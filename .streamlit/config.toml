@@ -5,3 +5,7 @@ backgroundColor = "#1E1E1E"
 secondaryBackgroundColor = "#2D2D2D"
 textColor = "#FFFFFF"
 font = "sans serif"
+# Fix component warnings
+widgetBackgroundColor = "#2D2D2D"
+widgetBorderColor = "#FF7E42"
+skeletonBackgroundColor = "#2D2D2D"
