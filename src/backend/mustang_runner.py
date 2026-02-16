@@ -278,30 +278,9 @@ class MustangRunner:
                 # Use simple filename since we set cwd to output_dir
                 output_prefix_arg = 'alignment'
             
-            # Create description file for Mustang input
-            # This is more robust than passing files on command line
-            desc_file_name = 'input_list.txt'
-            desc_file_path = output_dir / desc_file_name
-            
-            # Create list of relative paths for the description file
-            # Mustang expects lines like: >path/to/pdb1.pdb
-            with open(desc_file_path, 'w') as f:
-                for i, p in enumerate(pdb_files):
-                    # Use absolute paths in the description file to be safe
-                    # But if running in WSL, they need to be WSL paths
-                    if self.backend == 'wsl':
-                        p_str = self._convert_to_wsl_path(p)
-                    else:
-                        p_str = str(p.absolute())
-                    f.write(f">{p_str}\n")
-            
-            # Build command
-            # -f: description file
-            # -o: output prefix
-            # -F: fasta format
-            # -r: rmsd table
-            cmd = self.executable.split() + [
-                '-f', desc_file_name,
+            # Back to using -i flag as -f list file is failing parser
+            # But keep the output path fix (output_prefix_arg='alignment')
+            cmd = self.executable.split() + ['-i'] + converted_files + [
                 '-o', output_prefix_arg,
                 '-F', 'fasta',
                 '-r', 'ON'

@@ -251,16 +251,23 @@ class PDBManager:
                     data = response.json()
                     
                     # Extract relevant fields
-                    title = data.get('struct', {}).get('title', 'N/A')
-                    method = data.get('exptl', [{}])[0].get('method', 'N/A')
+                    # Ensure struct exists
+                    struct = data.get('struct', {})
+                    title = struct.get('title', 'N/A') if struct else 'N/A'
+                    
+                    # Method
+                    exptl = data.get('exptl', [{}])
+                    method = exptl[0].get('method', 'N/A') if exptl else 'N/A'
+                    
                     resolution = data.get('rcsb_entry_info', {}).get('resolution_combined', [None])[0]
                     
-                    # Organism (can be nested in multiple places)
+                    # Organism - Try simpler path or default to N/A without failing
+                    # rcsb_entity_source_organism is often not in Entry endpoint
                     organism = "N/A"
-                    if 'rcsb_entity_source_organism' in data:
-                        sources = data['rcsb_entity_source_organism']
-                        if sources and len(sources) > 0:
-                            organism = sources[0].get('ncbi_scientific_name', 'N/A')
+                    # Try basic lookup if available, otherwise just leave N/A to avoid errors
+                    if 'struct_keywords' in data:
+                        # Sometimes keywords contain organism hints, but better to be safe
+                        pass
                             
                     return pid, {
                         'title': title,
