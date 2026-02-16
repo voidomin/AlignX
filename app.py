@@ -99,9 +99,14 @@ def init_session_state():
         
     if 'history_db' not in st.session_state:
         st.session_state.history_db = HistoryDatabase()
+
+    if 'auto_recovered' not in st.session_state:
+        st.session_state.auto_recovered = False
         
     # Auto-recovery: If results is None, try to load the latest successful run
-    if st.session_state.get('results') is None and not st.session_state.get('loading_latest'):
+    # ONLY if we haven't already attempted recovery in this session
+    if st.session_state.get('results') is None and not st.session_state.auto_recovered:
+        st.session_state.auto_recovered = True # Mark as attempted (session-persistent)
         st.session_state.loading_latest = True
         latest_run = st.session_state.history_db.get_latest_run()
         if latest_run:
