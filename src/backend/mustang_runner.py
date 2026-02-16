@@ -161,6 +161,7 @@ class MustangRunner:
                     shutil.copy(binary, target)
                     target.chmod(0o755)
                     self.executable = str(target.absolute())
+                    self.backend = 'native'
                     logger.info(f"Mustang compiled and installed to {self.executable}")
                     return True
             
@@ -334,7 +335,16 @@ class MustangRunner:
             pdb_file = output_dir / 'alignment.pdb'
             
             if not (afasta_file.exists() or fasta_file.exists() or html_file.exists()):
-                return False, "Mustang did not produce expected output files", None
+                # Debug info
+                all_files = [f.name for f in output_dir.iterdir()]
+                log_content = "Log not found"
+                if log_file.exists():
+                    with open(log_file, 'r') as f:
+                        log_content = f.read()
+                        
+                error_msg = f"Mustang did not produce expected output files.\nFound: {all_files}\nLog tail: {log_content[-500:]}"
+                logger.error(error_msg)
+                return False, error_msg, None
             
             logger.info("Mustang alignment completed successfully")
             return True, "Alignment completed", output_dir

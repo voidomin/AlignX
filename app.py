@@ -189,6 +189,13 @@ def main():
                     except Exception as e:
                         st.error(f"Bio3D install error: {e}")
                         
+                    except Exception as e:
+                        st.error(f"Bio3D install error: {e}")
+                    
+                    # Force re-detection of backend
+                    if 'mustang_runner' in st.session_state:
+                        del st.session_state['mustang_runner']
+                        
                     st.rerun()
         
         st.divider()
