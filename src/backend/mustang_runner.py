@@ -1,7 +1,7 @@
-"""Mustang wrapper with support for native and Bio3D backends."""
-
 import subprocess
 import shutil
+import sys
+import os
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict
 import re
@@ -28,8 +28,12 @@ class MustangRunner:
         self.executable = config.get('mustang', {}).get('executable_path', None)
         self.timeout = config.get('mustang', {}).get('timeout', 600)
         
-        # We now handle detection lazily in check_installation
-        logger.info(f"Initialized Mustang Runner (Mode: {self.backend})")
+        # Platform detection
+        self.is_linux = sys.platform.startswith('linux')
+        self.is_windows = sys.platform.startswith('win')
+        self.use_wsl = False # Default
+        
+        logger.info(f"Initialized Mustang Runner (Platform: {sys.platform}, Mode: {self.backend})")
     
 
     def _compile_from_source(self) -> bool:
@@ -68,32 +72,30 @@ class MustangRunner:
             logger.info(f"Source extracted to: {src_dir}")
             
             # Compile using make
-            # Detect if we should use WSL for make
+            # Detect if we should use WSL for make (only on Windows if wsl exists)
             use_wsl_for_make = False
-            if shutil.which('wsl'):
+            if self.is_windows and shutil.which('wsl'):
                 use_wsl_for_make = True
                 
             if use_wsl_for_make:
                 logger.info("Compiling with make inside WSL...")
-                # We need to run make inside WSL. CWD should be handled by WSL
-                # Converting path might not be necessary if using wsl -d ... -c "cd ... && make"
-                # but let's try the simplest form first.
                 subprocess.run(["wsl", "make"], cwd=str(src_dir.absolute()), check=True, timeout=300)
             else:
-                logger.info("Compiling with native make...")
-                subprocess.run(["make"], cwd=str(src_dir.absolute()), check=True)
+                logger.info(f"Compiling with native make on {sys.platform}...")
+                subprocess.run(["make"], cwd=str(src_dir.absolute()), check=True, timeout=300)
             
             # Locate binary
-            # Mustang makefile typically outputs bin/mustang-x.y.z
-            # Check for binary in build dir
             bin_dir = src_dir / "bin"
             if bin_dir.exists():
                 binaries = list(bin_dir.glob("mustang*"))
                 if binaries:
-                    # On Windows, we can't run this linux binary directly
-                    # We just mark it as successful if we are on linux, 
-                    # OR if we are on Windows, we verify we can run it via WSL
-                    self.wsl_binary = binaries[0]
+                    # On Windows, we need WSL to run this Linux binary
+                    if self.is_windows:
+                        self.wsl_binary = binaries[0]
+                    else:
+                        # On Linux, we use it natively
+                        self.executable = str(binaries[0].absolute())
+                        os.chmod(self.executable, 0o755) # Ensure executable
                     return True
             
             logger.error("Compilation finished but binary not found")
@@ -108,45 +110,53 @@ class MustangRunner:
 
 
     def _check_mustang(self) -> Tuple[bool, str]:
-        """Check if Mustang binary is available (Native or WSL)."""
-        # 1. Check Native Windows Binary
-        # We look for mustang.exe in common locations or self.mustang_path
+        """Check if Mustang binary is available (Native, WSL, or Built)."""
+        # 1. Check Native (Windows or Linux)
         if hasattr(self, 'mustang_path') and self.mustang_path.exists():
             try:
-                # Try running it
-                subprocess.run([str(self.mustang_path)], capture_output=True, timeout=2)
+                subprocess.run([str(self.mustang_path), '--help'], capture_output=True, timeout=2)
                 self.use_wsl = False
-                return True, "Mustang binary found (Native Windows)"
+                return True, f"Mustang binary found (Native {sys.platform})"
             except Exception:
-                pass # Fallthrough if native execution fails
+                pass 
         
-        # 2. Check System-wide WSL Binary
-        try:
-            res = subprocess.run(['wsl', 'which', 'mustang'], capture_output=True, text=True, timeout=5)
-            if res.returncode == 0:
-                self.use_wsl = True
-                self.mustang_path = Path('mustang') # Mark as system command
-                return True, "System Mustang binary found (WSL)"
-        except Exception:
-            pass
-
-        # 3. Check Compiled WSL Binary
-        # We look for the binary we just compiled in WSL
-        # Path: mustang_build/MUSTANG_v3.2.4/bin/mustang-3.2.4
-        wsl_bin_path = self.base_dir / 'mustang_build' / 'MUSTANG_v3.2.4' / 'bin' / 'mustang-3.2.4'
-        if wsl_bin_path.exists():
-            # Verify we can actually run it
+        # 2. Check System-wide WSL Binary (Only on Windows)
+        if self.is_windows:
             try:
-                # Convert path to WSL format using helper
-                wsl_str = self._convert_to_wsl_path(wsl_bin_path)
-                
-                res = subprocess.run(['wsl', wsl_str, '--help'], capture_output=True, timeout=5)
-                if res.returncode != 127: # 127 = command not found
+                res = subprocess.run(['wsl', 'which', 'mustang'], capture_output=True, text=True, timeout=5)
+                if res.returncode == 0:
                     self.use_wsl = True
-                    self.mustang_path = wsl_bin_path # Store this path to use
-                    return True, "Mustang binary found (WSL)"
-            except Exception as e:
-                logger.warning(f"WSL check failed: {e}")
+                    self.mustang_path = Path('mustang') 
+                    return True, "System Mustang binary found (WSL)"
+            except Exception:
+                pass
+
+        # 3. Check Compiled Binary (Search build path)
+        build_dir = self.base_dir / 'mustang_build'
+        if build_dir.exists():
+            binaries = list(build_dir.glob("**/bin/mustang*"))
+            if binaries:
+                bin_path = binaries[0]
+                if self.is_windows:
+                    try:
+                        wsl_str = self._convert_to_wsl_path(bin_path)
+                        res = subprocess.run(['wsl', wsl_str, '--help'], capture_output=True, timeout=5)
+                        if res.returncode != 127:
+                            self.use_wsl = True
+                            self.mustang_path = bin_path
+                            return True, "Compiled Mustang found (WSL)"
+                    except Exception:
+                        pass
+                else:
+                    # Linux Native
+                    try:
+                        os.chmod(bin_path, 0o755)
+                        subprocess.run([str(bin_path), '--help'], capture_output=True, timeout=2)
+                        self.use_wsl = False
+                        self.mustang_path = bin_path
+                        return True, "Compiled Mustang found (Native Linux)"
+                    except Exception:
+                        pass
                 
         return False, "Mustang binary not found"
 
@@ -228,32 +238,39 @@ class MustangRunner:
         
         candidates = []
         
-        # 1. Check common Windows locations (PRIORITY)
-        common_paths = [
-            r"C:\Program Files\R",
-            r"C:\Program Files (x86)\R"
-        ]
-        
-        for base_path_str in common_paths:
-            base_path = Path(base_path_str)
-            if base_path.exists():
-                try:
-                    # Get all R folders, sort by version descending
-                    r_installations = [d for d in base_path.iterdir() if d.is_dir()]
-                    r_installations.sort(key=lambda x: x.name, reverse=True)
-                    
-                    for r_dir in r_installations:
-                        # Check bin/x64/R.exe
-                        bin_x64 = r_dir / "bin" / "x64" / "R.exe"
-                        if bin_x64.exists():
-                            candidates.append(str(bin_x64))
-                            
-                        # Check bin/R.exe
-                        bin_root = r_dir / "bin" / "R.exe"
-                        if bin_root.exists():
-                            candidates.append(str(bin_root))
-                except Exception as e:
-                    logger.error(f"Error scanning {base_path}: {e}")
+        # 1. Check common Windows locations (Only on Windows)
+        if self.is_windows:
+            common_paths = [
+                r"C:\Program Files\R",
+                r"C:\Program Files (x86)\R"
+            ]
+            
+            for base_path_str in common_paths:
+                base_path = Path(base_path_str)
+                if base_path.exists():
+                    try:
+                        # Get all R folders, sort by version descending
+                        r_installations = [d for d in base_path.iterdir() if d.is_dir()]
+                        r_installations.sort(key=lambda x: x.name, reverse=True)
+                        
+                        for r_dir in r_installations:
+                            # Check bin/x64/R.exe
+                            bin_x64 = r_dir / "bin" / "x64" / "R.exe"
+                            if bin_x64.exists():
+                                candidates.append(str(bin_x64))
+                                
+                            # Check bin/R.exe
+                            bin_root = r_dir / "bin" / "R.exe"
+                            if bin_root.exists():
+                                candidates.append(str(bin_root))
+                    except Exception as e:
+                        logger.error(f"Error scanning {base_path}: {e}")
+        else:
+            # 1b. Check common Linux locations
+            linux_paths = ["/usr/bin/R", "/usr/local/bin/R", "/usr/lib/R/bin/R"]
+            for lp in linux_paths:
+                if Path(lp).exists():
+                    candidates.append(lp)
 
         # 2. Check PATH as fallback
         path_r = shutil.which('R')
@@ -354,7 +371,7 @@ class MustangRunner:
         """Run native Mustang binary."""
         try:
             # Convert paths for WSL if needed
-            if self.backend == 'wsl':
+            if getattr(self, 'use_wsl', False):
                 converted_files = [self._convert_to_wsl_path(p) for p in pdb_files]
                 converted_output_dir = self._convert_to_wsl_path(output_dir)
             else:
@@ -362,27 +379,18 @@ class MustangRunner:
                 converted_output_dir = str(output_dir.absolute())
             
             # Output prefix
-            if self.backend == 'wsl':
+            if getattr(self, 'use_wsl', False):
                 output_prefix_arg = f"{converted_output_dir}/alignment"
             else:
                 # Use simple filename since we set cwd to output_dir
                 output_prefix_arg = 'alignment'
             
-            # Construct command robustly to handle spaces in paths
-            if self.backend == 'wsl':
-                # wsl /mnt/c/Users/My Name/...
-                cmd = ['wsl', self.executable]
+            # Construct command robustly
+            if getattr(self, 'use_wsl', False):
+                cmd = ['wsl', str(self.executable)]
             else:
-                # Native execution
-                if isinstance(self.executable, str):
-                     if ' ' in self.executable and not self.executable.startswith('"'):
-                         # Just strict path, do not split if it might be a full path with spaces
-                         cmd = [self.executable]
-                     else:
-                        # Fallback for complex commands if needed
-                        cmd = self.executable.split()
-                else:
-                     cmd = [str(self.executable)]
+                # Native execution (Linux or Windows)
+                cmd = [str(self.executable)]
 
             # Add arguments
             cmd.extend(['-i'] + converted_files + [
@@ -391,14 +399,14 @@ class MustangRunner:
                 '-r', 'ON'
             ])
             
-            logger.info(f"Running Mustang: {cmd[:2]}... (with {len(converted_files)} files)")
+            logger.info(f"Running Mustang: {cmd[:2]}... (Native: {not getattr(self, 'use_wsl', False)})")
             
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
-                cwd=str(output_dir) if self.backend != 'wsl' else None
+                cwd=str(output_dir) if not self.use_wsl else None
             )
             
             if result.returncode != 0:
