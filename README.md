@@ -2,17 +2,15 @@
 
 An automated bioinformatics pipeline for multiple structural alignment of **any protein family** using Mustang, with phylogenetic analysis and interactive visualizations.
 
-## 🎯 Features
+## 🎯 Features ("Cyber-Bio" Edition)
 
+- 🎨 **High-Impact UI**: "Cyber-Bio" aesthetic with dark gradients, glowing borders, and Montserrat typography.
+- 🧬 **Interactive 3D**: Viewer with **Neon Chain Coloring**, auto-spin, and transparent backgrounds.
+- 📊 **Plotly Visualizations**: Fully interactive RMSD Heatmaps (with value hover) and Phylogenetic Trees.
 - ✅ **Universal**: Works with any protein family from PDB
 - ✅ **Automated**: One-click analysis from PDB IDs to results
-- ✅ **User-Friendly**: Modern web interface (Streamlit)
-- ✅ **Flexible Deployment**: Run locally or deploy to cloud (FREE options available)
 - ✅ **Smart Filtering**: Handles large PDB files efficiently
-- ✅ **Interactive Alignment**: View sequences with conservation highlighting
-- ✅ **Residue Analysis**: Identify flexible regions with RMSF plots
-- ✅ **Rich Reporting**: Generate professional PDF reports
-- ✅ **Metadata**: Auto-fetch protein details (Organism, Method, Resolution)
+- ✅ **Rich Reporting**: PDF reports, CSV data, and high-res images
 - ✅ **Complete Pipeline**: Download → Clean → Align → Analyze → Visualize
 
 ## 🚀 Quick Start
