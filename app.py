@@ -138,8 +138,13 @@ def main():
 
         # History Section
         with st.expander("📜 History", expanded=False):
-            # Limit to latest 6 runs as requested
-            runs = st.session_state.history_db.get_all_runs(limit=6)
+            # Limit to latest 6 runs
+            # Handle stale session state where HistoryDatabase might be an old instance
+            try:
+                runs = st.session_state.history_db.get_all_runs(limit=6)
+            except TypeError:
+                # Fallback for old instances pending reload
+                runs = st.session_state.history_db.get_all_runs()[:6]
             if not runs:
                 st.info("No saved runs found.")
             else:
