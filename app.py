@@ -161,6 +161,35 @@ def main():
                     st.error(f"R check failed: {e}")
             else:
                 st.warning("R binary NOT found")
+                
+            st.divider()
+            
+            # Manual Fix Button
+            if st.button("🛠️ Force Re-install Dependencies"):
+                with st.spinner("Attempting to compile Mustang and install Bio3D..."):
+                    # 1. Try Compile Mustang
+                    st.write("1. Compiling Mustang...")
+                    try:
+                        compile_res = st.session_state.mustang_runner._compile_from_source()
+                        if compile_res:
+                            st.success("Mustang compiled successfully! ✅")
+                        else:
+                            st.error("Mustang compilation failed ❌")
+                    except Exception as e:
+                        st.error(f"Compilation error: {e}")
+                        
+                    # 2. Try Install Bio3D
+                    st.write("2. Installing Bio3D (R)...")
+                    try:
+                        install_res = st.session_state.mustang_runner._install_bio3d()
+                        if install_res:
+                            st.success("Bio3D installed successfully! ✅")
+                        else:
+                            st.error("Bio3D installation failed ❌")
+                    except Exception as e:
+                        st.error(f"Bio3D install error: {e}")
+                        
+                    st.experimental_rerun()
         
         st.divider()
         
