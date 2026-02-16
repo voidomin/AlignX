@@ -23,96 +23,14 @@ class MustangRunner:
             config: Configuration dictionary
         """
         self.config = config
+        
         self.backend = config.get('mustang', {}).get('backend', 'auto')
-        self.executable = config.get('mustang', {}).get('executable_path', 'mustang')
+        self.executable = config.get('mustang', {}).get('executable_path', None)
         self.timeout = config.get('mustang', {}).get('timeout', 600)
         
-        # Detect which backend to use
-        if self.backend == 'auto':
-            self.backend = self._detect_backend()
-        
-        logger.info(f"Mustang backend: {self.backend}")
+        # We now handle detection lazily in check_installation
+        logger.info(f"Initialized Mustang Runner (Mode: {self.backend})")
     
-    def _detect_backend(self) -> str:
-        """
-        Auto-detect available Mustang backend.
-        
-        Returns:
-            'native', 'wsl', or 'bio3d'
-        """
-        # Check for locally compiled binary
-        if Path("./mustang").exists():
-            logger.info("Detected locally compiled Mustang")
-            self.executable = str(Path("./mustang").absolute())
-            return 'native'
-            
-        # Try native mustang in PATH
-        if shutil.which('mustang'):
-            logger.info("Detected native Mustang installation")
-            return 'native'
-        
-        # Try WSL mustang
-        try:
-            result = subprocess.run(['wsl', 'which', 'mustang'], 
-                                  capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                logger.info("Detected Mustang in WSL")
-                self.executable = 'wsl mustang'
-                return 'wsl'
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
-        
-        # Fall back to Bio3D
-        logger.warning("No native Mustang found, will try Bio3D R package")
-        return 'bio3d'
-    
-    def check_installation(self) -> Tuple[bool, str]:
-        """
-        Check if Mustang is properly installed.
-        
-        Returns:
-            Tuple of (success, message)
-        """
-        if self.backend == 'bio3d':
-            return self._check_bio3d()
-        else:
-            return self._check_native_mustang()
-    
-    def _check_native_mustang(self) -> Tuple[bool, str]:
-        """Check native Mustang installation."""
-        try:
-            cmd = self.executable.split() + ['-h']
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-            
-            if result.returncode == 0 or 'MUSTANG' in result.stdout + result.stderr:
-                return True, f"Mustang found: {self.executable}"
-            else:
-                return False, f"Mustang not responding correctly"
-                
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            return False, f"Mustang not found: {str(e)}"
-    
-    def _check_bio3d(self) -> Tuple[bool, str]:
-        """Check Bio3D R package availability."""
-        try:
-            # Check if R is installed
-            result = subprocess.run(['R', '--version'], 
-                                  capture_output=True, text=True, timeout=5)
-            if result.returncode != 0:
-                return False, "R not installed. Required for Bio3D backend."
-            
-            # Check if bio3d package is installed
-            check_script = 'if(!require("bio3d", quietly=TRUE)) quit(status=1)'
-            result = subprocess.run(['R', '--vanilla', '-e', check_script],
-                                  capture_output=True, text=True, timeout=10)
-            
-            if result.returncode == 0:
-                return True, "Bio3D R package found"
-            else:
-                return False, "Bio3D R package not installed. Install with: install.packages('bio3d')"
-                
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            return False, f"R not found: {str(e)}"
 
     def _compile_from_source(self) -> bool:
         """Attempt to compile Mustang from bundled source."""
@@ -127,14 +45,17 @@ class MustangRunner:
 
             build_dir = Path("mustang_build")
             if build_dir.exists():
-                shutil.rmtree(build_dir)
+                try:
+                    shutil.rmtree(build_dir)
+                except Exception as e:
+                    logger.warning(f"Could not clear existing build directory (might be in use): {e}. Attempting to proceed...")
             build_dir.mkdir(exist_ok=True)
             
             # Copy tarball to build dir
             shutil.copy(bundled_tarball, build_dir / "mustang.tgz")
             
-            # Extract
-            subprocess.run(["tar", "-xzf", "mustang.tgz"], cwd=build_dir, check=True)
+            # Extract using shutil (more robust than tar command)
+            shutil.unpack_archive(build_dir / "mustang.tgz", build_dir)
             
             # Find makefile directory (it unpacks into a subdir)
             # Handle potential variation in folder name
@@ -147,22 +68,32 @@ class MustangRunner:
             logger.info(f"Source extracted to: {src_dir}")
             
             # Compile using make
-            subprocess.run(["make"], cwd=src_dir, check=True)
+            # Detect if we should use WSL for make
+            use_wsl_for_make = False
+            if shutil.which('wsl'):
+                use_wsl_for_make = True
+                
+            if use_wsl_for_make:
+                logger.info("Compiling with make inside WSL...")
+                # We need to run make inside WSL. CWD should be handled by WSL
+                # Converting path might not be necessary if using wsl -d ... -c "cd ... && make"
+                # but let's try the simplest form first.
+                subprocess.run(["wsl", "make"], cwd=str(src_dir.absolute()), check=True, timeout=300)
+            else:
+                logger.info("Compiling with native make...")
+                subprocess.run(["make"], cwd=str(src_dir.absolute()), check=True)
             
             # Locate binary
             # Mustang makefile typically outputs bin/mustang-x.y.z
+            # Check for binary in build dir
             bin_dir = src_dir / "bin"
             if bin_dir.exists():
                 binaries = list(bin_dir.glob("mustang*"))
                 if binaries:
-                    binary = binaries[0]
-                    # Copy to local bin or app root
-                    target = Path("./mustang")
-                    shutil.copy(binary, target)
-                    target.chmod(0o755)
-                    self.executable = str(target.absolute())
-                    self.backend = 'native'
-                    logger.info(f"Mustang compiled and installed to {self.executable}")
+                    # On Windows, we can't run this linux binary directly
+                    # We just mark it as successful if we are on linux, 
+                    # OR if we are on Windows, we verify we can run it via WSL
+                    self.wsl_binary = binaries[0]
                     return True
             
             logger.error("Compilation finished but binary not found")
@@ -172,35 +103,118 @@ class MustangRunner:
             logger.error(f"Compilation failed: {e}")
             return False
 
+
+
+
+
+    def _check_mustang(self) -> Tuple[bool, str]:
+        """Check if Mustang binary is available (Native or WSL)."""
+        # 1. Check Native Windows Binary
+        # We look for mustang.exe in common locations or self.mustang_path
+        if hasattr(self, 'mustang_path') and self.mustang_path.exists():
+            try:
+                # Try running it
+                subprocess.run([str(self.mustang_path)], capture_output=True, timeout=2)
+                self.use_wsl = False
+                return True, "Mustang binary found (Native Windows)"
+            except Exception:
+                pass # Fallthrough if native execution fails
+        
+        # 2. Check System-wide WSL Binary
+        try:
+            res = subprocess.run(['wsl', 'which', 'mustang'], capture_output=True, text=True, timeout=5)
+            if res.returncode == 0:
+                self.use_wsl = True
+                self.mustang_path = Path('mustang') # Mark as system command
+                return True, "System Mustang binary found (WSL)"
+        except Exception:
+            pass
+
+        # 3. Check Compiled WSL Binary
+        # We look for the binary we just compiled in WSL
+        # Path: mustang_build/MUSTANG_v3.2.4/bin/mustang-3.2.4
+        wsl_bin_path = self.base_dir / 'mustang_build' / 'MUSTANG_v3.2.4' / 'bin' / 'mustang-3.2.4'
+        if wsl_bin_path.exists():
+            # Verify we can actually run it
+            try:
+                # Convert path to WSL format using helper
+                wsl_str = self._convert_to_wsl_path(wsl_bin_path)
+                
+                res = subprocess.run(['wsl', wsl_str, '--help'], capture_output=True, timeout=5)
+                if res.returncode != 127: # 127 = command not found
+                    self.use_wsl = True
+                    self.mustang_path = wsl_bin_path # Store this path to use
+                    return True, "Mustang binary found (WSL)"
+            except Exception as e:
+                logger.warning(f"WSL check failed: {e}")
+                
+        return False, "Mustang binary not found"
+
+
     def _install_bio3d(self) -> bool:
         """Attempt to install Bio3D package dynamically."""
         try:
             logger.info("Attempting to auto-install 'bio3d' R package...")
             install_script = 'install.packages("bio3d", repos="https://cloud.r-project.org")'
-            subprocess.run(['R', '--vanilla', '-e', install_script], 
+            
+            # Use detected R executable if available
+            r_cmd = getattr(self, 'r_executable', 'R')
+            
+            subprocess.run([r_cmd, '--vanilla', '-e', install_script], 
                          check=True, timeout=300)
             return True
         except subprocess.SubprocessError as e:
             logger.error(f"Failed to auto-install Bio3D: {e}")
             return False
             
+    @property
+    def base_dir(self):
+        """Lazy load base_dir to handle stale session state."""
+        if not hasattr(self, '_base_dir'):
+             self._base_dir = Path(__file__).resolve().parent.parent.parent
+        return self._base_dir
+
     def check_installation(self) -> Tuple[bool, str]:
         """Check if Mustang is properly installed with fallbacks."""
-        # 1. Check Native/Conda
+        
+        # 1. Check if 'mustang' is in PATH (Native)
         if shutil.which('mustang'):
              self.backend = 'native'
-             return True, "Found native Mustang binary"
-             
-        # 2. Check Local Compilation
-        if Path("./mustang").exists():
-            self.executable = str(Path("./mustang").absolute())
-            self.backend = 'native'
-            return True, "Found locally compiled Mustang"
-            
+             self.executable = 'mustang'
+             return True, "Found native Mustang binary in PATH"
+
+        # 2. Check for existing executable via helper (covers local native and WSL)
+        found, msg = self._check_mustang()
+        if found:
+             if getattr(self, 'use_wsl', False):
+                 self.backend = 'wsl'
+                 # If it's a system command, don't convert path
+                 if str(self.mustang_path) == 'mustang':
+                     self.executable = 'mustang'
+                 else:
+                     self.executable = self._convert_to_wsl_path(self.mustang_path)
+                 return True, "Found Mustang binary (WSL)"
+             else:
+                 self.backend = 'native'
+                 self.executable = str(self.mustang_path)
+                 return True, "Found Mustang binary (Native)"
+
         # 3. Try to Compile
         if self._compile_from_source():
-             self.backend = 'native'
-             return True, "Successfully compiled Mustang from source"
+             # Re-check after compilation
+             found, msg = self._check_mustang()
+             if found:
+                 if getattr(self, 'use_wsl', False):
+                     self.backend = 'wsl'
+                     if str(self.mustang_path) == 'mustang':
+                         self.executable = 'mustang'
+                     else:
+                         self.executable = self._convert_to_wsl_path(self.mustang_path)
+                     return True, "Compiled Mustang binary (WSL)"
+                 else:
+                     self.backend = 'native'
+                     self.executable = str(self.mustang_path)
+                     return True, "Compiled Mustang binary (Native)"
              
         # 4. Fallback to Bio3D (Requires R)
         if self.backend != 'bio3d':
@@ -208,18 +222,85 @@ class MustangRunner:
             
         return self._check_bio3d()
 
+    def _find_r_executable(self) -> Optional[str]:
+        """Find R executable with rigorous verification."""
+        logger.info("Searching for R executable...")
+        
+        candidates = []
+        
+        # 1. Check common Windows locations (PRIORITY)
+        common_paths = [
+            r"C:\Program Files\R",
+            r"C:\Program Files (x86)\R"
+        ]
+        
+        for base_path_str in common_paths:
+            base_path = Path(base_path_str)
+            if base_path.exists():
+                try:
+                    # Get all R folders, sort by version descending
+                    r_installations = [d for d in base_path.iterdir() if d.is_dir()]
+                    r_installations.sort(key=lambda x: x.name, reverse=True)
+                    
+                    for r_dir in r_installations:
+                        # Check bin/x64/R.exe
+                        bin_x64 = r_dir / "bin" / "x64" / "R.exe"
+                        if bin_x64.exists():
+                            candidates.append(str(bin_x64))
+                            
+                        # Check bin/R.exe
+                        bin_root = r_dir / "bin" / "R.exe"
+                        if bin_root.exists():
+                            candidates.append(str(bin_root))
+                except Exception as e:
+                    logger.error(f"Error scanning {base_path}: {e}")
+
+        # 2. Check PATH as fallback
+        path_r = shutil.which('R')
+        if path_r:
+            candidates.append(path_r)
+            
+        # 3. Verify candidates
+        for r_path in candidates:
+            logger.info(f"Verifying R candidate: {r_path}")
+            try:
+                # Try running R --version
+                # Use strict timeout
+                result = subprocess.run(
+                    [r_path, '--version'], 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    logger.info(f"✅ Verified R executable: {r_path}")
+                    return r_path
+                else:
+                    logger.warning(f"❌ Candidate {r_path} failed verification (Exit {result.returncode})")
+            except Exception as e:
+                logger.warning(f"❌ Candidate {r_path} failed execution: {e}")
+                
+        logger.error("No valid R executable found after checking all candidates.")
+        return None
+
     def _check_bio3d(self) -> Tuple[bool, str]:
         """Check Bio3D R package availability."""
         try:
+            r_exec = self._find_r_executable()
+            if not r_exec:
+                 return False, "R executable not found in PATH or standard locations."
+            
+            self.r_executable = r_exec # Store for later use
+            
             # Check if R is installed
-            result = subprocess.run(['R', '--version'], 
+            result = subprocess.run([self.r_executable, '--version'], 
                                   capture_output=True, text=True, timeout=5)
             if result.returncode != 0:
                 return False, "R not installed. Required for Bio3D backend."
             
             # Check if bio3d package is installed
             check_script = 'if(!require("bio3d", quietly=TRUE)) quit(status=1)'
-            result = subprocess.run(['R', '--vanilla', '-e', check_script],
+            result = subprocess.run([self.r_executable, '--vanilla', '-e', check_script],
                                   capture_output=True, text=True, timeout=10)
             
             if result.returncode == 0:
@@ -228,7 +309,7 @@ class MustangRunner:
                 # Attempt Auto-Install
                 if self._install_bio3d():
                     # Check again
-                    result = subprocess.run(['R', '--vanilla', '-e', check_script],
+                    result = subprocess.run([self.r_executable, '--vanilla', '-e', check_script],
                                           capture_output=True, text=True, timeout=10)
                     if result.returncode == 0:
                         return True, "Bio3D R package installed and found"
@@ -255,10 +336,19 @@ class MustangRunner:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         
+        # Copy input files to output directory for self-contained results
+        local_pdb_files = []
+        for pdb_file in pdb_files:
+            dest_path = output_dir / pdb_file.name
+            if not dest_path.exists():
+                shutil.copy2(pdb_file, dest_path)
+            local_pdb_files.append(dest_path)
+            
+        # Use the local copies for alignment
         if self.backend == 'bio3d':
-            return self._run_bio3d_alignment(pdb_files, output_dir)
+            return self._run_bio3d_alignment(local_pdb_files, output_dir)
         else:
-            return self._run_native_mustang(pdb_files, output_dir)
+            return self._run_native_mustang(local_pdb_files, output_dir)
     
     def _run_native_mustang(self, pdb_files: List[Path], output_dir: Path) -> Tuple[bool, str, Optional[Path]]:
         """Run native Mustang binary."""
@@ -278,15 +368,30 @@ class MustangRunner:
                 # Use simple filename since we set cwd to output_dir
                 output_prefix_arg = 'alignment'
             
-            # Back to using -i flag as -f list file is failing parser
-            # But keep the output path fix (output_prefix_arg='alignment')
-            cmd = self.executable.split() + ['-i'] + converted_files + [
+            # Construct command robustly to handle spaces in paths
+            if self.backend == 'wsl':
+                # wsl /mnt/c/Users/My Name/...
+                cmd = ['wsl', self.executable]
+            else:
+                # Native execution
+                if isinstance(self.executable, str):
+                     if ' ' in self.executable and not self.executable.startswith('"'):
+                         # Just strict path, do not split if it might be a full path with spaces
+                         cmd = [self.executable]
+                     else:
+                        # Fallback for complex commands if needed
+                        cmd = self.executable.split()
+                else:
+                     cmd = [str(self.executable)]
+
+            # Add arguments
+            cmd.extend(['-i'] + converted_files + [
                 '-o', output_prefix_arg,
                 '-F', 'fasta',
                 '-r', 'ON'
-            ]
+            ])
             
-            logger.info(f"Running Mustang: {' '.join(cmd[:5])}... (with {len(converted_files)} files)")
+            logger.info(f"Running Mustang: {cmd[:2]}... (with {len(converted_files)} files)")
             
             result = subprocess.run(
                 cmd,
@@ -366,7 +471,12 @@ class MustangRunner:
             # Create R script
             r_script = output_dir / 'run_mustang.R'
             
-            pdb_paths_r = ', '.join([f'"{p.absolute()}"' for p in pdb_files])
+            # CRITICAL FIX FOR WINDOWS: R needs forward slashes even on Windows
+            # pathlib.absolute() returns backslashes on Windows, which R interprets as escape chars
+            pdb_paths_r = ', '.join([f'"{str(p.absolute()).replace(chr(92), "/")}"' for p in pdb_files])
+            
+            # Also fix output path for R
+            output_dir_r = str(output_dir.absolute()).replace(chr(92), "/")
             
             script_content = f"""
 library(bio3d)
@@ -378,11 +488,11 @@ pdb_files <- c({pdb_paths_r})
 result <- mustang(pdb_files)
 
 # Save outputs
-write.fasta(result$ali, file="{output_dir}/alignment.fasta")
-write.csv(result$rmsd, file="{output_dir}/rmsd_matrix.csv")
+write.fasta(result$ali, file="{output_dir_r}/alignment.fasta")
+write.csv(result$rmsd, file="{output_dir_r}/rmsd_matrix.csv")
 
 # Save result object
-save(result, file="{output_dir}/mustang_result.RData")
+save(result, file="{output_dir_r}/mustang_result.RData")
 
 cat("Mustang alignment completed\\n")
 """
@@ -392,8 +502,12 @@ cat("Mustang alignment completed\\n")
             
             # Run R script
             logger.info("Running Mustang via Bio3D R package")
+            
+            # Use the R executable we found during check_installation
+            r_cmd = self.r_executable if hasattr(self, 'r_executable') else 'R'
+            
             result = subprocess.run(
-                ['R', '--vanilla', '--file', str(r_script)],
+                [r_cmd, '--vanilla', '--file', str(r_script)],
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
@@ -401,8 +515,18 @@ cat("Mustang alignment completed\\n")
             )
             
             if result.returncode != 0:
-                logger.error(f"Bio3D failed: {result.stderr}")
-                return False, f"Bio3D execution failed: {result.stderr}", None
+                # Capture the full output for debugging
+                error_msg = f"Bio3D R script failed (Exit Code {result.returncode}).\n\nSTDOUT:\n{result.stdout}\n\nSTDERR:\n{result.stderr}"
+                logger.error(error_msg)
+                
+                # Check for common errors
+                if "there is no package called" in result.stderr:
+                    return False, "Bio3D package missing in R. Please install it.", None
+                
+                if "WinError 2" in str(result.stderr) or "WinError 2" in str(result.stdout):
+                     return False, "R executable not found or path issue.", None
+                     
+                return False, error_msg, None
             
             # Check for output
             fasta_file = output_dir / 'alignment.fasta'

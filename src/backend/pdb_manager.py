@@ -51,6 +51,33 @@ class PDBManager:
         pattern = r'^[0-9][A-Za-z0-9]{3}$'
         return bool(re.match(pattern, pdb_id.strip()))
     
+    def save_uploaded_file(self, uploaded_file) -> Tuple[bool, str, Optional[Path]]:
+        """
+        Save an uploaded file to the raw directory.
+        
+        Args:
+            uploaded_file: Streamlit UploadedFile object
+            
+        Returns:
+            Tuple of (success, message, file_path)
+        """
+        try:
+            # Clean filename
+            name = Path(uploaded_file.name).stem
+            # Replace spaces with underscores
+            name = re.sub(r'\s+', '_', name)
+            
+            output_file = self.raw_dir / f"{name}.pdb"
+            
+            with open(output_file, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+                
+            logger.info(f"Saved uploaded file: {output_file}")
+            return True, "Saved uploaded file", output_file
+        except Exception as e:
+            logger.error(f"Failed to save upload: {e}")
+            return False, str(e), None
+
     def download_pdb(self, pdb_id: str, force: bool = False) -> Tuple[bool, str, Optional[Path]]:
         """
         Download a PDB file from RCSB.
@@ -62,22 +89,29 @@ class PDBManager:
         Returns:
             Tuple of (success, message, file_path)
         """
-        pdb_id = pdb_id.strip().upper()
+        pdb_id = pdb_id.strip() # Don't UPPER() yet, might be local filename
+        
+        # Check if already exists (Local File/Upload)
+        output_file = self.raw_dir / f"{pdb_id}.pdb"
+        if output_file.exists() and not force:
+            file_size_mb = output_file.stat().st_size / (1024 * 1024)
+            logger.info(f"{pdb_id} found locally ({file_size_mb:.2f} MB)")
+            return True, f"Using local file ({file_size_mb:.2f} MB)", output_file
+        
+        # If not found locally, treat as PDB ID and download
+        pdb_id = pdb_id.upper()
         
         # Validate ID
         if not self.validate_pdb_id(pdb_id):
             return False, f"Invalid PDB ID format: {pdb_id}", None
         
-        # Check if already downloaded
+        # Update output path just in case case changed
         output_file = self.raw_dir / f"{pdb_id}.pdb"
-        if output_file.exists() and not force:
-            file_size_mb = output_file.stat().st_size / (1024 * 1024)
-            logger.info(f"{pdb_id} already downloaded ({file_size_mb:.2f} MB)")
-            return True, f"Already downloaded ({file_size_mb:.2f} MB)", output_file
         
         # Download
         try:
             url = f"{self.pdb_source}{pdb_id}.pdb"
+
             logger.info(f"Downloading {pdb_id} from {url}")
             
             response = requests.get(url, timeout=self.timeout, stream=True)
@@ -229,69 +263,119 @@ class PDBManager:
 
     def fetch_metadata(self, pdb_ids: List[str], max_workers: int = 4) -> Dict[str, Dict]:
         """
-        Fetch metadata for multiple PDB IDs from RCSB API.
+        Fetch metadata for multiple PDB IDs from RCSB GraphQL API.
         
         Args:
             pdb_ids: List of PDB IDs
-            max_workers: Number of parallel requests
+            max_workers: Unused in new implementation (kept for compatibility)
             
         Returns:
             Dictionary mapping PDB ID to metadata dict
         """
-        metadata_url = "https://data.rcsb.org/rest/v1/core/entry/"
-        results = {}
+        if not pdb_ids:
+            return {}
+            
+        # Deduplicate and upper case, but extract base PDB ID (4 chars) for GraphQL entries query
+        original_to_base = {}
+        for pid in pdb_ids:
+            clean_id = pid.strip().upper()
+            base_id = clean_id[:4]
+            original_to_base[clean_id] = base_id
+            
+        unique_base_ids = list(set(original_to_base.values()))
         
-        def _fetch_single(pdb_id):
-            try:
-                # Normalize ID
-                pid = pdb_id.strip().upper()
-                response = requests.get(f"{metadata_url}{pid}", timeout=10)
+        # GraphQL Query
+        query = """
+        query($ids: [String!]!) {
+          entries(entry_ids: $ids) {
+            rcsb_id
+            struct {
+              title
+            }
+            exptl {
+              method
+            }
+            rcsb_entry_info {
+              resolution_combined
+            }
+            polymer_entities {
+              rcsb_entity_source_organism {
+                scientific_name
+              }
+            }
+          }
+        }
+        """
+        
+        # Pre-fill with N/A
+        base_results = {}
+        for bid in unique_base_ids:
+            base_results[bid] = {
+                'title': 'N/A',
+                'method': 'N/A',
+                'resolution': 'N/A',
+                'organism': 'N/A'
+            }
+            
+        try:
+            url = "https://data.rcsb.org/graphql"
+            payload = {
+                "query": query,
+                "variables": {"ids": unique_base_ids}
+            }
+            
+            logger.info(f"Fetching metadata for {len(unique_base_ids)} entries via GraphQL")
+            response = requests.post(url, json=payload, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                entries = data.get('data', {}).get('entries', [])
                 
-                if response.status_code == 200:
-                    data = response.json()
+                for entry in entries:
+                    bid = entry.get('rcsb_id')
+                    if not bid: continue
                     
-                    # Extract relevant fields
-                    # Ensure struct exists
-                    struct = data.get('struct', {})
+                    struct = entry.get('struct', {})
                     title = struct.get('title', 'N/A') if struct else 'N/A'
                     
-                    # Method
-                    exptl = data.get('exptl', [{}])
+                    exptl = entry.get('exptl', [])
                     method = exptl[0].get('method', 'N/A') if exptl else 'N/A'
                     
-                    resolution = data.get('rcsb_entry_info', {}).get('resolution_combined', [None])[0]
+                    res_list = entry.get('rcsb_entry_info', {}).get('resolution_combined', [])
+                    resolution = f"{res_list[0]:.2f} \u00c5" if res_list else "N/A"
                     
-                    # Organism - Try simpler path or default to N/A without failing
-                    # rcsb_entity_source_organism is often not in Entry endpoint
                     organism = "N/A"
-                    # Try basic lookup if available, otherwise just leave N/A to avoid errors
-                    if 'struct_keywords' in data:
-                        # Sometimes keywords contain organism hints, but better to be safe
-                        pass
-                            
-                    return pid, {
+                    entities = entry.get('polymer_entities', [])
+                    if entities:
+                        for entity in entities:
+                            sources = entity.get('rcsb_entity_source_organism', [])
+                            if sources:
+                                organism = sources[0].get('scientific_name', 'N/A')
+                                break
+                    
+                    base_results[bid] = {
                         'title': title,
                         'method': method,
-                        'resolution': f"{resolution:.2f} Å" if resolution else "N/A",
+                        'resolution': resolution,
                         'organism': organism
                     }
-                else:
-                    return pid, None
-            except Exception as e:
-                logger.warning(f"Failed to fetch metadata for {pdb_id}: {str(e)}")
-                return pid, None
-
-        # Execute in parallel
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_pid = {executor.submit(_fetch_single, pid): pid for pid in pdb_ids}
             
-            for future in as_completed(future_to_pid):
-                pid = future_to_pid[future]
-                try:
-                    result_pid, info = future.result()
-                    if info:
-                        results[result_pid] = info
-                except Exception as e:
-                    logger.error(f"Error fetching metadata for {pid}: {str(e)}")
-                    
-        return results
+            # Map back to original IDs (case-insensitive key matching)
+            final_results = {}
+            for original_id, base_id in original_to_base.items():
+                meta = base_results.get(base_id)
+                if not meta:
+                    # Try uppercase base_id just in case
+                    meta = base_results.get(base_id.upper(), {
+                        'title': 'N/A',
+                        'method': 'N/A',
+                        'resolution': 'N/A',
+                        'organism': 'N/A'
+                    })
+                final_results[original_id] = meta
+                
+            return final_results
+            
+        except Exception as e:
+            logger.error(f"Metadata fetch failed: {str(e)}")
+            return {pid: {'title': 'N/A', 'method': 'N/A', 'resolution': 'N/A', 'organism': 'N/A'} for pid in pdb_ids}

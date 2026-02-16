@@ -27,9 +27,14 @@ results/
 temp/
 data/raw/
 data/cleaned/
+logs/
+mustang_build/
 *.pdb
 *.afasta
 *.log
+*.db
+*.tgz
+!mustang.tgz
 
 # OS
 .DS_Store
