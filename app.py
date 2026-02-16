@@ -320,8 +320,14 @@ def main():
                         st.session_state.metadata = metadata
                         st.session_state.metadata_fetched = True
                     except Exception as e:
-                        st.warning(f"Could not fetch metadata: {str(e)}")
+                        st.error(f"Could not fetch metadata: {str(e)}")
+                        logger.error(f"Metadata fetch failed: {str(e)}")
                         st.session_state.metadata = {}
+            
+            if st.session_state.metadata:
+                st.success(f"Fetched metadata for {len(st.session_state.metadata)} proteins")
+            else:
+                st.warning("No metadata available. Using basic IDs.")
             
             # Create a DataFrame for display
             if hasattr(st.session_state, 'metadata') and st.session_state.metadata:

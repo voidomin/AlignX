@@ -277,12 +277,33 @@ class MustangRunner:
                 # Use simple filename since we set cwd to output_dir
                 output_prefix_arg = 'alignment'
             
-            # Build command - use -i flag with individual files instead of -f with file list
-            # This avoids issues with spaces in paths
-            cmd = self.executable.split() + ['-i'] + converted_files + [
+            # Create description file for Mustang input
+            # This is more robust than passing files on command line
+            desc_file_name = 'input_list.txt'
+            desc_file_path = output_dir / desc_file_name
+            
+            # Create list of relative paths for the description file
+            # Mustang expects lines like: >path/to/pdb1.pdb
+            with open(desc_file_path, 'w') as f:
+                for i, p in enumerate(pdb_files):
+                    # Use absolute paths in the description file to be safe
+                    # But if running in WSL, they need to be WSL paths
+                    if self.backend == 'wsl':
+                        p_str = self._convert_to_wsl_path(p)
+                    else:
+                        p_str = str(p.absolute())
+                    f.write(f">{p_str}\n")
+            
+            # Build command
+            # -f: description file
+            # -o: output prefix
+            # -F: fasta format
+            # -r: rmsd table
+            cmd = self.executable.split() + [
+                '-f', desc_file_name,
                 '-o', output_prefix_arg,
-                '-F', 'fasta',  # Output alignment in FASTA format
-                '-r', 'ON',      # Print RMSD table
+                '-F', 'fasta',
+                '-r', 'ON'
             ]
             
             logger.info(f"Running Mustang: {' '.join(cmd[:5])}... (with {len(converted_files)} files)")
