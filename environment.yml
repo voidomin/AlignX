@@ -1,0 +1,11 @@
+name: mustang-pipeline
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - mustang
+  - pip
+  - pip:
+      - -r requirements.txt
