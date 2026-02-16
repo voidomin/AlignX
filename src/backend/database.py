@@ -133,3 +133,24 @@ class HistoryDatabase:
         except Exception as e:
             logger.error(f"Failed to delete run {run_id}: {e}")
             return False
+
+    def get_latest_run(self) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve the most recent successful run.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM runs WHERE status = 'completed' ORDER BY timestamp DESC LIMIT 1")
+                row = cursor.fetchone()
+                
+                if row:
+                    run = dict(row)
+                    run['pdb_ids'] = json.loads(run['pdb_ids'])
+                    run['metadata'] = json.loads(run['metadata']) if run['metadata'] else {}
+                    return run
+                return None
+        except Exception as e:
+            logger.error(f"Failed to retrieve latest run: {e}")
+            return None

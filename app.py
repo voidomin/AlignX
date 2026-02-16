@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
 from pathlib import Path
 import logging
@@ -21,101 +22,6 @@ from src.utils.logger import setup_logger
 from src.utils.config_loader import load_config
 from examples.protein_sets import EXAMPLES
 
-def init_session_state():
-    """Initialize Streamlit session state variables."""
-    # ... (existing init)
-    if 'ligand_analyzer' not in st.session_state:
-        st.session_state.ligand_analyzer = LigandAnalyzer(st.session_state.config)
-
-# ... (inside display_results)
-
-    # Tabs for different result views
-    tab1, tab2, tab3, tab_ligand, tab4, tab6, tab5 = st.tabs([
-        "📈 RMSD Analysis", 
-        "🌳 Phylogenetic Tree",
-        "🧬 3D Visualization",
-        "💊 Ligands",
-        "🔍 Clusters", 
-        "🧬 Sequences",
-        "📁 Downloads"
-    ])
-    
-    # ... (tab1, tab2, tab3)
-    
-    with tab_ligand:
-        st.subheader("💊 Ligand & Interaction Analysis")
-        
-        col1, col2 = st.columns([1, 2])
-        
-        with col1:
-            # Select Protein
-            selected_pdb_ligand = st.selectbox(
-                "Select Protein Structure", 
-                st.session_state.pdb_ids,
-                key="ligand_pdb_select"
-            )
-            
-            # Find path for selected PDB
-            # We need to find the CLEANED file path corresponding to this ID
-            # It should be in the results directory
-            result_dir = st.session_state.results['result_dir']
-            pdb_path = list(result_dir.glob(f"*{selected_pdb_ligand}*.pdb"))[0] if list(result_dir.glob(f"*{selected_pdb_ligand}*.pdb")) else None
-            
-            if pdb_path:
-                # Find Ligands
-                ligands = st.session_state.ligand_analyzer.get_ligands(pdb_path)
-                
-                if not ligands:
-                    st.info("No ligands found in this structure (excluding water/ions).")
-                else:
-                    st.success(f"Found {len(ligands)} ligands")
-                    
-                    # Create labels for dropdown
-                    ligand_options = {f"{l['name']} ({l['id']})": l for l in ligands}
-                    selected_ligand_name = st.selectbox("Select Ligand", list(ligand_options.keys()))
-                    
-                    selected_ligand = ligand_options[selected_ligand_name]
-                    
-                    # Calculate Interactions
-                    if st.button("Analyze Interactions"):
-                        interactions = st.session_state.ligand_analyzer.calculate_interactions(
-                            pdb_path, 
-                            selected_ligand['id']
-                        )
-                        st.session_state.current_interactions = interactions
-                        st.session_state.current_ligand_pdb = pdb_path
-            else:
-                st.error("PDB file not found.")
-
-        with col2:
-            if 'current_interactions' in st.session_state:
-                interactions = st.session_state.current_interactions
-                pdb_path = st.session_state.current_ligand_pdb
-                
-                if 'error' in interactions:
-                    st.error(interactions['error'])
-                else:
-                    st.markdown(f"### Binding Site: **{interactions['ligand']}**")
-                    
-                    # 3D View
-                    show_ligand_view_in_streamlit(
-                        pdb_path, 
-                        interactions, 
-                        width=700, 
-                        height=500,
-                        key="ligand_3d"
-                    )
-                    
-                    # Interaction Table
-                    st.markdown("#### Interacting Residues (< 5Å)")
-                    if interactions['interactions']:
-                        df_int = pd.DataFrame(interactions['interactions'])
-                        st.dataframe(
-                            df_int[['residue', 'chain', 'resi', 'distance', 'type']],
-                            use_container_width=True
-                        )
-                    else:
-                        st.info("No residues found within cutoff distance.")
 
 # Page configuration
 st.set_page_config(
@@ -193,6 +99,14 @@ def init_session_state():
         
     if 'history_db' not in st.session_state:
         st.session_state.history_db = HistoryDatabase()
+        
+    # Auto-recovery: If results is None, try to load the latest successful run
+    if st.session_state.get('results') is None and not st.session_state.get('loading_latest'):
+        st.session_state.loading_latest = True
+        latest_run = st.session_state.history_db.get_latest_run()
+        if latest_run:
+            load_run_from_history(latest_run['id'], is_auto=True)
+        st.session_state.loading_latest = False
 
 
 def main():
@@ -224,18 +138,25 @@ def main():
                 st.info("No saved runs found.")
             else:
                 for run in runs:
-                    col1, col2, col3 = st.columns([3, 1, 1])
-                    with col1:
-                        st.caption(f"**{run['name']}**\n{run['timestamp']}")
-                    with col2:
-                        if st.button("📂", key=f"load_{run['id']}", help="Load this run"):
-                            load_run_from_history(run['id'])
-                            st.rerun()
-                    with col3:
-                        if st.button("🗑️", key=f"del_{run['id']}", help="Delete this run"):
+                    with st.container():
+                        col1, col2 = st.columns([4, 1])
+                        with col1:
+                            st.caption(f"**{run['name']}**")
+                            st.caption(f"🕒 {run['timestamp']}")
+                        with col2:
+                            if st.button("📂", key=f"load_{run['id']}", help="Load this run"):
+                                load_run_from_history(run['id'])
+                        
+                        # Use a small delete button below or next to it
+                        if st.button("🗑️ Delete", key=f"del_{run['id']}", use_container_width=True):
                             if st.session_state.history_db.delete_run(run['id']):
                                 st.rerun()
-                    st.divider()
+                        st.divider()
+                
+                if st.button("🗑️ Clear All History", use_container_width=True, type="secondary"):
+                    for run in runs:
+                        st.session_state.history_db.delete_run(run['id'])
+                    st.rerun()
         
         st.divider()
         
@@ -243,7 +164,8 @@ def main():
         input_method = st.radio(
             "Input Method",
             ["Manual Entry", "Load Example", "Upload ID List", "Upload PDB Structure(s)"],
-            help="Choose how to provide PDB IDs"
+            help="Choose how to provide PDB IDs",
+            key="input_method_radio"
         )
         
         pdb_ids = []
@@ -254,13 +176,14 @@ def main():
                 "Enter PDB IDs (one per line)",
                 height=150,
                 placeholder="e.g.\n4YZI\n3UG9\n7E6X",
-                help="Enter 2-20 PDB IDs, one per line"
+                help="Enter 2-20 PDB IDs, one per line",
+                key="manual_pdb_input"
             )
             if pdb_input:
                 pdb_ids = [pid.strip().upper() for pid in pdb_input.strip().split('\n') if pid.strip()]
         
         elif input_method == "Load Example":
-            example_name = st.selectbox("Select Example Dataset", list(EXAMPLES.keys()))
+            example_name = st.selectbox("Select Example Dataset", list(EXAMPLES.keys()), key="example_select")
             if example_name:
                 pdb_ids = EXAMPLES[example_name]
                 st.info(f"Loaded {len(pdb_ids)} proteins from {example_name}")
@@ -312,7 +235,7 @@ def main():
                     st.session_state.metadata_fetched = False
                     st.session_state.metadata = {}
                     if 'chain_info' in st.session_state:
-                         del st.session_state.chain_info
+                        del st.session_state.chain_info
                     st.toast("Updated protein selection", icon="🔄")
                 
                 st.success(f"✓ {len(valid_ids)} valid PDB IDs")
@@ -320,13 +243,14 @@ def main():
             if invalid_ids:
                 st.warning(f"⚠ Invalid IDs: {', '.join(invalid_ids)}")
         else:
-            if st.session_state.pdb_ids:
+            # ONLY reset if NOT just recovered
+            if st.session_state.pdb_ids and not st.session_state.get('loading_latest'):
                 st.session_state.pdb_ids = []
                 st.session_state.results = None
                 st.session_state.metadata_fetched = False
                 st.session_state.metadata = {}
                 if 'chain_info' in st.session_state:
-                     del st.session_state.chain_info
+                    del st.session_state.chain_info
         
         st.divider()
         
@@ -565,26 +489,47 @@ def process_result_directory(result_dir: Path, pdb_ids: list):
         return False, str(e)
 
 
-def load_run_from_history(run_id: str):
+def load_run_from_history(run_id: str, is_auto: bool = False):
     """Load a past run from the database."""
     run = st.session_state.history_db.get_run(run_id)
     if not run:
-        st.error("Run not found in database.")
+        if not is_auto:
+            st.error("Run not found in database.")
         return
 
     result_path = Path(run['result_path'])
     if not result_path.exists():
-        st.error(f"Result directory not found: {result_path}")
+        if not is_auto:
+            st.error(f"Result directory not found: {result_path}")
         return
 
+    # Set state
     st.session_state.pdb_ids = run['pdb_ids']
+    st.session_state.metadata = run.get('metadata', {})
+    st.session_state.metadata_fetched = True if st.session_state.metadata else False
     
-    with st.spinner("Restoring analysis results..."):
-        success, msg = process_result_directory(result_path, run['pdb_ids'])
-        if success:
-            st.success(f"Loaded run: {run['name']}")
-        else:
-            st.error(f"Failed to load run: {msg}")
+    # Sync widgets
+    meta = run.get('metadata', {})
+    input_method = meta.get('input_method', 'Manual Entry')
+    st.session_state.input_method_radio = input_method
+    
+    if input_method == "Manual Entry":
+        st.session_state.manual_pdb_input = "\n".join(run['pdb_ids'])
+    elif input_method == "Load Example":
+        st.session_state.example_select = meta.get('example_name', list(EXAMPLES.keys())[0])
+
+    # Load results
+    if is_auto:
+        # Don't show spinner/success during auto-load to avoid UI jitter
+        process_result_directory(result_path, run['pdb_ids'])
+    else:
+        with st.spinner("Restoring analysis results..."):
+            success, msg = process_result_directory(result_path, run['pdb_ids'])
+            if success:
+                st.success(f"Loaded run: {run['name']}")
+                st.rerun()
+            else:
+                st.error(f"Failed to load run: {msg}")
 
 
 def run_analysis():
@@ -703,23 +648,26 @@ def run_analysis():
         status_text.text("✅ Analysis complete!")
         st.success("Analysis completed successfully!")
         
-        # Auto-save option or manual save button
-        col1, col2 = st.columns([3, 1])
-        with col2:
-            if st.button("💾 Save to History", use_container_width=True):
-                 run_id = f"run_{int(datetime.now().timestamp())}"
-                 name = f"Analysis {len(st.session_state.pdb_ids)} Structures"
-                 saved = st.session_state.history_db.save_run(
-                     run_id, 
-                     name, 
-                     st.session_state.pdb_ids, 
-                     result_dir
-                 )
-                 if saved:
-                     st.toast("Run saved to history!", icon="💾")
-                 else:
-                     st.error("Failed to save run")
-                     
+        # AUTO-SAVE to history
+        run_id = f"run_{int(datetime.now().timestamp())}"
+        # Name with protein count and timestamp
+        name = f"Analysis of {len(st.session_state.pdb_ids)} structures ({datetime.now().strftime('%H:%M')})"
+        
+        # Meta info for auto-recovery sync
+        meta = st.session_state.get('metadata', {})
+        meta['input_method'] = st.session_state.get('input_method_radio', 'Manual Entry')
+        meta['example_name'] = st.session_state.get('example_select')
+        
+        saved = st.session_state.history_db.save_run(
+            run_id, 
+            name, 
+            st.session_state.pdb_ids, 
+            result_dir,
+            metadata=meta
+        )
+        if saved:
+            st.toast(f"Saved to history: {name}", icon="✅")
+                      
         st.balloons()
         
     except Exception as e:
@@ -727,31 +675,13 @@ def run_analysis():
         st.session_state.logger.error(f"Analysis error: {str(e)}", exc_info=True)
 
 
-def display_results():
-    """Display analysis results."""
-    st.divider()
-    st.header("📊 Results")
-    
-    results = st.session_state.results
-    
-    # Tabs for different result views
-    tab1, tab2, tab3, tab_ligand, tab4, tab6, tab5 = st.tabs([
-        "📈 RMSD Analysis", 
-        "🌳 Phylogenetic Tree",
-        "🧬 3D Visualization",
-        "💊 Ligands",
-        "🔍 Clusters", 
-        "🧬 Sequences",
-        "📁 Downloads"
-    ])
-    
-    with tab1:
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            st.subheader("RMSD Heatmap")
-            with st.expander("❓ What is RMSD & How to read this?", expanded=False):
-                st.markdown("""
+
+def render_help_expander(topic):
+    """Render educational help expanders."""
+    helps = {
+        "rmsd": {
+            "title": "❓ What is RMSD & How to read this?",
+            "content": """
                 ### **1. What is RMSD?**
                 **RMSD (Root Mean Square Deviation)** is the standard measure of structural difference between proteins. It calculates the average distance between matching atoms in two superimposed structures.
                 *   **Unit**: Angstroms (Å). 1 Å = 0.1 nanometers.
@@ -761,356 +691,364 @@ def display_results():
                 *   **🟦 Blue (Low RMSD, e.g., < 2.0 Å)**: The structures are **very similar**. They likely share the same function and evolutionary origin.
                 *   **🟥 Red (High RMSD, e.g., > 2.0 Å)**: The structures are **different**. They may have diverged significantly or look completely different.
                 *   **Diagonal**: Always 0.00, because a protein compared to itself has 0 difference.
-                """)
-            
-            if results.get('heatmap_fig'):
-                 st.plotly_chart(results['heatmap_fig'], use_container_width=True)
-            elif results['heatmap_path'].exists():
-                st.image(str(results['heatmap_path']), use_container_width=True)
-        
-        with col2:
-            st.subheader("Statistics")
-            stats = results['stats']
-            st.metric("Mean RMSD", f"{stats['mean_rmsd']:.2f} Å")
-            st.metric("Median RMSD", f"{stats['median_rmsd']:.2f} Å")
-            st.metric("Min RMSD", f"{stats['min_rmsd']:.2f} Å")
-            st.metric("Max RMSD", f"{stats['max_rmsd']:.2f} Å")
-            st.metric("Std Dev", f"{stats['std_rmsd']:.2f} Å")
-        
-        st.subheader("RMSD Matrix")
-        st.dataframe(results['rmsd_df'].style.background_gradient(cmap='RdYlBu_r'))
-        
-        st.divider()
-        st.subheader("Residue-Level Flexibility (RMSF)")
-        with st.expander("❓ What is RMSF & How to read this?", expanded=False):
-            st.markdown("""
-            ### **1. What is RMSF?**
-            **RMSF (Root Mean Square Fluctuation)** measures how much each *individual* amino acid moves around in space.
-            *   **Rigid**: Parts that don't move much (the core structure).
-            *   **Flexible**: Parts that wobble or flap around (loops, tails).
-            
-            ### **2. How to read the Chart:**
-            *   **X-Axis**: The sequence of amino acids (Position 1, 2, 3...).
-            *   **Y-Axis (RMSF Å)**: How much that position moved. Higher = More Flexible.
-            *   **Peaks 📈**: Identify flexible loops or disordered regions. These are often where ligands bind or interactions happen!
-            *   **Valleys 📉**: The stable core of the protein.
-            """)
-        
-        if results.get('rmsf_values'):
-            rmsf_data = pd.DataFrame({
-                'Residue Position': range(1, len(results['rmsf_values']) + 1),
-                'RMSF (Å)': results['rmsf_values']
-            })
-            
-            fig = px.line(
-                rmsf_data,
-                x='Residue Position',
-                y='RMSF (Å)',
-                title='Structural Fluctuation per Position',
-                template='plotly_white'
-            )
-            fig.update_traces(line_color='#2196F3', line_width=2)
-            fig.update_layout(height=400)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("Residue RMSF data not available")
+            """
+        },
+        "rmsf": {
+            "title": "❓ What is RMSF & How to read this?",
+            "content": """
+                ### **1. What is RMSF?**
+                **RMSF (Root Mean Square Fluctuation)** measures how much each individual amino acid moves around in space.
+                *   **Rigid**: Parts that don't move much (the core structure).
+                *   **Flexible**: Parts that wobble or flap around (loops, tails).
+                
+                ### **2. How to read the Chart:**
+                *   **X-Axis**: The sequence of amino acids (Position 1, 2, 3...).
+                *   **Y-Axis (RMSF Å)**: How much that position moved. Higher = More Flexible.
+                *   **Peaks 📈**: Identify flexible loops or disordered regions. These are often where ligands bind or interactions happen!
+                *   **Valleys 📉**: The stable core of the protein.
+            """
+        },
+        "tree": {
+            "title": "❓ What is this Tree & How to read it?",
+            "content": """
+                ### **1. What is a Structural Tree?**
+                Unlike traditional evolutionary trees based on DNA sequences, this tree groups proteins based on their **3D shape similarity** (Structural Phylogeny).
+                *   **Clustering**: Proteins on the same branch are "structural siblings." They look very similar in 3D space.
+                *   **Distance**: The horizontal length of the branches represents the RMSD distance. **Longer branches = distinct structures**.
+                
+                ### **2. Why use UPGMA?**
+                UPGMA (Unweighted Pair Group Method with Arithmetic Mean) is a simple clustering algorithm that assumes a constant rate of evolution. It's great for visualizing hierarchical relationships in data.
+            """
+        },
+        "clusters": {
+            "title": "❓ What are Clusters & How to read this?",
+            "content": """
+                ### **1. What is Structural Clustering?**
+                Clustering is a way to group proteins that are "structurally similar" into families. We use **Hierarchical Clustering (UPGMA)** based on the RMSD values.
+                
+                ### **2. The RMSD Threshold:**
+                This is the "cutoff" distance for forming a group. 
+                *   **Low Threshold (e.g., 1.5 Å)**: Only very similar proteins (nearly identical folds) will be grouped together.
+                *   **High Threshold (e.g., 5.0 Å)**: Even distantly related proteins (sharing only broad structural features) will be put into the same cluster.
+                
+                ### **3. Why use this?**
+                It helps identify sub-families within a large dataset, making it easier to see which proteins might share specific functionalities or binding properties.
+            """
+        },
+        "superposition": {
+            "title": "❓ What is Superposition & Interpretation Guide",
+            "content": """
+                ### **1. What is Superposition?**
+                Superposition is the process of attempting to **overlap** multiple protein structures on top of each other to find the "best fit." This allows us to see exactly where they differ.
+                *   **Aligned Regions**: Parts of the proteins that overlap perfectly usually have the same function.
+                *   **Divergent Regions**: Parts that stick out or don't overlap are variable regions (often loops or surface areas).
 
-    with tab2:
-        st.subheader("Phylogenetic Tree (UPGMA)")
-        with st.expander("❓ What is this Tree & How to read it?", expanded=False):
-            st.markdown("""
-            ### **1. What is a Structural Tree?**
-            Unlike traditional evolutionary trees based on DNA sequences, this tree groups proteins based on their **3D shape similarity** (Structural Phylogeny).
-            *   **Clustering**: Proteins on the same branch are "structural siblings." They look very similar in 3D space.
-            *   **Distance**: The horizontal length of the branches represents the RMSD distance. **Longer branches = distinct structures**.
-            
-            ### **2. Why use UPGMA?**
-            UPGMA (Unweighted Pair Group Method with Arithmetic Mean) is a simple clustering algorithm that assumes a constant rate of evolution. It's great for visualizing hierarchical relationships in data.
-            """)
-            
-        if results.get('tree_fig'):
-            st.plotly_chart(results['tree_fig'], use_container_width=True)
-        elif results.get('tree_path') and results['tree_path'].exists():
-            st.image(str(results['tree_path']), use_container_width=True)
-        else:
-            st.warning("Phylogenetic tree not available")
+                ### **2. Visualization Styles:**
+                *   **Cartoon**: Simplifies the protein into ribbons (helices) and arrows (sheets). Best for seeing the overall "fold" or shape.
+                *   **Stick**: Shows the bonds between atoms. Useful for seeing side-chains.
+                *   **Surface**: Shows the outer "skin" of the molecule. Good for seeing pockets.
+            """
+        },
+        "ligands": {
+            "title": "❓ What are Ligands & How to read this?",
+            "content": """
+                ### **1. What is a Ligand?**
+                A **ligand** is a small molecule (like a drug, hormone, or vitamin) that binds to a specific site on a protein to trigger a function or inhibit it. Think of it as a **key** fitting into a **lock** (the protein).
+                
+                ### **2. How to use this tool:**
+                1.  **Select a Protein**: Choose one of your aligned structures from the dropdown.
+                2.  **Select a Ligand**: Pick the specific small molecule found in that structure.
+                3.  **Analyze Interactions**: Click the button to calculate which parts of the protein are "touching" the ligand.
+                
+                ### **3. Understanding the Results:**
+                -   **3D View (Right)**: Shows the ligand (colorful sticks) inside its binding pocket.
+                    -   The **Green/Blue/Red residues** represent the parts of the protein holding the ligand in place.
+                -   **Interaction Table (Bottom Right)**:
+                    -   **Residue**: The specific amino acid in the protein chain.
+                    -   **Distance (Å)**: How close it is to the ligand. **< 3.5 Å** usually means a strong chemical bond.
+                    -   **Type**: The kind of connection (e.g., *Hydrogen Bond* = strong, sticky; *Hydrophobic* = oily/greasy interaction).
+            """
+        }
+    }
+    if topic in helps:
+        with st.expander(helps[topic]["title"], expanded=False):
+            st.markdown(helps[topic]["content"])
+
+
+def render_rmsd_tab(results):
+    """Render the RMSD Analysis tab."""
+    col1, col2 = st.columns([2, 1])
     
-    with tab3:
-        st.subheader("3D Structural Superposition")
+    with col1:
+        st.subheader("RMSD Heatmap")
+        render_help_expander("rmsd")
         
-        with st.expander("❓ What is Superposition & Interpretation Guide", expanded=False):
-            st.markdown("""
-            ### **1. What is Superposition?**
-            Superposition is the process of attempting to **overlap** multiple protein structures on top of each other to find the "best fit." This allows us to see exactly where they differ.
-            *   **Aligned Regions**: Parts of the proteins that overlap perfectly usually have the same function.
-            *   **Divergent Regions**: Parts that stick out or don't overlap are variable regions (often loops or surface areas).
-
-            ### **2. Visualization Styles:**
-            *   **Cartoon**: Simplifies the protein into ribbons (helices) and arrows (sheets). Best for seeing the overall "fold" or shape.
-            *   **Stick**: Shows the bonds between atoms. Useful for seeing side-chains.
-            *   **Surface**: Shows the outer "skin" of the molecule. Good for seeing pockets.
-            """)
-            
-        st.info("💡 Explore different representations of the aligned structures. Rotate and zoom to investigate.")
-        
-        if results.get('alignment_pdb') and results['alignment_pdb'].exists():
-            try:
-                pdb_path = results['alignment_pdb']
-                
-                # Row 1
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.markdown("**Cartoon (Secondary Structure)**")
-                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='cartoon', key='view_cartoon')
-                with col2:
-                    st.markdown("**Sphere (Spacefill)**")
-                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='sphere', key='view_sphere')
-                    
-                # Row 2
-                col3, col4 = st.columns(2)
-                with col3:
-                    st.markdown("**Stick (Bonds & Atoms)**")
-                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='stick', key='view_stick')
-                with col4:
-                    st.markdown("**Line/Trace (Backbone)**")
-                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='line', key='view_line')
-                
-                st.caption("""
-                **Controls:**
-                - **Left click + drag**: Rotate
-                - **Right click + drag**: Zoom  
-                - **Scroll**: Zoom in/out
-                - Each structure is colored differently for easy identification
-                """)
-            except Exception as e:
-                st.error(f"Failed to load 3D viewer: {str(e)}")
-                st.info("You can download the alignment.pdb file and open it in PyMOL or Chimera")
-        else:
-            st.warning("3D visualization not available")
-
-    with tab_ligand:
-        st.subheader("💊 Ligand & Interaction Analysis")
-        
-        with st.expander("❓ What are Ligands & How to read this?", expanded=True):
-            st.markdown("""
-            ### **1. What is a Ligand?**
-            A **ligand** is a small molecule (like a drug, hormone, or vitamin) that binds to a specific site on a protein to trigger a function or inhibit it. Think of it as a **key** fitting into a **lock** (the protein).
-            
-            ### **2. How to use this tool:**
-            1.  **Select a Protein**: Choose one of your aligned structures from the dropdown.
-            2.  **Select a Ligand**: Pick the specific small molecule found in that structure.
-            3.  **Analyze Interactions**: Click the button to calculate which parts of the protein are "touching" the ligand.
-            
-            ### **3. Understanding the Results:**
-            -   **3D View (Right)**: Shows the ligand (colorful sticks) inside its binding pocket.
-                -   The **Green/Blue/Red residues** represent the parts of the protein holding the ligand in place.
-            -   **Interaction Table (Bottom Right)**:
-                -   **Residue**: The specific amino acid in the protein chain.
-                -   **Distance (Å)**: How close it is to the ligand. **< 3.5 Å** usually means a strong chemical bond.
-                -   **Type**: The kind of connection (e.g., *Hydrogen Bond* = strong, sticky; *Hydrophobic* = oily/greasy interaction).
-            """)
-        
-        col1, col2 = st.columns([1, 2])
-        
-        with col1:
-            # Select Protein
-            selected_pdb_ligand = st.selectbox(
-                "Select Protein Structure", 
-                st.session_state.pdb_ids,
-                key="ligand_pdb_select"
-            )
-            
-            # Find path for selected PDB
-            # We look for the file in the result directory
-            result_dir = st.session_state.results['result_dir']
-            
-            # Try multiple patterns to find the file
-            possible_files = [
-                result_dir / f"{selected_pdb_ligand}.pdb",
-                result_dir / f"{selected_pdb_ligand.lower()}.pdb",
-                result_dir / f"{selected_pdb_ligand.upper()}.pdb"
-            ]
-            
-            # Also try glob as fallback
-            pdb_path = None
-            for p in possible_files:
-                if p.exists():
-                    pdb_path = p
-                    break
-            
-            if not pdb_path:
-                # Fallback to glob
-                matches = list(result_dir.glob(f"*{selected_pdb_ligand}*.pdb"))
-                if matches:
-                    pdb_path = matches[0]
-            
-            if pdb_path:
-                # Find Ligands
-                ligands = st.session_state.ligand_analyzer.get_ligands(pdb_path)
-                
-                if not ligands:
-                    st.info("No ligands found in this structure (excluding water/ions).")
-                else:
-                    st.success(f"Found {len(ligands)} ligands")
-                    
-                    # Create labels for dropdown
-                    ligand_options = {f"{l['name']} ({l['id']})": l for l in ligands}
-                    selected_ligand_name = st.selectbox("Select Ligand", list(ligand_options.keys()))
-                    
-                    selected_ligand = ligand_options[selected_ligand_name]
-                    
-                    # Calculate Interactions
-                    if st.button("Analyze Interactions"):
-                        interactions = st.session_state.ligand_analyzer.calculate_interactions(
-                            pdb_path, 
-                            selected_ligand['id']
-                        )
-                        st.session_state.current_interactions = interactions
-                        st.session_state.current_ligand_pdb = pdb_path
-            else:
-                st.error(f"PDB file not found for {selected_pdb_ligand}")
-                # Debug info
-                st.warning(f"Looked in: {result_dir}")
-                st.info("Available files:")
-                files = list(result_dir.glob("*.pdb"))
-                if files:
-                    st.code("\n".join([f.name for f in files]))
-                else:
-                    st.text("No .pdb files found in results directory.")
-
-        with col2:
-            if 'current_interactions' in st.session_state:
-                interactions = st.session_state.current_interactions
-                pdb_path = st.session_state.current_ligand_pdb
-                
-                if 'error' in interactions:
-                    st.error(interactions['error'])
-                else:
-                    st.markdown(f"### Binding Site: **{interactions['ligand']}**")
-                    
-                    # 3D View
-                    show_ligand_view_in_streamlit(
-                        pdb_path, 
-                        interactions, 
-                        width=700, 
-                        height=500,
-                        key="ligand_3d"
-                    )
-                    
-                    # Interaction Table
-                    st.markdown("#### Interacting Residues (< 5Å)")
-                    if interactions['interactions']:
-                        df_int = pd.DataFrame(interactions['interactions'])
-                        st.dataframe(
-                            df_int[['residue', 'chain', 'resi', 'distance', 'type']],
-                            use_container_width=True
-                        )
-                    else:
-                        st.info("No residues found within cutoff distance.")
-
-    with tab6:
-        st.subheader("Multiple Sequence Alignment")
-        st.info("🧬 Color code: Red = 100% Identity, Yellow = High Similarity (>70%)")
-        
-        if results.get('alignment_afasta') and results['alignment_afasta'].exists():
-            sequences = st.session_state.sequence_viewer.parse_afasta(results['alignment_afasta'])
-            if sequences:
-                conservation = st.session_state.sequence_viewer.calculate_conservation(sequences)
-                html_view = st.session_state.sequence_viewer.generate_html(sequences, conservation)
-                st.components.v1.html(html_view, height=400, scrolling=True)
-            else:
-                st.error("Failed to parse alignment file")
-        else:
-            st.warning("Sequence alignment file not found")
+        if results.get('heatmap_fig'):
+             st.plotly_chart(results['heatmap_fig'], use_container_width=True)
+        elif results['heatmap_path'].exists():
+            st.image(str(results['heatmap_path']), use_container_width=True)
     
-    with tab4:
-        st.subheader("Structural Clusters")
-        clusters = results['clusters']
-        
-        if clusters:
-            for cluster_id, members in clusters.items():
-                st.write(f"**Cluster {cluster_id}**: {', '.join(members)}")
-        else:
-            st.info("No distinct clusters identified (all structures are similar)")
+    with col2:
+        st.subheader("Statistics")
+        stats = results['stats']
+        st.metric("Mean RMSD", f"{stats['mean_rmsd']:.2f} Å")
+        st.metric("Median RMSD", f"{stats['median_rmsd']:.2f} Å")
+        st.metric("Min RMSD", f"{stats['min_rmsd']:.2f} Å")
+        st.metric("Max RMSD", f"{stats['max_rmsd']:.2f} Å")
+        st.metric("Std Dev", f"{stats['std_rmsd']:.2f} Å")
     
-    with tab5:
-        st.subheader("Data Downloads")
+    st.subheader("RMSD Matrix")
+    st.dataframe(results['rmsd_df'].style.background_gradient(cmap='RdYlBu_r'))
+    
+    st.divider()
+    st.subheader("Residue-Level Flexibility (RMSF)")
+    render_help_expander("rmsf")
+    
+    if results.get('rmsf_values'):
+        rmsf_data = pd.DataFrame({
+            'Residue Position': range(1, len(results['rmsf_values']) + 1),
+            'RMSF (Å)': results['rmsf_values']
+        })
         
-        # Report Generation
-        st.markdown("### 📄 Analysis Report")
-        if st.button("Generate PDF Report", help="Create a comprehensive PDF report of these results"):
-            with st.spinner("Generating report..."):
-                try:
-                    report_path = st.session_state.report_generator.generate_report(
-                        st.session_state.results,
-                        st.session_state.pdb_ids
-                    )
-                    st.success(f"Report generated: {report_path.name}")
-                    
-                    with open(report_path, "rb") as f:
-                        st.download_button(
-                            "⬇️ Download PDF Report",
-                            f,
-                            file_name=report_path.name,
-                            mime="application/pdf"
-                        )
-                except Exception as e:
-                    st.error(f"Failed to generate report: {e}")
+        fig = px.line(
+            rmsf_data,
+            x='Residue Position',
+            y='RMSF (Å)',
+            title='Structural Fluctuation per Position',
+            template='plotly_white'
+        )
+        fig.update_traces(line_color='#2196F3', line_width=2)
+        fig.update_layout(height=400)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("Residue RMSF data not available")
+
+def render_phylo_tree_tab(results):
+    """Render the Phylogenetic Tree tab."""
+    st.subheader("Phylogenetic Tree (UPGMA)")
+    render_help_expander("tree")
         
-        st.divider()
-        st.markdown("### 📂 Raw Data")
+    if results.get('tree_fig'):
+        st.plotly_chart(results['tree_fig'], use_container_width=True)
+    elif results.get('tree_path') and results['tree_path'].exists():
+        st.image(str(results['tree_path']), use_container_width=True)
+    else:
+        st.warning("Phylogenetic tree not available")
+
+
+def render_3d_viewer_tab(results):
+    """Render the 3D Visualization tab."""
+    st.subheader("3D Structural Superposition")
+    render_help_expander("superposition")
         
+    st.info("💡 Explore different representations of the aligned structures. Rotate and zoom to investigate.")
+    
+    if results.get('alignment_pdb') and results['alignment_pdb'].exists():
+        try:
+            pdb_path = results['alignment_pdb']
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**Cartoon (Secondary Structure)**")
+                show_structure_in_streamlit(pdb_path, width=400, height=300, style='cartoon', key='view_cartoon')
+            with col2:
+                st.markdown("**Sphere (Spacefill)**")
+                show_structure_in_streamlit(pdb_path, width=400, height=300, style='sphere', key='view_sphere')
+                
+            col3, col4 = st.columns(2)
+            with col3:
+                st.markdown("**Stick (Bonds & Atoms)**")
+                show_structure_in_streamlit(pdb_path, width=400, height=300, style='stick', key='view_stick')
+            with col4:
+                st.markdown("**Line/Trace (Backbone)**")
+                show_structure_in_streamlit(pdb_path, width=400, height=300, style='line', key='view_line')
+            
+            st.caption("""
+            **Controls:**
+            - **Left click + drag**: Rotate | **Right click + drag**: Zoom | **Scroll**: Zoom in/out
+            - Each structure is colored differently for easy identification
+            """)
+        except Exception as e:
+            st.error(f"Failed to load 3D viewer: {str(e)}")
+    else:
+        st.warning("3D visualization not available")
+
+def render_ligand_tab(results):
+    """Render the Ligand & Interaction Analysis tab."""
+    st.subheader("💊 Ligand & Interaction Analysis")
+    render_help_expander("ligands")
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        selected_pdb_ligand = st.selectbox("Select Protein Structure", st.session_state.pdb_ids, key="ligand_pdb_select")
         result_dir = results['result_dir']
         
-        col1, col2 = st.columns(2)
+        # Try finding the PDB file
+        pdb_path = None
+        for suffix in ["", ".lower()", ".upper()"]:
+            p = result_dir / f"{selected_pdb_ligand}{suffix}.pdb"
+            if p.exists():
+                pdb_path = p
+                break
         
-        with col1:
-            # Download RMSD CSV
-            csv_data = results['rmsd_df'].to_csv()
-            st.download_button(
-                label="📥 RMSD Matrix (CSV)",
-                data=csv_data,
-                file_name="rmsd_matrix.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
+        if not pdb_path:
+            matches = list(result_dir.glob(f"*{selected_pdb_ligand}*.pdb"))
+            if matches: pdb_path = matches[0]
+        
+        if pdb_path:
+            ligands = st.session_state.ligand_analyzer.get_ligands(pdb_path)
+            if not ligands:
+                st.info("No ligands found in this structure (excluding water/ions).")
+            else:
+                st.success(f"Found {len(ligands)} ligands")
+                ligand_options = {f"{l['name']} ({l['id']})": l for l in ligands}
+                selected_ligand_name = st.selectbox("Select Ligand", list(ligand_options.keys()))
+                selected_ligand = ligand_options[selected_ligand_name]
+                
+                if st.button("Analyze Interactions"):
+                    interactions = st.session_state.ligand_analyzer.calculate_interactions(pdb_path, selected_ligand['id'])
+                    st.session_state.current_interactions = interactions
+                    st.session_state.current_ligand_pdb = pdb_path
+        else:
+            st.error(f"PDB file not found for {selected_pdb_ligand}")
+
+    with col2:
+        if 'current_interactions' in st.session_state:
+            interactions = st.session_state.current_interactions
+            pdb_path = st.session_state.current_ligand_pdb
             
-            # Download heatmap
-            if results['heatmap_path'].exists():
-                with open(results['heatmap_path'], 'rb') as f:
-                    st.download_button(
-                        label="📥 RMSD Heatmap (PNG)",
-                        data=f.read(),
-                        file_name="rmsd_heatmap.png",
-                        mime="image/png",
-                        use_container_width=True
-                    )
+            if 'error' in interactions:
+                st.error(interactions['error'])
+            else:
+                st.markdown(f"### Binding Site: **{interactions['ligand']}**")
+                show_ligand_view_in_streamlit(pdb_path, interactions, width=700, height=500, key="ligand_3d")
+                
+                st.markdown("#### Interacting Residues (< 5Å)")
+                if interactions['interactions']:
+                    df_int = pd.DataFrame(interactions['interactions'])
+                    st.dataframe(df_int[['residue', 'chain', 'resi', 'distance', 'type']], use_container_width=True)
+                else:
+                    st.info("No residues found within cutoff distance.")
+
+
+def render_sequences_tab(results):
+    """Render the Multiple Sequence Alignment tab."""
+    st.subheader("Multiple Sequence Alignment")
+    st.info("🧬 Color code: Red = 100% Identity, Yellow = High Similarity (>70%)")
+    
+    if results.get('alignment_afasta') and results['alignment_afasta'].exists():
+        sequences = st.session_state.sequence_viewer.parse_afasta(results['alignment_afasta'])
+        if sequences:
+            conservation = st.session_state.sequence_viewer.calculate_conservation(sequences)
+            html_view = st.session_state.sequence_viewer.generate_html(sequences, conservation)
+            st.components.v1.html(html_view, height=400, scrolling=True)
+        else:
+            st.error("Failed to parse alignment file")
+    else:
+        st.warning("Sequence alignment file not found")
+
+def render_clusters_tab(results):
+    """Render the Structural Clusters tab."""
+    st.subheader("🔍 Structural Clusters")
+    render_help_expander("clusters")
+    
+    rmsd_df = results.get('rmsd_df')
+    if rmsd_df is None:
+        st.warning("RMSD data not available for clustering.")
+        return
+
+    # User Interactive Threshold
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        threshold = st.slider(
+            "RMSD Threshold (Å)", 
+            min_value=0.1, 
+            max_value=10.0, 
+            value=3.0, 
+            step=0.1,
+            help="Structures with RMSD lower than this 'distance' will be grouped together."
+        )
+    
+    # Re-calculate clusters based on interactive threshold
+    clusters = st.session_state.rmsd_analyzer.identify_clusters(rmsd_df, threshold=threshold)
+    
+    if clusters:
+        st.markdown(f"Found **{len(clusters)}** distinct structural families at **{threshold} Å** cutoff.")
         
-        with col2:
-            # Download phylogenetic tree
-            if results.get('tree_path') and results['tree_path'].exists():
-                with open(results['tree_path'], 'rb') as f:
-                    st.download_button(
-                        label="📥 Phylogenetic Tree (PNG)",
-                        data=f.read(),
-                        file_name="phylogenetic_tree.png",
-                        mime="image/png",
-                        use_container_width=True
-                    )
+        for cid, members in clusters.items():
+            avg_rmsd = 0.0
+            if len(members) > 1:
+                # Calculate internal average RMSD (homogeneity of cluster)
+                subset = rmsd_df.loc[members, members]
+                avg_rmsd = subset.values[np.triu_indices(len(members), k=1)].mean()
             
-            # Download Newick tree
-            if results.get('newick_path') and results['newick_path'].exists():
-                with open(results['newick_path'], 'r') as f:
-                    st.download_button(
-                        label="📥 Tree Format (Newick)",
-                        data=f.read(),
-                        file_name="tree.newick",
-                        mime="text/plain",
-                        use_container_width=True
-                    )
-        
-        st.divider()
-        st.info(f"📂 All results saved to: `{result_dir}`")
+            with st.expander(f"📁 Cluster {cid} ({len(members)} members, Avg RMSD: {avg_rmsd:.2f} Å)", expanded=True):
+                # Show members in a nice clean list or table
+                member_data = []
+                for m in members:
+                    # Get metadata if available
+                    title = st.session_state.metadata.get(m, {}).get('title', 'Unknown Title') if hasattr(st.session_state, 'metadata') else 'N/A'
+                    member_data.append({"PDB ID": m, "Description": title})
+                
+                st.table(pd.DataFrame(member_data))
+    else:
+        st.info("No clusters identified with current settings.")
+
+def render_downloads_tab(results):
+    """Render the Data Downloads tab."""
+    st.subheader("Data Downloads")
+    
+    st.markdown("### 📄 Analysis Report")
+    if st.button("Generate PDF Report", help="Create a comprehensive PDF report"):
+        with st.spinner("Generating report..."):
+            try:
+                report_path = st.session_state.report_generator.generate_report(results, st.session_state.pdb_ids)
+                st.success(f"Report generated: {report_path.name}")
+                with open(report_path, "rb") as f:
+                    st.download_button("⬇️ Download PDF Report", f, file_name=report_path.name, mime="application/pdf")
+            except Exception as e:
+                st.error(f"Failed to generate report: {e}")
+    
+    st.divider()
+    st.markdown("### 📂 Raw Data")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button("📥 RMSD Matrix (CSV)", results['rmsd_df'].to_csv(), file_name="rmsd_matrix.csv", mime="text/csv", use_container_width=True)
+        if results['heatmap_path'].exists():
+            with open(results['heatmap_path'], 'rb') as f:
+                st.download_button("📥 RMSD Heatmap (PNG)", f.read(), file_name="rmsd_heatmap.png", mime="image/png", use_container_width=True)
+    with col2:
+        if results.get('tree_path') and results['tree_path'].exists():
+            with open(results['tree_path'], 'rb') as f:
+                st.download_button("📥 Phylogenetic Tree (PNG)", f.read(), file_name="phylogenetic_tree.png", mime="image/png", use_container_width=True)
+        if results.get('newick_path') and results['newick_path'].exists():
+            with open(results['newick_path'], 'r') as f:
+                st.download_button("📥 Tree Format (Newick)", f.read(), file_name="tree.newick", mime="text/plain", use_container_width=True)
+
+
+def display_results():
+    """Display analysis results."""
+    st.divider()
+    st.header("📊 Results")
+    results = st.session_state.results
+    
+    tab_list = [
+        ("📈 RMSD Analysis", render_rmsd_tab),
+        ("🌳 Phylogenetic Tree", render_phylo_tree_tab),
+        ("🧬 3D Visualization", render_3d_viewer_tab),
+        ("💊 Ligands", render_ligand_tab),
+        ("🔍 Clusters", render_clusters_tab),
+        ("🧬 Sequences", render_sequences_tab),
+        ("📁 Downloads", render_downloads_tab)
+    ]
+    
+    tabs = st.tabs([t[0] for t in tab_list])
+    for tab, (_, render_func) in zip(tabs, tab_list):
+        with tab:
+            render_func(results)
+    
+    st.divider()
+    st.info(f"📂 All results saved to: `{results['result_dir']}`")
 
 
 if __name__ == "__main__":
