@@ -39,23 +39,21 @@ Streamlit Cloud is the easiest way to deploy Streamlit apps. It connects directl
     - Streamlit will install dependencies from `requirements.txt`.
     - Once finished, your app will be live at `https://mustang-pipeline-yourname.streamlit.app`.
 
-### ⚠️ Important Note for Mustang Binary
+### ✨ Automated Mustang Setup
 
-Since Streamlit Cloud runs on Linux, **you cannot use the Windows/WSL setup**. You must ensure the app uses the `linux` backend for Mustang.
+In v1.1.2, the pipeline is fully automated for cloud environments:
 
-- The pipeline attempts to download/compile Mustang automatically on Linux?
-- **Current Limitation**: The current repo assumes pre-installed Mustang (via `make`).
-- **Solution**: You might need to add a `packages.txt` file (for apt dependencies) or a `post-install` script to compile Mustang on the cloud server.
+1.  **Auto-Compile**: The app automatically detects the Linux environment and compiles the bundled Mustang source code if a binary isn't pre-installed.
+2.  **Platform Agnostic**: All file path conversions and WSL-specific logic are automatically bypassed.
+3.  **Dependency Synchronization**: The included `packages.txt` provides all system-level build tools needed for the compilation.
 
-**packages.txt** (Create this file in root):
+### ⚠️ Note on Persistent History
 
-```text
-build-essential
-wget
-```
+Streamlit Community Cloud uses ephemeral storage. This means:
 
-**Streamlit Setup**:
-You may need to configure the app to download and compile Mustang on first run if it's not found.
+- The **"History"** sidebar will be cleared if the server reboots.
+- **Result Files** will be cleared on server restart.
+- **Recommendation**: Download your results and alignment files from the "Downloads" tab for permanent storage.
 
 ---
 
