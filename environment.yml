@@ -6,6 +6,8 @@ channels:
 dependencies:
   - python=3.10
   - mustang
+  - r-base
+  - r-bio3d
   - pip
   - pip:
       - -r requirements.txt
