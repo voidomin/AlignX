@@ -187,18 +187,24 @@ class MustangRunner:
         """Check if Mustang is properly installed with fallbacks."""
         # 1. Check Native/Conda
         if shutil.which('mustang'):
+             self.backend = 'native'
              return True, "Found native Mustang binary"
              
         # 2. Check Local Compilation
         if Path("./mustang").exists():
             self.executable = "./mustang"
+            self.backend = 'native'
             return True, "Found locally compiled Mustang"
             
         # 3. Try to Compile
         if self._compile_from_source():
+             self.backend = 'native'
              return True, "Successfully compiled Mustang from source"
              
         # 4. Fallback to Bio3D (Requires R)
+        if self.backend != 'bio3d':
+            self.backend = 'bio3d'
+            
         return self._check_bio3d()
 
     def _check_bio3d(self) -> Tuple[bool, str]:
