@@ -11,8 +11,8 @@ Version: 1.0.0
 __version__ = "1.0.0"
 __author__ = "Akash"
 
-from .utils.config_loader import load_config
-from .utils.logger import setup_logger
+from src.utils.config_loader import load_config
+from src.utils.logger import setup_logger
 
 __all__ = [
     "load_config",

@@ -7,7 +7,7 @@ from typing import List, Tuple, Optional, Dict
 import re
 import pandas as pd
 
-from ..utils.logger import get_logger
+from src.utils.logger import get_logger
 
 logger = get_logger()
 

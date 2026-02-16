@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional
 import streamlit.components.v1 as components
 
-from ..utils.logger import get_logger
+from src.utils.logger import get_logger
 
 logger = get_logger()
 

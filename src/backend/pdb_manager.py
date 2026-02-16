@@ -10,7 +10,7 @@ import gzip
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
-from ..utils.logger import get_logger
+from src.utils.logger import get_logger
 
 logger = get_logger()
 
