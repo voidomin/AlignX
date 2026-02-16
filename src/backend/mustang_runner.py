@@ -40,7 +40,13 @@ class MustangRunner:
         Returns:
             'native', 'wsl', or 'bio3d'
         """
-        # Try native mustang
+        # Check for locally compiled binary
+        if Path("./mustang").exists():
+            logger.info("Detected locally compiled Mustang")
+            self.executable = str(Path("./mustang").absolute())
+            return 'native'
+            
+        # Try native mustang in PATH
         if shutil.which('mustang'):
             logger.info("Detected native Mustang installation")
             return 'native'
