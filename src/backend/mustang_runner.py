@@ -107,6 +107,48 @@ class MustangRunner:
                 
         except (subprocess.TimeoutExpired, FileNotFoundError) as e:
             return False, f"R not found: {str(e)}"
+
+    def _install_bio3d(self) -> bool:
+        """Attempt to install Bio3D package dynamically."""
+        try:
+            logger.info("Attempting to auto-install 'bio3d' R package...")
+            install_script = 'install.packages("bio3d", repos="http://cran.us.r-project.org")'
+            subprocess.run(['R', '--vanilla', '-e', install_script], 
+                         check=True, timeout=300)
+            return True
+        except subprocess.SubprocessError as e:
+            logger.error(f"Failed to auto-install Bio3D: {e}")
+            return False
+            
+    def _check_bio3d(self) -> Tuple[bool, str]:
+        """Check Bio3D R package availability."""
+        try:
+            # Check if R is installed
+            result = subprocess.run(['R', '--version'], 
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode != 0:
+                return False, "R not installed. Required for Bio3D backend."
+            
+            # Check if bio3d package is installed
+            check_script = 'if(!require("bio3d", quietly=TRUE)) quit(status=1)'
+            result = subprocess.run(['R', '--vanilla', '-e', check_script],
+                                  capture_output=True, text=True, timeout=10)
+            
+            if result.returncode == 0:
+                return True, "Bio3D R package found"
+            else:
+                # Attempt Auto-Install
+                if self._install_bio3d():
+                    # Check again
+                    result = subprocess.run(['R', '--vanilla', '-e', check_script],
+                                          capture_output=True, text=True, timeout=10)
+                    if result.returncode == 0:
+                        return True, "Bio3D R package installed and found"
+                
+                return False, "Bio3D R package not installed and auto-install failed."
+                
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            return False, f"R not found: {str(e)}"
     
     def run_alignment(self, pdb_files: List[Path], output_dir: Path) -> Tuple[bool, str, Optional[Path]]:
         """
