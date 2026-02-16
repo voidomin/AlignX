@@ -274,7 +274,8 @@ class MustangRunner:
             if self.backend == 'wsl':
                 output_prefix_arg = f"{converted_output_dir}/alignment"
             else:
-                output_prefix_arg = str(output_dir / 'alignment')
+                # Use simple filename since we set cwd to output_dir
+                output_prefix_arg = 'alignment'
             
             # Build command - use -i flag with individual files instead of -f with file list
             # This avoids issues with spaces in paths
