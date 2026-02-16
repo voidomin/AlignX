@@ -587,54 +587,59 @@ cat("Mustang alignment completed\\n")
     
     def _parse_rms_rot_file(self, rms_rot_file: Path, pdb_ids: List[str]) -> Optional[pd.DataFrame]:
         """
-        Parse RMSD matrix from Mustang's .rms_rot file.
-        
-        Example format:
-        RMSD matrix (based on multiple superpostion):
-               1    2    3  
-             ---------------
-          1|  ---  0.4  0.1
-          2|  0.4  ---  0.4
-          3|  0.1  0.4  ---
+        Parse RMSD matrix from Mustang's .rms_rot file with robust line-based detection.
         """
         try:
             with open(rms_rot_file, 'r') as f:
-                lines = f.readlines()
+                content = f.read()
             
-            # Find the RMSD matrix section
+            if 'RMSD matrix' not in content:
+                logger.error(f"Keyword 'RMSD matrix' not found in {rms_rot_file}")
+                return None
+                
+            lines = content.splitlines()
             matrix_start = None
             for i, line in enumerate(lines):
                 if 'RMSD matrix' in line:
-                    matrix_start = i + 2  # Skip header and column numbers
+                    matrix_start = i
                     break
             
             if matrix_start is None:
-                logger.error("Could not find RMSD matrix in .rms_rot file")
                 return None
+                
+            data_rows = []
+            for line in lines[matrix_start:]:
+                if '|' in line:
+                    parts = line.split('|')[1].strip().split()
+                    if parts:
+                        data_rows.append(parts)
             
-            # Skip the separator line
-            matrix_start += 1
-            
-            # Parse matrix values
+            if not data_rows:
+                logger.error(f"No data rows found in {rms_rot_file}")
+                return None
+                
             n = len(pdb_ids)
             matrix = []
-            
-            for i in range(n):
-                line = lines[matrix_start + i]
-                # Extract values from line like "  1|  ---  0.4  0.1"
-                parts = line.split('|')[1].split()
-                
+            for i in range(min(len(data_rows), n)):
                 row = []
-                for val in parts:
-                    if val == '---':
+                for j in range(min(len(data_rows[i]), n)):
+                    val = data_rows[i][j]
+                    if val == '---' or '---' in val:
                         row.append(0.0)
                     else:
-                        row.append(float(val))
-                matrix.append(row)
+                        try:
+                            row.append(float(val))
+                        except ValueError:
+                            row.append(0.0)
+                while len(row) < n:
+                    row.append(0.0)
+                matrix.append(row[:n])
             
-            # Create DataFrame
+            while len(matrix) < n:
+                matrix.append([0.0] * n)
+                
             df = pd.DataFrame(matrix, index=pdb_ids, columns=pdb_ids)
-            logger.info(f"Successfully parsed RMSD matrix from {rms_rot_file.name}")
+            logger.info(f"Robustly parsed RMSD matrix from {rms_rot_file.name}")
             return df
             
         except Exception as e:
@@ -643,26 +648,30 @@ cat("Mustang alignment completed\\n")
     
     
     def _parse_mustang_log(self, log_file: Path, pdb_ids: List[str]) -> Optional[pd.DataFrame]:
-        """Parse RMSD matrix from Mustang log file."""
+        """Parse RMSD matrix from Mustang log file using regex patterns."""
         try:
             with open(log_file, 'r') as f:
-                content = f.read()
+                lines = f.readlines()
             
-            # Look for RMSD matrix in output
-            # Mustang typically outputs a matrix of pairwise RMSDs
-            # This is a simplified parser - may need adjustment based on actual output
+            n = len(pdb_ids)
+            potential_matrix = []
+            for line in lines:
+                matches = re.findall(r'(\d+\.\d+|---)', line)
+                if len(matches) == n:
+                    row = []
+                    for m in matches:
+                        if m == '---':
+                            row.append(0.0)
+                        else:
+                            row.append(float(m))
+                    potential_matrix.append(row)
             
-            matrix = []
-            for line in content.split('\n'):
-                # Look for lines containing RMSD values
-                numbers = re.findall(r'\d+\.\d+', line)
-                if len(numbers) == len(pdb_ids):
-                    matrix.append([float(n) for n in numbers])
-            
-            if len(matrix) == len(pdb_ids):
+            if len(potential_matrix) >= n:
+                matrix = potential_matrix[-n:]
                 df = pd.DataFrame(matrix, index=pdb_ids, columns=pdb_ids)
+                logger.info(f"Parsed RMSD matrix from log: {log_file.name}")
                 return df
-            
+                
             return None
             
         except Exception as e:
