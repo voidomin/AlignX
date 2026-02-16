@@ -108,11 +108,48 @@ class MustangRunner:
         except (subprocess.TimeoutExpired, FileNotFoundError) as e:
             return False, f"R not found: {str(e)}"
 
+    def _compile_from_source(self) -> bool:
+        """Attempt to download and compile Mustang from source."""
+        try:
+            logger.info("Attempting to compile Mustang from source...")
+            source_url = "http://www.csse.monash.edu.au/~karun/site/mustang_v3.2.4.tgz"
+            build_dir = Path("mustang_build")
+            build_dir.mkdir(exist_ok=True)
+            
+            # Download
+            subprocess.run(["wget", source_url, "-O", "mustang.tgz"], cwd=build_dir, check=True)
+            
+            # Extract
+            subprocess.run(["tar", "-xzf", "mustang.tgz"], cwd=build_dir, check=True)
+            
+            # Find makefile directory (it unpacks into a subdir)
+            src_dir = next(build_dir.glob("mustang_v*"))
+            
+            # Compile using make
+            subprocess.run(["make"], cwd=src_dir, check=True)
+            
+            # Locate binary
+            binary = src_dir / "bin" / "mustang-3.2.4"
+            if binary.exists():
+                # Copy to local bin or app root
+                target = Path("./mustang")
+                shutil.copy(binary, target)
+                target.chmod(0o755)
+                self.executable = str(target.absolute())
+                logger.info(f"Mustang compiled and installed to {self.executable}")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Compilation failed: {e}")
+            return False
+
     def _install_bio3d(self) -> bool:
         """Attempt to install Bio3D package dynamically."""
         try:
             logger.info("Attempting to auto-install 'bio3d' R package...")
-            install_script = 'install.packages("bio3d", repos="http://cran.us.r-project.org")'
+            install_script = 'install.packages("bio3d", repos="https://cloud.r-project.org")'
             subprocess.run(['R', '--vanilla', '-e', install_script], 
                          check=True, timeout=300)
             return True
@@ -120,6 +157,24 @@ class MustangRunner:
             logger.error(f"Failed to auto-install Bio3D: {e}")
             return False
             
+    def check_installation(self) -> Tuple[bool, str]:
+        """Check if Mustang is properly installed with fallbacks."""
+        # 1. Check Native/Conda
+        if shutil.which('mustang'):
+             return True, "Found native Mustang binary"
+             
+        # 2. Check Local Compilation
+        if Path("./mustang").exists():
+            self.executable = "./mustang"
+            return True, "Found locally compiled Mustang"
+            
+        # 3. Try to Compile
+        if self._compile_from_source():
+             return True, "Successfully compiled Mustang from source"
+             
+        # 4. Fallback to Bio3D (Requires R)
+        return self._check_bio3d()
+
     def _check_bio3d(self) -> Tuple[bool, str]:
         """Check Bio3D R package availability."""
         try:

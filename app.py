@@ -116,6 +116,52 @@ def main():
             st.error(f"✗ {mustang_msg}")
             st.info("See WINDOWS_SETUP.md for installation instructions")
         
+        # Debug Section (Collapse by default)
+        with st.expander("🔧 System Diagnostics", expanded=False):
+            import shutil
+            import subprocess
+            from pathlib import Path
+            
+            # Check Mustang
+            mustang_path = shutil.which('mustang')
+            local_mustang = Path("./mustang")
+            
+            if mustang_path:
+                st.write(f"**Mustang Path (System)**: `{mustang_path}`")
+                target_bin = "mustang"
+            elif local_mustang.exists():
+                st.write(f"**Mustang Path (Local)**: `./mustang` (Compiled)")
+                target_bin = "./mustang"
+            else:
+                st.error("Mustang binary NOT found")
+                target_bin = None
+                
+            if target_bin:
+                try:
+                    res = subprocess.run([target_bin, '-h'], capture_output=True, text=True, timeout=5)
+                    st.code(res.stdout[:200] if res.returncode==0 else res.stderr, language="text")
+                except Exception as e:
+                    st.error(f"Exec failed: {e}")
+                
+            st.divider()
+            
+            # Check R
+            r_path = shutil.which('R')
+            st.write(f"**R Path**: `{r_path}`")
+            if r_path:
+                try:
+                    # Check for Bio3D
+                    res = subprocess.run(['R', '-e', 'installed.packages()[,1]'], capture_output=True, text=True, timeout=30)
+                    if "bio3d" in res.stdout:
+                        st.success("R 'bio3d' package FOUND ✅")
+                    else:
+                        st.error("R 'bio3d' package MISSING ❌")
+                        st.code(res.stdout[-200:], language="text") 
+                except Exception as e:
+                    st.error(f"R check failed: {e}")
+            else:
+                st.warning("R binary NOT found")
+        
         st.divider()
         
         # Input method selection
