@@ -189,7 +189,7 @@ def main():
                     except Exception as e:
                         st.error(f"Bio3D install error: {e}")
                         
-                    st.experimental_rerun()
+                    st.rerun()
         
         st.divider()
         
