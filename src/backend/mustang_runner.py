@@ -109,36 +109,56 @@ class MustangRunner:
             return False, f"R not found: {str(e)}"
 
     def _compile_from_source(self) -> bool:
-        """Attempt to download and compile Mustang from source."""
+        """Attempt to compile Mustang from bundled source."""
         try:
-            logger.info("Attempting to compile Mustang from source...")
-            source_url = "http://www.csse.monash.edu.au/~karun/site/mustang_v3.2.4.tgz"
+            logger.info("Attempting to compile Mustang from bundled source...")
+            
+            # Check for bundled tarball
+            bundled_tarball = Path("mustang.tgz")
+            if not bundled_tarball.exists():
+                logger.error("Bundled mustang.tgz not found!")
+                return False
+
             build_dir = Path("mustang_build")
+            if build_dir.exists():
+                shutil.rmtree(build_dir)
             build_dir.mkdir(exist_ok=True)
             
-            # Download
-            subprocess.run(["wget", source_url, "-O", "mustang.tgz"], cwd=build_dir, check=True)
+            # Copy tarball to build dir
+            shutil.copy(bundled_tarball, build_dir / "mustang.tgz")
             
             # Extract
             subprocess.run(["tar", "-xzf", "mustang.tgz"], cwd=build_dir, check=True)
             
             # Find makefile directory (it unpacks into a subdir)
-            src_dir = next(build_dir.glob("mustang_v*"))
+            # Handle potential variation in folder name
+            extracted_dirs = [d for d in build_dir.iterdir() if d.is_dir()]
+            if not extracted_dirs:
+                logger.error("Extraction failed: No directory found")
+                return False
+                
+            src_dir = extracted_dirs[0]
+            logger.info(f"Source extracted to: {src_dir}")
             
             # Compile using make
             subprocess.run(["make"], cwd=src_dir, check=True)
             
             # Locate binary
-            binary = src_dir / "bin" / "mustang-3.2.4"
-            if binary.exists():
-                # Copy to local bin or app root
-                target = Path("./mustang")
-                shutil.copy(binary, target)
-                target.chmod(0o755)
-                self.executable = str(target.absolute())
-                logger.info(f"Mustang compiled and installed to {self.executable}")
-                return True
+            # Mustang makefile typically outputs bin/mustang-x.y.z
+            bin_dir = src_dir / "bin"
+            if bin_dir.exists():
+                binaries = list(bin_dir.glob("mustang*"))
+                if binaries:
+                    binary = binaries[0]
+                    # Copy to local bin or app root
+                    target = Path("./mustang")
+                    shutil.copy(binary, target)
+                    target.chmod(0o755)
+                    self.executable = str(target.absolute())
+                    logger.info(f"Mustang compiled and installed to {self.executable}")
+                    return True
             
+            logger.error("Compilation finished but binary not found")
             return False
             
         except Exception as e:
