@@ -76,10 +76,13 @@ class HistoryDatabase:
             logger.error(f"Failed to save run {run_id}: {e}")
             return False
 
-    def get_all_runs(self) -> List[Dict[str, Any]]:
+    def get_all_runs(self, limit: int = None) -> List[Dict[str, Any]]:
         """
-        Retrieve all saved runs, sorted by timestamp (newest first).
+        Retrieve saved runs, sorted by timestamp (newest first).
         
+        Args:
+            limit: Maximum number of runs to return (None for all)
+            
         Returns:
             List of run dictionaries
         """
@@ -87,7 +90,15 @@ class HistoryDatabase:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
-                cursor.execute("SELECT * FROM runs ORDER BY timestamp DESC")
+                
+                query = "SELECT * FROM runs ORDER BY timestamp DESC"
+                params = ()
+                
+                if limit:
+                    query += " LIMIT ?"
+                    params = (limit,)
+                    
+                cursor.execute(query, params)
                 rows = cursor.fetchall()
                 
                 runs = []

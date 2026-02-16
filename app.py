@@ -138,7 +138,8 @@ def main():
 
         # History Section
         with st.expander("📜 History", expanded=False):
-            runs = st.session_state.history_db.get_all_runs()
+            # Limit to latest 6 runs as requested
+            runs = st.session_state.history_db.get_all_runs(limit=6)
             if not runs:
                 st.info("No saved runs found.")
             else:
