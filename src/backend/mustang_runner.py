@@ -192,7 +192,7 @@ class MustangRunner:
              
         # 2. Check Local Compilation
         if Path("./mustang").exists():
-            self.executable = "./mustang"
+            self.executable = str(Path("./mustang").absolute())
             self.backend = 'native'
             return True, "Found locally compiled Mustang"
             
