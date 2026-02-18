@@ -81,6 +81,11 @@ def render_3d_structure(pdb_file: Path, width: int = 800, height: int = 600, sty
                 // Get all atoms to identify unique chains
                 let m = viewer.getModel(0);
                 let atoms = m.selectedAtoms({{}});
+                
+                // HIGHLIGHTS INJECTION
+                // Highlights are passed as a JSON list of residue numbers
+                let highlightedResidues = {highlight_residues};
+                console.log("DEBUG: Highlights received:", highlightedResidues);
                 let chains = [];
                 for(let i=0; i<atoms.length; i++) {{
                     if(!chains.includes(atoms[i].chain)) chains.push(atoms[i].chain);
@@ -91,31 +96,39 @@ def render_3d_structure(pdb_file: Path, width: int = 800, height: int = 600, sty
                     let color = neonColors[i % neonColors.length];
                     let sel = {{chain: chains[i]}};
                     
+                    // Dim background if highlights are active
+                    // User feedback: Increased brightness to 0.8 (was 0.35/0.65).
+                    let opacity = (highlightedResidues.length > 0) ? 0.8 : 1.0;
+                    
                     if ("{style}" === "cartoon") {{
-                        viewer.setStyle(sel, {{cartoon: {{color: color}}}});
+                        viewer.setStyle(sel, {{cartoon: {{color: color, opacity: opacity}}}});
                     }} else if ("{style}" === "sphere") {{
-                        viewer.setStyle(sel, {{sphere: {{scale: 0.3, color: color}}}});
+                        viewer.setStyle(sel, {{sphere: {{scale: 0.3, color: color, opacity: opacity}}}});
                     }} else if ("{style}" === "stick") {{
-                        // Sticks use element colors usually, but let's try chain color for carbon
-                        viewer.setStyle(sel, {{stick: {{radius: 0.15, colorscheme: 'Jmol'}}}});
+                        viewer.setStyle(sel, {{stick: {{radius: 0.15, colorscheme: 'Jmol', opacity: opacity}}}});
                     }} else if ("{style}" === "line") {{
-                        viewer.setStyle(sel, {{line: {{linewidth: 2, color: color}}}});
+                        viewer.setStyle(sel, {{line: {{linewidth: 2, color: color, opacity: opacity}}}});
                     }}
                 }}
                 
                 // HIGHLIGHTS INJECTION
-                // Highlights are passed as a JSON list of residue numbers
-                let highlightedResidues = {highlight_residues};
-                console.log("DEBUG: Highlights received:", highlightedResidues);
-                
                 if (highlightedResidues.length > 0) {{
-                    viewer.addStyle({{resi: highlightedResidues}}, {{sphere: {{color: 'red', radius: 1.0}}}});
-                    viewer.addStyle({{resi: highlightedResidues}}, {{stick: {{color: 'yellow', radius: 0.3}}}});
+                    let sel = {{resi: highlightedResidues}};
+                    
+                    // Use setStyle to OVERWRITE the base style for these residues
+                    // This prevents "double sphere" rendering issues in Sphere mode
+                    viewer.setStyle(sel, {{
+                        sphere: {{color: '#FF0055', scale: 1.0, opacity: 1.0}}, // Make highlighted spheres larger
+                        stick: {{color: '#FFFF00', radius: 0.3, opacity: 1.0}}
+                    }});
                 }}
 
                 viewer.zoomTo();
                 viewer.render();
                 viewer.zoom(0.8, 1000);
+                
+                // Enable Auto-Rotation (Slow spin)
+                viewer.spin('y', 0.5);
             </script>
         </body>
         </html>

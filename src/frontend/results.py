@@ -173,37 +173,51 @@ def render_3d_viewer_tab(results):
     st.info("💡 Explore different representations of the aligned structures. Rotate and zoom to investigate.")
     
     if results.get('alignment_pdb') and results['alignment_pdb'].exists():
-        try:
-            pdb_path = results['alignment_pdb']
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("**Cartoon (Secondary Structure)**")
-                show_structure_in_streamlit(pdb_path, width=400, height=300, style='cartoon', key='view_cartoon', highlight_residues=st.session_state.get('highlighted_residues', []))
-            with col2:
-                st.markdown("**Sphere (Spacefill)**")
-                show_structure_in_streamlit(pdb_path, width=400, height=300, style='sphere', key='view_sphere', highlight_residues=st.session_state.get('highlighted_residues', []))
-                
-            col3, col4 = st.columns(2)
-            with col3:
-                st.markdown("**Stick (Bonds & Atoms)**")
-                show_structure_in_streamlit(pdb_path, width=400, height=300, style='stick', key='view_stick', highlight_residues=st.session_state.get('highlighted_residues', []))
-            with col4:
-                st.markdown("**Line/Trace (Backbone)**")
-                show_structure_in_streamlit(pdb_path, width=400, height=300, style='line', key='view_line', highlight_residues=st.session_state.get('highlighted_residues', []))
+        # Lazy Loading Logic
+        if "show_3d_viewer" not in st.session_state:
+            st.session_state.show_3d_viewer = False
             
-            st.caption("""
-            **Controls:**
-            - **Left click + drag**: Rotate | **Right click + drag**: Zoom | **Scroll**: Zoom in/out
-            - Each structure is colored differently for easy identification
-            """)
-            
-            # Show active highlights info
-            hl = st.session_state.get('highlighted_residues', [])
-            if hl:
-                st.info(f"🔥 Highlighting {len(hl)} residues: {hl[:10]}{'...' if len(hl)>10 else ''} from Sequence Tab.")
+        if not st.session_state.show_3d_viewer:
+             st.info("⚠️ 3D visualization requires WebGL and may slow down the app.")
+             if st.button("🚀 Initialize 3D Viewers", type="primary"):
+                 st.session_state.show_3d_viewer = True
+                 st.rerun()
+        else:
+            if st.button("❌ Close Viewers"):
+                st.session_state.show_3d_viewer = False
+                st.rerun()
                 
-        except Exception as e:
-            st.error(f"Failed to load 3D viewer: {str(e)}")
+            try:
+                pdb_path = results['alignment_pdb']
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**Cartoon (Secondary Structure)**")
+                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='cartoon', key='view_cartoon', highlight_residues=st.session_state.get('highlighted_residues', []))
+                with col2:
+                    st.markdown("**Sphere (Spacefill)**")
+                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='sphere', key='view_sphere', highlight_residues=st.session_state.get('highlighted_residues', []))
+                    
+                col3, col4 = st.columns(2)
+                with col3:
+                    st.markdown("**Stick (Bonds & Atoms)**")
+                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='stick', key='view_stick', highlight_residues=st.session_state.get('highlighted_residues', []))
+                with col4:
+                    st.markdown("**Line/Trace (Backbone)**")
+                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='line', key='view_line', highlight_residues=st.session_state.get('highlighted_residues', []))
+                
+                st.caption("""
+                **Controls:**
+                - **Left click + drag**: Rotate | **Right click + drag**: Zoom | **Scroll**: Zoom in/out
+                - Each structure is colored differently for easy identification
+                """)
+                
+                # Show active highlights info
+                hl = st.session_state.get('highlighted_residues', [])
+                if hl:
+                    st.info(f"🔥 Highlighting {len(hl)} residues: {hl[:10]}{'...' if len(hl)>10 else ''} from Sequence Tab.")
+                    
+            except Exception as e:
+                st.error(f"Failed to load 3D viewer: {str(e)}")
     else:
         st.warning("3D visualization not available")
 
