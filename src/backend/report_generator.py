@@ -55,6 +55,22 @@ class ReportGenerator:
             pdf.set_font("Arial", '', 11)
             pdf.multi_cell(0, 7, f"Analyzed {len(pdb_ids)} structures: {', '.join(pdb_ids)}")
             
+            # 2. Automated Insights (Key Findings)
+            from src.backend.insights import InsightsGenerator
+            # Generate fresh to ensure report is standalone
+            gen = InsightsGenerator({})
+            insights = gen.generate_insights(results)
+            
+            if insights:
+                pdf.ln(5)
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 7, "Key Findings:", 0, 1)
+                pdf.set_font("Arial", '', 11)
+                for item in insights:
+                    # Strip markdown bolding for PDF
+                    clean_text = item.replace('**', '').replace('`', '')
+                    pdf.multi_cell(0, 6, f"- {clean_text}")
+            
             stats = results.get('stats', {})
             if stats:
                 pdf.ln(5)

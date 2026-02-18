@@ -111,8 +111,14 @@ def process_result_directory(result_dir: Path, pdb_ids: list):
             'tree_fig': tree_fig,
             'alignment_pdb': alignment_pdb,
             'alignment_afasta': alignment_afasta,
+            'alignment_afasta': alignment_afasta,
             'rmsf_values': rmsf_values
         }
+        
+        # Clear cached insights so they regenerate
+        if 'insights' in st.session_state:
+            del st.session_state.insights
+            
         logger.info("Results stored successfully.")
         return True, "Success"
     except Exception as e:

@@ -480,6 +480,24 @@ def display_results():
     st.header("📊 Results")
     results = st.session_state.results
     
+    # --- AUTOMATED INSIGHTS SECTION ---
+    st.subheader("💡 Key Findings")
+    
+    # Initialize generator if needed
+    if 'insights' not in st.session_state:
+        from src.backend.insights import InsightsGenerator
+        # Assuming config is available in session state or passing empty dict for now as it's not strictly used yet
+        generator = InsightsGenerator({}) 
+        st.session_state.insights = generator.generate_insights(results)
+    
+    if st.session_state.insights:
+        for insight in st.session_state.insights:
+            st.markdown(insight)
+    else:
+        st.info("No specific insights generated for this dataset.")
+    
+    st.divider()
+    
     # Initialize highlight state if not present
     if 'highlighted_residues' not in st.session_state:
         st.session_state.highlighted_residues = []
