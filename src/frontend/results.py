@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 from pathlib import Path
 from src.backend.structure_viewer import show_structure_in_streamlit, show_ligand_view_in_streamlit
+from src.backend.notebook_exporter import NotebookExporter
 
 def render_learning_card(tab_name):
     """Render a context-aware learning card for Guided Mode."""
@@ -599,19 +600,40 @@ def render_downloads_tab(results):
             if st.checkbox("Phylogenetic Tree", value=True): report_sections.append("tree")
             if st.checkbox("RMSD Matrix", value=True): report_sections.append("matrix")
 
-        if st.button("Generate PDF Report", help="Create a comprehensive PDF report", key="btn_gen_report"):
-            with st.spinner("Generating report..."):
-                try:
-                    report_path = st.session_state.report_generator.generate_report(
-                        results, 
-                        st.session_state.pdb_ids,
-                        sections=report_sections
-                    )
-                    st.success(f"Report generated: {report_path.name}")
-                    with open(report_path, "rb") as f:
-                        st.download_button("⬇️ Download PDF Report", f, file_name=report_path.name, mime="application/pdf")
-                except Exception as e:
-                    st.error(f"Failed to generate report: {e}")
+        c_pdf, c_html = st.columns(2)
+        
+        with c_pdf:
+            if st.button("Generate PDF Report", help="Create a comprehensive PDF report", key="btn_gen_report", use_container_width=True):
+                with st.spinner("Generating PDF..."):
+                    try:
+                        report_path = st.session_state.report_generator.generate_report(
+                            results, 
+                            st.session_state.pdb_ids,
+                            sections=report_sections
+                        )
+                        st.success(f"PDF Ready: {report_path.name}")
+                        with open(report_path, "rb") as f:
+                            st.download_button("⬇️ Download PDF", f, file_name=report_path.name, mime="application/pdf", use_container_width=True)
+                    except Exception as e:
+                        st.error(f"Failed to generate PDF: {e}")
+
+        with c_html:
+            if st.button("Generate Lab Notebook", help="Create an interactive HTML notebook", key="btn_gen_html", use_container_width=True):
+                 with st.spinner("Building interactive notebook..."):
+                    try:
+                        exporter = NotebookExporter()
+                        # Pass insights if available
+                        insights = st.session_state.get('insights', [])
+                        nb_path = exporter.generate_notebook(results, insights)
+                        
+                        if nb_path:
+                            st.success(f"Notebook Ready!")
+                            with open(nb_path, "rb") as f:
+                                st.download_button("⬇️ Download HTML Notebook", f, file_name="lab_notebook.html", mime="text/html", use_container_width=True)
+                        else:
+                            st.error("Failed to generate notebook.")
+                    except Exception as e:
+                         st.error(f"Error: {str(e)}")
     
     with col_d2:
         st.markdown("### 📦 Full Project Bundle")

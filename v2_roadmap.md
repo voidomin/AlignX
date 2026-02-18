@@ -59,8 +59,8 @@ Brand new functionality to expand scientific scope.
 
 ### Automated Insights
 
-- [ ] "Smart Captions" that textually describe RMSD outliers and conserved regions. (Currently placeholder)
-- [ ] Exportable HTML Lab Notebook.
+- [x] **Automated Insights**: "Smart Captions" that textually describe RMSD outliers and conserved regions.
+- [x] **Exportable Lab Notebook**: Generating a standalone HTML file of the results (with embedded 3D viewer).
 
 ## 🏗️ Architecture & Tech Debt
 
