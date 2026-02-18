@@ -423,11 +423,27 @@ def render_downloads_tab(results):
     
     with col_d1:
         st.markdown("### 📄 Analysis Report")
-        st.write("Generate a comprehensive PDF Summary.")
+        st.write("Customize your report:")
+        
+        # Report Configuration
+        report_sections = []
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.checkbox("Summary & Stats", value=True): report_sections.append("summary")
+            if st.checkbox("Key Findings", value=True): report_sections.append("insights")
+            if st.checkbox("RMSD Heatmap", value=True): report_sections.append("heatmap")
+        with c2:
+            if st.checkbox("Phylogenetic Tree", value=True): report_sections.append("tree")
+            if st.checkbox("RMSD Matrix", value=True): report_sections.append("matrix")
+
         if st.button("Generate PDF Report", help="Create a comprehensive PDF report", key="btn_gen_report"):
             with st.spinner("Generating report..."):
                 try:
-                    report_path = st.session_state.report_generator.generate_report(results, st.session_state.pdb_ids)
+                    report_path = st.session_state.report_generator.generate_report(
+                        results, 
+                        st.session_state.pdb_ids,
+                        sections=report_sections
+                    )
                     st.success(f"Report generated: {report_path.name}")
                     with open(report_path, "rb") as f:
                         st.download_button("⬇️ Download PDF Report", f, file_name=report_path.name, mime="application/pdf")
