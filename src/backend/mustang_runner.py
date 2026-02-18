@@ -290,12 +290,12 @@ class MustangRunner:
                     timeout=5
                 )
                 if result.returncode == 0:
-                    logger.info(f"✅ Verified R executable: {r_path}")
+                    logger.info(f"[OK] Verified R executable: {r_path}")
                     return r_path
                 else:
-                    logger.warning(f"❌ Candidate {r_path} failed verification (Exit {result.returncode})")
+                    logger.warning(f"[FAIL] Candidate {r_path} failed verification (Exit {result.returncode})")
             except Exception as e:
-                logger.warning(f"❌ Candidate {r_path} failed execution: {e}")
+                logger.warning(f"[FAIL] Candidate {r_path} failed execution: {e}")
                 
         logger.error("No valid R executable found after checking all candidates.")
         return None
@@ -367,51 +367,87 @@ class MustangRunner:
         else:
             return self._run_native_mustang(local_pdb_files, output_dir)
     
+    def _construct_command(self, pdb_files: List[Path], output_dir: Path) -> Tuple[List[str], Path]:
+        """
+        Construct the command line arguments for Mustang.
+        Returns: (command_list, run_cwd)
+        """
+        # We run in output_dir, so we can use filenames directly (files are copied there)
+        run_cwd = output_dir.absolute()
+        input_filenames = [p.name for p in pdb_files]
+        
+        output_prefix_arg = 'alignment'
+
+        if getattr(self, 'use_wsl', False):
+            cmd = ['wsl', str(self.executable)]
+        else:
+            # Native execution
+            exe_path = Path(self.executable)
+            if exe_path.exists():
+                cmd = [str(exe_path.resolve())]
+            else:
+                cmd = [str(self.executable)]
+
+        # Add arguments
+        cmd.extend(['-i'] + input_filenames + [
+            '-o', output_prefix_arg,
+            '-F', 'fasta',
+            '-r', 'ON'
+        ])
+        
+        return cmd, run_cwd
+
     def _run_native_mustang(self, pdb_files: List[Path], output_dir: Path) -> Tuple[bool, str, Optional[Path]]:
         """Run native Mustang binary."""
         try:
-            # Convert paths for WSL if needed
-            if getattr(self, 'use_wsl', False):
-                converted_files = [self._convert_to_wsl_path(p) for p in pdb_files]
-                converted_output_dir = self._convert_to_wsl_path(output_dir)
-            else:
-                converted_files = [str(p.absolute()) for p in pdb_files]
-                converted_output_dir = str(output_dir.absolute())
+            cmd, run_cwd = self._construct_command(pdb_files, output_dir)
             
-            # Output prefix
-            if getattr(self, 'use_wsl', False):
-                output_prefix_arg = f"{converted_output_dir}/alignment"
-            else:
-                # Use simple filename since we set cwd to output_dir
-                output_prefix_arg = 'alignment'
-            
-            # Construct command robustly
-            if getattr(self, 'use_wsl', False):
-                cmd = ['wsl', str(self.executable)]
-            else:
-                # Native execution (Linux or Windows)
-                cmd = [str(self.executable)]
-
-            # Add arguments
-            cmd.extend(['-i'] + converted_files + [
-                '-o', output_prefix_arg,
-                '-F', 'fasta',
-                '-r', 'ON'
-            ])
-            
-            logger.info(f"Running Mustang: {cmd[:2]}... (Native: {not getattr(self, 'use_wsl', False)})")
+            logger.info(f"Running Mustang: {cmd[:2]}... (CWD: {run_cwd})")
             
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
-                cwd=str(output_dir) if not self.use_wsl else None
+                cwd=str(run_cwd)
             )
             
             if result.returncode != 0:
                 logger.error(f"Mustang failed: {result.stderr}")
                 return False, f"Mustang execution failed: {result.stderr}", None
+            
+            # Save stdout to log file for RMSD parsing
+            log_file = output_dir / 'mustang.log'
+            with open(log_file, 'w') as f:
+                f.write(result.stdout)
+                f.write("\n=== STDERR ===\n")
+                f.write(result.stderr)
+            
+            # Check for output files - Mustang creates .afasta or .fasta
+            afasta_file = output_dir / 'alignment.afasta'
+            fasta_file = output_dir / 'alignment.fasta'
+            pdb_file = output_dir / 'alignment.pdb'
+            
+            if not (afasta_file.exists() or fasta_file.exists()):
+                 # Debug info
+                all_files = [f.name for f in output_dir.iterdir()]
+                log_content = "Log not found"
+                if log_file.exists():
+                    with open(log_file, 'r') as f:
+                        log_content = f.read()
+                        
+                error_msg = f"Mustang did not produce expected output files.\nFound: {all_files}\nLog tail: {log_content[-500:]}"
+                logger.error(error_msg)
+                return False, error_msg, None
+            
+            logger.info("Mustang alignment completed successfully")
+            return True, "Alignment completed", output_dir
+            
+        except subprocess.TimeoutExpired:
+            return False, f"Mustang timed out after {self.timeout}s", None
+        except Exception as e:
+            logger.error(f"Mustang execution error: {str(e)}")
+            return False, f"Mustang error: {str(e)}", None
             
             # Save stdout to log file for RMSD parsing
             log_file = output_dir / 'mustang.log'

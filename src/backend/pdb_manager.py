@@ -261,6 +261,37 @@ class PDBManager:
             logger.error(f"Failed to clean {pdb_file.name}: {str(e)}")
             return False, f"Cleaning failed: {str(e)}", None
 
+    def batch_clean(self, pdb_files: List[Path], max_workers: int = 4) -> Dict[str, Tuple[bool, str, Optional[Path]]]:
+        """
+        Clean multiple PDB files in parallel.
+        
+        Args:
+            pdb_files: List of PDB file paths
+            max_workers: Number of parallel workers
+            
+        Returns:
+            Dictionary mapping PDB filename to (success, message, path)
+        """
+        results = {}
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_file = {
+                executor.submit(self.clean_pdb, p): p 
+                for p in pdb_files
+            }
+            
+            with tqdm(total=len(pdb_files), desc="Cleaning PDB files") as pbar:
+                for future in as_completed(future_to_file):
+                    pdb_file = future_to_file[future]
+                    try:
+                        results[pdb_file.name] = future.result()
+                    except Exception as e:
+                        logger.error(f"Error cleaning {pdb_file.name}: {str(e)}")
+                        results[pdb_file.name] = (False, f"Error: {str(e)}", None)
+                    pbar.update(1)
+        
+        return results
+
     def fetch_metadata(self, pdb_ids: List[str], max_workers: int = 4) -> Dict[str, Dict]:
         """
         Fetch metadata for multiple PDB IDs from RCSB GraphQL API.

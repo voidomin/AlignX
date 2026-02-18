@@ -9,7 +9,7 @@ from src.utils.logger import get_logger
 logger = get_logger()
 
 
-def render_3d_structure(pdb_file: Path, width: int = 800, height: int = 600, style: str = 'cartoon', unique_id: str = '1') -> Optional[str]:
+def render_3d_structure(pdb_file: Path, width: int = 800, height: int = 600, style: str = 'cartoon', unique_id: str = '1', highlight_residues: list = []) -> Optional[str]:
     """
     Render 3D structure using py3Dmol in Streamlit.
     
@@ -103,12 +103,19 @@ def render_3d_structure(pdb_file: Path, width: int = 800, height: int = 600, sty
                     }}
                 }}
                 
+                // HIGHLIGHTS INJECTION
+                // Highlights are passed as a JSON list of residue numbers
+                let highlightedResidues = {highlight_residues};
+                console.log("DEBUG: Highlights received:", highlightedResidues);
+                
+                if (highlightedResidues.length > 0) {{
+                    viewer.addStyle({{resi: highlightedResidues}}, {{sphere: {{color: 'red', radius: 1.0}}}});
+                    viewer.addStyle({{resi: highlightedResidues}}, {{stick: {{color: 'yellow', radius: 0.3}}}});
+                }}
+
                 viewer.zoomTo();
                 viewer.render();
                 viewer.zoom(0.8, 1000);
-                
-                // Add a slow spin for "High-Impact" effect
-                viewer.spin("y", 0.5);
             </script>
         </body>
         </html>
@@ -200,7 +207,7 @@ def render_ligand_view(pdb_file: Path, ligand_data: dict, width: int = 800, heig
         logger.error(f"Failed to render ligand view: {e}")
         return None
 
-def show_structure_in_streamlit(pdb_file: Path, width: int = 400, height: int = 300, style: str = 'cartoon', key: str = '1'):
+def show_structure_in_streamlit(pdb_file: Path, width: int = 400, height: int = 300, style: str = 'cartoon', key: str = '1', highlight_residues: list = []):
     """
     Display 3D structure in Streamlit app.
     
@@ -211,7 +218,7 @@ def show_structure_in_streamlit(pdb_file: Path, width: int = 400, height: int = 
         style: Visualization style
         key: Unique key for component
     """
-    html = render_3d_structure(pdb_file, width, height, style, key)
+    html = render_3d_structure(pdb_file, width, height, style, key, highlight_residues)
     if html:
         components.html(html, width=width, height=height, scrolling=False)
     else:

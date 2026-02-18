@@ -58,7 +58,7 @@ def setup_logger(
     logger.info(f"Logger initialized: {name}")
     logger.info(f"Log file: {log_file}")
     
-    return logger
+    return logger, log_file
 
 
 def get_logger(name: str = "mustang_pipeline") -> logging.Logger:
