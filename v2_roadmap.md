@@ -25,7 +25,7 @@ Polishing and upgrading what we already have.
 ### Performance Optimization
 
 - [x] Parallel processing for PDB cleaning and Mustang execution. (Implemented ThreadPoolExecutor in `pdb_manager` and optimized runner)
-- [ ] Lazy loading for 3D molecular views to speed up initial render.
+- [x] Lazy loading for 3D molecular views to speed up initial render.
 
 ### Download Manager
 
@@ -35,7 +35,7 @@ Polishing and upgrading what we already have.
 ### Contextual Education (For Non-Experts)
 
 - [x] Add "Explain this" tooltips/modals for technical terms (RMSD, P-value, etc.).
-- [ ] **"Guided Mode"**: A walkthrough wizard that explains the results step-by-step.
+- [x] **"Guided Mode"**: A walkthrough wizard that explains the results step-by-step.
 
 ## ✨ Features (New Capabilities)
 

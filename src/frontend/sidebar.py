@@ -59,6 +59,13 @@ def render_sidebar(load_run_callback):
         
         st.divider()
         
+        # Guided Mode Toggle
+        st.session_state.guided_mode = st.sidebar.toggle(
+            "🎓 Guided Mode", 
+            value=st.session_state.get('guided_mode', False),
+            help="Enable interactive explanations for each result tab."
+        )
+        
         # Advanced options
         with st.expander("⚙️ Advanced Options"):
             filter_chains = st.checkbox("Filter large files", value=True,

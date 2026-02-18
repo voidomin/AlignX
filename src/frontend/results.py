@@ -5,6 +5,65 @@ import plotly.express as px
 from pathlib import Path
 from src.backend.structure_viewer import show_structure_in_streamlit, show_ligand_view_in_streamlit
 
+def render_learning_card(tab_name):
+    """Render a context-aware learning card for Guided Mode."""
+    if not st.session_state.get('guided_mode', False):
+        return
+
+    content = {
+        "Summary": {
+            "title": "🎓 Learning: Understanding Alignment Quality",
+            "body": """
+            - **RMSD (Root Mean Square Deviation)**: Measures the average distance between atoms. Lower is better (0.0 is perfect).
+            - **Alignment Length**: How many residues were successfully matched.
+            - **Sequence Identity**: % of exact amino acid matches. High identity often means similar function.
+            """
+        },
+        "Sequence": {
+            "title": "🎓 Learning: Sequence Conservation",
+            "body": """
+            - **Conservation Score (0-9)**:
+                - **9 (Star)**: Identity. The same amino acid is present in all structures. Crucial for function.
+                - **0-4**: Variable regions. These parts evolve rapidly or are less important.
+            - **Tip**: Click on a residue in the table to highlight it in the 3D viewer!
+            """
+        },
+        "Structure": {
+            "title": "🎓 Learning: Structural Superposition",
+            "body": """
+            - **Superposition**: Rotates proteins to overlap them as best as possible.
+            - **Visual Styles**:
+                - **Cartoon**: Best for seeing helices and sheets.
+                - **Surface**: Good for finding pockets.
+            - **Controls**: Mouse Wheel to Zoom, Drag to Rotate.
+            """
+        },
+        "Ligands": {
+            "title": "🎓 Learning: Ligand Interactions",
+            "body": """
+            - **Ligands**: Small molecules (drugs, cofactors) bound to the protein.
+            - **Interaction Similarity**:
+                - **1.0**: Identical binding pockets.
+                - **0.0**: Completely different binding pockets.
+            - **Tip**: Use 'Pocket Comparison' to see how different proteins bind the same (or different) ligands.
+            """
+        },
+        "Tree": {
+            "title": "🎓 Learning: Phylogenetic Tree",
+            "body": """
+            - **Clustering**: Groups proteins by structural similarity.
+            - **Branch Length**: Longer branches mean more structural difference.
+            - **Clusters**: Items in the same color group are likely a sub-family.
+            """
+        }
+    }
+
+    if tab_name in content:
+        card = content[tab_name]
+        with st.container():
+            st.info(f"**{card['title']}**\n\n{card['body']}")
+            st.divider()
+
 def render_help_expander(topic):
     """Render educational help expanders."""
     helps = {
@@ -106,6 +165,9 @@ def render_help_expander(topic):
 
 def render_rmsd_tab(results):
     """Render the RMSD Analysis tab."""
+    st.subheader("📊 RMSD & Alignment Quality")
+    render_learning_card("Summary")
+    
     col1, col2 = st.columns([2, 1])
     
     with col1:
@@ -154,7 +216,8 @@ def render_rmsd_tab(results):
 
 def render_phylo_tree_tab(results):
     """Render the Phylogenetic Tree tab."""
-    st.subheader("Phylogenetic Tree (UPGMA)")
+    st.subheader("🌳 Phylogenetic Tree (UPGMA)")
+    render_learning_card("Tree")
     render_help_expander("tree")
         
     if results.get('tree_fig'):
@@ -168,8 +231,9 @@ def render_phylo_tree_tab(results):
 def render_3d_viewer_tab(results):
     """Render the 3D Visualization tab."""
     st.subheader("3D Structural Superposition")
+    render_learning_card("Structure")
     render_help_expander("superposition")
-        
+                
     st.info("💡 Explore different representations of the aligned structures. Rotate and zoom to investigate.")
     
     if results.get('alignment_pdb') and results['alignment_pdb'].exists():
@@ -224,59 +288,67 @@ def render_3d_viewer_tab(results):
 def render_ligand_tab(results):
     """Render the Ligand & Interaction Analysis tab."""
     st.subheader("💊 Ligand & Interaction Analysis")
+    render_learning_card("Ligands")
     render_help_expander("ligands")
+    col1, col2 = st.columns([2, 1])
     
-    # Tab Layout for Ligands
     tab_single, tab_compare = st.tabs(["🧪 Single Ligand Analysis", "⚔️ Pocket Comparison"])
     
-    # --- TAB 1: SINGLE LIGAND ---
     with tab_single:
-        col1, col2 = st.columns([1, 2])
         with col1:
             selected_pdb_ligand = st.selectbox("Select Protein Structure", st.session_state.pdb_ids, key="ligand_pdb_select")
-            result_dir = results['result_dir']
-            
-            # PDB Finding Logic
-            pdb_path = None
-            for suffix in ["", ".lower()", ".upper()"]:
-                p = result_dir / f"{selected_pdb_ligand}{suffix}.pdb"
-                if p.exists():
-                    pdb_path = p
-                    break
-            
-            if not pdb_path:
-                matches = list(result_dir.glob(f"*{selected_pdb_ligand}*.pdb"))
-                if matches: pdb_path = matches[0]
-            
-            if pdb_path:
-                ligands = st.session_state.ligand_analyzer.get_ligands(pdb_path)
-                if not ligands:
-                    st.info("No ligands found in this structure.")
-                else:
-                    st.success(f"Found {len(ligands)} ligands")
-                    ligand_options = {f"{l['name']} ({l['id']})": l for l in ligands}
-                    selected_ligand_name = st.selectbox("Select Ligand", list(ligand_options.keys()))
-                    selected_ligand = ligand_options[selected_ligand_name]
-                    
-                    if st.button("Analyze Interactions"):
-                        interactions = st.session_state.ligand_analyzer.calculate_interactions(pdb_path, selected_ligand['id'])
-                        st.session_state.current_interactions = interactions
-                        st.session_state.current_ligand_pdb = pdb_path
-                        
-                        # Store in global history for comparison
-                        entry = interactions.copy()
-                        entry['pdb_path'] = str(pdb_path) # Store as string for serialization safety
-                        entry['pdb_id'] = selected_pdb_ligand # Keep track of ID
-                        
-                        if 'pocket_history' not in st.session_state: st.session_state.pocket_history = []
-                        
-                        # Add or Update
-                        # Filter out existing entry for this ligand
-                        st.session_state.pocket_history = [x for x in st.session_state.pocket_history if x['ligand'] != interactions['ligand']]
-                        st.session_state.pocket_history.append(entry)
-                        
+        result_dir = results['result_dir']
+        
+        # PDB Finding Logic
+        pdb_path = None
+        # precise match first
+        possible_names = [
+            f"{selected_pdb_ligand}.pdb",
+            f"{selected_pdb_ligand.lower()}.pdb",
+            f"{selected_pdb_ligand.upper()}.pdb"
+        ]
+        
+        for name in possible_names:
+            p = result_dir / name
+            if p.exists():
+                pdb_path = p
+                break
+        
+        # Fuzzy match if exact fails
+        if not pdb_path:
+            matches = list(result_dir.glob(f"*{selected_pdb_ligand}*.pdb"))
+            if matches: 
+                pdb_path = matches[0]
+                
+        if pdb_path:
+            ligands = st.session_state.ligand_analyzer.get_ligands(pdb_path)
+            if not ligands:
+                st.info("No ligands found in this structure.")
             else:
-                st.error(f"PDB file not found for {selected_pdb_ligand}")
+                st.success(f"Found {len(ligands)} ligands")
+                ligand_options = {f"{l['name']} ({l['id']})": l for l in ligands}
+                selected_ligand_name = st.selectbox("Select Ligand", list(ligand_options.keys()))
+                selected_ligand = ligand_options[selected_ligand_name]
+                
+                if st.button("Analyze Interactions"):
+                    interactions = st.session_state.ligand_analyzer.calculate_interactions(pdb_path, selected_ligand['id'])
+                    st.session_state.current_interactions = interactions
+                    st.session_state.current_ligand_pdb = pdb_path
+                    
+                    # Store in global history for comparison
+                    entry = interactions.copy()
+                    entry['pdb_path'] = str(pdb_path) # Store as string for serialization safety
+                    entry['pdb_id'] = selected_pdb_ligand # Keep track of ID
+                    
+                    if 'pocket_history' not in st.session_state: st.session_state.pocket_history = []
+                    
+                    # Add or Update
+                    # Filter out existing entry for this ligand
+                    st.session_state.pocket_history = [x for x in st.session_state.pocket_history if x['ligand'] != interactions['ligand']]
+                    st.session_state.pocket_history.append(entry)
+                    
+        else:
+            st.error(f"PDB file not found for {selected_pdb_ligand}")
 
         with col2:
             if 'current_interactions' in st.session_state:
@@ -287,7 +359,8 @@ def render_ligand_tab(results):
                     st.error(interactions['error'])
                 else:
                     st.markdown(f"### Binding Site: **{interactions['ligand']}**")
-                    show_ligand_view_in_streamlit(pdb_path, interactions, width=700, height=500, key="ligand_3d")
+                    # Render 3D Ligand View
+                    show_ligand_view_in_streamlit(pdb_path, interactions, width=400, height=450, key="ligand_3d")
                     
                     st.markdown("#### Interacting Residues (< 5Å)")
                     if interactions['interactions']:
@@ -356,9 +429,11 @@ def render_ligand_tab(results):
 
 
 def render_sequences_tab(results):
-    """Render the Multiple Sequence Alignment tab."""
-    st.subheader("Multiple Sequence Alignment")
-    st.info("🧬 Color code: Red = 100% Identity, Yellow = High Similarity (>70%)")
+    """Render the Sequence Analysis tab."""
+    render_learning_card("Sequence")
+    st.subheader("🧬 Sequence Alignment")
+    
+    if results.get('alignment_path'):fo("🧬 Color code: Red = 100% Identity, Yellow = High Similarity (>70%)")
     
     if results.get('alignment_afasta') and results['alignment_afasta'].exists():
         sequences = st.session_state.sequence_viewer.parse_afasta(results['alignment_afasta'])
@@ -606,13 +681,16 @@ def display_results():
     if 'highlighted_residues' not in st.session_state:
         st.session_state.highlighted_residues = []
     
+    # Define function map for render loop
+    # Using specific names for render functions for clarity
+    
     tab_list = [
-        ("📈 RMSD Analysis", render_rmsd_tab),
-        ("🌳 Phylogenetic Tree", render_phylo_tree_tab),
-        ("🧬 3D Visualization", render_3d_viewer_tab),
+        ("� Summary", render_rmsd_tab),
+        ("🧬 Sequence", render_sequences_tab),
+        ("nm Structure", render_3d_viewer_tab),
         ("💊 Ligands", render_ligand_tab),
+        ("🌳 Tree", render_phylo_tree_tab),
         ("🔍 Clusters", render_clusters_tab),
-        ("🧬 Sequences", render_sequences_tab),
         ("📁 Downloads", render_downloads_tab)
     ]
     
