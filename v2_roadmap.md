@@ -51,11 +51,11 @@ Brand new functionality to expand scientific scope.
 - [x] Clicking a residue in Sequence View highlights it in Structure View.
 - [ ] Selecting a cluster in the Tree View filters the Structure View.
 
-### Ligand Hunter
+### Ligand Hunter (Active)
 
 - [x] Automated detection of residues within 5Å of ligands.
 - [x] "Binding Pocket View": Side-by-side comparison of active sites.
-- [ ] Ligand chemical similarity matrix.
+- [x] Ligand chemical similarity matrix. (Implemented Interaction Similarity)
 
 ### Automated Insights
 

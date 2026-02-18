@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
 
 import numpy as np
+import pandas as pd
 from Bio.PDB import PDBParser, Selection, NeighborSearch, Residue
 from Bio.PDB.PDBExceptions import PDBConstructionWarning
 
@@ -186,3 +187,68 @@ class LigandAnalyzer:
         results['interactions'].sort(key=lambda x: x['distance'])
         
         return results
+
+    def calculate_interaction_similarity(self, all_interactions: List[Dict[str, Any]]) -> pd.DataFrame:
+        """
+        Calculate pairwise similarity of ligand interaction fingerprints (Jaccard Index).
+        
+        Args:
+            all_interactions: List of interaction dictionaries (output of calculate_interactions)
+            
+        Returns:
+            pd.DataFrame: Symmetric similarity matrix
+        """
+        
+        if not all_interactions:
+            return pd.DataFrame()
+            
+        # Extract signatures: Set of (ResidueName, Resi) tuples for each ligand
+        # Note: We rely on alignment, so we ideally compare "Aligned Residue IDs". 
+        # But for now, we assume the inputs are from aligned structures where residue numbering might align 
+        # OR we're just comparing "types" of interactions. 
+        # BETTER: Use the "Position" if we had the alignment mapping. 
+        # FALLBACK: Just use ResidueName + ResidueNumber and assume conservation? 
+        # Actually, without MSA integration here, we can't perfectly map Residue 10 in A to Residue 12 in B.
+        # So we'll limit this to: "Comparing ligands within the SAME PDB" OR just generic residue composition similarity.
+        
+        # WAIT! The user wants to compare active sites. 
+        # If we don't have the MSA mapping here, strict residue-to-residue comparison is flawed across different proteins.
+        # However, for a "similarity matrix" of *types* of interactions (e.g. "Both hit a Histidine"), we can do that.
+        # OR better: The user likely wants to see if the binding pockets look similar.
+        
+        # Let's pivot: We will calculate similarity based on Residue Composition of the pocket.
+        # e.g. Pocket A has {HIS, ASP, GLU}, Pocket B has {HIS, ASP, ALA}. Jaccard = 2/4 = 0.5.
+        
+        # 1. Build Fingerprints (Counts of residue types) -- No, just set of types is too simple.
+        # Let's use: Set of "ResidueType_InteractionType" strings. 
+        
+        ligand_ids = [item['ligand'] for item in all_interactions]
+        n = len(ligand_ids)
+        matrix = np.zeros((n, n))
+        
+        fingerprints = []
+        for item in all_interactions:
+            # Create a set of "ResName" strings found in the pocket
+            # This measures "Is the chemical environment similar?"
+            fp = set([res['residue'] for res in item['interactions']])
+            fingerprints.append(fp)
+            
+        for i in range(n):
+            for j in range(n):
+                if i == j:
+                    matrix[i][j] = 1.0
+                else:
+                    # Jaccard Index
+                    set_i = fingerprints[i]
+                    set_j = fingerprints[j]
+                    
+                    if not set_i and not set_j:
+                        score = 0.0 # Both empty
+                    else:
+                        intersection = len(set_i.intersection(set_j))
+                        union = len(set_i.union(set_j))
+                        score = intersection / union if union > 0 else 0.0
+                    
+                    matrix[i][j] = score
+                    
+        return pd.DataFrame(matrix, index=ligand_ids, columns=ligand_ids)
