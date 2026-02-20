@@ -65,6 +65,22 @@ def process_result_directory(result_dir: Path, pdb_ids: list):
         
         # Calculate statistics
         stats = st.session_state.rmsd_analyzer.calculate_statistics(rmsd_df)
+
+        # Get alignment PDB path for 3D visualization
+        alignment_pdb = result_dir / 'alignment.pdb'
+        alignment_afasta = result_dir / 'alignment.afasta'
+
+        # Calculate Alignment Stats
+        if alignment_afasta.exists():
+            try:
+                # We need sequence_viewer in session state, usually init in app.py
+                if 'sequence_viewer' in st.session_state:
+                    sequences = st.session_state.sequence_viewer.parse_afasta(alignment_afasta)
+                    if sequences:
+                        stats['chain_length'] = len(list(sequences.values())[0])
+                        stats['seq_identity'] = st.session_state.sequence_viewer.calculate_identity(sequences)
+            except Exception as e:
+                logger.warning(f"Failed to calculate detailed stats: {e}")
         
         # Identify clusters
         clusters = st.session_state.rmsd_analyzer.identify_clusters(rmsd_df)
@@ -237,14 +253,24 @@ def run_analysis():
         
         output_dir = Path('results') / 'latest_run'
         
-        # Check for Force Run flag
-        force_rerun = st.session_state.get('force_rerun', False)
+        # CRITICAL: Clean the output directory before each new run
+        # Stale files from previous runs cause Bio3D to fail or produce wrong results
+        # NOTE: We delete files individually instead of rmtree because Windows may
+        # lock the directory if another process (R, Streamlit watcher) has a handle on it
+        if output_dir.exists():
+            for f in output_dir.iterdir():
+                try:
+                    if f.is_file():
+                        f.unlink()
+                    elif f.is_dir():
+                        shutil.rmtree(f, ignore_errors=True)
+                except PermissionError:
+                    pass  # Skip locked files — they'll be overwritten anyway
+        output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Use CACHED alignment (unless forced)
-        if force_rerun:
-             cached_run_alignment.clear()
-             st.toast("Forcing re-run...", icon="🔄")
-             
+        # Always clear alignment cache for fresh runs
+        cached_run_alignment.clear()
+              
         success, msg, result_dir = cached_run_alignment(
             st.session_state.mustang_runner,
             cleaned_files,
@@ -410,8 +436,14 @@ def render_dashboard():
             st.session_state.results = None
             st.session_state.metadata = {}
             st.session_state.metadata_fetched = False
+            st.session_state.highlighted_residues = []
+            st.session_state.highlight_protein = "All Proteins"
+            st.session_state.residue_selections = {}
+            st.session_state.highlight_chains = {}
             if 'chain_info' in st.session_state:
                 del st.session_state.chain_info
+            # Clear all @st.cache_data caches so new proteins get fresh runs
+            st.cache_data.clear()
             st.rerun()
 
     # 3. Main Content Area

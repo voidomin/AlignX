@@ -165,3 +165,15 @@ class HistoryDatabase:
         except Exception as e:
             logger.error(f"Failed to retrieve latest run: {e}")
             return None
+
+    def clear_all_runs(self) -> bool:
+        """Clear all runs from the database."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM runs")
+                conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to clear all runs: {e}")
+            return False

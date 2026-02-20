@@ -193,21 +193,35 @@ class MustangRunner:
              self.executable = 'mustang'
              return True, "Found native Mustang binary in PATH"
 
-        # 2. Check for existing executable via helper (covers local native and WSL)
-        found, msg = self._check_mustang()
-        if found:
-             if getattr(self, 'use_wsl', False):
-                 self.backend = 'wsl'
-                 # If it's a system command, don't convert path
-                 if str(self.mustang_path) == 'mustang':
-                     self.executable = 'mustang'
-                 else:
-                     self.executable = self._convert_to_wsl_path(self.mustang_path)
-                 return True, "Found Mustang binary (WSL)"
-             else:
-                 self.backend = 'native'
-                 self.executable = str(self.mustang_path)
-                 return True, "Found Mustang binary (Native)"
+        # 2. Check System-wide WSL Binary (Only on Windows)
+        if self.is_windows:
+            try:
+                # Direct check for mustang in WSL
+                # Note: WSL output might be UTF-16 in some terminals, leading to \x00 bytes
+                # Increased timeout to 30s as WSL might need to spin up (cold start)
+                res = subprocess.run(['wsl', 'which', 'mustang'], capture_output=True, timeout=30)
+                
+                # Robust decoding
+                try:
+                    stdout_str = res.stdout.decode('utf-8')
+                except UnicodeDecodeError:
+                    stdout_str = res.stdout.decode('utf-16', errors='ignore')
+                    
+                # Clean up null bytes if any remain
+                stdout_str = stdout_str.replace('\x00', '').strip()
+                
+                if res.returncode == 0 and stdout_str and 'mustang' in stdout_str:
+                    self.use_wsl = True
+                    self.mustang_path = Path('mustang') 
+                    # Force backend to wsl if it was auto OR bio3d (prioritize native)
+                    if self.backend in ['auto', 'bio3d']:
+                        self.backend = 'wsl'
+                    logger.info(f"System Mustang binary found in WSL: {stdout_str}")
+                    return True, "System Mustang binary found (WSL)"
+                else:
+                    logger.warning(f"WSL check failed. 'wsl which mustang' returned: '{stdout_str}' (Exit: {res.returncode})")
+            except Exception as e:
+                logger.warning(f"WSL check exception: {e}")
 
         # 3. Try to Compile
         if self._compile_from_source():
@@ -428,17 +442,32 @@ class MustangRunner:
             fasta_file = output_dir / 'alignment.fasta'
             pdb_file = output_dir / 'alignment.pdb'
             
-            if not (afasta_file.exists() or fasta_file.exists()):
-                 # Debug info
-                all_files = [f.name for f in output_dir.iterdir()]
-                log_content = "Log not found"
-                if log_file.exists():
-                    with open(log_file, 'r') as f:
-                        log_content = f.read()
-                        
-                error_msg = f"Mustang did not produce expected output files.\nFound: {all_files}\nLog tail: {log_content[-500:]}"
-                logger.error(error_msg)
-                return False, error_msg, None
+            if not pdb_file.exists():
+                 logger.error("Mustang did not produce alignment.pdb")
+                 return False, "Mustang did not produce alignment.pdb", None
+
+            # Standardize FASTA output name
+            if afasta_file.exists() and not fasta_file.exists():
+                shutil.copy(afasta_file, output_dir / 'alignment.fasta')
+            elif not fasta_file.exists():
+                logger.error("Mustang did not produce alignment fasta")
+                return False, "Mustang did not produce alignment fasta", None
+            
+            # CALCULATE RMSD MATRIX (Python Native)
+            try:
+                from src.backend.rmsd_calculator import calculate_structure_rmsd
+                logger.info("Computing RMSD matrix using Native Python calculator...")
+                rmsd_df = calculate_structure_rmsd(pdb_file, output_dir / 'alignment.fasta')
+                
+                if rmsd_df is not None:
+                    rmsd_path = output_dir / 'rmsd_matrix.csv'
+                    rmsd_df.to_csv(rmsd_path)
+                    logger.info(f"RMSD matrix saved to {rmsd_path}")
+                else:
+                    logger.warning("RMSD Calculation returned None")
+            except Exception as e:
+                logger.error(f"Failed to compute RMSD: {e}")
+                # Don't fail the whole run, just missing RMSD
             
             logger.info("Mustang alignment completed successfully")
             return True, "Alignment completed", output_dir
@@ -522,14 +551,31 @@ class MustangRunner:
             # Also fix output path for R
             output_dir_r = str(output_dir.absolute()).replace(chr(92), "/")
             
+            # Handle WSL: Bio3D running in Windows R cannot directly call WSL binary
+            # We must create a shim script (wrapper) if we are using WSL
+            mustang_exe_arg = ""
+            if getattr(self, 'use_wsl', False):
+                shim_path = output_dir / 'mustang_shim.bat'
+                with open(shim_path, 'w') as f:
+                    f.write('@echo off\n')
+                    f.write('wsl mustang %*\n')
+                
+                # Convert shim path for R
+                shim_path_r = str(shim_path.absolute()).replace(chr(92), "/")
+                mustang_exe_arg = f', exefile="{shim_path_r}"'
+                logger.info(f"Created WSL shim at {shim_path}")
+
             script_content = f"""
 library(bio3d)
+
+# Redirect output to log file
+sink("mustang.log", split=TRUE)
 
 # PDB files
 pdb_files <- c({pdb_paths_r})
 
 # Run Mustang alignment
-result <- mustang(pdb_files)
+result <- mustang(pdb_files{mustang_exe_arg})
 
 # Save outputs
 write.fasta(result$ali, file="{output_dir_r}/alignment.fasta")
@@ -539,6 +585,9 @@ write.csv(result$rmsd, file="{output_dir_r}/rmsd_matrix.csv")
 save(result, file="{output_dir_r}/mustang_result.RData")
 
 cat("Mustang alignment completed\\n")
+
+# Close sink
+sink()
 """
             
             with open(r_script, 'w') as f:

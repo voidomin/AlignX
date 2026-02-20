@@ -37,6 +37,19 @@ def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
     return config
 
 
+def save_config(config: Dict[str, Any], config_path: str = "config.yaml") -> None:
+    """
+    Save configuration dictionary back to the YAML file.
+    
+    Args:
+        config: Configuration dictionary to save
+        config_path: Path to the configuration YAML file
+    """
+    config_file = Path(config_path)
+    with open(config_file, 'w') as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+
 def _override_from_env(config: Dict[str, Any]) -> None:
     """Override config values with environment variables."""
     env_mappings = {

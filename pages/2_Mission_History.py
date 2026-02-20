@@ -62,8 +62,15 @@ def render_history_page():
         # Handle Selection
         selection = st.session_state.history_selection
         selected_run_id = None
-        if selection and len(selection['rows']) > 0:
-            idx = selection['rows'][0]
+        try:
+            # Streamlit 1.41+ returns DataframeSelectionState with .selection.rows
+            selected_rows = selection.selection.rows
+        except AttributeError:
+            # Fallback for dict-style access
+            selected_rows = selection.get('rows', []) if isinstance(selection, dict) else []
+        
+        if selected_rows and len(selected_rows) > 0:
+            idx = selected_rows[0]
             selected_run_id = df.iloc[idx]['Run ID']
 
         if selected_run_id:
@@ -89,8 +96,11 @@ def render_history_page():
             
             with col_act2:
                 if st.button("🗑️ Delete Record", type="secondary", use_container_width=True):
-                    # db.delete_run(selected_run_id) # Need to implement delete in backend first
-                    st.toast("Delete feature coming soon.", icon="🔒")
+                    if db.delete_run(selected_run_id):
+                        st.toast(f"Deleted mission {selected_run_id}", icon="🗑️")
+                        st.rerun()
+                    else:
+                        st.error("Failed to delete record")
 
     with col2:
         st.subheader("Quick Stats")
@@ -98,10 +108,29 @@ def render_history_page():
         
         st.divider()
         st.caption("Storage Management")
-        if st.button("Clear All History", type="secondary"):
-             # Confirmation?
-             st.warning("This will wipe the database. Are you sure?")
-             # This is just a placeholder for now
+        
+        if 'confirm_clear' not in st.session_state:
+            st.session_state.confirm_clear = False
+            
+        if not st.session_state.confirm_clear:
+            if st.button("Clear All History", type="secondary"):
+                 st.session_state.confirm_clear = True
+                 st.rerun()
+        else:
+            st.warning("⚠️ Using this will permanently wipe the entire database. Are you sure?")
+            col_confirm, col_cancel = st.columns(2)
+            with col_confirm:
+                if st.button("Yes, Clear All", type="primary", use_container_width=True):
+                    if db.clear_all_runs():
+                        st.success("Database wiped successfully!")
+                        st.session_state.confirm_clear = False
+                        st.rerun()
+                    else:
+                        st.error("Failed to clear database")
+            with col_cancel:
+                if st.button("Cancel", use_container_width=True):
+                    st.session_state.confirm_clear = False
+                    st.rerun()
 
 if __name__ == "__main__":
     init_history_page()

@@ -9,7 +9,7 @@ from src.utils.logger import get_logger
 logger = get_logger()
 
 
-def render_3d_structure(pdb_file: Path, width: int = 800, height: int = 600, style: str = 'cartoon', unique_id: str = '1', highlight_residues: list = []) -> Optional[str]:
+def render_3d_structure(pdb_file: Path, width: int = 800, height: int = 600, style: str = 'cartoon', unique_id: str = '1', highlight_residues = None) -> Optional[str]:
     """
     Render 3D structure using py3Dmol in Streamlit.
     
@@ -19,28 +19,33 @@ def render_3d_structure(pdb_file: Path, width: int = 800, height: int = 600, sty
         height: Viewer height in pixels
         style: Visualization style ('cartoon', 'sphere', 'stick', 'line')
         unique_id: Unique identifier for the viewer div
+        highlight_residues: Dict of {chain: [residue_nums]} for per-chain highlights,
+                           or list of residue nums for global highlights (backward compat),
+                           or None/empty for no highlights
         
     Returns:
         HTML string for embedding or None if failed
     """
+    if highlight_residues is None:
+        highlight_residues = {}
+    
+    # Backward compat: convert flat list to global dict
+    if isinstance(highlight_residues, list):
+        if highlight_residues:
+            highlight_residues = {"__all__": highlight_residues}
+        else:
+            highlight_residues = {}
+    
     try:
         # Read PDB file
         with open(pdb_file, 'r') as f:
             pdb_content = f.read()
         
-        # Define style configuration
-        style_spec = ""
-        if style == 'cartoon':
-            style_spec = "{cartoon: {colorscheme: 'chain'}}"
-        elif style == 'sphere':
-            style_spec = "{sphere: {scale: 0.3, colorscheme: 'chain'}}"
-        elif style == 'stick':
-            style_spec = "{stick: {radius: 0.15, colorscheme: 'chain'}}"
-        elif style == 'line':
-            style_spec = "{line: {linewidth: 2, colorscheme: 'chain'}}"
+        import json
+        highlights_json = json.dumps(highlight_residues)
+        has_highlights = len(highlight_residues) > 0
         
         # Create py3Dmol HTML viewer
-        # Use transparent background to blend with the Cyber-Bio theme
         html = f"""
         <!DOCTYPE html>
         <html>
@@ -50,55 +55,37 @@ def render_3d_structure(pdb_file: Path, width: int = 800, height: int = 600, sty
         <body style="margin:0; padding:0; overflow:hidden;">
             <div id="container_{unique_id}" style="width: {width}px; height: {height}px; position: relative;"></div>
             <script>
-                // Create viewer with transparent background
                 let viewer = $3Dmol.createViewer("container_{unique_id}", {{
                     backgroundColor: 'white' 
                 }});
-                
-                // Set background to dark/transparent to match theme
                 viewer.setBackgroundColor(0x000000, 0); 
                 
                 let pdbData = `{pdb_content}`;
-                
                 viewer.addModel(pdbData, "pdb");
                 
-                // HIGH IMPACT NEON PALETTE EXPANDED (12 unique colors)
                 const neonColors = [
-                    '#FF00FF', // Neon Magenta
-                    '#00FFFF', // Neon Cyan
-                    '#00FF00', // Neon Lime
-                    '#FFFF00', // Neon Yellow
-                    '#FF7E42', // Sunset Orange
-                    '#4272FF', // Royal Blue
-                    '#FF0055', // Neon Red
-                    '#8A2BE2', // Blue Violet
-                    '#00FA9A', // Spring Green
-                    '#FFD700', // Gold
-                    '#FF1493', // Deep Pink
-                    '#1E90FF'  // Dodger Blue
+                    '#FF00FF', '#00FFFF', '#00FF00', '#FFFF00', '#FF7E42',
+                    '#4272FF', '#FF0055', '#8A2BE2', '#00FA9A', '#FFD700',
+                    '#FF1493', '#1E90FF'
                 ];
                 
-                // Get all atoms to identify unique chains
                 let m = viewer.getModel(0);
                 let atoms = m.selectedAtoms({{}});
                 
-                // HIGHLIGHTS INJECTION
-                // Highlights are passed as a JSON list of residue numbers
-                let highlightedResidues = {highlight_residues};
-                console.log("DEBUG: Highlights received:", highlightedResidues);
+                // Per-chain highlight dict: {{"A": [1,2,3], "C": [5,6]}} or {{"__all__": [1,2,3]}}
+                let highlightDict = {highlights_json};
+                let hasHighlights = {'true' if has_highlights else 'false'};
+                
                 let chains = [];
                 for(let i=0; i<atoms.length; i++) {{
                     if(!chains.includes(atoms[i].chain)) chains.push(atoms[i].chain);
                 }}
                 
-                // Apply color per chain
+                // Apply base color per chain
                 for(let i=0; i<chains.length; i++) {{
                     let color = neonColors[i % neonColors.length];
                     let sel = {{chain: chains[i]}};
-                    
-                    // Dim background if highlights are active
-                    // User feedback: Increased brightness to 0.8 (was 0.35/0.65).
-                    let opacity = (highlightedResidues.length > 0) ? 0.8 : 1.0;
+                    let opacity = hasHighlights ? 0.8 : 1.0;
                     
                     if ("{style}" === "cartoon") {{
                         viewer.setStyle(sel, {{cartoon: {{color: color, opacity: opacity}}}});
@@ -111,23 +98,34 @@ def render_3d_structure(pdb_file: Path, width: int = 800, height: int = 600, sty
                     }}
                 }}
                 
-                // HIGHLIGHTS INJECTION
-                if (highlightedResidues.length > 0) {{
-                    let sel = {{resi: highlightedResidues}};
+                // Apply per-chain highlights
+                if (hasHighlights) {{
+                    const hlColors = ['#FF0055', '#FFFF00', '#00FF99', '#FF8800', '#AA00FF', '#00CCFF'];
+                    let hlIdx = 0;
                     
-                    // Use setStyle to OVERWRITE the base style for these residues
-                    // This prevents "double sphere" rendering issues in Sphere mode
-                    viewer.setStyle(sel, {{
-                        sphere: {{color: '#FF0055', scale: 1.0, opacity: 1.0}}, // Make highlighted spheres larger
-                        stick: {{color: '#FFFF00', radius: 0.3, opacity: 1.0}}
-                    }});
+                    for (let chainKey in highlightDict) {{
+                        let residues = highlightDict[chainKey];
+                        if (residues.length === 0) continue;
+                        
+                        let sel;
+                        if (chainKey === "__all__") {{
+                            sel = {{resi: residues}};
+                        }} else {{
+                            sel = {{chain: chainKey, resi: residues}};
+                        }}
+                        
+                        let hlColor = hlColors[hlIdx % hlColors.length];
+                        viewer.setStyle(sel, {{
+                            sphere: {{color: hlColor, scale: 1.0, opacity: 1.0}},
+                            stick: {{color: hlColor, radius: 0.3, opacity: 1.0}}
+                        }});
+                        hlIdx++;
+                    }}
                 }}
 
                 viewer.zoomTo();
                 viewer.render();
                 viewer.zoom(0.8, 1000);
-                
-                // Enable Auto-Rotation (Slow spin)
                 viewer.spin('y', 0.5);
             </script>
         </body>
@@ -220,7 +218,7 @@ def render_ligand_view(pdb_file: Path, ligand_data: dict, width: int = 800, heig
         logger.error(f"Failed to render ligand view: {e}")
         return None
 
-def show_structure_in_streamlit(pdb_file: Path, width: int = 400, height: int = 300, style: str = 'cartoon', key: str = '1', highlight_residues: list = []):
+def show_structure_in_streamlit(pdb_file: Path, width: int = 400, height: int = 300, style: str = 'cartoon', key: str = '1', highlight_residues=None):
     """
     Display 3D structure in Streamlit app.
     
@@ -230,6 +228,7 @@ def show_structure_in_streamlit(pdb_file: Path, width: int = 400, height: int = 
         height: Viewer height
         style: Visualization style
         key: Unique key for component
+        highlight_residues: Dict of {chain: [residues]} or list or None
     """
     html = render_3d_structure(pdb_file, width, height, style, key, highlight_residues)
     if html:

@@ -191,3 +191,24 @@ code {
   background-color: #0c0e11 !important;
   border-right: 1px solid rgba(255, 255, 255, 0.05);
 }
+
+/* Command Console - Compact Terminal */
+.console-container {
+  max-height: 180px;
+  overflow-y: auto;
+  background: #0a0c0f;
+  border: 1px solid rgba(66, 234, 255, 0.2);
+  border-radius: 8px;
+  padding: 12px 16px;
+  box-shadow: 0 0 8px rgba(66, 234, 255, 0.1);
+}
+
+.console-text {
+  font-family: "Roboto Mono", "Courier New", monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: #42eaff;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

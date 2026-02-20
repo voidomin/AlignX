@@ -150,3 +150,29 @@ class SequenceViewer:
         </div>
         """
         return html
+
+    def calculate_identity(self, sequences: Dict[str, str]) -> float:
+        """
+        Calculate average pairwise sequence identity (0-100%).
+        Ignores gap-gap matches.
+        """
+        if not sequences:
+            return 0.0
+            
+        seqs = list(sequences.values())
+        n = len(seqs)
+        if n < 2:
+            return 100.0 if n == 1 else 0.0
+            
+        import itertools
+        identities = []
+        for s1, s2 in itertools.combinations(seqs, 2):
+            matches = sum(1 for a, b in zip(s1, s2) if a == b and a != '-')
+            length = len(s1)
+            # Avoid division by zero
+            if length == 0:
+                continue
+            # Identity = Matches / Total Alignment Length * 100
+            identities.append((matches / length) * 100)
+            
+        return sum(identities) / len(identities) if identities else 0.0

@@ -11,8 +11,12 @@ def render_sidebar(load_run_callback):
     with st.sidebar:
         st.header("⚙️ Setup")
         
-        # Check Mustang installation
-        mustang_ok, mustang_msg = st.session_state.mustang_runner.check_installation()
+        # Check Mustang installation (cached in session state to avoid re-checking every rerun)
+        if 'mustang_install_status' not in st.session_state:
+            mustang_ok, mustang_msg = st.session_state.mustang_runner.check_installation()
+            st.session_state.mustang_install_status = (mustang_ok, mustang_msg)
+        
+        mustang_ok, mustang_msg = st.session_state.mustang_install_status
         if mustang_ok:
             st.success(f"✓ {mustang_msg}")
         else:

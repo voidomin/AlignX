@@ -4,13 +4,16 @@ An automated bioinformatics pipeline for multiple structural alignment of **any 
 
 ## 🎯 Features ("Cyber-Bio" Edition)
 
-- 🎨 **High-Impact UI**: "Cyber-Bio" aesthetic with dark gradients, glowing borders, and Montserrat typography.
-- 🧬 **Interactive 3D**: Viewer with **Neon Chain Coloring**, auto-spin, and transparent backgrounds.
-- 📊 **Plotly Visualizations**: Fully interactive RMSD Heatmaps (with value hover) and Phylogenetic Trees.
+- 🎨 **High-Impact UI**: "Cyber-Bio" aesthetic with glassmorphism, neon borders, and "Mission Control" dashboard.
+- 🎓 **Guided Mode**: Interactive learning cards explain analysis steps for beginners.
+- 🧬 **Interactive 3D**: Embedded 3D viewer (3Dmol.js) in both App and Exported Notebooks.
+- 💊 **Ligand Hunter**: Auto-detect binding pockets, calculate interaction similarities, and compare pockets side-by-side.
+- 🧠 **Smart Insights**: Automated captions describing RMSD outliers, ligand stats, and structural clusters.
+- 📊 **Plotly Visualizations**: Fully interactive RMSD Heatmaps, RMSF plots, and Phylogenetic Trees.
+- 📒 **Exportable Notebook**: Generate a standalone HTML lab notebook with embedded 3D structures and results.
 - ✅ **Universal**: Works with any protein family from PDB
 - ✅ **Automated**: One-click analysis from PDB IDs to results
 - ✅ **Smart Filtering**: Handles large PDB files efficiently
-- ✅ **Rich Reporting**: PDF reports, CSV data, and high-res images
 - ✅ **Complete Pipeline**: Download → Clean → Align → Analyze → Visualize
 
 ## 🚀 Quick Start
@@ -126,6 +129,18 @@ Included examples:
 - **Lysozymes** (3 proteins)
 - **Kinases** (3 proteins)
 
+### 🚀 Getting Started
+
+### Prerequisites
+
+- **Python 3.8+**
+- **R Programming Language (v4.0+)** for Bio3D alignment.
+  - Make sure `R` is reachable in your system PATH.
+- **Mustang Executable (v3.2.3)**
+  - Bio3D requires the external `mustang` program to perform alignments.
+  - Download the Mustang binary for Windows and add it to your system PATH, or place `mustang.exe` in `C:\Windows\System32`.
+  - Alternatively, you can compile from source if you have Rtools installed.
+
 ## 🐛 Troubleshooting
 
 ### "Mustang not found"
@@ -179,7 +194,7 @@ MIT License - see LICENSE file
 Created as part of a bioinformatics project to automate structural alignment workflows.
 
 **Author**: Akash  
-**Version**: 1.0.0  
+**Version**: 2.0.0
 **Last Updated**: February 2026
 
 ---

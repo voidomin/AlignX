@@ -1,3 +1,4 @@
+
 # Python
 __pycache__/
 *.py[cod]
@@ -35,6 +36,9 @@ mustang_build/
 *.db
 *.tgz
 !mustang.tgz
+lab_notebook.html
+notebook_debug.txt
+status.txt
 
 # OS
 .DS_Store
@@ -47,6 +51,7 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+reproduce_notebook.py
 
 # Documentation builds
 docs/_build/

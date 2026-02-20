@@ -1,68 +1,46 @@
-# Mustang Pipeline Configuration
-
-# Application Settings
 app:
-  name: "Mustang Structural Alignment Pipeline"
-  version: "1.0.0"
-  max_proteins: 20 # Maximum proteins per analysis
-
-# PDB Download Settings
+  name: Mustang Structural Alignment Pipeline
+  version: 1.0.0
+  max_proteins: 20
 pdb:
-  source_url: "https://files.rcsb.org/download/"
+  source_url: https://files.rcsb.org/download/
   timeout: 60
-  max_file_size_mb: 500 # Warn if PDB exceeds this size
+  max_file_size_mb: 500
   retry_attempts: 3
-
-# File Filtering (for large PDB files)
 filtering:
   auto_filter_large_files: true
-  size_threshold_mb: 50 # Auto-suggest filtering above this size
-  default_chain: null # null = keep all chains, or specify like "A"
+  size_threshold_mb: 50
+  default_chain: null
   remove_heteroatoms: true
   remove_water: true
   remove_ligands: false
-
-# Mustang Settings
 mustang:
-  backend: "auto" # Options: "native", "bio3d", "auto" (tries native first)
-  executable_path: "mustang" # Path to mustang binary (or "wsl mustang" for WSL)
-  timeout: 600 # seconds (10 minutes)
-
-# Phylip Settings
+  backend: auto
+  executable_path: mustang
+  timeout: 600
 phylip:
-  executable: "neighbor" # Phylip neighbor-joining program
-  method: "neighbor_joining"
+  executable: neighbor
+  method: neighbor_joining
   bootstrap: 100
-
-# PyMOL Settings
 pymol:
   enabled: true
-  executable: "pymol"
-  headless: true # Run without GUI
-  ray_trace: false # High-quality rendering (slower)
+  executable: pymol
+  headless: true
+  ray_trace: false
   image_width: 1920
   image_height: 1080
-
-# Output Settings
 output:
-  base_dir: "results"
+  base_dir: results
   keep_intermediates: true
   formats:
-    - "html" # Always generate HTML report
-    # - "pdf"  # Optional PDF export
-
-# Visualization Settings
+  - html
 visualization:
-  heatmap_colormap: "RdYlBu_r"
-  tree_format: "rectangular" # or "circular", "radial"
+  heatmap_colormap: RdYlBu_r
+  tree_format: rectangular
   dpi: 300
-
-# Performance Settings
 performance:
-  max_workers: 4 # Parallel downloads
-  chunk_size: 8192 # File download chunk size
-
-# Development/Debug Settings
+  max_workers: 4
+  chunk_size: 8192
 debug:
   verbose_logging: false
   save_raw_outputs: false
