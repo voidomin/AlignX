@@ -258,25 +258,18 @@ def render_progress_stepper(current_step: int) -> None:
         </style>
     """, unsafe_allow_html=True)
     
-    stepper_html = '<div class="stepper-container fade-in">'
+    stepper_html = '<div class="stepper-container fade-in">\n'
     for i, label in enumerate(steps):
         idx = i + 1
-        status_class = ""
-        bubble_content = str(idx)
+        status_class = "complete" if idx < current_step else "active" if idx == current_step else ""
+        bubble_content = "✓" if idx < current_step else str(idx)
         
-        if idx < current_step:
-            status_class = "complete"
-            bubble_content = "✓"
-        elif idx == current_step:
-            status_class = "active"
+        stepper_html += f'<div class="step-item {status_class}">\n'
+        stepper_html += f'<div class="step-bubble">{bubble_content}</div>\n'
+        stepper_html += f'<div class="step-label">{label}</div>\n'
+        stepper_html += '<div class="step-line"></div>\n'
+        stepper_html += '</div>\n'
         
-        stepper_html += f"""
-            <div class="step-item {status_class}">
-                <div class="step-bubble">{bubble_content}</div>
-                <div class="step-label">{label}</div>
-                <div class="step-line"></div>
-            </div>
-        """
     stepper_html += '</div>'
     
     st.markdown(stepper_html, unsafe_allow_html=True)
