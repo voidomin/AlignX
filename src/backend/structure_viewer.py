@@ -9,7 +9,7 @@ from src.utils.logger import get_logger
 logger = get_logger()
 
 
-def render_3d_structure(pdb_file: Path, width: int = 800, height: int = 600, style: str = 'cartoon', unique_id: str = '1', highlight_residues = None) -> Optional[str]:
+def render_3d_structure(pdb_file: Path, width: int = 800, height: int = 600, style: str = 'cartoon', unique_id: str = '1', highlight_residues = None, visible_chains = None) -> Optional[str]:
     """
     Render 3D structure using py3Dmol in Streamlit.
     
@@ -22,6 +22,7 @@ def render_3d_structure(pdb_file: Path, width: int = 800, height: int = 600, sty
         highlight_residues: Dict of {chain: [residue_nums]} for per-chain highlights,
                            or list of residue nums for global highlights (backward compat),
                            or None/empty for no highlights
+        visible_chains: List of chain IDs to show. If None, show all.
         
     Returns:
         HTML string for embedding or None if failed
@@ -98,28 +99,36 @@ def render_3d_structure(pdb_file: Path, width: int = 800, height: int = 600, sty
                     }}
                 }}
                 
-                // Apply per-chain highlights
-                if (hasHighlights) {{
+                // Mapping of chain IDs to user-provided visibility
+                let visibleChains = {json.dumps(visible_chains) if visible_chains else 'null'};
+                
+                // Apply per-chain highlights and visibility
+                if (hasHighlights || visibleChains) {{
                     const hlColors = ['#FF0055', '#FFFF00', '#00FF99', '#FF8800', '#AA00FF', '#00CCFF'];
                     let hlIdx = 0;
                     
-                    for (let chainKey in highlightDict) {{
-                        let residues = highlightDict[chainKey];
-                        if (residues.length === 0) continue;
+                    for (let i=0; i<chains.length; i++) {{
+                        let chainID = chains[i];
+                        let sel = {{chain: chainID}};
                         
-                        let sel;
-                        if (chainKey === "__all__") {{
-                            sel = {{resi: residues}};
-                        }} else {{
-                            sel = {{chain: chainKey, resi: residues}};
+                        // Handle Visibility (Filter)
+                        if (visibleChains && !visibleChains.includes(chainID)) {{
+                            viewer.setStyle(sel, {{}}); // Hide if not in list
+                            continue;
                         }}
                         
-                        let hlColor = hlColors[hlIdx % hlColors.length];
-                        viewer.setStyle(sel, {{
-                            sphere: {{color: hlColor, scale: 1.0, opacity: 1.0}},
-                            stick: {{color: hlColor, radius: 0.3, opacity: 1.0}}
-                        }});
-                        hlIdx++;
+                        // Handle Highlights
+                        if (hasHighlights) {{
+                            let residues = highlightDict[chainID] || highlightDict["__all__"] || [];
+                            if (residues.length > 0) {{
+                                let hlColor = hlColors[hlIdx % hlColors.length];
+                                viewer.setStyle({{chain: chainID, resi: residues}}, {{
+                                    sphere: {{color: hlColor, scale: 1.0, opacity: 1.0}},
+                                    stick: {{color: hlColor, radius: 0.3, opacity: 1.0}}
+                                }});
+                                hlIdx++;
+                            }}
+                        }}
                     }}
                 }}
 
@@ -218,7 +227,7 @@ def render_ligand_view(pdb_file: Path, ligand_data: dict, width: int = 800, heig
         logger.error(f"Failed to render ligand view: {e}")
         return None
 
-def show_structure_in_streamlit(pdb_file: Path, width: int = 400, height: int = 300, style: str = 'cartoon', key: str = '1', highlight_residues=None):
+def show_structure_in_streamlit(pdb_file: Path, width: int = 400, height: int = 300, style: str = 'cartoon', key: str = '1', highlight_residues=None, visible_chains=None):
     """
     Display 3D structure in Streamlit app.
     
@@ -229,8 +238,9 @@ def show_structure_in_streamlit(pdb_file: Path, width: int = 400, height: int = 
         style: Visualization style
         key: Unique key for component
         highlight_residues: Dict of {chain: [residues]} or list or None
+        visible_chains: List of chain IDs to show or None
     """
-    html = render_3d_structure(pdb_file, width, height, style, key, highlight_residues)
+    html = render_3d_structure(pdb_file, width, height, style, key, highlight_residues, visible_chains)
     if html:
         components.html(html, width=width, height=height, scrolling=False)
     else:

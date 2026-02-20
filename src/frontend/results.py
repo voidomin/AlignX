@@ -250,26 +250,44 @@ def render_3d_viewer_tab(results):
         else:
             if st.button("❌ Close Viewers"):
                 st.session_state.show_3d_viewer = False
+                # Also clear cluster selection when closing
+                if 'selected_cluster_members' in st.session_state:
+                    del st.session_state.selected_cluster_members
                 st.rerun()
                 
             try:
                 pdb_path = results['alignment_pdb']
+                
+                # Handle Cluster Filtering
+                visible_chains = None
+                members = st.session_state.get('selected_cluster_members')
+                if members:
+                    # Map protein names/IDs to chain IDs (A, B, C...)
+                    # The order in results['rmsd_df'] index is the chain order
+                    all_members = list(results['rmsd_df'].index)
+                    visible_chains = [chr(ord('A') + all_members.index(m)) for m in members if m in all_members]
+                    
+                    st.warning(f"🎯 Currently viewing Cluster Family ({len(members)} proteins)")
+                    if st.button("🔓 Clear Cluster Filter", use_container_width=True):
+                        del st.session_state.selected_cluster_members
+                        st.rerun()
+                
                 col1, col2 = st.columns(2)
                 hl_chains = st.session_state.get('highlight_chains', {})
                 with col1:
                     st.markdown("**Cartoon (Secondary Structure)**")
-                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='cartoon', key='view_cartoon', highlight_residues=hl_chains)
+                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='cartoon', key='view_cartoon', highlight_residues=hl_chains, visible_chains=visible_chains)
                 with col2:
                     st.markdown("**Sphere (Spacefill)**")
-                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='sphere', key='view_sphere', highlight_residues=hl_chains)
+                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='sphere', key='view_sphere', highlight_residues=hl_chains, visible_chains=visible_chains)
                     
                 col3, col4 = st.columns(2)
                 with col3:
                     st.markdown("**Stick (Bonds & Atoms)**")
-                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='stick', key='view_stick', highlight_residues=hl_chains)
+                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='stick', key='view_stick', highlight_residues=hl_chains, visible_chains=visible_chains)
                 with col4:
                     st.markdown("**Line/Trace (Backbone)**")
-                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='line', key='view_line', highlight_residues=hl_chains)
+                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='line', key='view_line', highlight_residues=hl_chains, visible_chains=visible_chains)
                 
                 st.caption("""
                 **Controls:**
@@ -755,6 +773,13 @@ def render_clusters_tab(results):
                     member_data.append({"PDB ID": m, "Description": title})
                 
                 st.table(pd.DataFrame(member_data))
+                
+                # View in 3D Button
+                if st.button(f"🎯 View Cluster {cid} in 3D", key=f"btn_view_cluster_{cid}", use_container_width=True):
+                    st.session_state.selected_cluster_members = members
+                    st.session_state.show_3d_viewer = True # Auto-open viewer
+                    st.success(f"Filter applied for Cluster {cid}. Switch to '3D Visualization' tab to view.")
+                    # Optional: st.rerun() if we want to force tab switch (not easy in Streamlit without hack)
     else:
         st.info("No clusters identified with current settings.")
 

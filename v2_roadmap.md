@@ -29,7 +29,7 @@ Polishing and upgrading what we already have.
 
 ### Download Manager
 
-- [ ] Add a "Cancel" button for long download batches.
+- [x] Add a "Cancel" button for long download batches.
 - [x] Show individual progress bars for each file.
 
 ### Contextual Education (For Non-Experts)
@@ -43,13 +43,13 @@ Brand new functionality to expand scientific scope.
 
 ### Custom Report Builder
 
-- [ ] Selectable modules: Users choose which results (RMSD, Sequence, clusters) to include.
+- [x] Selectable modules: Users choose which results (RMSD, Sequence, clusters) to include.
 - [x] Comprehensive Output: Support for full-resolution plots and data tables in the PDF/HTML report.
 
 ### Bidirectional Sync (The "Killer Feature")
 
 - [x] Clicking a residue in Sequence View highlights it in Structure View.
-- [ ] Selecting a cluster in the Tree View filters the Structure View.
+- [x] Selecting a cluster in the Tree View filters the Structure View.
 
 ### Ligand Hunter (Active)
 

@@ -189,9 +189,28 @@ def run_analysis():
     """Run the complete analysis pipeline."""
     progress_bar = st.progress(0)
     status_text = st.empty()
+    cancel_container = st.empty()
+    
+    # Initialize cancellation state
+    if 'cancel_analysis' not in st.session_state:
+        st.session_state.cancel_analysis = False
+    
+    def check_cancel(step_id):
+        if cancel_container.button("🛑 Cancel Analysis", key=f"btn_cancel_{step_id}", use_container_width=True):
+            st.session_state.cancel_analysis = True
+            st.warning("Cancellation requested...")
+        
+        if st.session_state.cancel_analysis:
+            st.session_state.cancel_analysis = False # Reset for next run
+            st.error("Analysis cancelled by user.")
+            progress_bar.empty()
+            status_text.empty()
+            cancel_container.empty()
+            st.stop()
     
     try:
         # Step 1: Download PDB files
+        check_cancel("download")
         status_text.text("📥 Step 1/4: Downloading PDB files...")
         progress_bar.progress(0.1)
         
@@ -210,6 +229,7 @@ def run_analysis():
         pdb_files = [path for success, msg, path in download_results.values() if path]
         progress_bar.progress(0.3)
         
+        check_cancel("clean")
         # Step 2: Clean PDB files
         status_text.text("🧹 Step 2/4: Cleaning PDB files...")
         
@@ -248,6 +268,7 @@ def run_analysis():
         
         progress_bar.progress(0.5)
         
+        check_cancel("align")
         # Step 3: Run Mustang alignment
         status_text.text("⚙️ Step 3/4: Running Mustang alignment...")
         
@@ -293,6 +314,7 @@ def run_analysis():
         
         progress_bar.progress(0.75)
         
+        check_cancel("viz")
         # Step 4: Analyze results
         status_text.text("📊 Step 4/4: Generating visualizations...")
         
@@ -307,6 +329,7 @@ def run_analysis():
             
         progress_bar.progress(1.0)
         status_text.text("✅ Analysis complete!")
+        cancel_container.empty()
         st.success("Analysis completed successfully!")
         
         # AUTO-SAVE to history
