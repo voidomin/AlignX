@@ -42,7 +42,7 @@ def cached_fetch_metadata(_pdb_manager, pdb_ids):
 # Analysis Logic
 # -----------------------------------------------------------------------------
 
-def process_result_directory(result_dir: Path, pdb_ids: list):
+def process_result_directory(result_dir: Path, pdb_ids: list, run_id: str = "latest", timestamp: str = None, name: str = "Latest Run"):
     """
     Process a Mustang result directory and generate all analysis artifacts.
     Re-uses existing logic to populate st.session_state.results.
@@ -113,9 +113,16 @@ def process_result_directory(result_dir: Path, pdb_ids: list):
             logger.warning(f"RMSF calculation failed (continuing without it): {e}")
             rmsf_values = []
         
+        if timestamp is None:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
         # Store results
         logger.info("Storing results in session state...")
         st.session_state.results = {
+            'id': run_id,
+            'timestamp': timestamp,
+            'name': name,
+            'pdb_ids': pdb_ids,
             'rmsd_df': rmsd_df,
             'heatmap_path': heatmap_path,
             'stats': stats,
@@ -126,7 +133,6 @@ def process_result_directory(result_dir: Path, pdb_ids: list):
             'heatmap_fig': heatmap_fig,
             'tree_fig': tree_fig,
             'alignment_pdb': alignment_pdb,
-            'alignment_afasta': alignment_afasta,
             'alignment_afasta': alignment_afasta,
             'rmsf_values': rmsf_values
         }
@@ -174,7 +180,7 @@ def load_run_from_history(run_id: str, is_auto: bool = False):
     # Load results
     if is_auto:
         # Don't show spinner/success during auto-load to avoid UI jitter
-        process_result_directory(result_path, run['pdb_ids'])
+        process_result_directory(result_path, run['pdb_ids'], run_id=run['id'], timestamp=run['timestamp'], name=run['name'])
     else:
         with st.spinner("Restoring analysis results..."):
             success, msg = process_result_directory(result_path, run['pdb_ids'])
@@ -318,7 +324,11 @@ def run_analysis():
         # Step 4: Analyze results
         status_text.text("📊 Step 4/4: Generating visualizations...")
         
-        success, msg = process_result_directory(result_dir, st.session_state.pdb_ids)
+        run_id = f"run_{int(datetime.now().timestamp())}"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        name = f"Analysis of {len(st.session_state.pdb_ids)} structures ({datetime.now().strftime('%H:%M')})"
+        
+        success, msg = process_result_directory(result_dir, st.session_state.pdb_ids, run_id=run_id, timestamp=timestamp, name=name)
         
         if not success:
             st.error(f"Analysis failed: {msg}")
@@ -331,11 +341,6 @@ def run_analysis():
         status_text.text("✅ Analysis complete!")
         cancel_container.empty()
         st.success("Analysis completed successfully!")
-        
-        # AUTO-SAVE to history
-        run_id = f"run_{int(datetime.now().timestamp())}"
-        # Name with protein count and timestamp
-        name = f"Analysis of {len(st.session_state.pdb_ids)} structures ({datetime.now().strftime('%H:%M')})"
         
         # Meta info for auto-recovery sync
         meta = st.session_state.get('metadata', {})

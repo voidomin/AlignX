@@ -1,0 +1,55 @@
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+from src.frontend.tabs.common import render_learning_card, render_help_expander
+
+def render_rmsd_tab(results):
+    """Render the RMSD Analysis tab."""
+    st.subheader("📊 RMSD & Alignment Quality")
+    render_learning_card("Summary")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.subheader("RMSD Heatmap")
+        render_help_expander("rmsd")
+        
+        if results.get('heatmap_fig'):
+             st.plotly_chart(results['heatmap_fig'], use_container_width=True)
+        elif results['heatmap_path'].exists():
+            st.image(str(results['heatmap_path']), use_container_width=True)
+    
+    with col2:
+        st.subheader("Statistics")
+        stats = results['stats']
+        st.metric("Mean RMSD", f"{stats['mean_rmsd']:.2f} Å")
+        st.metric("Median RMSD", f"{stats['median_rmsd']:.2f} Å")
+        st.metric("Min RMSD", f"{stats['min_rmsd']:.2f} Å")
+        st.metric("Max RMSD", f"{stats['max_rmsd']:.2f} Å")
+        st.metric("Std Dev", f"{stats['std_rmsd']:.2f} Å")
+    
+    st.subheader("RMSD Matrix")
+    st.dataframe(results['rmsd_df'].style.background_gradient(cmap='RdYlBu_r'))
+    
+    st.divider()
+    st.subheader("Residue-Level Flexibility (RMSF)")
+    render_help_expander("rmsf")
+    
+    if results.get('rmsf_values'):
+        rmsf_data = pd.DataFrame({
+            'Residue Position': range(1, len(results['rmsf_values']) + 1),
+            'RMSF (Å)': results['rmsf_values']
+        })
+        
+        fig = px.line(
+            rmsf_data,
+            x='Residue Position',
+            y='RMSF (Å)',
+            title='Structural Fluctuation per Position',
+            template='plotly_white'
+        )
+        fig.update_traces(line_color='#2196F3', line_width=2)
+        fig.update_layout(height=400)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("Residue RMSF data not available")
