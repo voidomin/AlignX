@@ -18,7 +18,7 @@ class RMSDAnalyzer:
     def __init__(self, config: Dict[str, Any]):
         """Initialize RMSD Analyzer."""
         self.config = config
-        self.colormap = config.get('visualization', {}).get('heatmap_colormap', 'RdYlBu_r')
+        self.colormap = config.get('rmsd', {}).get('heatmap_colormap', 'RdYlBu_r')
         self.dpi = config.get('visualization', {}).get('dpi', 300)
     
     def generate_heatmap(self, rmsd_df: pd.DataFrame, output_path: Path) -> bool:

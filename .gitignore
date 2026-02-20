@@ -26,6 +26,7 @@ dist/
 # Pipeline outputs
 results/
 temp/
+crashes/
 data/raw/
 data/cleaned/
 logs/

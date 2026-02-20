@@ -16,15 +16,15 @@ RUN apt-get update && apt-get install -y \
     tar \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Mustang
+# Install Mustang from local source
+COPY mustang.tgz /tmp/
 WORKDIR /tmp
-RUN wget http://lcb.infotech.monash.edu.au/mustang/mustang_v3.2.3.tgz \
-    && tar -xzf mustang_v3.2.3.tgz \
+RUN tar -xzf mustang.tgz \
     && cd MUSTANG_v.3.2.3 \
     && make \
     && cp bin/mustang /usr/local/bin/ \
-    && cd /tmp \
-    && rm -rf mustan*
+    && cd /app \
+    && rm -rf /tmp/mustan*
 
 # Return to app directory
 WORKDIR /app

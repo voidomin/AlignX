@@ -1,6 +1,7 @@
 app:
   name: Mustang Structural Alignment Pipeline
   version: 1.0.0
+core:
   max_proteins: 20
 pdb:
   source_url: https://files.rcsb.org/download/
@@ -33,7 +34,7 @@ output:
   base_dir: results
   keep_intermediates: true
   formats:
-  - html
+    - html
 visualization:
   heatmap_colormap: RdYlBu_r
   tree_format: rectangular
