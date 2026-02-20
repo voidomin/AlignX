@@ -26,6 +26,6 @@ def render_console(log_file_path: Optional[Path] = None) -> None:
         # Render inside a height-limited styled div
         escaped = log_content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         st.markdown(
-            f"""<div class="console-container"><pre class="console-text">{escaped}</pre></div>""",
+            f"""<div class="console-container fade-in"><pre class="console-text">{escaped}</pre></div>""",
             unsafe_allow_html=True,
         )

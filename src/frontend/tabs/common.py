@@ -166,3 +166,117 @@ def render_help_expander(topic: str) -> None:
     if topic in helps:
         with st.expander(helps[topic]["title"], expanded=False):
             st.markdown(helps[topic]["content"])
+
+def render_progress_stepper(current_step: int) -> None:
+    """
+    Render a visual progress stepper for the analysis workflow.
+    
+    Args:
+        current_step: Current step index (1-4).
+    """
+    steps = [
+        "🧬 Data Prep",
+        "🚀 Aligning",
+        "📊 Statistics",
+        "📓 Lab Notebook"
+    ]
+    
+    # Custom CSS for the stepper
+    st.markdown("""
+        <style>
+        .stepper-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .step-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+            position: relative;
+        }
+        .step-bubble {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.8rem;
+            margin-bottom: 0.5rem;
+            background: #181b21;
+            border: 2px solid #333;
+            color: #666;
+            z-index: 1;
+        }
+        .step-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #666;
+        }
+        .step-item.active .step-bubble {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+            color: white;
+            box-shadow: 0 0 15px rgba(255, 126, 66, 0.4);
+        }
+        .step-item.active .step-label {
+            color: var(--primary-color);
+            font-weight: bold;
+        }
+        .step-item.complete .step-bubble {
+            background: #4caf50;
+            border-color: #4caf50;
+            color: white;
+        }
+        .step-item.complete .step-label {
+            color: #4caf50;
+        }
+        .step-line {
+            position: absolute;
+            top: 15px;
+            left: 50%;
+            width: 100%;
+            height: 2px;
+            background: #333;
+            z-index: 0;
+        }
+        .step-item:last-child .step-line {
+            display: none;
+        }
+        .step-item.complete .step-line {
+            background: #4caf50;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    stepper_html = '<div class="stepper-container fade-in">'
+    for i, label in enumerate(steps):
+        idx = i + 1
+        status_class = ""
+        bubble_content = str(idx)
+        
+        if idx < current_step:
+            status_class = "complete"
+            bubble_content = "✓"
+        elif idx == current_step:
+            status_class = "active"
+        
+        stepper_html += f"""
+            <div class="step-item {status_class}">
+                <div class="step-bubble">{bubble_content}</div>
+                <div class="step-label">{label}</div>
+                <div class="step-line"></div>
+            </div>
+        """
+    stepper_html += '</div>'
+    
+    st.markdown(stepper_html, unsafe_allow_html=True)

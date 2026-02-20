@@ -18,6 +18,7 @@ from src.backend.database import HistoryDatabase
 from src.backend.phylo_tree import PhyloTreeGenerator
 from src.backend.report_generator import ReportGenerator
 from src.backend.notebook_exporter import NotebookExporter
+from src.frontend.tabs.common import render_progress_stepper
 
 logger = get_logger()
 
@@ -286,6 +287,7 @@ def run_analysis() -> None:
     
     try:
         # Step 1: Download PDB files
+        render_progress_stepper(1)
         check_cancel("download")
         status_text.text("📥 Step 1/4: Downloading PDB files...")
         progress_bar.progress(0.1)
@@ -307,6 +309,7 @@ def run_analysis() -> None:
         
         check_cancel("clean")
         # Step 2: Clean PDB files
+        render_progress_stepper(2)
         status_text.text("🧹 Step 2/4: Cleaning PDB files...")
         
         cleaned_files = []
@@ -346,6 +349,7 @@ def run_analysis() -> None:
         
         check_cancel("align")
         # Step 3: Run Mustang alignment
+        render_progress_stepper(3)
         status_text.text("⚙️ Step 3/4: Running Mustang alignment...")
         
         output_dir = Path('results') / 'latest_run'
@@ -392,6 +396,7 @@ def run_analysis() -> None:
         
         check_cancel("viz")
         # Step 4: Analyze results
+        render_progress_stepper(4)
         status_text.text("📊 Step 4/4: Generating visualizations...")
         
         run_id = f"run_{int(datetime.now().timestamp())}"
