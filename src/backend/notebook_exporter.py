@@ -22,8 +22,16 @@ class NotebookExporter:
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    
+    <!-- 3Dmol JS: Embedded or CDN Fallback -->
+    {% if dmol_js %}
+    <script>
+    {{ dmol_js | safe }}
+    </script>
+    {% else %}
     <script src="https://3dmol.org/build/3Dmol-min.js"></script>
+    {% endif %}
+
     <style>
         :root {
             --primary-color: #7B1FA2; /* Deep Purple */
@@ -173,6 +181,7 @@ class NotebookExporter:
                     let element = $('#container-01');
                     let config = { backgroundColor: 'black' };
                     let viewer = $3Dmol.createViewer( element, config );
+                    // Using template literal for multiline string, escaping backticks is crucial
                     let pdbData = `{{ pdb_content }}`;
                     viewer.addModel( pdbData, "pdb" );                       /* load data */
                     viewer.setStyle({}, {cartoon: {color: 'spectrum'}});  /* style all atoms */
@@ -237,20 +246,57 @@ class NotebookExporter:
             Path: Path to the generated HTML file.
         """
         try:
-            # Prepare Data
-            stats = results.get('stats', {})
-            stats['num_structures'] = len(results.get('rmsd_df', []))
-            stats['identity'] = stats.get('seq_identity', 'N/A')
+            # Prepare Data & Log Debug Info
+            with open("notebook_debug.txt", "w") as f:
+                 f.write(f"DEBUG: Results keys: {list(results.keys())}\n")
+                 f.write(f"DEBUG: Input Stats: {results.get('stats')}\n")
+            
+            # CRITICAL: Create a copy to avoid mutating the global 'results' dict
+            # which would break the dashboard (results.py) that expects floats
+            stats = results.get('stats', {}).copy()
+            # Format Mean RMSD nicely
+            if 'mean_rmsd' in stats and isinstance(stats['mean_rmsd'], (int, float)):
+                stats['mean_rmsd'] = f"{stats['mean_rmsd']:.3f}"
+            else:
+                 # If it's already a string or missing, leave it or set default
+                 if 'mean_rmsd' not in stats:
+                     stats['mean_rmsd'] = "N/A"
+
+            # Populate missing stats
+            if 'num_structures' not in stats:
+                stats['num_structures'] = len(results.get('rmsd_df', []))
+            
+            # Identity might be missing if sequence analysis wasn't run or failed
+            if 'identity' not in stats:
+                stats['identity'] = stats.get('seq_identity', 'N/A')
+            
+            # Chain/Alignment Length
+            if 'chain_length' not in stats:
+                # Try to infer from alignment fasta or sequences if available
+                 stats['chain_length'] = "N/A"
             
             # PDB Content for 3D Viewer
             pdb_content = ""
             if results.get('alignment_pdb') and results['alignment_pdb'].exists():
                 with open(results['alignment_pdb'], 'r') as f:
-                    pdb_content = f.read()
+                    content = f.read()
+                    # Escape backticks to prevent JS template literal errors
+                    pdb_content = content.replace("`", "\\`")
             
+            # Load 3Dmol JS from local resource if available
+            dmol_js = None
+            try:
+                js_path = Path(__file__).parent / "resources" / "3Dmol-min.js"
+                if js_path.exists():
+                    with open(js_path, "r", encoding="utf-8") as f:
+                        dmol_js = f.read()
+            except Exception as e:
+                print(f"Warning: Could not load local 3Dmol.js: {e}")
+
             # 1. Heatmap
             heatmap_fig = results.get('heatmap_fig')
-            heatmap_div = pio.to_html(heatmap_fig, full_html=False, include_plotlyjs=False) if heatmap_fig else "<p>No Heatmap Available</p>"
+            # Embed plotly.js to solve "empty" (CDN) issue by using include_plotlyjs=True
+            heatmap_div = pio.to_html(heatmap_fig, full_html=False, include_plotlyjs=True) if heatmap_fig else "<p>No Heatmap Available</p>"
             
             # 2. RMSF (Create fig if only data is present)
             rmsf_div = ""
@@ -261,7 +307,11 @@ class NotebookExporter:
                     'RMSF (Å)': results['rmsf_values']
                 })
                 fig = px.line(rmsf_data, x='Residue Position', y='RMSF (Å)', title='RMSF per Residue', template='plotly_dark')
-                rmsf_div = pio.to_html(fig, full_html=False, include_plotlyjs=False)
+                # No need to include plotlyjs again if it is included in heatmap, BUT to be safe if heatmap is missing, include it?
+                # If we include it twice, it's heavy but safe. 
+                # Optimization: Only include if heatmap didn't?
+                # For robustness now, let's include it. It just increases file size.
+                rmsf_div = pio.to_html(fig, full_html=False, include_plotlyjs=True)
 
             # 3. Ligand Table (Convert dict to HTML)
             ligand_html = ""
@@ -291,16 +341,23 @@ class NotebookExporter:
                 heatmap_div=heatmap_div,
                 rmsf_div=rmsf_div,
                 ligand_summary=ligand_html,
-                pdb_content=pdb_content
+                pdb_content=pdb_content,
+                dmol_js=dmol_js
             )
             
             # Save File
             output_path = results['result_dir'] / "lab_notebook.html"
             with open(output_path, "w", encoding="utf-8") as f:
                 f.write(html_content)
+            
+            # Log success
+            with open("notebook_debug.txt", "a") as f:
+                 f.write(f"DEBUG: Success! Generated HTML length: {len(html_content)}\n")
                 
             return output_path
 
         except Exception as e:
+            with open("notebook_debug.txt", "a") as f:
+                f.write(f"ERROR: {str(e)}\n")
             print(f"Error generating notebook: {e}")
             return None
