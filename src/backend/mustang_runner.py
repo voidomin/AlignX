@@ -44,8 +44,15 @@ class MustangRunner:
             # Check for bundled tarball
             bundled_tarball = Path("mustang.tgz")
             if not bundled_tarball.exists():
-                logger.error("Bundled mustang.tgz not found!")
-                return False
+                logger.warning("Bundled mustang.tgz not found. Downloading from source...")
+                import urllib.request
+                try:
+                    url = "http://lcb.infotech.monash.edu.au/mustang/mustang_v3.2.3.tgz"
+                    urllib.request.urlretrieve(url, "mustang.tgz")
+                    logger.info("Successfully downloaded mustang.tgz")
+                except Exception as e:
+                    logger.error(f"Failed to download mustang.tgz: {e}")
+                    return False
 
             build_dir = Path("mustang_build")
             if build_dir.exists():
