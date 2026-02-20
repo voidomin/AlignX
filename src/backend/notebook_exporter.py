@@ -20,6 +20,9 @@ class NotebookExporter:
     <title>Mustang Analysis Report - {{ date }}</title>
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- jQuery and Bootstrap JS loaded early to support inline interactive scripts -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     
@@ -79,9 +82,11 @@ class NotebookExporter:
             text-align: center;
         }
         .metric-value {
-            font-size: 1.8rem;
+            font-size: clamp(1.2rem, 5vw, 1.8rem);
             font-weight: bold;
             color: var(--secondary-color);
+            word-break: break-all;
+            line-height: 1.2;
         }
         .metric-label {
             font-size: 0.9rem;
@@ -228,8 +233,7 @@ class NotebookExporter:
 
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- Scripts moved to head for better compatibility with inline initialization -->
 </body>
 </html>
         """
