@@ -1,7 +1,13 @@
 import streamlit as st
+from typing import Dict, Any
 
-def render_downloads_tab(results):
-    """Render the Data Downloads tab."""
+def render_downloads_tab(results: Dict[str, Any]) -> None:
+    """
+    Render the Data Downloads tab.
+    
+    Args:
+        results: The results dictionary containing paths to all exportable artifacts.
+    """
     st.subheader("Data Downloads")
     
     col_d1, col_d2 = st.columns(2)

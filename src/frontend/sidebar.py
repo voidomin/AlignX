@@ -1,12 +1,15 @@
 import streamlit as st
 from examples.protein_sets import EXAMPLES
 
-def render_sidebar(load_run_callback):
+from typing import Callable
+
+def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
     """
     Render the sidebar configuration and history.
     
     Args:
         load_run_callback: Function to call when loading a run from history.
+                           Takes a run_id (str) as argument.
     """
     with st.sidebar:
         st.header("⚙️ Setup")

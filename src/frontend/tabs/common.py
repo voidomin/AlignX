@@ -1,7 +1,12 @@
 import streamlit as st
 
-def render_learning_card(tab_name):
-    """Render a context-aware learning card for Guided Mode."""
+def render_learning_card(tab_name: str) -> None:
+    """
+    Render a context-aware learning card for Guided Mode.
+    
+    Args:
+        tab_name: The name of the current tab (e.g., 'Summary', 'Sequence').
+    """
     if not st.session_state.get('guided_mode', False):
         return
 
@@ -59,8 +64,13 @@ def render_learning_card(tab_name):
             st.info(f"**{card['title']}**\n\n{card['body']}")
             st.divider()
 
-def render_help_expander(topic):
-    """Render educational help expanders."""
+def render_help_expander(topic: str) -> None:
+    """
+    Render educational help expanders.
+    
+    Args:
+        topic: The topic key (e.g., 'rmsd', 'tree', 'ligands').
+    """
     helps = {
         "rmsd": {
             "title": "❓ What is RMSD & How to read this?",

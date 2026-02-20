@@ -3,8 +3,15 @@ import pandas as pd
 import plotly.express as px
 from src.frontend.tabs.common import render_learning_card, render_help_expander
 
-def render_rmsd_tab(results):
-    """Render the RMSD Analysis tab."""
+from typing import Dict, Any
+
+def render_rmsd_tab(results: Dict[str, Any]) -> None:
+    """
+    Render the RMSD Analysis tab.
+    
+    Args:
+        results: The results dictionary containing RMSD data and stats.
+    """
     st.subheader("📊 RMSD & Alignment Quality")
     render_learning_card("Summary")
     

@@ -1,8 +1,14 @@
 import streamlit as st
-from src.frontend.tabs import rmsd, phylo, structure, sequence, clusters, ligand, downloads
+from typing import Optional, Dict, Any
+from src.frontend.tabs import rmsd, sequence, phylo, clusters, structure, ligand, downloads
 
-def display_results(results=None):
-    """Main results display logic with tabs."""
+def display_results(results: Optional[Dict[str, Any]] = None) -> None:
+    """
+    Main results display logic with tabs.
+    
+    Args:
+        results: Results dictionary. If None, retrieves from session state.
+    """
     if results is None:
         results = st.session_state.get('results')
         
@@ -49,8 +55,13 @@ def display_results(results=None):
     with t7:
         downloads.render_downloads_tab(results)
 
-def render_compact_summary(results=None):
-    """Render a high-level summary of results for the dashboard."""
+def render_compact_summary(results: Optional[Dict[str, Any]] = None) -> None:
+    """
+    Render a high-level summary of results for the dashboard.
+    
+    Args:
+        results: Results dictionary. If None, retrieves from session state.
+    """
     if results is None:
         results = st.session_state.get('results')
         

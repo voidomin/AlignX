@@ -3,7 +3,7 @@ import shutil
 import sys
 import os
 from pathlib import Path
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, Any
 import re
 import pandas as pd
 
@@ -15,7 +15,7 @@ logger = get_logger()
 class MustangRunner:
     """Wrapper for running Mustang structural alignment."""
     
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict[str, Any]) -> None:
         """
         Initialize Mustang Runner.
         
@@ -104,10 +104,6 @@ class MustangRunner:
         except Exception as e:
             logger.error(f"Compilation failed: {e}")
             return False
-
-
-
-
 
     def _check_mustang(self) -> Tuple[bool, str]:
         """Check if Mustang binary is available (Native, WSL, or Built)."""
@@ -477,40 +473,6 @@ class MustangRunner:
         except Exception as e:
             logger.error(f"Mustang execution error: {str(e)}")
             return False, f"Mustang error: {str(e)}", None
-            
-            # Save stdout to log file for RMSD parsing
-            log_file = output_dir / 'mustang.log'
-            with open(log_file, 'w') as f:
-                f.write(result.stdout)
-                f.write("\n=== STDERR ===\n")
-                f.write(result.stderr)
-            
-            # Check for output files - Mustang creates .afasta or .fasta
-            afasta_file = output_dir / 'alignment.afasta'
-            fasta_file = output_dir / 'alignment.fasta'
-            html_file = output_dir / 'alignment.html'
-            pdb_file = output_dir / 'alignment.pdb'
-            
-            if not (afasta_file.exists() or fasta_file.exists() or html_file.exists()):
-                # Debug info
-                all_files = [f.name for f in output_dir.iterdir()]
-                log_content = "Log not found"
-                if log_file.exists():
-                    with open(log_file, 'r') as f:
-                        log_content = f.read()
-                        
-                error_msg = f"Mustang did not produce expected output files.\nFound: {all_files}\nLog tail: {log_content[-500:]}"
-                logger.error(error_msg)
-                return False, error_msg, None
-            
-            logger.info("Mustang alignment completed successfully")
-            return True, "Alignment completed", output_dir
-            
-        except subprocess.TimeoutExpired:
-            return False, f"Mustang timed out after {self.timeout}s", None
-        except Exception as e:
-            logger.error(f"Mustang execution error: {str(e)}")
-            return False, f"Mustang error: {str(e)}", None
     
     def _convert_to_wsl_path(self, windows_path: Path) -> str:
         """
@@ -552,7 +514,6 @@ class MustangRunner:
             output_dir_r = str(output_dir.absolute()).replace(chr(92), "/")
             
             # Handle WSL: Bio3D running in Windows R cannot directly call WSL binary
-            # We must create a shim script (wrapper) if we are using WSL
             mustang_exe_arg = ""
             if getattr(self, 'use_wsl', False):
                 shim_path = output_dir / 'mustang_shim.bat'

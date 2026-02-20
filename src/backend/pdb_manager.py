@@ -3,7 +3,7 @@
 import requests
 import re
 from pathlib import Path
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, Any
 from Bio import PDB
 from Bio.PDB import PDBIO, Select
 import gzip
@@ -18,7 +18,7 @@ logger = get_logger()
 class PDBManager:
     """Manages PDB file downloads, validation, and preprocessing."""
     
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict[str, Any]):
         """
         Initialize PDB Manager.
         
@@ -51,7 +51,7 @@ class PDBManager:
         pattern = r'^[0-9][A-Za-z0-9]{3}$'
         return bool(re.match(pattern, pdb_id.strip()))
     
-    def save_uploaded_file(self, uploaded_file) -> Tuple[bool, str, Optional[Path]]:
+    def save_uploaded_file(self, uploaded_file: Any) -> Tuple[bool, str, Optional[Path]]:
         """
         Save an uploaded file to the raw directory.
         

@@ -1,15 +1,23 @@
 import streamlit as st
-from pathlib import Path
-import logging
-import shutil
-from datetime import datetime
 import pandas as pd
-
-from src.backend.phylo_tree import PhyloTreeGenerator
-from examples.protein_sets import EXAMPLES
-from src.frontend.results import display_results
-from src.frontend.console import render_console
+import numpy as np
+import shutil
+from pathlib import Path
+from typing import List, Dict, Tuple, Optional, Any
 from src.utils.logger import get_logger
+from datetime import datetime
+from examples.protein_sets import EXAMPLES
+from src.frontend.console import render_console
+from src.frontend.results import display_results
+
+# Backend Imports
+from src.backend.pdb_manager import PDBManager
+from src.backend.mustang_runner import MustangRunner
+from src.backend.rmsd_analyzer import RMSDAnalyzer
+from src.backend.database import HistoryDatabase
+from src.backend.phylo_tree import PhyloTreeGenerator
+from src.backend.report_generator import ReportGenerator
+from src.backend.notebook_exporter import NotebookExporter
 
 logger = get_logger()
 
@@ -18,23 +26,60 @@ logger = get_logger()
 # -----------------------------------------------------------------------------
 
 @st.cache_data(show_spinner=False)
-def cached_batch_download(_pdb_manager, pdb_ids):
-    """Cached wrapper for batch PDB download."""
+def cached_batch_download(_pdb_manager: Any, pdb_ids: List[str]) -> Dict[str, Tuple[bool, str, Optional[Path]]]:
+    """
+    Cached wrapper for batch PDB download.
+    
+    Args:
+        _pdb_manager: The PDBManager instance (backend).
+        pdb_ids: List of 4-character PDB identifiers.
+        
+    Returns:
+        Dictionary mapping PDB IDs to (success, message, local_path) tuples.
+    """
     return _pdb_manager.batch_download(pdb_ids, max_workers=4)
 
 @st.cache_data(show_spinner=False)
-def cached_analyze_structure(_pdb_manager, file_path):
-    """Cached wrapper for structure analysis."""
+def cached_analyze_structure(_pdb_manager: Any, file_path: Path) -> Dict[str, Any]:
+    """
+    Cached wrapper for structure analysis.
+    
+    Args:
+        _pdb_manager: The PDBManager instance.
+        file_path: Path to the PDB file.
+        
+    Returns:
+        Dictionary containing chain and residue information.
+    """
     return _pdb_manager.analyze_structure(file_path)
 
 @st.cache_data(show_spinner=False)
-def cached_run_alignment(_mustang_runner, pdb_files, run_dir):
-    """Cached wrapper for Mustang alignment."""
+def cached_run_alignment(_mustang_runner: Any, pdb_files: List[Path], run_dir: Path) -> Tuple[bool, str, Optional[Path]]:
+    """
+    Cached wrapper for Mustang alignment.
+    
+    Args:
+        _mustang_runner: The MustangRunner instance.
+        pdb_files: List of paths to cleaned PDB files.
+        run_dir: Directory where alignment output will be stored.
+        
+    Returns:
+        Tuple of (success, message, result_directory).
+    """
     return _mustang_runner.run_alignment(pdb_files, run_dir)
 
 @st.cache_data(show_spinner=False)
-def cached_fetch_metadata(_pdb_manager, pdb_ids):
-    """Cached wrapper for metadata fetching."""
+def cached_fetch_metadata(_pdb_manager: Any, pdb_ids: List[str]) -> Dict[str, Dict[str, str]]:
+    """
+    Cached wrapper for metadata fetching.
+    
+    Args:
+        _pdb_manager: The PDBManager instance.
+        pdb_ids: List of PDB IDs.
+        
+    Returns:
+        Dictionary mapping IDs to metadata dictionaries (title, organism, etc).
+    """
     return _pdb_manager.fetch_metadata(pdb_ids)
 
 
@@ -42,10 +87,20 @@ def cached_fetch_metadata(_pdb_manager, pdb_ids):
 # Analysis Logic
 # -----------------------------------------------------------------------------
 
-def process_result_directory(result_dir: Path, pdb_ids: list, run_id: str = "latest", timestamp: str = None, name: str = "Latest Run"):
+def process_result_directory(result_dir: Path, pdb_ids: List[str], run_id: str = "latest", timestamp: Optional[str] = None, name: str = "Latest Run") -> Tuple[bool, str]:
     """
     Process a Mustang result directory and generate all analysis artifacts.
     Re-uses existing logic to populate st.session_state.results.
+    
+    Args:
+        result_dir: Path to the directory containing Mustang output files.
+        pdb_ids: List of PDB IDs that were aligned.
+        run_id: Unique identifier for this analysis run.
+        timestamp: When the run was executed.
+        name: Human-readable name for the run.
+        
+    Returns:
+        Tuple of (success, message).
     """
     try:
         # Parse RMSD matrix
@@ -148,8 +203,14 @@ def process_result_directory(result_dir: Path, pdb_ids: list, run_id: str = "lat
         return False, str(e)
 
 
-def load_run_from_history(run_id: str, is_auto: bool = False):
-    """Load a past run from the database."""
+def load_run_from_history(run_id: str, is_auto: bool = False) -> None:
+    """
+    Load a past run from the database.
+    
+    Args:
+        run_id: ID of the run to restore.
+        is_auto: Whether this is an automatic recovery (silent).
+    """
     run = st.session_state.history_db.get_run(run_id)
     if not run:
         if not is_auto:
@@ -191,8 +252,17 @@ def load_run_from_history(run_id: str, is_auto: bool = False):
                 st.error(f"Failed to load run: {msg}")
 
 
-def run_analysis():
-    """Run the complete analysis pipeline."""
+def run_analysis() -> None:
+    """
+    Run the complete analysis pipeline.
+    
+    This function orchestrates:
+    1. Downloading PDBs
+    2. Cleaning/Filtering PDBs
+    3. Structural Alignment (Mustang)
+    4. Post-alignment Analysis (RMSD, Trees, RMSF)
+    5. Saving to history
+    """
     progress_bar = st.progress(0)
     status_text = st.empty()
     cancel_container = st.empty()
@@ -365,8 +435,13 @@ def run_analysis():
         logger.error(f"Analysis error: {str(e)}", exc_info=True)
 
 
-def render_dashboard():
-    """Render the main Analysis Dashboard (Mission Control)."""
+def render_dashboard() -> None:
+    """
+    Render the main Analysis Dashboard (Mission Control).
+    
+    Handles both the pre-analysis configuration (ID entry, upload)
+    and the post-analysis result display.
+    """
     
     # 1. Dashboard Header
     st.caption("Perform rigorous structural alignment, RMSD calculations, and phylogenetic analysis.")

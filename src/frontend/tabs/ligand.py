@@ -1,11 +1,17 @@
 import streamlit as st
 import pandas as pd
 from pathlib import Path
+from typing import Dict, Any
 from src.backend.structure_viewer import show_ligand_view_in_streamlit
 from src.frontend.tabs.common import render_learning_card, render_help_expander
 
-def render_ligand_tab(results):
-    """Render the Ligand & Interaction Analysis tab."""
+def render_ligand_tab(results: Dict[str, Any]) -> None:
+    """
+    Render the Ligand & Interaction Analysis tab.
+    
+    Args:
+        results: The results dictionary containing data directory for ligand lookup.
+    """
     st.subheader("💊 Ligand & Interaction Analysis")
     render_learning_card("Ligands")
     render_help_expander("ligands")
@@ -65,7 +71,7 @@ def render_ligand_tab(results):
                     
         else:
             st.error(f"PDB file not found for {selected_pdb_ligand}")
-
+    
         st.divider()
 
         if 'current_interactions' in st.session_state:

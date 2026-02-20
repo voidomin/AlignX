@@ -1,10 +1,16 @@
 import streamlit as st
 
 
-def render_console(log_file_path=None):
+from pathlib import Path
+from typing import Optional
+
+def render_console(log_file_path: Optional[Path] = None) -> None:
     """
     Render a compact, styled command console log viewer.
     Shows last 30 lines in a collapsible expander.
+    
+    Args:
+        log_file_path: Path to the log file to read.
     """
     log_content = ""
     if log_file_path and log_file_path.exists():

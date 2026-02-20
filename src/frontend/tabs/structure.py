@@ -2,8 +2,15 @@ import streamlit as st
 from src.backend.structure_viewer import show_structure_in_streamlit
 from src.frontend.tabs.common import render_learning_card, render_help_expander
 
-def render_3d_viewer_tab(results):
-    """Render the 3D Visualization tab."""
+from typing import Dict, Any
+
+def render_3d_viewer_tab(results: Dict[str, Any]) -> None:
+    """
+    Render the 3D Visualization tab.
+    
+    Args:
+        results: The results dictionary containing alignment PDB path.
+    """
     st.subheader("3D Structural Superposition")
     render_learning_card("Structure")
     render_help_expander("superposition")

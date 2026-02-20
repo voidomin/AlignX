@@ -2,9 +2,15 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from src.frontend.tabs.common import render_help_expander
+from typing import Dict, Any
 
-def render_clusters_tab(results):
-    """Render the Structural Clusters tab."""
+def render_clusters_tab(results: Dict[str, Any]) -> None:
+    """
+    Render the Structural Clusters tab.
+    
+    Args:
+        results: The results dictionary containing RMSD data for clustering.
+    """
     st.subheader("🔍 Structural Clusters")
     render_help_expander("clusters")
     

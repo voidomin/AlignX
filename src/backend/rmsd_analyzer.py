@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Any
 
 from src.utils.logger import get_logger
 
@@ -15,7 +15,7 @@ logger = get_logger()
 class RMSDAnalyzer:
     """Analyze and visualize RMSD matrices."""
     
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict[str, Any]):
         """Initialize RMSD Analyzer."""
         self.config = config
         self.colormap = config.get('visualization', {}).get('heatmap_colormap', 'RdYlBu_r')
