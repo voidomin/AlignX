@@ -25,6 +25,36 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
         else:
             st.error(f"✗ {mustang_msg}")
             st.info("See WINDOWS_SETUP.md for installation instructions")
+
+        # System Diagnostics
+        with st.expander("🛠️ System Health", expanded=False):
+            if st.button("🔍 Run Diagnostics", use_container_width=True):
+                with st.spinner("Checking dependencies..."):
+                    results = st.session_state.system_manager.run_diagnostics()
+                    st.session_state.diag_results = results
+            
+            if 'diag_results' in st.session_state:
+                res = st.session_state.diag_results
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.write("**Mustang**")
+                    if res["Mustang"]["status"] == "PASSED":
+                        st.success("OK")
+                    else:
+                        st.error("FAIL")
+                with col_b:
+                    st.write("**R (Bio3D)**")
+                    if res["R environment"]["status"] == "PASSED":
+                        st.success("OK")
+                    else:
+                        st.warning("MISSING")
+                
+                st.caption(f"OS: {res['Platform']}")
+                st.caption(f"Py: {res['Python Version']}")
+                
+                if st.button("🧹 Clear Logs", use_container_width=True, type="secondary"):
+                    st.session_state.system_manager.cleanup_old_runs(days=0) # Clear all temp/old
+                    st.success("Temporary files cleared.")
         
         st.divider()
 

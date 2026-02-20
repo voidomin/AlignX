@@ -1,5 +1,7 @@
-import streamlit as st
 from typing import Dict, Any
+import zipfile
+import io
+from pathlib import Path
 
 def render_downloads_tab(results: Dict[str, Any]) -> None:
     """
@@ -88,3 +90,43 @@ def render_downloads_tab(results: Dict[str, Any]) -> None:
         if results.get('heatmap_path') and results['heatmap_path'].exists():
             with open(results['heatmap_path'], "rb") as f:
                 st.download_button("📥 RMSD Heatmap (PNG)", f, f"heatmap_{results['id']}.png", "image/png", use_container_width=True)
+
+    st.divider()
+    st.markdown("### 📦 Complete Package")
+    st.write("Download all results, alignments, and the lab notebook in a single compressed ZIP file.")
+    
+    if st.button("🎁 Prepare All-in-One ZIP", type="primary", use_container_width=True):
+        with st.spinner("Bundling files..."):
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+                # Add PDB alignment
+                if results.get('alignment_pdb') and results['alignment_pdb'].exists():
+                    zip_file.write(results['alignment_pdb'], arcname=f"alignment_{results['id']}.pdb")
+                
+                # Add AFasta
+                if results.get('alignment_afasta') and results['alignment_afasta'].exists():
+                    zip_file.write(results['alignment_afasta'], arcname=f"alignment_{results['id']}.afasta")
+                
+                # Add RMSD CSV
+                if results.get('rmsd_df') is not None:
+                    csv_data = results['rmsd_df'].to_csv()
+                    zip_file.writestr(f"rmsd_matrix_{results['id']}.csv", csv_data)
+                
+                # Add Heatmap
+                if results.get('heatmap_path') and results['heatmap_path'].exists():
+                    zip_file.write(results['heatmap_path'], arcname=f"rmsd_heatmap_{results['id']}.png")
+                
+                # Add Lab Notebook (if it exists or try to export)
+                from src.backend.notebook_exporter import NotebookExporter
+                exporter = NotebookExporter()
+                nb_path = exporter.export(results) # Generates if needed
+                if nb_path and nb_path.exists():
+                    zip_file.write(nb_path, arcname=f"lab_notebook_{results['id']}.html")
+            
+            st.download_button(
+                label="📥 Download Everything (.zip)",
+                data=zip_buffer.getvalue(),
+                file_name=f"Mustang_Full_Results_{results['id']}.zip",
+                mime="application/zip",
+                use_container_width=True
+            )

@@ -9,6 +9,7 @@ from src.backend.sequence_viewer import SequenceViewer
 from src.backend.report_generator import ReportGenerator
 from src.backend.ligand_analyzer import LigandAnalyzer
 from src.backend.database import HistoryDatabase
+from src.backend.utilities import SystemManager
 
 # Utility Imports
 from src.utils.logger import setup_logger
@@ -60,6 +61,11 @@ def init_session_state():
 
     if 'auto_recovered' not in st.session_state:
         st.session_state.auto_recovered = False
+        
+    if 'system_manager' not in st.session_state:
+        st.session_state.system_manager = SystemManager(st.session_state.config)
+        # Perform automated startup cleanup (runs older than 7 days)
+        st.session_state.system_manager.cleanup_old_runs(days=7)
         
     # Auto-recovery: If results is None, try to load the latest successful run
     # ONLY if we haven't already attempted recovery in this session
