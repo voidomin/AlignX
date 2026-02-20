@@ -255,20 +255,21 @@ def render_3d_viewer_tab(results):
             try:
                 pdb_path = results['alignment_pdb']
                 col1, col2 = st.columns(2)
+                hl_chains = st.session_state.get('highlight_chains', {})
                 with col1:
                     st.markdown("**Cartoon (Secondary Structure)**")
-                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='cartoon', key='view_cartoon', highlight_residues=st.session_state.get('highlighted_residues', []))
+                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='cartoon', key='view_cartoon', highlight_residues=hl_chains)
                 with col2:
                     st.markdown("**Sphere (Spacefill)**")
-                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='sphere', key='view_sphere', highlight_residues=st.session_state.get('highlighted_residues', []))
+                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='sphere', key='view_sphere', highlight_residues=hl_chains)
                     
                 col3, col4 = st.columns(2)
                 with col3:
                     st.markdown("**Stick (Bonds & Atoms)**")
-                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='stick', key='view_stick', highlight_residues=st.session_state.get('highlighted_residues', []))
+                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='stick', key='view_stick', highlight_residues=hl_chains)
                 with col4:
                     st.markdown("**Line/Trace (Backbone)**")
-                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='line', key='view_line', highlight_residues=st.session_state.get('highlighted_residues', []))
+                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='line', key='view_line', highlight_residues=hl_chains)
                 
                 st.caption("""
                 **Controls:**
@@ -277,9 +278,9 @@ def render_3d_viewer_tab(results):
                 """)
                 
                 # Show active highlights info
-                hl = st.session_state.get('highlighted_residues', [])
-                if hl:
-                    st.info(f"🔥 Highlighting {len(hl)} residues: {hl[:10]}{'...' if len(hl)>10 else ''} from Sequence Tab.")
+                if hl_chains:
+                    chain_summary = ", ".join([f"Chain {c}: {len(r)} residues" for c, r in hl_chains.items()])
+                    st.info(f"🔥 Highlighting: {chain_summary}")
                     
             except Exception as e:
                 st.error(f"Failed to load 3D viewer: {str(e)}")
@@ -291,13 +292,16 @@ def render_ligand_tab(results):
     st.subheader("💊 Ligand & Interaction Analysis")
     render_learning_card("Ligands")
     render_help_expander("ligands")
-    col1, col2 = st.columns([2, 1])
     
     tab_single, tab_compare = st.tabs(["🧪 Single Ligand Analysis", "⚔️ Pocket Comparison"])
     
     with tab_single:
-        with col1:
+        # Layout: Selections on Top
+        sel_col1, sel_col2 = st.columns(2)
+        
+        with sel_col1:
             selected_pdb_ligand = st.selectbox("Select Protein Structure", st.session_state.pdb_ids, key="ligand_pdb_select")
+        
         result_dir = results['result_dir']
         
         # PDB Finding Logic
@@ -326,47 +330,60 @@ def render_ligand_tab(results):
             if not ligands:
                 st.info("No ligands found in this structure.")
             else:
-                st.success(f"Found {len(ligands)} ligands")
-                ligand_options = {f"{l['name']} ({l['id']})": l for l in ligands}
-                selected_ligand_name = st.selectbox("Select Ligand", list(ligand_options.keys()))
-                selected_ligand = ligand_options[selected_ligand_name]
-                
-                if st.button("Analyze Interactions"):
-                    interactions = st.session_state.ligand_analyzer.calculate_interactions(pdb_path, selected_ligand['id'])
-                    st.session_state.current_interactions = interactions
-                    st.session_state.current_ligand_pdb = pdb_path
+                with sel_col2:
+                    st.success(f"Found {len(ligands)} ligands")
+                    ligand_options = {f"{l['name']} ({l['id']})": l for l in ligands}
+                    selected_ligand_name = st.selectbox("Select Ligand", list(ligand_options.keys()))
+                    selected_ligand = ligand_options[selected_ligand_name]
                     
-                    # Store in global history for comparison
-                    entry = interactions.copy()
-                    entry['pdb_path'] = str(pdb_path) # Store as string for serialization safety
-                    entry['pdb_id'] = selected_pdb_ligand # Keep track of ID
-                    
-                    if 'pocket_history' not in st.session_state: st.session_state.pocket_history = []
-                    
-                    # Add or Update
-                    # Filter out existing entry for this ligand
-                    st.session_state.pocket_history = [x for x in st.session_state.pocket_history if x['ligand'] != interactions['ligand']]
-                    st.session_state.pocket_history.append(entry)
+                    if st.button("Analyze Interactions", type="primary", use_container_width=True):
+                        interactions = st.session_state.ligand_analyzer.calculate_interactions(pdb_path, selected_ligand['id'])
+                        st.session_state.current_interactions = interactions
+                        st.session_state.current_ligand_pdb = pdb_path
+                        
+                        # Store in global history for comparison
+                        entry = interactions.copy()
+                        entry['pdb_path'] = str(pdb_path) # Store as string for serialization safety
+                        entry['pdb_id'] = selected_pdb_ligand # Keep track of ID
+                        
+                        if 'pocket_history' not in st.session_state: st.session_state.pocket_history = []
+                        
+                        # Add or Update
+                        # Filter out existing entry for this ligand
+                        st.session_state.pocket_history = [x for x in st.session_state.pocket_history if x['ligand'] != interactions['ligand']]
+                        st.session_state.pocket_history.append(entry)
                     
         else:
             st.error(f"PDB file not found for {selected_pdb_ligand}")
 
-        with col2:
-            if 'current_interactions' in st.session_state:
-                interactions = st.session_state.current_interactions
-                pdb_path = st.session_state.current_ligand_pdb
+        st.divider()
+
+        # Results Section (Below)
+        if 'current_interactions' in st.session_state:
+            interactions = st.session_state.current_interactions
+            pdb_path = st.session_state.current_ligand_pdb
+            
+            if 'error' in interactions:
+                st.error(interactions['error'])
+            else:
+                st.markdown(f"### Binding Site: **{interactions['ligand']}**")
                 
-                if 'error' in interactions:
-                    st.error(interactions['error'])
-                else:
-                    st.markdown(f"### Binding Site: **{interactions['ligand']}**")
+                # Layout: 3D View (Left) | Table (Right)
+                res_col1, res_col2 = st.columns([1, 1])
+                
+                with res_col1:
                     # Render 3D Ligand View
-                    show_ligand_view_in_streamlit(pdb_path, interactions, width=400, height=450, key="ligand_3d")
-                    
+                    show_ligand_view_in_streamlit(pdb_path, interactions, width=500, height=450, key="ligand_3d")
+                
+                with res_col2:
                     st.markdown("#### Interacting Residues (< 5Å)")
                     if interactions['interactions']:
                         df_int = pd.DataFrame(interactions['interactions'])
-                        st.dataframe(df_int[['residue', 'chain', 'resi', 'distance', 'type']], use_container_width=True)
+                        st.dataframe(
+                            df_int[['residue', 'chain', 'resi', 'distance', 'type']].style.format({"distance": "{:.2f}"}), 
+                            use_container_width=True, 
+                            height=400
+                        )
                     else:
                         st.info("No residues found within cutoff distance.")
 
@@ -428,13 +445,83 @@ def render_ligand_tab(results):
                 delta_col3.metric(f"Unique to {l2_id}", len(unique2), help=f"{', '.join(unique2)}")
 
 
+def _parse_range_str(range_str, max_val):
+    """Parse a range string like '1-20, 23-25, 30' into a sorted list of ints."""
+    result = set()
+    if not range_str or not range_str.strip():
+        return []
+    for part in range_str.split(','):
+        part = part.strip()
+        if not part:
+            continue
+        if '-' in part:
+            try:
+                start, end = part.split('-', 1)
+                start, end = int(start.strip()), int(end.strip())
+                for i in range(max(1, start), min(max_val, end) + 1):
+                    result.add(i)
+            except ValueError:
+                pass
+        else:
+            try:
+                val = int(part)
+                if 1 <= val <= max_val:
+                    result.add(val)
+            except ValueError:
+                pass
+    return sorted(result)
+
+
+def _find_gaps(sequence):
+    """Find gap positions (1-indexed) in an alignment sequence."""
+    gaps = []
+    for i, ch in enumerate(sequence):
+        if ch == '-':
+            gaps.append(i + 1)  # 1-indexed
+    return gaps
+
+
+def _gaps_to_ranges_str(gaps):
+    """Convert a list of gap positions to a compact range string like '21-22, 26-29'."""
+    if not gaps:
+        return "None"
+    ranges = []
+    start = gaps[0]
+    end = gaps[0]
+    for g in gaps[1:]:
+        if g == end + 1:
+            end = g
+        else:
+            ranges.append(f"{start}-{end}" if start != end else str(start))
+            start = end = g
+    ranges.append(f"{start}-{end}" if start != end else str(start))
+    return ", ".join(ranges)
+
+
+def _selection_to_range_str(residues):
+    """Convert a list of residue numbers to a compact range string."""
+    if not residues:
+        return ""
+    residues = sorted(residues)
+    ranges = []
+    start = residues[0]
+    end = residues[0]
+    for r in residues[1:]:
+        if r == end + 1:
+            end = r
+        else:
+            ranges.append(f"{start}-{end}" if start != end else str(start))
+            start = end = r
+    ranges.append(f"{start}-{end}" if start != end else str(start))
+    return ", ".join(ranges)
+
 
 def render_sequences_tab(results):
     """Render the Sequence Analysis tab."""
     render_learning_card("Sequence")
     st.subheader("🧬 Sequence Alignment")
     
-    if results.get('alignment_path'):fo("🧬 Color code: Red = 100% Identity, Yellow = High Similarity (>70%)")
+    st.info("🧬 Color code: Red = 100% Identity, Yellow = High Similarity (>70%)")
     
     if results.get('alignment_afasta') and results['alignment_afasta'].exists():
         sequences = st.session_state.sequence_viewer.parse_afasta(results['alignment_afasta'])
@@ -442,91 +529,183 @@ def render_sequences_tab(results):
             # 1. Visualization
             conservation = st.session_state.sequence_viewer.calculate_conservation(sequences)
             html_view = st.session_state.sequence_viewer.generate_html(sequences, conservation)
-            st.components.v1.html(html_view, height=400, scrolling=True)
             
-            st.divider()
+            # Dynamic Height Calculation to fix UI gap
+            # Base header/footer ~60px, per-sequence row ~30px
+            n_seqs = len(sequences)
+            viz_height = min(600, max(150, 60 + (n_seqs * 30)))
+            st.components.v1.html(html_view, height=viz_height, scrolling=True)
             
-            # 2. Interactive Selection (Table of Residues)
-            st.markdown("### 🔍 Interactive Residue Selection")
-            st.caption("Select residues in the table below to highlight them in the 3D Structure Viewer.")
+            # 2. Alignment Table with Gap Indicators
+            st.markdown("### 📊 Alignment Table")
             
-            col_sel1, col_sel2 = st.columns([3, 1])
-            with col_sel1:
-                # Prepare Data for Table
-                seq_keys = list(sequences.keys())
-                seq_len = len(sequences[seq_keys[0]])
+            seq_keys = list(sequences.keys())
+            seq_len = len(sequences[seq_keys[0]])
+            
+            # Build alignment DataFrame — rows = positions, cols = proteins
+            import pandas as pd
+            table_data = {}
+            gap_info = {}  # {protein_name: [gap_positions]}
+            max_len = max(len(sequences[name]) for name in seq_keys)
+            for name in seq_keys:
+                seq = sequences[name]
+                residues = []
+                protein_gaps = []
+                for i, ch in enumerate(seq):
+                    pos = i + 1
+                    if ch == '-':
+                        residues.append('—')  # em dash for visual clarity
+                        protein_gaps.append(pos)
+                    else:
+                        residues.append(ch)
+                # Pad shorter sequences if needed
+                while len(residues) < max_len:
+                    residues.append('—')
+                    protein_gaps.append(len(residues))
+                table_data[name] = residues
+                gap_info[name] = protein_gaps
+            
+            # Show a compact summary of positions (first 100 to avoid overwhelming)
+            display_len = min(max_len, 100)
+            # Truncate data to display_len for the DataFrame
+            display_data = {name: vals[:display_len] for name, vals in table_data.items()}
+            df = pd.DataFrame(display_data, index=range(1, display_len + 1))
+            df.index.name = "Pos"
+            
+            # Style: highlight gaps in grey
+            def style_gaps(val):
+                if val == '—':
+                    return 'background-color: #2a2a3a; color: #666; font-weight: bold'
+                return ''
+            
+            styled_df = df.style.map(style_gaps)
+            st.dataframe(styled_df, height=300, use_container_width=True)
+            
+            if seq_len > 100:
+                st.caption(f"Showing first 100 of {seq_len} positions. Full alignment visible in the visualization above.")
+            
+            # Gap Summary
+            with st.expander("🔎 Gap Summary per Protein", expanded=False):
+                for name in seq_keys:
+                    gaps = gap_info[name]
+                    gap_pct = (len(gaps) / seq_len) * 100
+                    gap_str = _gaps_to_ranges_str(gaps)
+                    if gaps:
+                        st.markdown(f"**{name}** — {len(gaps)} gaps ({gap_pct:.1f}%): `{gap_str}`")
+                    else:
+                        st.markdown(f"**{name}** — No gaps ✅")
+            
+            # 3. Per-Protein Residue Selection
+            st.markdown("### 🔍 Per-Protein Residue Selection")
+            st.caption("Enter residue ranges for each protein (e.g. `1-20, 23-25, 30`). Leave blank to skip a protein.")
+            
+            # Initialize selection state
+            if 'residue_selections' not in st.session_state:
+                st.session_state.residue_selections = {}
+            
+            # Get chain mapping: protein order → chain letter (A, B, C, ...)
+            chain_letters = [chr(ord('A') + i) for i in range(len(seq_keys))]
+            
+            # Form to batch all inputs — single rerun on submit
+            with st.form("residue_selection_form"):
+                range_inputs = {}
+                for i, name in enumerate(seq_keys):
+                    chain = chain_letters[i]
+                    gaps = gap_info[name]
+                    existing = st.session_state.residue_selections.get(name, [])
+                    existing_str = _selection_to_range_str(existing)
+                    
+                    col_name, col_input, col_gaps = st.columns([2, 3, 2])
+                    with col_name:
+                        st.markdown(f"**{name}**")
+                        st.caption(f"Chain {chain}")
+                    with col_input:
+                        range_inputs[name] = st.text_input(
+                            f"Residues for {name}",
+                            value=existing_str,
+                            placeholder="e.g. 1-20, 23-25, 30",
+                            key=f"range_{name}",
+                            label_visibility="collapsed"
+                        )
+                    with col_gaps:
+                        if gaps:
+                            st.caption(f"⚠️ Gaps: {_gaps_to_ranges_str(gaps[:10])}")
+                        else:
+                            st.caption("✅ No gaps")
                 
-                # Helper to build dataframe (cached/optimized)
-                @st.cache_data
-                def build_sequence_df(sequences, conservation):
-                    data = []
-                    keys = list(sequences.keys())
-                    length = len(sequences[keys[0]])
-                    for i in range(length):
-                        row = {
-                            "Position": i + 1,
-                            "Conservation": conservation[i] if i < len(conservation) else 0.0,
-                        }
-                        for k in keys:
-                            row[k] = sequences[k][i]
-                        data.append(row)
-                    return pd.DataFrame(data)
-
-                base_df = build_sequence_df(sequences, conservation).copy()
-                
-                # Apply current selection state to DF
-                current_highlights = set(st.session_state.get('highlighted_residues', []))
-                base_df.insert(0, "Select", base_df['Position'].apply(lambda x: x in current_highlights))
-                
-                # Configure Columns
-                column_config = {
-                    "Select": st.column_config.CheckboxColumn("Highlight", default=False),
-                    "Position": st.column_config.NumberColumn("Residue", format="%d"),
-                    "Conservation": st.column_config.ProgressColumn("Conservation", format="%.2f", min_value=0, max_value=1),
-                }
-                
-                # Render Editor
-                edited_df = st.data_editor(
-                    base_df,
-                    column_config=column_config,
-                    disabled=[c for c in base_df.columns if c != "Select"],
-                    hide_index=True,
-                    use_container_width=True,
-                    height=400,
-                    key="residue_table_editor"
-                )
-                
-                # Sync State
-                selected_rows = edited_df[edited_df.Select]
-                new_selection = sorted(selected_rows['Position'].tolist())
-                
-                if new_selection != sorted(list(current_highlights)):
-                    st.session_state.highlighted_residues = new_selection
+                # Submit button
+                col_apply, col_clear = st.columns(2)
+                with col_apply:
+                    submitted = st.form_submit_button("✅ Apply All Selections", type="primary", use_container_width=True)
+                with col_clear:
+                    clear_submitted = st.form_submit_button("🗑️ Clear All", use_container_width=True)
+            
+            # Handle form submission
+            if submitted:
+                new_selections = {}
+                for name in seq_keys:
+                    parsed = _parse_range_str(range_inputs.get(name, ""), max_len)
+                    if parsed:
+                        new_selections[name] = parsed
+                st.session_state.residue_selections = new_selections
+                # Build per-chain highlight dict for 3D viewer
+                chain_highlights = {}
+                for i, name in enumerate(seq_keys):
+                    chain = chain_letters[i]
+                    if name in new_selections and new_selections[name]:
+                        chain_highlights[chain] = new_selections[name]
+                st.session_state.highlight_chains = chain_highlights
+                st.rerun()
+            
+            if clear_submitted:
+                st.session_state.residue_selections = {}
+                st.session_state.highlight_chains = {}
+                st.rerun()
+            
+            # Quick Actions (outside form)
+            st.markdown("**Quick Actions:**")
+            qa_col1, qa_col2 = st.columns(2)
+            with qa_col1:
+                if st.button("🎯 Select All Non-Gap Residues", use_container_width=True):
+                    all_selections = {}
+                    chain_highlights = {}
+                    for i, name in enumerate(seq_keys):
+                        chain = chain_letters[i]
+                        non_gap = [pos + 1 for pos, ch in enumerate(sequences[name]) if ch != '-']
+                        all_selections[name] = non_gap
+                        chain_highlights[chain] = non_gap
+                    st.session_state.residue_selections = all_selections
+                    st.session_state.highlight_chains = chain_highlights
                     st.rerun()
-
-            with col_sel2:
-                # Quick Range Input Helper
-                st.markdown("**Quick Add Range**")
-                range_input = st.text_input("e.g. 10-20", key="range_adder", help="Add a range of residues to the selection.")
-                if st.button("Add Range"):
-                    try:
-                        if '-' in range_input:
-                            s, e = map(int, range_input.split('-'))
-                            new_range = list(range(s, e + 1))
-                            current = set(st.session_state.get('highlighted_residues', []))
-                            current.update(new_range)
-                            st.session_state.highlighted_residues = sorted(list(current))
-                            st.rerun()
-                    except:
-                        st.error("Invalid range format")
-
-                if st.button("Clear Selection", type="primary"):
-                    st.session_state.highlighted_residues = []
+            with qa_col2:
+                if st.button("🧬 Select Conserved Only (100% Identity)", use_container_width=True):
+                    conserved_positions = []
+                    for pos_idx in range(max_len):
+                        residues_at_pos = [sequences[name][pos_idx] for name in seq_keys if pos_idx < len(sequences[name])]
+                        if len(residues_at_pos) == len(seq_keys) and all(r == residues_at_pos[0] and r != '-' for r in residues_at_pos):
+                            conserved_positions.append(pos_idx + 1)
+                    all_selections = {}
+                    chain_highlights = {}
+                    for i, name in enumerate(seq_keys):
+                        chain = chain_letters[i]
+                        all_selections[name] = conserved_positions
+                        chain_highlights[chain] = conserved_positions
+                    st.session_state.residue_selections = all_selections
+                    st.session_state.highlight_chains = chain_highlights
                     st.rerun()
             
-            if st.session_state.get('highlighted_residues'):
-                st.info(f"👉 **{len(st.session_state.highlighted_residues)}** residues highlighted in 3D Viewer.")
-
+            # Selection Summary
+            selections = st.session_state.get('residue_selections', {})
+            if selections:
+                st.markdown("---")
+                st.markdown("#### 📋 Current Selection Summary")
+                for i, name in enumerate(seq_keys):
+                    chain = chain_letters[i]
+                    sel = selections.get(name, [])
+                    if sel:
+                        st.success(f"**{name}** (Chain {chain}): {len(sel)} residues — `{_selection_to_range_str(sel)}`")
+                    else:
+                        st.caption(f"**{name}** (Chain {chain}): No selection")
         else:
             st.error("Failed to parse alignment file")
     else:
