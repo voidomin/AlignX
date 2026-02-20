@@ -238,7 +238,7 @@ class NotebookExporter:
 </html>
         """
 
-    def generate_notebook(self, results, insights=None):
+    def export(self, results, insights=None):
         """
         Generate HTML notebook from results.
         
@@ -250,10 +250,7 @@ class NotebookExporter:
             Path: Path to the generated HTML file.
         """
         try:
-            # Prepare Data & Log Debug Info
-            with open("notebook_debug.txt", "w") as f:
-                 f.write(f"DEBUG: Results keys: {list(results.keys())}\n")
-                 f.write(f"DEBUG: Input Stats: {results.get('stats')}\n")
+            # Prepare Data
             
             # CRITICAL: Create a copy to avoid mutating the global 'results' dict
             # which would break the dashboard (results.py) that expects floats
@@ -354,14 +351,10 @@ class NotebookExporter:
             with open(output_path, "w", encoding="utf-8") as f:
                 f.write(html_content)
             
-            # Log success
-            with open("notebook_debug.txt", "a") as f:
-                 f.write(f"DEBUG: Success! Generated HTML length: {len(html_content)}\n")
-                
             return output_path
-
+            
         except Exception as e:
-            with open("notebook_debug.txt", "a") as f:
-                f.write(f"ERROR: {str(e)}\n")
-            print(f"Error generating notebook: {e}")
+            import traceback
+            print(f"Error generating notebook: {str(e)}")
+            print(traceback.format_exc())
             return None

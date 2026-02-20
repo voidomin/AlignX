@@ -29,15 +29,18 @@ class ReportGenerator:
         self.output_dir = output_dir
         self.report_path = output_dir / f"mustang_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
 
-    def generate_report(self, results: Dict[str, Any], pdb_ids: List[str], sections: List[str] = None) -> Path:
+    def generate_full_report(self, results: Dict[str, Any], pdb_ids: List[str] = None, sections: List[str] = None) -> Path:
         """
         Generate PDF report from analysis results.
         
         Args:
             results: Dictionary containing analysis results
-            pdb_ids: List of PDB IDs analyzed
+            pdb_ids: List of PDB IDs analyzed (default: from results)
             sections: List of sections to include (default: all)
         """
+        if pdb_ids is None:
+            pdb_ids = results.get('pdb_ids', [])
+            
         if sections is None:
             sections = ["summary", "insights", "heatmap", "tree", "matrix"]
             

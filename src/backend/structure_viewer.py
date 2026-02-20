@@ -86,14 +86,16 @@ def render_3d_structure(pdb_file: Path, width: int = 800, height: int = 600, sty
                 for(let i=0; i<chains.length; i++) {{
                     let color = neonColors[i % neonColors.length];
                     let sel = {{chain: chains[i]}};
-                    let opacity = hasHighlights ? 0.8 : 1.0;
+                    // Make base structure translucent if highlights exist for better contrast
+                    // 0.6 provides a good balance (not too faint)
+                    let opacity = hasHighlights ? 0.6 : 1.0;
                     
                     if ("{style}" === "cartoon") {{
                         viewer.setStyle(sel, {{cartoon: {{color: color, opacity: opacity}}}});
                     }} else if ("{style}" === "sphere") {{
                         viewer.setStyle(sel, {{sphere: {{scale: 0.3, color: color, opacity: opacity}}}});
                     }} else if ("{style}" === "stick") {{
-                        viewer.setStyle(sel, {{stick: {{radius: 0.15, colorscheme: 'Jmol', opacity: opacity}}}});
+                        viewer.setStyle(sel, {{stick: {{radius: 0.2, colorscheme: 'Jmol', opacity: opacity}}}});
                     }} else if ("{style}" === "line") {{
                         viewer.setStyle(sel, {{line: {{linewidth: 2, color: color, opacity: opacity}}}});
                     }}
@@ -104,7 +106,8 @@ def render_3d_structure(pdb_file: Path, width: int = 800, height: int = 600, sty
                 
                 // Apply per-chain highlights and visibility
                 if (hasHighlights || visibleChains) {{
-                    const hlColors = ['#FF0055', '#FFFF00', '#00FF99', '#FF8800', '#AA00FF', '#00CCFF'];
+                    // Distinct, high-intensity colors for highlights
+                    const hlColors = ['#FFD700', '#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#00FFFF'];
                     let hlIdx = 0;
                     
                     for (let i=0; i<chains.length; i++) {{
@@ -124,7 +127,8 @@ def render_3d_structure(pdb_file: Path, width: int = 800, height: int = 600, sty
                                 let hlColor = hlColors[hlIdx % hlColors.length];
                                 viewer.setStyle({{chain: chainID, resi: residues}}, {{
                                     sphere: {{color: hlColor, scale: 1.0, opacity: 1.0}},
-                                    stick: {{color: hlColor, radius: 0.3, opacity: 1.0}}
+                                    stick: {{color: hlColor, radius: 0.5, opacity: 1.0}},
+                                    cartoon: {{color: hlColor, opacity: 1.0}}
                                 }});
                                 hlIdx++;
                             }}

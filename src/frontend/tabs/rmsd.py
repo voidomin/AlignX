@@ -15,6 +15,17 @@ def render_rmsd_tab(results: Dict[str, Any]) -> None:
     st.subheader("📊 RMSD & Alignment Quality")
     render_learning_card("Summary")
     
+    # Automated Insights
+    if 'insights' not in st.session_state:
+        from src.backend.insights import InsightsGenerator
+        gen = InsightsGenerator(st.session_state.config)
+        st.session_state.insights = gen.generate_insights(results)
+    
+    if st.session_state.insights:
+        with st.expander("🧠 Automated Insights (Smart Findings)", expanded=True):
+            for insight in st.session_state.insights:
+                st.markdown(insight)
+    
     col1, col2 = st.columns([2, 1])
     
     with col1:

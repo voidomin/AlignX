@@ -49,7 +49,7 @@ def render_downloads_tab(results: Dict[str, Any]) -> None:
             with st.spinner("Exporting..."):
                 try:
                     from src.backend.notebook_exporter import NotebookExporter
-                    exporter = NotebookExporter(results['result_dir'])
+                    exporter = NotebookExporter()
                     notebook_path = exporter.export(results)
                     
                     if notebook_path and notebook_path.exists():

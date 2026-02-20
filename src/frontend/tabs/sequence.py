@@ -106,6 +106,10 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
     render_learning_card("Sequence")
     st.subheader("🧬 Sequence Alignment")
     
+    # Show Global Metrics
+    identity = results['stats'].get('seq_identity', 0.0)
+    st.metric("Global Sequence Identity", f"{identity:.1f}%", help="Average pairwise identity across all aligned structures.")
+    
     st.info("🧬 Color code: Red = 100% Identity, Yellow = High Similarity (>70%)")
     
     if results.get('alignment_afasta') and results['alignment_afasta'].exists():
@@ -146,39 +150,110 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
                 n_total = len(conservation)
                 st.success(f"Found {len(conserved_cols)} strictly conserved residues ({(len(conserved_cols)/n_total)*100:.1f}% of alignment)")
                 
+                if 'residue_selections' not in st.session_state:
+                    st.session_state.residue_selections = {}
+                
                 sel_col1, sel_col2 = st.columns(2)
                 
                 with sel_col1:
-                    st.write("**Selection Strategy**")
-                    strategy = st.radio("Highlight Option:", 
-                                      ["All Strictly Conserved", "Manual Residue Selection"],
-                                      horizontal=True)
+                    st.write("**Selection Target**")
+                    target_protein = st.selectbox(
+                        "Apply selection to:", 
+                        ["All Proteins (Alignment Columns)"] + list(sequences.keys()),
+                        index=0,
+                        help="Choose 'All Proteins' to select columns in the alignment, or a specific protein to use its internal numbering."
+                    )
+                    
+                    col1_btn, col2_btn = st.columns(2)
+                    with col1_btn:
+                        if st.button("⭐ Select All strictly Conserved columns", use_container_width=True):
+                            cons_str = _selection_to_range_str([i+1 for i in conserved_cols])
+                            st.session_state.residue_selections["All Proteins (Alignment Columns)"] = cons_str
+                            st.rerun()
+                    with col2_btn:
+                        if st.button("🗑️ Clear All Selections", use_container_width=True):
+                            st.session_state.residue_selections = {}
+                            if 'highlight_chains' in st.session_state:
+                                del st.session_state.highlight_chains
+                            st.rerun()
                 
                 with sel_col2:
-                    if strategy == "Manual Residue Selection":
-                        user_input = st.text_input("Enter residue indices (e.g. 1-10, 25, 30-45)", "")
-                        selected_indices = _parse_range_str(user_input, n_total)
-                    else:
-                        selected_indices = conserved_cols
+                    st.write("**Residue Ranges**")
+                    # Retrieve previous input for this selection
+                    prev_input = st.session_state.residue_selections.get(target_protein, "")
+                    user_input = st.text_input(
+                        f"Sequence Indices for {target_protein}", 
+                        value=prev_input,
+                        placeholder="e.g. 1-10, 25, 30-45",
+                        key=f"input_{target_protein}"
+                    )
+                    # Update state
+                    if user_input != prev_input:
+                        st.session_state.residue_selections[target_protein] = user_input
+                    
+                    # Highlight what is currently selected for THIS protein
+                    current_selected = _parse_range_str(user_input, n_total)
+                    if current_selected:
+                        st.caption(f"📍 {len(current_selected)} residues active for this target.")
                 
-                if selected_indices:
-                    st.info(f"Selected: {_selection_to_range_str(selected_indices)}")
+                # Check if we have any active selections to show the project button
+                active_entries = {k: v for k, v in st.session_state.residue_selections.items() if v.strip()}
+                
+                if active_entries:
+                    st.markdown("#### 📋 Selective Extraction Summary")
+                    # Build summary table
+                    summary_data = []
+                    for target, ranges in active_entries.items():
+                        summary_data.append({
+                            "Target": target,
+                            "Residue Ranges": ranges
+                        })
+                    st.table(pd.DataFrame(summary_data))
+                    
+                    st.info("💡 Click the button below to project these selections onto the 3D structures.")
                     
                     if st.button("✨ Project Selection to 3D Viewer", use_container_width=True, type="primary"):
-                        # Map alignment indices to residues in structures
-                        # This maps alignment index (0-based) to PDB residue numbers for EACH structure in current alignment
-                        mapping = {}
-                        for pid, seq in sequences.items():
-                            res_nums = []
-                            current_res = 1 # Assuming PDB starts at 1, simplified
-                            for i, char in enumerate(seq):
-                                if char != '-':
-                                    if (i + 1) in selected_indices: 
-                                        res_nums.append(current_res)
-                                    current_res += 1
-                            mapping[pid] = res_nums
+                        # Combine all entries from residue_selections
+                        all_members = list(results['rmsd_df'].index)
+                        all_headers = list(sequences.keys())
+                        final_mapping = {}
                         
-                        st.session_state.active_3d_selection = mapping
+                        # Initialize mapping with empty lists for all chains
+                        for i in range(len(all_headers)):
+                            c_id = chr(ord('A') + i)
+                            final_mapping[c_id] = []
+                        
+                        # Process each entry in selections
+                        for target, input_str in st.session_state.residue_selections.items():
+                            if not input_str.strip(): continue
+                            
+                            indices = _parse_range_str(input_str, n_total)
+                            
+                            if target == "All Proteins (Alignment Columns)":
+                                # Apply columns to EVERY protein
+                                for p_idx, (pid, seq) in enumerate(sequences.items()):
+                                    chain_id = chr(ord('A') + p_idx)
+                                    
+                                    res_nums = []
+                                    current_res = 1
+                                    for i, char in enumerate(seq):
+                                        if char != '-':
+                                            if (i + 1) in indices: res_nums.append(current_res)
+                                            current_res += 1
+                                    final_mapping[chain_id].extend(res_nums)
+                            else:
+                                # Apply internal numbering to SPECIFIC protein
+                                # Find index of header in sequences
+                                if target in all_headers:
+                                    p_idx = all_headers.index(target)
+                                    chain_id = chr(ord('A') + p_idx)
+                                    final_mapping[chain_id].extend(indices)
+                        
+                        # De-duplicate
+                        for k in final_mapping:
+                            final_mapping[k] = sorted(list(set(final_mapping[k])))
+                        
+                        st.session_state.highlight_chains = final_mapping
                         st.session_state.show_3d_viewer = True
                         st.success("Selection transferred. Switch to '3D Visualization' tab to view results.")
             else:

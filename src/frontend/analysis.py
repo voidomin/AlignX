@@ -402,9 +402,6 @@ def run_analysis() -> None:
         
         if not success:
             st.error(f"Analysis failed: {msg}")
-            # Diagnostic info
-            if result_dir and result_dir.exists():
-                logger.error(f"Diagnostic - result_dir files: {list(result_dir.iterdir())}")
             return
             
         progress_bar.progress(1.0)
