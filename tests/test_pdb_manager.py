@@ -72,3 +72,25 @@ class TestPDBManager:
         assert success is True
         assert cleaned_path.exists()
         assert cleaned_path.parent == temp_workspace['cleaned']
+
+    def test_clean_specific_chain(self, mock_config, temp_workspace):
+        """Test cleaning a specific chain from a multi-chain PDB."""
+        manager = PDBManager(mock_config)
+        manager.cleaned_dir = temp_workspace['cleaned']
+        
+        # Create multi-chain content
+        multi_content = "ATOM      1  N   ALA A   1      11.104  13.203   7.334  1.00 20.00           N\n" \
+                        "TER\n" \
+                        "ATOM      2  N   ALA B   1      21.104  23.203  17.334  1.00 20.00           N\n" \
+                        "TER"
+        
+        raw_file = temp_workspace['raw'] / "MULTI.pdb"
+        raw_file.write_text(multi_content)
+        
+        # Clean only chain B
+        success, msg, cleaned_path = manager.clean_pdb(raw_file, chain='B')
+        
+        assert success is True
+        content = cleaned_path.read_text()
+        assert "ALA B" in content
+        assert "ALA A" not in content
