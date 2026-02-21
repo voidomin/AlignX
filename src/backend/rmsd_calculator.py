@@ -83,11 +83,11 @@ def parse_mustang_log_for_rmsd(log_file: Path) -> Optional[pd.DataFrame]:
     Mustang outputs a table like:
     
     > RMSD TABLE:
-           1      2      3
     1   0.00   0.85   1.20
     2   0.85   0.00   0.90
     3   1.20   0.90   0.00
     """
+    import re
     try:
         if not log_file.exists():
             return None
@@ -95,22 +95,134 @@ def parse_mustang_log_for_rmsd(log_file: Path) -> Optional[pd.DataFrame]:
         with open(log_file, 'r') as f:
             lines = f.readlines()
             
-        # Find start of table
-        start_idx = -1
-        for i, line in enumerate(lines):
-            if "RMSD values" in line or "RMSD matrix" in line or "Pairwise RMSD" in line:
-                start_idx = i
-                break
+        # Extract protein count by looking at IDs if possible, or just the table
+        # We'll assume the number of proteins is determined by the caller or inferred from the table size
         
-        if start_idx == -1:
-            # Try looking for a triangular matrix or simple table
+        potential_matrix = []
+        for line in lines:
+            matches = re.findall(r'(\d+\.\d+|---)', line)
+            if matches:
+                row = []
+                for m in matches:
+                    if m == '---':
+                        row.append(0.0)
+                    else:
+                        row.append(float(m))
+                potential_matrix.append(row)
+        
+        if not potential_matrix:
             return None
             
-        # This part depends highly on Mustang version output format.
-        # Safe fallback: Return None and let the pipeline handle it (shows N/A).
+        # Find the largest square submatrix at the end (typical Mustang output)
+        n = len(potential_matrix[-1])
+        if len(potential_matrix) >= n:
+            matrix = potential_matrix[-n:]
+            return pd.DataFrame(matrix)
+            
         return None
         
-    except Exception:
+    except Exception as e:
+        logger.error(f"Failed to parse Mustang log: {e}")
+        return None
+
+def parse_rmsd_matrix(output_dir: Path, pdb_ids: List[str]) -> Optional[pd.DataFrame]:
+    """
+    Unified entry point for parsing RMSD matrix from various Mustang output formats.
+    
+    Args:
+        output_dir: Directory containing Mustang outputs
+        pdb_ids: List of PDB IDs (for labeling)
+        
+    Returns:
+        DataFrame with RMSD matrix or None if parsing fails
+    """
+    # 1. Try Bio3D CSV format (if legacy results exist)
+    csv_file = output_dir / 'rmsd_matrix.csv'
+    if csv_file.exists():
+        try:
+            df = pd.read_csv(csv_file, index_col=0)
+            if len(df) == len(pdb_ids):
+                df.index = pdb_ids
+                df.columns = pdb_ids
+                return df
+        except Exception:
+            pass
+    
+    # 2. Try Mustang's robust .rms_rot file
+    rms_rot_file = output_dir / 'alignment.rms_rot'
+    if rms_rot_file.exists():
+        df = parse_rms_rot_file(rms_rot_file, pdb_ids)
+        if df is not None:
+            return df
+    
+    # 3. Try parsing from Mustang log
+    log_file = output_dir / 'mustang.log'
+    if log_file.exists():
+        df = parse_mustang_log_for_rmsd(log_file)
+        if df is not None and len(df) == len(pdb_ids):
+            df.index = pdb_ids
+            df.columns = pdb_ids
+            return df
+            
+    logger.error("Could not find or parse RMSD matrix in output")
+    return None
+
+def parse_rms_rot_file(rms_rot_file: Path, pdb_ids: List[str]) -> Optional[pd.DataFrame]:
+    """
+    Parse RMSD matrix from Mustang's .rms_rot file with robust line-based detection.
+    """
+    try:
+        with open(rms_rot_file, 'r') as f:
+            content = f.read()
+        
+        if 'RMSD matrix' not in content:
+            return None
+            
+        lines = content.splitlines()
+        matrix_start = None
+        for i, line in enumerate(lines):
+            if 'RMSD matrix' in line:
+                matrix_start = i
+                break
+        
+        if matrix_start is None:
+            return None
+            
+        data_rows = []
+        for line in lines[matrix_start:]:
+            if '|' in line:
+                parts = line.split('|')[1].strip().split()
+                if parts:
+                    data_rows.append(parts)
+        
+        if not data_rows:
+            return None
+            
+        n = len(pdb_ids)
+        matrix = []
+        for i in range(min(len(data_rows), n)):
+            row = []
+            for j in range(min(len(data_rows[i]), n)):
+                val = data_rows[i][j]
+                if val == '---' or '---' in val:
+                    row.append(0.0)
+                else:
+                    try:
+                        row.append(float(val))
+                    except ValueError:
+                        row.append(0.0)
+            while len(row) < n:
+                row.append(0.0)
+            matrix.append(row[:n])
+        
+        while len(matrix) < n:
+            matrix.append([0.0] * n)
+            
+        df = pd.DataFrame(matrix, index=pdb_ids, columns=pdb_ids)
+        return df
+        
+    except Exception as e:
+        logger.error(f"Failed to parse .rms_rot file: {e}")
         return None
 
 # Re-implementing robust RMSD using aligned FASTA + Superimposed PDB

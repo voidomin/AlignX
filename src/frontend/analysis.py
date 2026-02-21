@@ -16,8 +16,10 @@ from src.backend.mustang_runner import MustangRunner
 from src.backend.rmsd_analyzer import RMSDAnalyzer
 from src.backend.database import HistoryDatabase
 from src.backend.phylo_tree import PhyloTreeGenerator
+from src.backend.rmsd_calculator import calculate_structure_rmsd, parse_rmsd_matrix
 from src.backend.report_generator import ReportGenerator
 from src.backend.notebook_exporter import NotebookExporter
+from src.backend.ligand_analyzer import LigandAnalyzer
 from src.frontend.tabs.common import render_progress_stepper
 
 logger = get_logger()
@@ -104,8 +106,8 @@ def process_result_directory(result_dir: Path, pdb_ids: List[str], run_id: str =
         Tuple of (success, message).
     """
     try:
-        # Parse RMSD matrix
-        rmsd_df = st.session_state.mustang_runner.parse_rmsd_matrix(
+        # Parse RMSD matrix (Centralized in rmsd_calculator)
+        rmsd_df = parse_rmsd_matrix(
             result_dir,
             pdb_ids
         )
