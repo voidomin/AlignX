@@ -49,9 +49,15 @@ class ReportGenerator:
             pdf.add_page()
             
             # Helper to clean text for FPDF (Latin-1)
+            # Helper to clean text for FPDF (Latin-1)
             def clean_text(text):
                 if not isinstance(text, str): return str(text)
-                return text.encode('latin-1', 'replace').decode('latin-1')
+                # Try to preserve as much as possible, mapping common symbols
+                # or just using ignore to prevent crashing
+                try:
+                    return text.encode('latin-1', 'ignore').decode('latin-1')
+                except Exception:
+                    return "".join(c for c in text if ord(c) < 128)
 
             # Title Section (Always included)
             pdf.set_font("Arial", 'B', 12)

@@ -37,11 +37,12 @@ class NotebookExporter:
 
     <style>
         :root {
-            --primary-color: #7B1FA2; /* Deep Purple */
-            --secondary-color: #00E5FF; /* Cyan Accent */
-            --bg-dark: #0F172A;
-            --card-bg: #1E293B;
-            --text-color: #E2E8F0;
+            --primary-color: #ff7e42; /* Sunset Orange */
+            --secondary-color: #ffb343; /* Mustard Glow */
+            --accent-cyan: #42eaff;
+            --bg-dark: #0f1115;
+            --card-bg: #181b21;
+            --text-color: #ffffff;
         }
         body {
             font-family: 'Inter', sans-serif;

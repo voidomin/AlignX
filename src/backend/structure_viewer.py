@@ -9,7 +9,7 @@ from src.utils.logger import get_logger
 logger = get_logger()
 
 
-def render_3d_structure(pdb_file: Path, width: int = 800, height: int = 600, style: str = 'cartoon', unique_id: str = '1', highlight_residues = None, visible_chains = None) -> Optional[str]:
+def render_3d_structure(pdb_file: Path, width: Any = "100%", height: int = 400, style: str = 'cartoon', unique_id: str = '1', highlight_residues = None, visible_chains = None) -> Optional[str]:
     """
     Render 3D structure using py3Dmol in Streamlit.
     
@@ -53,8 +53,8 @@ def render_3d_structure(pdb_file: Path, width: int = 800, height: int = 600, sty
         <head>
             <script src="https://3Dmol.csb.pitt.edu/build/3Dmol-min.js"></script>
         </head>
-        <body style="margin:0; padding:0; overflow:hidden;">
-            <div id="container_{unique_id}" style="width: {width}px; height: {height}px; position: relative;"></div>
+        <body style="margin:0; padding:0; overflow:hidden; background-color: transparent;">
+            <div id="container_{unique_id}" style="width: 100%; height: {height}px; position: relative;"></div>
             <script>
                 let viewer = $3Dmol.createViewer("container_{unique_id}", {{
                     backgroundColor: 'white' 
@@ -231,13 +231,13 @@ def render_ligand_view(pdb_file: Path, ligand_data: dict, width: int = 800, heig
         logger.error(f"Failed to render ligand view: {e}")
         return None
 
-def show_structure_in_streamlit(pdb_file: Path, width: int = 400, height: int = 300, style: str = 'cartoon', key: str = '1', highlight_residues=None, visible_chains=None):
+def show_structure_in_streamlit(pdb_file: Path, width: Any = "100%", height: int = 400, style: str = 'cartoon', key: str = '1', highlight_residues=None, visible_chains=None):
     """
     Display 3D structure in Streamlit app.
     
     Args:
         pdb_file: Path to PDB file
-        width: Viewer width
+        width: Viewer width (int or "100%")
         height: Viewer height
         style: Visualization style
         key: Unique key for component
@@ -246,16 +246,16 @@ def show_structure_in_streamlit(pdb_file: Path, width: int = 400, height: int = 
     """
     html = render_3d_structure(pdb_file, width, height, style, key, highlight_residues, visible_chains)
     if html:
-        components.html(html, width=width, height=height, scrolling=False)
+        components.html(html, height=height, scrolling=False)
     else:
         import streamlit as st
         st.error(f"Failed to load {style} viewer")
 
-def show_ligand_view_in_streamlit(pdb_file: Path, ligand_data: dict, width: int = 800, height: int = 600, key: str = 'ligand'):
+def show_ligand_view_in_streamlit(pdb_file: Path, ligand_data: dict, width: Any = "100%", height: int = 600, key: str = 'ligand'):
     """Wrapper for displaying ligand view in Streamlit"""
     html = render_ligand_view(pdb_file, ligand_data, width, height, key)
     if html:
-        components.html(html, width=width, height=height, scrolling=False)
+        components.html(html, height=height, scrolling=False)
     else:
         import streamlit as st
         st.error("Failed to render ligand visualization")

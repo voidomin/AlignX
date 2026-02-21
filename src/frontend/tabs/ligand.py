@@ -105,6 +105,13 @@ def render_ligand_tab(results: Dict[str, Any]) -> None:
         
         history = st.session_state.get('pocket_history', [])
         
+        if history:
+            if st.button("🗑️ Clear Interaction History", use_container_width=True):
+                st.session_state.pocket_history = []
+                if 'current_interactions' in st.session_state:
+                    del st.session_state.current_interactions
+                st.rerun()
+
         if len(history) < 2:
              st.warning("⚠️ Analyze at least 2 different ligands in the 'Single Ligand Analysis' tab to enable comparison.")
         else:
