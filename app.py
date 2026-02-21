@@ -10,6 +10,7 @@ from src.backend.report_generator import ReportGenerator
 from src.backend.ligand_analyzer import LigandAnalyzer
 from src.backend.database import HistoryDatabase
 from src.backend.utilities import SystemManager
+from src.backend.coordinator import AnalysisCoordinator
 
 # Utility Imports
 from src.utils.logger import setup_logger
@@ -58,6 +59,9 @@ def init_session_state():
         
     if 'history_db' not in st.session_state:
         st.session_state.history_db = HistoryDatabase()
+
+    if 'coordinator' not in st.session_state:
+        st.session_state.coordinator = AnalysisCoordinator(st.session_state.config)
 
     if 'auto_recovered' not in st.session_state:
         st.session_state.auto_recovered = False

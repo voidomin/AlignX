@@ -56,20 +56,7 @@ def cached_analyze_structure(_pdb_manager: Any, file_path: Path) -> Dict[str, An
     """
     return _pdb_manager.analyze_structure(file_path)
 
-@st.cache_data(show_spinner=False)
-def cached_run_alignment(_mustang_runner: Any, pdb_files: List[Path], run_dir: Path) -> Tuple[bool, str, Optional[Path]]:
-    """
-    Cached wrapper for Mustang alignment.
-    
-    Args:
-        _mustang_runner: The MustangRunner instance.
-        pdb_files: List of paths to cleaned PDB files.
-        run_dir: Directory where alignment output will be stored.
-        
-    Returns:
-        Tuple of (success, message, result_directory).
-    """
-    return _mustang_runner.run_alignment(pdb_files, run_dir)
+
 
 @st.cache_data(show_spinner=False)
 def cached_fetch_metadata(_pdb_manager: Any, pdb_ids: List[str]) -> Dict[str, Dict[str, str]]:
@@ -90,120 +77,7 @@ def cached_fetch_metadata(_pdb_manager: Any, pdb_ids: List[str]) -> Dict[str, Di
 # Analysis Logic
 # -----------------------------------------------------------------------------
 
-def process_result_directory(result_dir: Path, pdb_ids: List[str], run_id: str = "latest", timestamp: Optional[str] = None, name: str = "Latest Run") -> Tuple[bool, str]:
-    """
-    Process a Mustang result directory and generate all analysis artifacts.
-    Re-uses existing logic to populate st.session_state.results.
-    
-    Args:
-        result_dir: Path to the directory containing Mustang output files.
-        pdb_ids: List of PDB IDs that were aligned.
-        run_id: Unique identifier for this analysis run.
-        timestamp: When the run was executed.
-        name: Human-readable name for the run.
-        
-    Returns:
-        Tuple of (success, message).
-    """
-    try:
-        # Parse RMSD matrix (Centralized in rmsd_calculator)
-        rmsd_df = parse_rmsd_matrix(
-            result_dir,
-            pdb_ids
-        )
-        
-        if rmsd_df is None:
-            return False, "Could not parse RMSD matrix"
 
-        # Generate heatmap
-        heatmap_path = result_dir / 'rmsd_heatmap.png'
-        # We re-generate it to ensure it exists, or just use it if it does?
-        # Re-generating is safer in case of cleanups
-        st.session_state.rmsd_analyzer.generate_heatmap(rmsd_df, heatmap_path)
-        
-        # Calculate statistics
-        stats = st.session_state.rmsd_analyzer.calculate_statistics(rmsd_df)
-
-        # Get alignment PDB path for 3D visualization
-        alignment_pdb = result_dir / 'alignment.pdb'
-        alignment_afasta = result_dir / 'alignment.afasta'
-
-        # Calculate Alignment Stats
-        if alignment_afasta.exists():
-            try:
-                # We need sequence_viewer in session state, usually init in app.py
-                if 'sequence_viewer' in st.session_state:
-                    sequences = st.session_state.sequence_viewer.parse_afasta(alignment_afasta)
-                    if sequences:
-                        stats['chain_length'] = len(list(sequences.values())[0])
-                        stats['seq_identity'] = st.session_state.sequence_viewer.calculate_identity(sequences)
-            except Exception as e:
-                logger.warning(f"Failed to calculate detailed stats: {e}")
-        
-        # Identify clusters
-        clusters = st.session_state.rmsd_analyzer.identify_clusters(rmsd_df)
-        
-        # Generate phylogenetic tree
-        tree_path = result_dir / 'phylogenetic_tree.png'
-        newick_path = result_dir / 'tree.newick'
-        
-        phylo_generator = PhyloTreeGenerator(st.session_state.config)
-        phylo_generator.generate_tree(rmsd_df, tree_path)
-        phylo_generator.export_newick(rmsd_df, newick_path)
-        
-        # Generate Interactive Plotly Figures
-        heatmap_fig = st.session_state.rmsd_analyzer.generate_plotly_heatmap(rmsd_df)
-        tree_fig = phylo_generator.generate_plotly_tree(rmsd_df)
-        
-        # Get alignment PDB path for 3D visualization
-        alignment_pdb = result_dir / 'alignment.pdb'
-        alignment_afasta = result_dir / 'alignment.afasta'
-        
-        # Calculate Residue RMSF
-        logger.info("Calculating Residue RMSF...")
-        try:
-            rmsf_values, conservation_labels = st.session_state.rmsd_analyzer.calculate_residue_rmsf(
-                alignment_pdb, 
-                alignment_afasta
-            )
-            logger.info(f"RMSF calculated: {len(rmsf_values)} residues")
-        except Exception as e:
-            logger.warning(f"RMSF calculation failed (continuing without it): {e}")
-            rmsf_values = []
-        
-        if timestamp is None:
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        # Store results
-        logger.info("Storing results in session state...")
-        st.session_state.results = {
-            'id': run_id,
-            'timestamp': timestamp,
-            'name': name,
-            'pdb_ids': pdb_ids,
-            'rmsd_df': rmsd_df,
-            'heatmap_path': heatmap_path,
-            'stats': stats,
-            'clusters': clusters,
-            'result_dir': result_dir,
-            'tree_path': tree_path,
-            'newick_path': newick_path,
-            'heatmap_fig': heatmap_fig,
-            'tree_fig': tree_fig,
-            'alignment_pdb': alignment_pdb,
-            'alignment_afasta': alignment_afasta,
-            'rmsf_values': rmsf_values
-        }
-        
-        # Clear cached insights so they regenerate
-        if 'insights' in st.session_state:
-            del st.session_state.insights
-            
-        logger.info("Results stored successfully.")
-        return True, "Success"
-    except Exception as e:
-        logger.error(f"Error processing results: {e}", exc_info=True)
-        return False, str(e)
 
 
 def load_run_from_history(run_id: str, is_auto: bool = False) -> None:
@@ -241,202 +115,74 @@ def load_run_from_history(run_id: str, is_auto: bool = False) -> None:
     elif input_method == "Load Example":
         st.session_state.example_select = meta.get('example_name', list(EXAMPLES.keys())[0])
 
-    # Load results
+    # Load results via Coordinator
     if is_auto:
-        # Don't show spinner/success during auto-load to avoid UI jitter
-        process_result_directory(result_path, run['pdb_ids'], run_id=run['id'], timestamp=run['timestamp'], name=run['name'])
+        # Silent recovery
+        results = st.session_state.coordinator.process_result_directory(result_path, run['pdb_ids'])
+        if results:
+            results['id'] = run['id']
+            results['name'] = run['name']
+            results['timestamp'] = run['timestamp']
+            st.session_state.results = results
     else:
         with st.spinner("Restoring analysis results..."):
-            success, msg = process_result_directory(result_path, run['pdb_ids'])
-            if success:
+            results = st.session_state.coordinator.process_result_directory(result_path, run['pdb_ids'])
+            if results:
+                results['id'] = run['id']
+                results['name'] = run['name']
+                results['timestamp'] = run['timestamp']
+                st.session_state.results = results
                 st.success(f"Loaded run: {run['name']}")
                 st.rerun()
             else:
-                st.error(f"Failed to load run: {msg}")
+                st.error("Failed to process result directory.")
 
 
 def run_analysis() -> None:
     """
-    Run the complete analysis pipeline.
-    
-    This function orchestrates:
-    1. Downloading PDBs
-    2. Cleaning/Filtering PDBs
-    3. Structural Alignment (Mustang)
-    4. Post-alignment Analysis (RMSD, Trees, RMSF)
-    5. Saving to history
+    Run the complete analysis pipeline using the AnalysisCoordinator.
     """
     progress_bar = st.progress(0)
     status_text = st.empty()
-    cancel_container = st.empty()
     
-    # Initialize cancellation state
-    if 'cancel_analysis' not in st.session_state:
-        st.session_state.cancel_analysis = False
-    
-    def check_cancel(step_id):
-        if cancel_container.button("🛑 Cancel Analysis", key=f"btn_cancel_{step_id}", use_container_width=True):
-            st.session_state.cancel_analysis = True
-            st.warning("Cancellation requested...")
+    # Progress callback for the coordinator
+    def on_progress(fraction: float, message: str, step: int):
+        render_progress_stepper(step)
+        status_text.text(message)
+        progress_bar.progress(fraction)
         
-        if st.session_state.cancel_analysis:
-            st.session_state.cancel_analysis = False # Reset for next run
-            st.error("Analysis cancelled by user.")
-            progress_bar.empty()
-            status_text.empty()
-            cancel_container.empty()
-            st.stop()
-    
     try:
-        # Step 1: Download PDB files
-        render_progress_stepper(1)
-        check_cancel("download")
-        status_text.text("📥 Step 1/4: Downloading PDB files...")
-        progress_bar.progress(0.1)
+        # Prepare chain selection mapping
+        chain_selection = {}
+        if st.session_state.get('chain_selection_mode') == "Specify chain ID":
+            target_chain = st.session_state.get('selected_chain', 'A')
+            for pid in st.session_state.pdb_ids:
+                chain_selection[pid] = target_chain
         
-        # Use CACHED download
-        download_results = cached_batch_download(
-            st.session_state.pdb_manager,
-            st.session_state.pdb_ids
-        )
-        
-        # Check for failures
-        failed = [pid for pid, (success, msg, path) in download_results.items() if not success]
-        if failed:
-            st.error(f"Failed to download: {', '.join(failed)}")
-            return
-        
-        pdb_files = [path for success, msg, path in download_results.values() if path]
-        progress_bar.progress(0.3)
-        
-        check_cancel("clean")
-        # Step 2: Clean PDB files
-        render_progress_stepper(2)
-        status_text.text("🧹 Step 2/4: Cleaning PDB files...")
-        
-        cleaned_files = []
-        for pdb_file in pdb_files:
-            # Analyze structure to check for multiple chains
-            try:
-                # Use CACHED analysis
-                structure_info = cached_analyze_structure(st.session_state.pdb_manager, pdb_file)
-                
-                # Determine which chain to use based on user preference
-                chain_to_use = None
-                if len(structure_info['chains']) > 1:
-                    # Check user's chain selection preference
-                    if st.session_state.get('chain_selection_mode') == "Specify chain ID":
-                        chain_to_use = st.session_state.get('selected_chain', 'A')
-                        st.info(f"📎 {pdb_file.name}: Using specified chain {chain_to_use}")
-                    else:
-                        # Auto mode: use first chain
-                        chain_to_use = structure_info['chains'][0]['id']
-                        st.info(f"📎 {pdb_file.name}: Auto-selected chain {chain_to_use} ({len(structure_info['chains'])} chains available)")
-                
-                success, msg, cleaned_path = st.session_state.pdb_manager.clean_pdb(
-                    pdb_file,
-                    chain=chain_to_use,  # Use chain based on user preference
-                    remove_water=True,
-                    remove_heteroatoms=False # KEEP LIGANDS for analysis
-                )
-                if cleaned_path:
-                    cleaned_files.append(cleaned_path)
-            except Exception as e:
-                st.error(f"Error cleaning {pdb_file.name}: {str(e)}")
-                logger.error(f"Error cleaning {pdb_file.name}: {str(e)}")
-                continue
-        
-        
-        progress_bar.progress(0.5)
-        
-        check_cancel("align")
-        # Step 3: Run Mustang alignment
-        render_progress_stepper(3)
-        status_text.text("⚙️ Step 3/4: Running Mustang alignment...")
-        
-        output_dir = Path('results') / 'latest_run'
-        
-        # CRITICAL: Clean the output directory before each new run
-        # Stale files from previous runs cause Bio3D to fail or produce wrong results
-        # NOTE: We delete files individually instead of rmtree because Windows may
-        # lock the directory if another process (R, Streamlit watcher) has a handle on it
-        if output_dir.exists():
-            for f in output_dir.iterdir():
-                try:
-                    if f.is_file():
-                        f.unlink()
-                    elif f.is_dir():
-                        shutil.rmtree(f, ignore_errors=True)
-                except PermissionError:
-                    pass  # Skip locked files — they'll be overwritten anyway
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Always clear alignment cache for fresh runs
-        cached_run_alignment.clear()
-              
-        success, msg, result_dir = cached_run_alignment(
-            st.session_state.mustang_runner,
-            cleaned_files,
-            output_dir
+        # Execute via coordinator
+        success, msg, results = st.session_state.coordinator.run_full_pipeline(
+            pdb_ids=st.session_state.pdb_ids,
+            progress_callback=on_progress,
+            chain_selection=chain_selection
         )
         
         if not success:
-            st.error(f"Mustang alignment failed: {msg}")
+            st.error(f"Analysis Failed: {msg}")
             return
             
-        # KEY FIX: Ensure input PDBs are present in the result directory
-        # This is needed because cached runs might skip the MustangRunner step where copying happens
-        for pdb_file in cleaned_files:
-            dest_path = result_dir / pdb_file.name
-            if not dest_path.exists():
-                try:
-                    shutil.copy2(pdb_file, dest_path)
-                except Exception as e:
-                    logger.warning(f"Failed to copy {pdb_file.name} to results: {e}")
+        # Update session state with results
+        st.session_state.results = results
         
-        progress_bar.progress(0.75)
-        
-        check_cancel("viz")
-        # Step 4: Analyze results
-        render_progress_stepper(4)
-        status_text.text("📊 Step 4/4: Generating visualizations...")
-        
-        run_id = f"run_{int(datetime.now().timestamp())}"
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        name = f"Analysis of {len(st.session_state.pdb_ids)} structures ({datetime.now().strftime('%H:%M')})"
-        
-        success, msg = process_result_directory(result_dir, st.session_state.pdb_ids, run_id=run_id, timestamp=timestamp, name=name)
-        
-        if not success:
-            st.error(f"Analysis failed: {msg}")
-            return
-            
+        # UI Polish
         progress_bar.progress(1.0)
         status_text.text("✅ Analysis complete!")
-        cancel_container.empty()
         st.success("Analysis completed successfully!")
-        
-        # Meta info for auto-recovery sync
-        meta = st.session_state.get('metadata', {})
-        meta['input_method'] = st.session_state.get('input_method_radio', 'Manual Entry')
-        meta['example_name'] = st.session_state.get('example_select')
-        
-        saved = st.session_state.history_db.save_run(
-            run_id, 
-            name, 
-            st.session_state.pdb_ids, 
-            result_dir,
-            metadata=meta
-        )
-        if saved:
-            st.toast(f"Saved to history: {name}", icon="✅")
-                      
         st.balloons()
         st.rerun()
         
     except Exception as e:
-        st.error(f"Error during analysis: {str(e)}")
-        logger.error(f"Analysis error: {str(e)}", exc_info=True)
+        st.error(f"Execution Error: {str(e)}")
+        logger.error(f"Execution Error: {str(e)}", exc_info=True)
 
 
 def render_dashboard() -> None:
