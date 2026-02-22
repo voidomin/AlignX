@@ -75,6 +75,54 @@ def render_3d_viewer_tab(results: Dict[str, Any]) -> None:
                 - Each structure is colored differently for easy identification
                 """)
                 
+                # Export controls
+                st.divider()
+                st.markdown("#### 📸 Export Options")
+                exp_col1, exp_col2 = st.columns(2)
+                
+                with exp_col1:
+                    if st.button("🎥 Export Spinning HTML", use_container_width=True, help="Download a self-contained HTML file with a spinning 3D view"):
+                        pdb_content = pdb_path.read_text()
+                        # Escape backticks and backslashes for JS template literal
+                        pdb_escaped = pdb_content.replace("\\", "\\\\").replace("`", "\\`")
+                        
+                        html_content = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>Structural Superposition — Spin View</title>
+<script src="https://3Dmol.org/build/3Dmol-min.js"></script>
+<style>body{{margin:0;background:#111;display:flex;justify-content:center;align-items:center;height:100vh}}
+#viewer{{width:800px;height:600px;border:2px solid #333;border-radius:8px}}</style>
+</head><body>
+<div id="viewer"></div>
+<script>
+let viewer = $3Dmol.createViewer('viewer', {{backgroundColor:'#111'}});
+let pdbData = `{pdb_escaped}`;
+viewer.addModel(pdbData, 'pdb');
+viewer.setStyle({{}}, {{cartoon:{{color:'spectrum'}}}});
+viewer.zoomTo();
+viewer.spin(true);
+viewer.render();
+</script></body></html>"""
+                        
+                        st.download_button(
+                            "⬇️ Download HTML",
+                            data=html_content,
+                            file_name="structure_spin.html",
+                            mime="text/html",
+                            use_container_width=True
+                        )
+                
+                with exp_col2:
+                    if st.button("📄 Export Static PDB", use_container_width=True, help="Download the aligned PDB file"):
+                        pdb_data = pdb_path.read_bytes()
+                        st.download_button(
+                            "⬇️ Download PDB",
+                            data=pdb_data,
+                            file_name="alignment.pdb",
+                            mime="chemical/x-pdb",
+                            use_container_width=True
+                        )
+                
                 # Show active highlights info
                 if hl_chains:
                     chain_summary = ", ".join([f"Chain {c}: {len(r)} residues" for c, r in hl_chains.items()])

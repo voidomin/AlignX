@@ -188,6 +188,70 @@ class LigandAnalyzer:
         
         return results
 
+    def calculate_sasa(self, pdb_file: Path) -> Dict[str, Any]:
+        """
+        Calculate Solvent Accessible Surface Area (SASA) for a PDB structure.
+        
+        Uses BioPython's ShrakeRupley algorithm to compute per-residue and
+        total SASA values.
+        
+        Args:
+            pdb_file: Path to the PDB file.
+            
+        Returns:
+            Dictionary with total SASA, per-chain SASA, and per-residue breakdown.
+        """
+        from Bio.PDB.SASA import ShrakeRupley
+        
+        pdb_file = Path(pdb_file)
+        parser = PDBParser(QUIET=True)
+        
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", PDBConstructionWarning)
+                structure = parser.get_structure('struct', str(pdb_file))
+        except Exception as e:
+            logger.error(f"SASA: Failed to parse {pdb_file}: {e}")
+            return {'error': str(e)}
+
+        # Compute SASA using ShrakeRupley
+        sr = ShrakeRupley()
+        sr.compute(structure[0], level="R")  # Compute at residue level
+        
+        total_sasa = 0.0
+        chain_sasa: Dict[str, float] = {}
+        residue_data: List[Dict[str, Any]] = []
+        
+        for chain in structure[0]:
+            chain_id = chain.get_id()
+            chain_total = 0.0
+            
+            for residue in chain:
+                # Skip water and non-standard residues
+                if residue.get_id()[0] != ' ':
+                    continue
+                    
+                res_sasa = residue.sasa if hasattr(residue, 'sasa') else 0.0
+                chain_total += res_sasa
+                
+                residue_data.append({
+                    'chain': chain_id,
+                    'residue': residue.get_resname().strip(),
+                    'resi': residue.get_id()[1],
+                    'sasa': round(res_sasa, 2)
+                })
+            
+            chain_sasa[chain_id] = round(chain_total, 2)
+            total_sasa += chain_total
+        
+        logger.info(f"SASA computed for {pdb_file.name}: {total_sasa:.1f} Å²")
+        
+        return {
+            'total_sasa': round(total_sasa, 2),
+            'chain_sasa': chain_sasa,
+            'residues': residue_data
+        }
+
     def calculate_interaction_similarity(self, all_interactions: List[Dict[str, Any]]) -> pd.DataFrame:
         """
         Calculate pairwise similarity of ligand interaction fingerprints (Jaccard Index).

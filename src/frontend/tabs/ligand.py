@@ -16,7 +16,7 @@ def render_ligand_tab(results: Dict[str, Any]) -> None:
     render_learning_card("Ligands")
     render_help_expander("ligands")
     
-    tab_single, tab_compare = st.tabs(["🧪 Single Ligand Analysis", "⚔️ Pocket Comparison"])
+    tab_single, tab_compare, tab_sasa = st.tabs(["🧪 Single Ligand Analysis", "⚔️ Pocket Comparison", "🌊 Surface Area (SASA)"])
     
     with tab_single:
         sel_col1, sel_col2 = st.columns(2)
@@ -154,3 +154,56 @@ def render_ligand_tab(results: Dict[str, Any]) -> None:
                 delta_col1.metric("Shared Residue Types", len(shared), help=f"{', '.join(shared)}")
                 delta_col2.metric(f"Unique to {l1_id}", len(unique1), help=f"{', '.join(unique1)}")
                 delta_col3.metric(f"Unique to {l2_id}", len(unique2), help=f"{', '.join(unique2)}")
+
+    with tab_sasa:
+        st.caption("Compute Solvent Accessible Surface Area (SASA) using the Shrake-Rupley algorithm.")
+        
+        selected_sasa_pdb = st.selectbox("Select Protein", st.session_state.pdb_ids, key="sasa_pdb_select")
+        
+        result_dir = results['result_dir']
+        sasa_pdb_path = None
+        for name in [f"{selected_sasa_pdb}.pdb", f"{selected_sasa_pdb.lower()}.pdb", f"{selected_sasa_pdb.upper()}.pdb"]:
+            p = result_dir / name
+            if p.exists():
+                sasa_pdb_path = p
+                break
+        
+        if sasa_pdb_path:
+            if st.button("🌊 Calculate SASA", type="primary", use_container_width=True, key="btn_sasa"):
+                with st.spinner("Computing solvent accessible surface area..."):
+                    sasa_result = st.session_state.ligand_analyzer.calculate_sasa(sasa_pdb_path)
+                    st.session_state.sasa_result = sasa_result
+                    st.session_state.sasa_pdb_id = selected_sasa_pdb
+            
+            if 'sasa_result' in st.session_state and st.session_state.get('sasa_pdb_id') == selected_sasa_pdb:
+                sasa = st.session_state.sasa_result
+                
+                if 'error' in sasa:
+                    st.error(sasa['error'])
+                else:
+                    # Metrics row
+                    m1, m2 = st.columns(2)
+                    m1.metric("Total SASA", f"{sasa['total_sasa']:.1f} Å²")
+                    chain_summary = ", ".join([f"Chain {k}: {v:.0f} Å²" for k, v in sasa['chain_sasa'].items()])
+                    m2.metric("Chains", chain_summary)
+                    
+                    # Per-residue chart
+                    if sasa.get('residues'):
+                        import plotly.express as px
+                        
+                        df_sasa = pd.DataFrame(sasa['residues'])
+                        df_sasa['label'] = df_sasa['residue'] + df_sasa['resi'].astype(str)
+                        
+                        fig = px.bar(
+                            df_sasa,
+                            x='label',
+                            y='sasa',
+                            color='sasa',
+                            color_continuous_scale='Viridis',
+                            labels={'label': 'Residue', 'sasa': 'SASA (Å²)'},
+                            title=f'Per-Residue SASA — {selected_sasa_pdb}'
+                        )
+                        fig.update_layout(height=400, xaxis_tickangle=-45, showlegend=False)
+                        st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.error(f"PDB file not found for {selected_sasa_pdb}")

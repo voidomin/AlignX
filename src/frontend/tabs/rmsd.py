@@ -49,7 +49,8 @@ def render_rmsd_tab(results: Dict[str, Any]) -> None:
         st.metric("Std Dev", f"{stats['std_rmsd']:.2f} Å")
     
     st.subheader("RMSD Matrix")
-    st.dataframe(results['rmsd_df'].style.background_gradient(cmap='RdYlBu_r'))
+    colormap = st.session_state.config.get('visualization', {}).get('heatmap_colormap', 'RdYlBu_r')
+    st.dataframe(results['rmsd_df'].style.background_gradient(cmap=colormap))
     
     st.divider()
     st.subheader("Residue-Level Flexibility (RMSF)")

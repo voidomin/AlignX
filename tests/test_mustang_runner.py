@@ -1,7 +1,9 @@
 import pytest
+import shutil
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 from src.backend.mustang_runner import MustangRunner
+
 
 class TestMustangRunner:
     
@@ -13,11 +15,11 @@ class TestMustangRunner:
         
     @patch('shutil.which')
     def test_check_mustang_native_found(self, mock_which, mock_config):
-        """Test detection of native mustang executable."""
+        """Test detection of native mustang executable via check_installation."""
         mock_which.return_value = "/usr/bin/mustang"
         
         runner = MustangRunner(mock_config)
-        found, msg = runner._check_mustang()
+        found, msg = runner.check_installation()
         
         assert found is True
         assert "found" in msg.lower()
@@ -48,3 +50,72 @@ class TestMustangRunner:
         assert "-F" in cmd
         assert "fasta" in cmd
         assert input_files[0].name in cmd
+
+
+class TestMustangRunnerValidation:
+    """Tests for input validation and error handling."""
+
+    def test_run_alignment_insufficient_files(self, mock_config, tmp_path):
+        """Alignment should fail with fewer than 2 structures."""
+        runner = MustangRunner(mock_config)
+        single_file = tmp_path / "only_one.pdb"
+        single_file.write_text("ATOM      1  CA  ALA A   1       0.0   0.0   0.0  1.00  0.00\n")
+
+        success, msg, result_dir = runner.run_alignment([single_file], tmp_path / "out")
+        assert success is False
+        assert "at least 2" in msg.lower()
+
+    def test_run_alignment_empty_list(self, mock_config, tmp_path):
+        """Alignment should fail with empty input list."""
+        runner = MustangRunner(mock_config)
+
+        success, msg, result_dir = runner.run_alignment([], tmp_path / "out")
+        assert success is False
+
+    @patch('subprocess.run')
+    def test_exit_139_error_message(self, mock_run, mock_config, tmp_path):
+        """Exit code 139 should produce a divergence warning."""
+        runner = MustangRunner(mock_config)
+        runner.executable = "mustang"
+        runner.use_wsl = False
+
+        # Create dummy PDB files in output dir
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+        for name in ["a.pdb", "b.pdb"]:
+            (out_dir / name).write_text("ATOM      1  CA  ALA A   1       0.0   0.0   0.0  1.00  0.00\n")
+
+        # Simulate Mustang segfault — no output files created
+        mock_run.return_value = MagicMock(returncode=139, stdout="", stderr="")
+
+        success, msg, result_dir = runner.run_alignment(
+            [out_dir / "a.pdb", out_dir / "b.pdb"], out_dir
+        )
+
+        assert success is False
+        assert "divergence" in msg.lower()
+
+    @patch('subprocess.run')
+    def test_afasta_standardization(self, mock_run, mock_config, tmp_path):
+        """Test that .afasta is copied to .fasta when .fasta is missing."""
+        runner = MustangRunner(mock_config)
+        runner.executable = "mustang"
+        runner.use_wsl = False
+
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+
+        for name in ["a.pdb", "b.pdb"]:
+            (out_dir / name).write_text("ATOM      1  CA  ALA A   1       0.0   0.0   0.0  1.00  0.00\n")
+
+        # Simulate successful Mustang run that produces .afasta + .pdb
+        mock_run.return_value = MagicMock(returncode=0, stdout="OK", stderr="")
+        (out_dir / "alignment.pdb").write_text("ATOM      1  CA  ALA A   1       0.0   0.0   0.0\n")
+        (out_dir / "alignment.afasta").write_text(">a\nACDEF\n>b\nACDEF\n")
+
+        success, msg, result_dir = runner.run_alignment(
+            [out_dir / "a.pdb", out_dir / "b.pdb"], out_dir
+        )
+
+        assert success is True
+        assert (out_dir / "alignment.fasta").exists()

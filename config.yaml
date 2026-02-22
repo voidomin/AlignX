@@ -37,6 +37,7 @@ output:
     - html
 visualization:
   heatmap_colormap: RdYlBu_r
+  viewer_default_style: cartoon
   tree_format: rectangular
   dpi: 300
 performance:
