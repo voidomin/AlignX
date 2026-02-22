@@ -26,6 +26,9 @@ def render_ligand_tab(results: Dict[str, Any]) -> None:
         
         result_dir = results['result_dir']
         
+        # Ligand analysis requires the ORIGINAL (uncleaned) PDB files because
+        # the cleaning pipeline strips all HETATM records. We look in data/raw/ first.
+        raw_dir = Path("data/raw")
         pdb_path = None
         possible_names = [
             f"{selected_pdb_ligand}.pdb",
@@ -33,11 +36,20 @@ def render_ligand_tab(results: Dict[str, Any]) -> None:
             f"{selected_pdb_ligand.upper()}.pdb"
         ]
         
+        # 1. Check raw directory (has HETATM/ligand records)
         for name in possible_names:
-            p = result_dir / name
+            p = raw_dir / name
             if p.exists():
                 pdb_path = p
                 break
+        
+        # 2. Fallback to result directory (cleaned, may lack ligands)
+        if not pdb_path:
+            for name in possible_names:
+                p = result_dir / name
+                if p.exists():
+                    pdb_path = p
+                    break
         
         if not pdb_path:
             matches = list(result_dir.glob(f"*{selected_pdb_ligand}*.pdb"))
