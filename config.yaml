@@ -45,3 +45,6 @@ performance:
 debug:
   verbose_logging: false
   save_raw_outputs: false
+cache:
+  max_cache_size_mb: 1000
+  enabled: true

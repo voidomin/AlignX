@@ -38,6 +38,14 @@ class HistoryDatabase:
                         metadata TEXT
                     )
                 """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS pdb_cache (
+                        id TEXT PRIMARY KEY,
+                        path TEXT NOT NULL,
+                        size_bytes INTEGER NOT NULL,
+                        last_accessed TEXT NOT NULL
+                    )
+                """)
                 conn.commit()
         except Exception as e:
             logger.error(f"Failed to initialize database: {e}")
@@ -177,3 +185,73 @@ class HistoryDatabase:
         except Exception as e:
             logger.error(f"Failed to clear all runs: {e}")
             return False
+
+    # -------------------------------------------------------------------------
+    # CACHE MANAGEMENT METHODS
+    # -------------------------------------------------------------------------
+
+    def register_cache_item(self, item_id: str, path: str, size_bytes: int) -> bool:
+        """Register or update a PDB file in the cache table."""
+        try:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO pdb_cache (id, path, size_bytes, last_accessed)
+                    VALUES (?, ?, ?, ?)
+                """, (item_id, path, size_bytes, now))
+                conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to register cache item {item_id}: {e}")
+            return False
+
+    def update_cache_access(self, item_id: str) -> bool:
+        """Update the last accessed timestamp for a cache item."""
+        try:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("UPDATE pdb_cache SET last_accessed = ? WHERE id = ?", (now, item_id))
+                conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update cache access for {item_id}: {e}")
+            return False
+
+    def get_oldest_cache_items(self) -> List[Dict[str, Any]]:
+        """Retrieve cache items ordered by last accessed (oldest first)."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM pdb_cache ORDER BY last_accessed ASC")
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Failed to retrieve oldest cache items: {e}")
+            return []
+
+    def remove_cache_item(self, item_id: str) -> bool:
+        """Remove an item from the cache database."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM pdb_cache WHERE id = ?", (item_id,))
+                conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to remove cache item {item_id}: {e}")
+            return False
+
+    def get_total_cache_size(self) -> int:
+        """Get the total size of all items in the cache (bytes)."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT SUM(size_bytes) FROM pdb_cache")
+                result = cursor.fetchone()
+                return result[0] if result and result[0] else 0
+        except Exception as e:
+            logger.error(f"Failed to get total cache size: {e}")
+            return 0

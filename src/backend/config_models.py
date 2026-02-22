@@ -6,6 +6,10 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, field_validator
 
 
+class CacheConfig(BaseModel):
+    max_cache_size_mb: int = Field(1000, description="Maximum size of PDB cache in MB")
+    enabled: bool = Field(True, description="Whether persistent caching is enabled")
+
 class AppConfig(BaseModel):
     name: str = Field(..., description="Application name")
     version: str = Field(..., description="Application version")
@@ -94,6 +98,7 @@ class PipelineConfig(BaseModel):
     visualization: VisualizationConfig
     performance: PerformanceConfig
     debug: DebugConfig
+    cache: Optional[CacheConfig] = Field(default_factory=CacheConfig)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to raw dictionary for backward compatibility."""

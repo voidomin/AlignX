@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
 from src.utils.logger import get_logger
+from src.utils.cache_manager import CacheManager
 
 logger = get_logger()
 
@@ -26,8 +27,10 @@ class PDBManager:
         
         Args:
             config: Configuration dictionary
+            cache_manager: Optional CacheManager instance
         """
         self.config = config
+        self.cache_manager = cache_manager
         self.pdb_source = config.get('pdb', {}).get('source_url', 
                                                      'https://files.rcsb.org/download/')
         self.timeout = config.get('pdb', {}).get('timeout', 60)
@@ -90,6 +93,8 @@ class PDBManager:
         output_file = self.raw_dir / f"{pdb_id}.pdb"
         if output_file.exists() and not force:
             file_size_mb = output_file.stat().st_size / (1024 * 1024)
+            if self.cache_manager:
+                self.cache_manager.update_access(pdb_id)
             return True, f"Using local file ({file_size_mb:.2f} MB)", output_file
         
         pdb_id = pdb_id.upper()
@@ -118,6 +123,10 @@ class PDBManager:
                     f.write(content)
                 
             if manage_client: await client.aclose()
+            
+            if self.cache_manager:
+                self.cache_manager.register_item(pdb_id, output_file)
+                
             logger.info(f"Downloaded {pdb_id} successfully ({file_size_mb:.2f} MB)")
             return True, f"Downloaded ({file_size_mb:.2f} MB)", output_file
             

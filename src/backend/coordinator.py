@@ -16,6 +16,7 @@ from src.backend.rmsd_analyzer import RMSDAnalyzer
 from src.backend.phylo_tree import PhyloTreeGenerator
 from src.backend.rmsd_calculator import parse_rmsd_matrix
 from src.backend.database import HistoryDatabase
+from src.utils.cache_manager import CacheManager
 
 logger = get_logger()
 
@@ -26,10 +27,11 @@ class AnalysisCoordinator:
     """
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-        self.pdb_manager = PDBManager(config)
+        self.history_db = HistoryDatabase()
+        self.cache_manager = CacheManager(config, self.history_db)
+        self.pdb_manager = PDBManager(config, self.cache_manager)
         self.mustang_runner = MustangRunner(config)
         self.rmsd_analyzer = RMSDAnalyzer(config)
-        self.history_db = HistoryDatabase()
         
         # Eagerly check installation to set up the correct backend
         success, msg = self.mustang_runner.check_installation()
