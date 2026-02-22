@@ -331,11 +331,7 @@ class MustangRunner:
                 cwd=str(run_cwd)
             )
             
-            if result.returncode != 0:
-                logger.error(f"Mustang failed: {result.stderr}")
-                return False, f"Mustang execution failed: {result.stderr}", None
-            
-            # Save stdout to log file for RMSD parsing
+            # Save output to log file regardless of success for debugging
             log_file = output_dir / 'mustang.log'
             with open(log_file, 'w') as f:
                 f.write(result.stdout)
@@ -347,16 +343,37 @@ class MustangRunner:
             fasta_file = output_dir / 'alignment.fasta'
             pdb_file = output_dir / 'alignment.pdb'
             
+            # Legacy Mustang often segfaults (139) on exit even if it produced files.
+            # We check if files exist to determine real success.
+            is_definitely_failed = result.returncode != 0 and not pdb_file.exists()
+            
+            if is_definitely_failed:
+                error_msg = f"Mustang execution failed (Exit {result.returncode})"
+                if result.returncode == 139:
+                    error_msg += ". This often indicates structural divergence (e.g. 1BKV/Collagen vs Globular). Try removing structurally atypical proteins."
+                
+                logger.error(f"Mustang failed (Exit {result.returncode}).")
+                logger.error(f"STDOUT: {result.stdout}")
+                logger.error(f"STDERR: {result.stderr}")
+                return False, error_msg, None
+            
             if not pdb_file.exists():
                  logger.error("Mustang did not produce alignment.pdb")
                  return False, "Mustang did not produce alignment.pdb", None
 
             # Standardize FASTA output name
-            if afasta_file.exists() and not fasta_file.exists():
-                shutil.copy(afasta_file, output_dir / 'alignment.fasta')
-            elif not fasta_file.exists():
-                logger.error("Mustang did not produce alignment fasta")
-                return False, "Mustang did not produce alignment fasta", None
+            # Mustang produces .afasta or .fasta
+            if not fasta_file.exists():
+                if afasta_file.exists():
+                    shutil.copy(afasta_file, fasta_file)
+                else:
+                    # Check for .fasta (Mustang sometimes uses this)
+                    possible_fasta = list(output_dir.glob("*.fasta"))
+                    if possible_fasta and possible_fasta[0].name != 'alignment.fasta':
+                         shutil.copy(possible_fasta[0], fasta_file)
+                    elif not possible_fasta:
+                        logger.error("Mustang did not produce alignment fasta")
+                        return False, "Mustang did not produce alignment fasta", None
             
             # CALCULATE RMSD MATRIX (Python Native)
             try:

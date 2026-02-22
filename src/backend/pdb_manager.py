@@ -2,6 +2,8 @@
 
 import requests
 import httpx
+import shutil
+import logging
 import asyncio
 import re
 from pathlib import Path
@@ -206,39 +208,110 @@ class PDBManager:
             class CleanSelect(Select):
                 def accept_residue(self, residue):
                     # Remove water
-                    if remove_water and residue.id[0] == 'W':
+                    if remove_water and (residue.id[0] == 'W' or residue.resname == 'HOH'):
                         return 0
-                    # Remove heteroatoms
-                    if remove_heteroatoms and residue.id[0] != ' ':
+                    
+                    # Keep standard residues
+                    if residue.id[0] == ' ':
+                        return 1
+                    
+                    # For non-standard residues (HETATM), keep them if they have a CA atom
+                    # (prevents gaps in structures like Collagen with HYP)
+                    if residue.has_id('CA'):
+                        return 1
+                        
+                    return 0 if remove_heteroatoms else 1
+                
+                def accept_atom(self, atom):
+                    # Exclude hydrogens (mustang often crashes on them)
+                    if atom.element == 'H' or atom.name.startswith('H'):
                         return 0
                     return 1
-                
-                def accept_model(self, model):
-                    # Mustang requires exactly one model/chain. 
-                    # NMR structures often have many; we only take the first.
-                    return 1 if model.id == 0 else 0
-                
-                def accept_chain(self, chain_obj):
-                    if chain is None:
-                        return 1
-                    return chain_obj.id == chain
             
-            # Save cleaned structure
+            # Extract model 0
+            model = structure[0]
+            
+            # Create a New sanitized structure
+            new_structure = PDB.Structure.Structure(structure.id)
+            new_model = PDB.Model.Model(0)
+            new_structure.add(new_model)
+            
+            # Find the chain
+            target_chain_obj = None
+            for ch in model:
+                if chain is None or ch.id == chain:
+                    target_chain_obj = ch
+                    break
+            
+            if not target_chain_obj:
+                 return False, f"Chain {chain} not found", None
+                 
+            new_chain = PDB.Chain.Chain(target_chain_obj.id)
+            new_model.add(new_chain)
+            
+            # Mapping of common non-standard residues to standard ones
+            RESIDUE_MAPPING = {
+                'HYP': 'PRO',
+                'MSE': 'MET',
+                'CSD': 'ALA',
+                'CAS': 'CYS',
+                'KCX': 'LYS',
+                'LLP': 'LYS',
+                'CME': 'CYS',
+                'MLY': 'LYS',
+            }
+            
+            clean_select = CleanSelect()
+            res_count = 1
+            for residue in target_chain_obj:
+                # Use our logic to accept residue
+                if not clean_select.accept_residue(residue):
+                    continue
+                
+                # Standardize residue: remove HETATM prefix, map name, renumber
+                res_name = residue.resname.strip()
+                std_res_name = RESIDUE_MAPPING.get(res_name, res_name)
+                
+                # Force to be standard ATOM record: id[0] = ' '
+                new_id = (' ', res_count, ' ')
+                new_res = PDB.Residue.Residue(new_id, std_res_name, ' ')
+                
+                # Add atoms
+                atoms_added = 0
+                for atom in residue:
+                    if clean_select.accept_atom(atom):
+                        # Construct a fresh atom to ensure clean state
+                        new_atom = PDB.Atom.Atom(
+                            atom.name,
+                            atom.coord,
+                            atom.occupancy,
+                            atom.bfactor,
+                            atom.altloc,
+                            atom.get_fullname(), # Fix: fullname must be string
+                            atom.serial_number,
+                            element=atom.element
+                        )
+                        new_res.add(new_atom)
+                        atoms_added += 1
+                
+                if atoms_added > 0:
+                    new_chain.add(new_res)
+                    res_count += 1
+            
+            # Save cleaned structure with LF line endings
             output_file = self.cleaned_dir / pdb_file.name
-            io = PDBIO()
-            io.set_structure(structure)
-            io.save(str(output_file), CleanSelect())
+            with open(str(output_file), 'w', newline='\n') as f:
+                io = PDBIO()
+                io.set_structure(new_structure)
+                io.save(f)
             
             # Get size reduction
             original_size = pdb_file.stat().st_size / (1024 * 1024)
             cleaned_size = output_file.stat().st_size / (1024 * 1024)
             
-            msg = f"Cleaned: {original_size:.2f} MB → {cleaned_size:.2f} MB"
-            if chain:
-                msg += f" (Chain {chain} only)"
+            logger.info(f"Cleaned {pdb_file.name}: {original_size:.2f}MB -> {cleaned_size:.2f}MB")
             
-            logger.info(msg)
-            return True, msg, output_file
+            return True, "Cleaning and sanitization successful", output_file
             
         except Exception as e:
             logger.error(f"Failed to clean {pdb_file.name}: {str(e)}")

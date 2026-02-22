@@ -307,6 +307,8 @@ def render_dashboard() -> None:
             st.session_state.highlight_protein = "All Proteins"
             st.session_state.residue_selections = {}
             st.session_state.highlight_chains = {}
+            st.session_state.insights = None
+            st.session_state.insights_run_id = None
             if 'chain_info' in st.session_state:
                 del st.session_state.chain_info
             # Clear all @st.cache_data caches so new proteins get fresh runs
