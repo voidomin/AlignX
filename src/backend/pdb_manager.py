@@ -21,7 +21,7 @@ logger = get_logger()
 class PDBManager:
     """Manages PDB file downloads, validation, and preprocessing."""
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], cache_manager: Optional[CacheManager] = None):
         """
         Initialize PDB Manager.
         

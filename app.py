@@ -15,6 +15,7 @@ from src.backend.coordinator import AnalysisCoordinator
 # Utility Imports
 from src.utils.logger import setup_logger
 from src.utils.config_loader import load_config
+from src.utils.cache_manager import CacheManager
 
 # Frontend Modules
 from src.frontend import utils, home, sidebar, analysis, results
@@ -33,8 +34,14 @@ def init_session_state():
         st.session_state.config = load_config()
         st.session_state.logger, st.session_state.log_file = setup_logger()
     
+    if 'history_db' not in st.session_state:
+        st.session_state.history_db = HistoryDatabase()
+        
+    if 'cache_manager' not in st.session_state:
+        st.session_state.cache_manager = CacheManager(st.session_state.config, st.session_state.history_db)
+    
     if 'pdb_manager' not in st.session_state:
-        st.session_state.pdb_manager = PDBManager(st.session_state.config)
+        st.session_state.pdb_manager = PDBManager(st.session_state.config, st.session_state.cache_manager)
     
     if 'mustang_runner' not in st.session_state:
         st.session_state.mustang_runner = MustangRunner(st.session_state.config)
@@ -57,9 +64,6 @@ def init_session_state():
     if 'ligand_analyzer' not in st.session_state:
         st.session_state.ligand_analyzer = LigandAnalyzer(st.session_state.config)
         
-    if 'history_db' not in st.session_state:
-        st.session_state.history_db = HistoryDatabase()
-
     if 'coordinator' not in st.session_state:
         st.session_state.coordinator = AnalysisCoordinator(st.session_state.config)
 
