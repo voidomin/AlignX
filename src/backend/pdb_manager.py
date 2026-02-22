@@ -109,18 +109,17 @@ class PDBManager:
             if manage_client:
                 client = httpx.AsyncClient(timeout=self.timeout)
             
-            async with client.get(url, follow_redirects=True) as response:
-                if response.status_code != 200:
-                    if manage_client: await client.aclose()
-                    return False, f"Download failed (Status {response.status_code})", None
-                
-                # Check file size
-                file_size = int(response.headers.get('content-length', 0))
-                file_size_mb = file_size / (1024 * 1024)
-                
-                content = await response.aread()
-                with open(output_file, 'wb') as f:
-                    f.write(content)
+            response = await client.get(url, follow_redirects=True)
+            if response.status_code != 200:
+                if manage_client: await client.aclose()
+                return False, f"Download failed (Status {response.status_code})", None
+            
+            # Check file size
+            file_size = len(response.content)
+            file_size_mb = file_size / (1024 * 1024)
+            
+            with open(output_file, 'wb') as f:
+                f.write(response.content)
                 
             if manage_client: await client.aclose()
             
