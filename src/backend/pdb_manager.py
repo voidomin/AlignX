@@ -213,6 +213,11 @@ class PDBManager:
                         return 0
                     return 1
                 
+                def accept_model(self, model):
+                    # Mustang requires exactly one model/chain. 
+                    # NMR structures often have many; we only take the first.
+                    return 1 if model.id == 0 else 0
+                
                 def accept_chain(self, chain_obj):
                     if chain is None:
                         return 1
