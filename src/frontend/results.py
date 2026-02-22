@@ -18,6 +18,10 @@ def display_results(results: Optional[Dict[str, Any]] = None) -> None:
 
     st.success(f"### Analysis Results: {results.get('name', 'Latest Run')}")
     run_id = results.get('id', 'N/A')
+    
+    # Ensure id is present in the dictionary for downstream tabs
+    if 'id' not in results:
+        results['id'] = results.get('run_id', 'latest')
     timestamp = results.get('timestamp', 'N/A')
     st.caption(f"Run ID: `{run_id}` | Timestamp: {timestamp}")
     
@@ -33,6 +37,10 @@ def display_results(results: Optional[Dict[str, Any]] = None) -> None:
     ]
     
     t1, t2, t3, t4, t5, t6, t7 = st.tabs(tab_list)
+    
+    # Ensure id/metadata is present (Defensive)
+    if 'id' not in results:
+        results['id'] = results.get('run_id', 'latest')
     
     with t1:
         rmsd.render_rmsd_tab(results)

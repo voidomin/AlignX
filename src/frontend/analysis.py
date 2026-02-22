@@ -154,16 +154,28 @@ def run_analysis() -> None:
     try:
         # Prepare chain selection mapping
         chain_selection = {}
-        if st.session_state.get('chain_selection_mode') == "Specify chain ID":
-            target_chain = st.session_state.get('selected_chain', 'A')
-            for pid in st.session_state.pdb_ids:
-                chain_selection[pid] = target_chain
+        
+        # 1. Check for manual individual selections first
+        manual_selections = st.session_state.get('manual_chain_selections', {})
+        
+        # 2. Apply logic based on mode
+        mode = st.session_state.get('chain_selection_mode', 'Auto (use first chain)')
+        
+        for pid in st.session_state.pdb_ids:
+            # Individual selection takes precedence
+            if pid in manual_selections:
+                chain_selection[pid] = manual_selections[pid]
+            elif mode == "Specify chain ID":
+                chain_selection[pid] = st.session_state.get('selected_chain', 'A')
+            # Else: Coordinator will default to first chain (Auto)
         
         # Execute via coordinator
         success, msg, results = st.session_state.coordinator.run_full_pipeline(
             pdb_ids=st.session_state.pdb_ids,
             progress_callback=on_progress,
-            chain_selection=chain_selection
+            chain_selection=chain_selection,
+            remove_water=st.session_state.get('remove_water', True),
+            remove_heteroatoms=st.session_state.get('remove_hetero', True)
         )
         
         if not success:
@@ -369,13 +381,39 @@ def render_dashboard() -> None:
         # Chain Info Display
         if 'chain_info' in st.session_state and st.session_state.chain_info:
             st.success("✓ Chain analysis complete!")
-            with st.expander("🔗 Chain Information", expanded=True):
+            with st.expander("🔗 Chain Information & Selection", expanded=True):
+                if 'manual_chain_selections' not in st.session_state:
+                    st.session_state.manual_chain_selections = {}
+                
                 for pdb_id, info in st.session_state.chain_info.items():
-                    st.markdown(f"**{pdb_id}**")
-                    cols = st.columns(len(info['chains']) if len(info['chains']) <= 5 else 5)
-                    for idx, chain in enumerate(info['chains']):
-                        with cols[idx % 5]:
-                            st.metric(f"Chain {chain['id']}", f"{chain['residue_count']} residues")
+                    # Create a card-like container for each protein
+                    st.markdown(f"#### {pdb_id}")
+                    
+                    c1, c2 = st.columns([1, 2])
+                    
+                    with c1:
+                        # Allow selecting chain for THIS PDB
+                        chain_ids = [c['id'] for c in info['chains']]
+                        current_sel = st.session_state.manual_chain_selections.get(pdb_id, chain_ids[0] if chain_ids else "A")
+                        
+                        new_sel = st.selectbox(
+                            f"Select Chain for {pdb_id}",
+                            options=chain_ids,
+                            index=chain_ids.index(current_sel) if current_sel in chain_ids else 0,
+                            key=f"sel_chain_{pdb_id}",
+                            label_visibility="collapsed"
+                        )
+                        st.session_state.manual_chain_selections[pdb_id] = new_sel
+                    
+                    with c2:
+                        cols = st.columns(len(info['chains']) if len(info['chains']) <= 4 else 4)
+                        for idx, chain in enumerate(info['chains']):
+                            with cols[idx % 4]:
+                                # Highlight the selected chain
+                                label = f"Chain {chain['id']}"
+                                if chain['id'] == st.session_state.manual_chain_selections[pdb_id]:
+                                    label = f"🎯 {label}"
+                                st.metric(label, f"{chain['residue_count']} res")
                     st.divider()
 
     # 4. Console

@@ -108,8 +108,8 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
             filter_chains = st.checkbox("Filter large files", value=True,
                                        help="Automatically suggest chain extraction for large PDB files")
             
-            remove_water = st.checkbox("Remove water molecules", value=True)
-            remove_hetero = st.checkbox("Remove heteroatoms", value=True)
+            remove_water = st.checkbox("Remove water molecules", value=True, key="remove_water")
+            remove_hetero = st.checkbox("Remove heteroatoms", value=True, key="remove_hetero")
             
             st.markdown("**Chain Selection**")
             chain_selection = st.radio(

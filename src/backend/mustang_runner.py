@@ -125,14 +125,17 @@ class MustangRunner:
         
         # 2. Check System-wide WSL Binary (Only on Windows)
         if self.is_windows:
+            wsl_path = shutil.which('wsl') or "C:/Windows/System32/wsl.exe"
             try:
-                res = subprocess.run(['wsl', 'which', 'mustang'], capture_output=True, text=True, timeout=5)
+                res = subprocess.run([wsl_path, 'which', 'mustang'], capture_output=True, text=True, timeout=5)
                 if res.returncode == 0:
                     self.use_wsl = True
                     self.mustang_path = Path('mustang') 
+                    self.executable = 'mustang'
+                    logger.info(f"System Mustang binary found in WSL using {wsl_path}")
                     return True, "System Mustang binary found (WSL)"
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"WSL check at {wsl_path} failed: {e}")
 
         # 3. Check Compiled Binary (Search build path)
         build_dir = self.base_dir / 'mustang_build'
@@ -177,10 +180,12 @@ class MustangRunner:
         """Check if Mustang is properly installed with fallbacks."""
         
         # 1. Check if 'mustang' is in PATH (Native)
-        if shutil.which('mustang'):
+        path_binary = shutil.which('mustang')
+        if path_binary:
              self.backend = 'native'
-             self.executable = 'mustang'
-             return True, "Found native Mustang binary in PATH"
+             self.executable = path_binary # Use absolute path found by shutil.which
+             logger.info(f"Found native Mustang binary in PATH: {path_binary}")
+             return True, f"Found native Mustang binary in PATH: {path_binary}"
 
         # 2. Check System-wide WSL Binary (Only on Windows)
         if self.is_windows:
@@ -188,7 +193,8 @@ class MustangRunner:
                 # Direct check for mustang in WSL
                 # Note: WSL output might be UTF-16 in some terminals, leading to \x00 bytes
                 # Increased timeout to 30s as WSL might need to spin up (cold start)
-                res = subprocess.run(['wsl', 'which', 'mustang'], capture_output=True, timeout=30)
+                wsl_path = shutil.which('wsl') or "C:/Windows/System32/wsl.exe"
+                res = subprocess.run([wsl_path, 'which', 'mustang'], capture_output=True, timeout=30)
                 
                 # Robust decoding
                 try:
@@ -202,15 +208,16 @@ class MustangRunner:
                 if res.returncode == 0 and stdout_str and 'mustang' in stdout_str:
                     self.use_wsl = True
                     self.mustang_path = Path('mustang') 
+                    self.executable = 'mustang'
                     # Force backend to wsl if it was auto OR bio3d (prioritize native)
                     if self.backend in ['auto', 'bio3d']:
                         self.backend = 'wsl'
-                    logger.info(f"System Mustang binary found in WSL: {stdout_str}")
-                    return True, "System Mustang binary found (WSL)"
+                    logger.info(f"System Mustang binary found in WSL ({wsl_path}): {stdout_str}")
+                    return True, f"System Mustang binary found (WSL: {wsl_path})"
                 else:
-                    logger.warning(f"WSL check failed. 'wsl which mustang' returned: '{stdout_str}' (Exit: {res.returncode})")
+                    logger.warning(f"WSL check failed using {wsl_path}. 'wsl which mustang' returned: '{stdout_str}' (Exit: {res.returncode})")
             except Exception as e:
-                logger.warning(f"WSL check exception: {e}")
+                logger.warning(f"WSL check exception using {wsl_path}: {e}")
 
         # 3. Try to Compile
         if self._compile_from_source():
@@ -229,6 +236,7 @@ class MustangRunner:
                      self.executable = str(self.mustang_path)
                      return True, "Compiled Mustang binary (Native)"
              
+        logger.error("Mustang binary found neither in PATH nor in WSL")
         return False, "Mustang binary found neither in PATH nor in WSL"
 
     
@@ -272,15 +280,32 @@ class MustangRunner:
         
         output_prefix_arg = 'alignment'
 
+        if not self.executable:
+             # Fallback: if check_installation was never called but wsl exists
+             wsl_path = shutil.which('wsl') or "C:/Windows/System32/wsl.exe"
+             if self.is_windows and (shutil.which('wsl') or Path(wsl_path).exists()):
+                 self.use_wsl = True
+                 self.executable = 'mustang'
+                 logger.info(f"No executable set, falling back to 'mustang' via WSL ({wsl_path})")
+             else:
+                 self.executable = 'mustang'
+                 logger.info("No executable set, falling back to 'mustang' (Native)")
+
+        logger.info(f"Constructing command. Executable: {self.executable}, WSL: {getattr(self, 'use_wsl', False)}")
+        
         if getattr(self, 'use_wsl', False):
-            cmd = ['wsl', str(self.executable)]
+            wsl_exe = shutil.which('wsl') or "C:/Windows/System32/wsl.exe"
+            cmd = [wsl_exe, str(self.executable)]
         else:
             # Native execution
-            exe_path = Path(self.executable)
-            if exe_path.exists():
-                cmd = [str(exe_path.resolve())]
+            exe_str = str(self.executable)
+            if os.path.isabs(exe_str) and Path(exe_str).exists():
+                cmd = [exe_str]
+            elif shutil.which(exe_str):
+                cmd = [shutil.which(exe_str)]
             else:
-                cmd = [str(self.executable)]
+                # If all else fails, just use the string and hope it's in path
+                cmd = [exe_str]
 
         # Add arguments
         cmd.extend(['-i'] + input_filenames + [

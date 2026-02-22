@@ -30,12 +30,21 @@ class AnalysisCoordinator:
         self.rmsd_analyzer = RMSDAnalyzer(config)
         self.history_db = HistoryDatabase()
         
+        # Eagerly check installation to set up the correct backend
+        success, msg = self.mustang_runner.check_installation()
+        if not success:
+            logger.warning(f"Mustang installation check failed: {msg}")
+        else:
+            logger.info(f"Mustang installation verified: {msg}")
+        
     def run_full_pipeline(
         self, 
         pdb_ids: List[str], 
         output_dir: Optional[Path] = None,
         progress_callback: Optional[Callable[[float, str, int], None]] = None,
-        chain_selection: Optional[Dict[str, str]] = None
+        chain_selection: Optional[Dict[str, str]] = None,
+        remove_water: bool = True,
+        remove_heteroatoms: bool = True
     ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         """
         Execute the full analysis pipeline.
@@ -71,11 +80,19 @@ class AnalysisCoordinator:
                 pdb_id = pdb_file.stem.split('_')[0].upper()
                 target_chain = chain_selection.get(pdb_id) if chain_selection else None
                 
+                # Mustang requires exactly one chain per structure.
+                # If no specific chain is requested, we automatically pick the first one.
+                if not target_chain:
+                    info = self.pdb_manager.analyze_structure(pdb_file)
+                    if info['chains']:
+                        target_chain = info['chains'][0]['id']
+                        logger.info(f"Auto-detected multi-chain PDB {pdb_id}. Selecting chain '{target_chain}' for Mustang.")
+                
                 success, msg, cleaned_path = self.pdb_manager.clean_pdb(
                     pdb_file,
                     chain=target_chain,
-                    remove_water=True,
-                    remove_heteroatoms=False
+                    remove_water=remove_water,
+                    remove_heteroatoms=remove_heteroatoms
                 )
                 if cleaned_path:
                     cleaned_files.append(cleaned_path)
@@ -108,8 +125,9 @@ class AnalysisCoordinator:
                 return False, "Failed to process result directory", None
             
             # 5. SAVE TO HISTORY
-            run_id = f"run_{int(datetime.now().timestamp())}"
-            run_name = f"Analysis of {len(pdb_ids)} structures ({datetime.now().strftime('%H:%M')})"
+            now = datetime.now()
+            run_id = f"run_{int(now.timestamp())}"
+            run_name = f"Analysis of {len(pdb_ids)} structures ({now.strftime('%H:%M')})"
             
             self.history_db.save_run(
                 run_id,
@@ -117,6 +135,11 @@ class AnalysisCoordinator:
                 pdb_ids,
                 result_dir
             )
+            
+            # Inject metadata into results for UI
+            results['id'] = run_id
+            results['name'] = run_name
+            results['timestamp'] = now.strftime('%Y-%m-%d %H:%M:%S')
             
             if progress_callback: progress_callback(1.0, "✅ Analysis complete!", 4)
             return True, "Analysis completed successfully", results

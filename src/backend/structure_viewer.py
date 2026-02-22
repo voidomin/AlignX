@@ -1,7 +1,7 @@
 """3D structure visualization using py3Dmol."""
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 import streamlit.components.v1 as components
 
 from src.utils.logger import get_logger

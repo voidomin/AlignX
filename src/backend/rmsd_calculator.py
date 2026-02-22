@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from Bio.PDB import PDBParser
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from src.utils.logger import get_logger
 
 logger = get_logger()

@@ -11,7 +11,13 @@ def render_downloads_tab(results: Dict[str, Any]) -> None:
     Args:
         results: The results dictionary containing paths to all exportable artifacts.
     """
+    # Telemetry to confirm reload in user console
+    print(f"DEBUG: Rendering downloads tab for run {results.get('id', 'unknown')}")
+    
     st.subheader("Data Downloads")
+    
+    # Defensive metadata retrieval
+    run_id = results.get('id') or results.get('run_id') or "latest"
     
     col_d1, col_d2 = st.columns(2)
     
@@ -37,7 +43,7 @@ def render_downloads_tab(results: Dict[str, Any]) -> None:
                             st.download_button(
                                 label="📥 Download PDF Report",
                                 data=f,
-                                file_name=f"Mustang_Report_{results['id']}.pdf",
+                                file_name=f"Mustang_Report_{run_id}.pdf",
                                 mime="application/pdf",
                                 use_container_width=True
                             )
@@ -60,7 +66,7 @@ def render_downloads_tab(results: Dict[str, Any]) -> None:
                             st.download_button(
                                 label="📥 Download HTML Notebook",
                                 data=f,
-                                file_name=f"Lab_Notebook_{results['id']}.html",
+                                file_name=f"Lab_Notebook_{run_id}.html",
                                 mime="text/html",
                                 use_container_width=True
                             )
@@ -75,22 +81,22 @@ def render_downloads_tab(results: Dict[str, Any]) -> None:
         # CSV Data
         if results.get('rmsd_df') is not None:
              csv = results['rmsd_df'].to_csv().encode('utf-8')
-             st.download_button("📥 Raw RMSD Matrix (CSV)", csv, f"rmsd_matrix_{results['id']}.csv", "text/csv", use_container_width=True)
+             st.download_button("📥 Raw RMSD Matrix (CSV)", csv, f"rmsd_matrix_{run_id}.csv", "text/csv", use_container_width=True)
         
         # Mustang Alignment
         if results.get('alignment_pdb') and results['alignment_pdb'].exists():
             with open(results['alignment_pdb'], "rb") as f:
-                st.download_button("📥 Mustang PDB Alignment", f, f"alignment_{results['id']}.pdb", use_container_width=True)
+                st.download_button("📥 Mustang PDB Alignment", f, f"alignment_{run_id}.pdb", use_container_width=True)
                 
         # Fasta Alignment
         if results.get('alignment_afasta') and results['alignment_afasta'].exists():
             with open(results['alignment_afasta'], "rb") as f:
-                st.download_button("📥 Sequence Alignment (FASTA)", f, f"alignment_{results['id']}.fasta", use_container_width=True)
+                st.download_button("📥 Sequence Alignment (FASTA)", f, f"alignment_{run_id}.fasta", use_container_width=True)
         
         # RMSD Plot
         if results.get('heatmap_path') and results['heatmap_path'].exists():
             with open(results['heatmap_path'], "rb") as f:
-                st.download_button("📥 RMSD Heatmap (PNG)", f, f"heatmap_{results['id']}.png", "image/png", use_container_width=True)
+                st.download_button("📥 RMSD Heatmap (PNG)", f, f"heatmap_{run_id}.png", "image/png", use_container_width=True)
 
     st.divider()
     st.markdown("### 📦 Complete Package")
@@ -102,32 +108,32 @@ def render_downloads_tab(results: Dict[str, Any]) -> None:
             with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
                 # Add PDB alignment
                 if results.get('alignment_pdb') and results['alignment_pdb'].exists():
-                    zip_file.write(results['alignment_pdb'], arcname=f"alignment_{results['id']}.pdb")
+                    zip_file.write(results['alignment_pdb'], arcname=f"alignment_{run_id}.pdb")
                 
                 # Add AFasta
                 if results.get('alignment_afasta') and results['alignment_afasta'].exists():
-                    zip_file.write(results['alignment_afasta'], arcname=f"alignment_{results['id']}.afasta")
+                    zip_file.write(results['alignment_afasta'], arcname=f"alignment_{run_id}.afasta")
                 
                 # Add RMSD CSV
                 if results.get('rmsd_df') is not None:
                     csv_data = results['rmsd_df'].to_csv()
-                    zip_file.writestr(f"rmsd_matrix_{results['id']}.csv", csv_data)
+                    zip_file.writestr(f"rmsd_matrix_{run_id}.csv", csv_data)
                 
                 # Add Heatmap
                 if results.get('heatmap_path') and results['heatmap_path'].exists():
-                    zip_file.write(results['heatmap_path'], arcname=f"rmsd_heatmap_{results['id']}.png")
+                    zip_file.write(results['heatmap_path'], arcname=f"rmsd_heatmap_{run_id}.png")
                 
                 # Add Lab Notebook (if it exists or try to export)
                 from src.backend.notebook_exporter import NotebookExporter
                 exporter = NotebookExporter()
                 nb_path = exporter.export(results) # Generates if needed
                 if nb_path and nb_path.exists():
-                    zip_file.write(nb_path, arcname=f"lab_notebook_{results['id']}.html")
+                    zip_file.write(nb_path, arcname=f"lab_notebook_{run_id}.html")
             
             st.download_button(
                 label="📥 Download Everything (.zip)",
                 data=zip_buffer.getvalue(),
-                file_name=f"Mustang_Full_Results_{results['id']}.zip",
+                file_name=f"Mustang_Full_Results_{run_id}.zip",
                 mime="application/zip",
                 use_container_width=True
             )
