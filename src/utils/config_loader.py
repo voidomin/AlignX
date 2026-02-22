@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from typing import Dict, Any
 from dotenv import load_dotenv
+from src.backend.config_models import PipelineConfig
+from pydantic import ValidationError
 
 
 def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
@@ -26,10 +28,20 @@ def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
     
     with open(config_file, 'r') as f:
-        config = yaml.safe_load(f)
+        raw_config = yaml.safe_load(f)
     
     # Override with environment variables if present
-    _override_from_env(config)
+    _override_from_env(raw_config)
+    
+    # Validate with Pydantic
+    try:
+        validated_config = PipelineConfig(**raw_config)
+        # Convert back to dict for backward compatibility
+        config = validated_config.to_dict()
+    except ValidationError as e:
+        print(f"CRITICAL: Configuration validation failed!")
+        print(e)
+        raise SystemExit(1)
     
     # Create necessary directories
     _create_directories(config)

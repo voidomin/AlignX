@@ -4,6 +4,7 @@ Orchestrates the structural alignment pipeline (PDB -> Mustang -> RMSD -> Report
 """
 
 import shutil
+import asyncio
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any, Callable
 from datetime import datetime
@@ -65,7 +66,8 @@ class AnalysisCoordinator:
             # 1. DATA PREPARATION (Step 1)
             if progress_callback: progress_callback(0.1, "📥 Downloading PDB files...", 1)
             
-            download_results = self.pdb_manager.batch_download(pdb_ids)
+            # Run async batch download from sync context
+            download_results = asyncio.run(self.pdb_manager.batch_download(pdb_ids))
             failed = [pid for pid, (success, msg, path) in download_results.items() if not success]
             if failed:
                 return False, f"Failed to download: {', '.join(failed)}", None

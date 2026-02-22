@@ -6,8 +6,8 @@ This document tracks all planned improvements, bug fixes, and feature requests f
 
 _Based on a review of the v2.0 repository, here are areas we can optimize:_
 
-- [ ] **Data Validation**: Replace raw dictionary parsing of `config.yaml` with **Pydantic** models. This will catch configuration errors immediately upon startup.
-- [ ] **Async PDB Downloads**: Refactor the `PDBManager` to use `aiohttp` or `asyncio`. Currently, PDBs download sequentially. Fetching 20 proteins asynchronously will drastically reduce the "Data Prep" waiting time.
+- [x] **Data Validation**: Replace raw dictionary parsing of `config.yaml` with **Pydantic** models. This catches configuration errors immediately upon startup.
+- [x] **Async PDB Downloads**: Refactored the `PDBManager` to use `httpx` and `asyncio`. Fetching multiple proteins concurrently drastically reduces data prep time.
 - [x] **Decouple Pipeline Orchestration**: `src/frontend/analysis.py` is a 600+ line monolith handling both UI rendering and backend execution. We should extract the backend orchestration into a new `src/backend/coordinator.py` to achieve true MVC architecture.
 - [x] **Remove RMSD Code Duplication**: Both `mustang_runner.py` and `rmsd_calculator.py` contain redundant functions for parsing the Mustang output logs and matrices (`parse_mustang_log`, `_parse_rms_rot_file`). These should be consolidated exclusively into `rmsd_calculator.py`.
 - [x] **Remove Dead Bio3D Code**: Since we switched to purely native auto-compilation, all Fallback R/Bio3D execution logic inside `mustang_runner.py` is now dead code and should be aggressively deleted.

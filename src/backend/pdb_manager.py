@@ -1,6 +1,8 @@
 """PDB file management: download, validation, and preprocessing."""
 
 import requests
+import httpx
+import asyncio
 import re
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict, Any
@@ -78,95 +80,63 @@ class PDBManager:
             logger.error(f"Failed to save upload: {e}")
             return False, str(e), None
 
-    def download_pdb(self, pdb_id: str, force: bool = False) -> Tuple[bool, str, Optional[Path]]:
+    async def download_pdb(self, pdb_id: str, force: bool = False, client: Optional[httpx.AsyncClient] = None) -> Tuple[bool, str, Optional[Path]]:
         """
-        Download a PDB file from RCSB.
-        
-        Args:
-            pdb_id: PDB identifier
-            force: Re-download even if file exists
-            
-        Returns:
-            Tuple of (success, message, file_path)
+        Download a PDB file from RCSB (Asynchronous).
         """
-        pdb_id = pdb_id.strip() # Don't UPPER() yet, might be local filename
+        pdb_id = pdb_id.strip()
         
-        # Check if already exists (Local File/Upload)
+        # Check if already exists
         output_file = self.raw_dir / f"{pdb_id}.pdb"
         if output_file.exists() and not force:
             file_size_mb = output_file.stat().st_size / (1024 * 1024)
-            logger.info(f"{pdb_id} found locally ({file_size_mb:.2f} MB)")
             return True, f"Using local file ({file_size_mb:.2f} MB)", output_file
         
-        # If not found locally, treat as PDB ID and download
         pdb_id = pdb_id.upper()
-        
-        # Validate ID
         if not self.validate_pdb_id(pdb_id):
             return False, f"Invalid PDB ID format: {pdb_id}", None
         
-        # Update output path just in case case changed
         output_file = self.raw_dir / f"{pdb_id}.pdb"
+        url = f"{self.pdb_source}{pdb_id}.pdb"
         
-        # Download
         try:
-            url = f"{self.pdb_source}{pdb_id}.pdb"
-
-            logger.info(f"Downloading {pdb_id} from {url}")
+            manage_client = client is None
+            if manage_client:
+                client = httpx.AsyncClient(timeout=self.timeout)
             
-            response = requests.get(url, timeout=self.timeout, stream=True)
-            response.raise_for_status()
-            
-            # Check file size
-            file_size = int(response.headers.get('content-length', 0))
-            file_size_mb = file_size / (1024 * 1024)
-            
-            if file_size_mb > self.max_size_mb:
-                logger.warning(f"{pdb_id} is large ({file_size_mb:.2f} MB). Consider filtering.")
-            
-            # Save file
-            with open(output_file, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            
+            async with client.get(url, follow_redirects=True) as response:
+                if response.status_code != 200:
+                    if manage_client: await client.aclose()
+                    return False, f"Download failed (Status {response.status_code})", None
+                
+                # Check file size
+                file_size = int(response.headers.get('content-length', 0))
+                file_size_mb = file_size / (1024 * 1024)
+                
+                content = await response.aread()
+                with open(output_file, 'wb') as f:
+                    f.write(content)
+                
+            if manage_client: await client.aclose()
             logger.info(f"Downloaded {pdb_id} successfully ({file_size_mb:.2f} MB)")
             return True, f"Downloaded ({file_size_mb:.2f} MB)", output_file
             
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             logger.error(f"Failed to download {pdb_id}: {str(e)}")
             return False, f"Download failed: {str(e)}", None
-    
-    def batch_download(self, pdb_ids: List[str], max_workers: int = 4) -> Dict[str, Tuple[bool, str, Optional[Path]]]:
+
+    async def batch_download(self, pdb_ids: List[str]) -> Dict[str, Tuple[bool, str, Optional[Path]]]:
         """
-        Download multiple PDB files in parallel.
-        
-        Args:
-            pdb_ids: List of PDB identifiers
-            max_workers: Number of parallel downloads
-            
-        Returns:
-            Dictionary mapping PDB ID to (success, message, path)
+        Download multiple PDB files in parallel using AsyncIO.
         """
         results = {}
-        
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all download tasks
-            future_to_pdb = {
-                executor.submit(self.download_pdb, pdb_id): pdb_id 
-                for pdb_id in pdb_ids
-            }
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            tasks = [self.download_pdb(pdb_id, client=client) for pdb_id in pdb_ids]
+            download_responses = await asyncio.gather(*tasks)
             
-            # Progress bar
-            with tqdm(total=len(pdb_ids), desc="Downloading PDB files") as pbar:
-                for future in as_completed(future_to_pdb):
-                    pdb_id = future_to_pdb[future]
-                    try:
-                        results[pdb_id] = future.result()
-                    except Exception as e:
-                        logger.error(f"Error downloading {pdb_id}: {str(e)}")
-                        results[pdb_id] = (False, f"Error: {str(e)}", None)
-                    pbar.update(1)
-        
+            for pdb_id, res in zip(pdb_ids, download_responses):
+                results[pdb_id] = res
+                
         return results
     
     def analyze_structure(self, pdb_file: Path) -> Dict:
@@ -292,21 +262,13 @@ class PDBManager:
         
         return results
 
-    def fetch_metadata(self, pdb_ids: List[str], max_workers: int = 4) -> Dict[str, Dict]:
+    async def fetch_metadata(self, pdb_ids: List[str], client: Optional[httpx.AsyncClient] = None) -> Dict[str, Dict]:
         """
-        Fetch metadata for multiple PDB IDs from RCSB GraphQL API.
-        
-        Args:
-            pdb_ids: List of PDB IDs
-            max_workers: Unused in new implementation (kept for compatibility)
-            
-        Returns:
-            Dictionary mapping PDB ID to metadata dict
+        Fetch metadata for multiple PDB IDs from RCSB GraphQL API (Asynchronous).
         """
         if not pdb_ids:
             return {}
             
-        # Deduplicate and upper case, but extract base PDB ID (4 chars) for GraphQL entries query
         original_to_base = {}
         for pid in pdb_ids:
             clean_id = pid.strip().upper()
@@ -315,48 +277,32 @@ class PDBManager:
             
         unique_base_ids = list(set(original_to_base.values()))
         
-        # GraphQL Query
         query = """
         query($ids: [String!]!) {
           entries(entry_ids: $ids) {
             rcsb_id
-            struct {
-              title
-            }
-            exptl {
-              method
-            }
-            rcsb_entry_info {
-              resolution_combined
-            }
+            struct { title }
+            exptl { method }
+            rcsb_entry_info { resolution_combined }
             polymer_entities {
-              rcsb_entity_source_organism {
-                scientific_name
-              }
+              rcsb_entity_source_organism { scientific_name }
             }
           }
         }
         """
         
-        # Pre-fill with N/A
-        base_results = {}
-        for bid in unique_base_ids:
-            base_results[bid] = {
-                'title': 'N/A',
-                'method': 'N/A',
-                'resolution': 'N/A',
-                'organism': 'N/A'
-            }
+        base_results = {bid: {'title': 'N/A', 'method': 'N/A', 'resolution': 'N/A', 'organism': 'N/A'} for bid in unique_base_ids}
             
         try:
+            manage_client = client is None
+            if manage_client:
+                client = httpx.AsyncClient(timeout=10)
+                
             url = "https://data.rcsb.org/graphql"
-            payload = {
-                "query": query,
-                "variables": {"ids": unique_base_ids}
-            }
+            payload = {"query": query, "variables": {"ids": unique_base_ids}}
             
-            logger.info(f"Fetching metadata for {len(unique_base_ids)} entries via GraphQL")
-            response = requests.post(url, json=payload, timeout=10)
+            logger.info(f"Fetching metadata for {len(unique_base_ids)} entries via GraphQL (Async)")
+            response = await client.post(url, json=payload)
             
             if response.status_code == 200:
                 data = response.json()
@@ -391,19 +337,13 @@ class PDBManager:
                         'organism': organism
                     }
             
-            # Map back to original IDs (case-insensitive key matching)
+            if manage_client: await client.aclose()
+            
             final_results = {}
             for original_id, base_id in original_to_base.items():
-                meta = base_results.get(base_id)
-                if not meta:
-                    # Try uppercase base_id just in case
-                    meta = base_results.get(base_id.upper(), {
-                        'title': 'N/A',
-                        'method': 'N/A',
-                        'resolution': 'N/A',
-                        'organism': 'N/A'
-                    })
-                final_results[original_id] = meta
+                final_results[original_id] = base_results.get(base_id, base_results.get(base_id.upper(), {
+                    'title': 'N/A', 'method': 'N/A', 'resolution': 'N/A', 'organism': 'N/A'
+                }))
                 
             return final_results
             

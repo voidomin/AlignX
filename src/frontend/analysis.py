@@ -28,6 +28,8 @@ logger = get_logger()
 # Cached Wrappers
 # -----------------------------------------------------------------------------
 
+import asyncio
+
 @st.cache_data(show_spinner=False)
 def cached_batch_download(_pdb_manager: Any, pdb_ids: List[str]) -> Dict[str, Tuple[bool, str, Optional[Path]]]:
     """
@@ -40,7 +42,7 @@ def cached_batch_download(_pdb_manager: Any, pdb_ids: List[str]) -> Dict[str, Tu
     Returns:
         Dictionary mapping PDB IDs to (success, message, local_path) tuples.
     """
-    return _pdb_manager.batch_download(pdb_ids, max_workers=4)
+    return asyncio.run(_pdb_manager.batch_download(pdb_ids))
 
 @st.cache_data(show_spinner=False)
 def cached_analyze_structure(_pdb_manager: Any, file_path: Path) -> Dict[str, Any]:
@@ -70,7 +72,7 @@ def cached_fetch_metadata(_pdb_manager: Any, pdb_ids: List[str]) -> Dict[str, Di
     Returns:
         Dictionary mapping IDs to metadata dictionaries (title, organism, etc).
     """
-    return _pdb_manager.fetch_metadata(pdb_ids)
+    return asyncio.run(_pdb_manager.fetch_metadata(pdb_ids))
 
 
 # -----------------------------------------------------------------------------
