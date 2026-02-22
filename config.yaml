@@ -1,6 +1,6 @@
 app:
   name: Mustang Structural Alignment Pipeline
-  version: 1.0.0
+  version: 2.1.0
 core:
   max_proteins: 20
 pdb:

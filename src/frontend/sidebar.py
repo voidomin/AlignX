@@ -130,3 +130,7 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
             # Store in session state
             st.session_state.chain_selection_mode = chain_selection
             st.session_state.selected_chain = selected_chain
+        
+        # Version badge — read from config for single source of truth
+        version = st.session_state.config.get('app', {}).get('version', '?.?.?')
+        st.caption(f"🧬 **Mustang Pipeline** `v{version}`")
