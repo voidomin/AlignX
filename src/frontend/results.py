@@ -33,10 +33,11 @@ def display_results(results: Optional[Dict[str, Any]] = None) -> None:
         "🔍 Structural Clusters",
         "🔮 3D Visualization", 
         "💊 Ligand Hunter",
+        "🔄 Batch Comparison",
         "📥 Downloads"
     ]
     
-    t1, t2, t3, t4, t5, t6, t7 = st.tabs(tab_list)
+    t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs(tab_list)
     
     # Ensure id/metadata is present (Defensive)
     if 'id' not in results:
@@ -79,6 +80,12 @@ def display_results(results: Optional[Dict[str, Any]] = None) -> None:
             st.error(f"Error rendering Ligand tab: {e}")
         
     with t7:
+        try:
+            comparison.render_comparison_tab(results)
+        except Exception as e:
+            st.error(f"Error rendering Comparison tab: {e}")
+            
+    with t8:
         try:
             downloads.render_downloads_tab(results)
         except Exception as e:

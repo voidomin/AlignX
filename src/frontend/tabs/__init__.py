@@ -1,1 +1,1 @@
-from . import rmsd, phylo, structure, sequence, clusters, ligand, downloads
+from . import rmsd, phylo, structure, sequence, clusters, ligand, downloads, comparison
