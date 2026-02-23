@@ -14,11 +14,6 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
     with st.sidebar:
         st.header("⚙️ Setup")
         
-        # Check Mustang installation (cached in session state to avoid re-checking every rerun)
-        if 'mustang_install_status' not in st.session_state:
-            mustang_ok, mustang_msg = st.session_state.mustang_runner.check_installation()
-            st.session_state.mustang_install_status = (mustang_ok, mustang_msg)
-        
         mustang_ok, mustang_msg = st.session_state.mustang_install_status
         if mustang_ok:
             st.success(f"✓ {mustang_msg}")
@@ -92,40 +87,38 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
         st.divider()
         st.info("👈 Use the main dashboard to enter PDB IDs or upload files.")
         
-        st.divider()
-        
         # Guided Mode Toggle
-        st.session_state.guided_mode = st.sidebar.toggle(
+        st.session_state.guided_mode = st.toggle(
             "🎓 Guided Mode", 
-            value=st.session_state.get('guided_mode', False),
+            value=st.session_state.guided_mode,
             help="Enable interactive explanations for each result tab."
         )
         
         # Advanced options
         with st.expander("⚙️ Advanced Options"):
-            filter_chains = st.checkbox("Filter large files", value=True,
-                                       help="Automatically suggest chain extraction for large PDB files")
+            st.checkbox("Filter large files", value=True,
+                        help="Automatically suggest chain extraction for large PDB files")
             
-            remove_water = st.checkbox("Remove water molecules", value=True, key="remove_water")
-            remove_hetero = st.checkbox("Remove heteroatoms", value=True, key="remove_hetero")
+            st.session_state.remove_water = st.checkbox("Remove water molecules", value=st.session_state.remove_water)
+            st.session_state.remove_hetero = st.checkbox("Remove heteroatoms", value=st.session_state.remove_hetero)
             
             st.markdown("**Chain Selection**")
             chain_selection = st.radio(
                 "How to handle multi-chain structures?",
                 ["Auto (use first chain)", "Specify chain ID"],
-                help="GPCRs and other proteins may have multiple chains. Choose how to handle them."
+                help="GPCRs and other proteins may have multiple chains. Choose how to handle them.",
+                index=0 if st.session_state.chain_selection_mode == "Auto (use first chain)" else 1
             )
             
-            selected_chain = None
+            selected_chain = st.session_state.selected_chain
             if chain_selection == "Specify chain ID":
                 selected_chain = st.text_input(
                     "Chain ID",
-                    value="A",
+                    value=st.session_state.selected_chain,
                     max_chars=1,
                     help="Enter chain identifier (e.g., A, B, C)"
                 ).strip().upper()
             
-            # Store in session state
             st.session_state.chain_selection_mode = chain_selection
             st.session_state.selected_chain = selected_chain
         

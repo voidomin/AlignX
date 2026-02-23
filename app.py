@@ -70,10 +70,42 @@ def init_session_state():
     if 'auto_recovered' not in st.session_state:
         st.session_state.auto_recovered = False
         
-    if 'system_manager' not in st.session_state:
-        st.session_state.system_manager = SystemManager(st.session_state.config)
-        # Perform automated startup cleanup (runs older than 7 days)
-        st.session_state.system_manager.cleanup_old_runs(days=7)
+        if 'system_manager' not in st.session_state:
+            st.session_state.system_manager = SystemManager(st.session_state.config)
+            # Perform automated startup cleanup (runs older than 7 days)
+            st.session_state.system_manager.cleanup_old_runs(days=7)
+            
+        # --- NEW CENTRALIZED STATE ---
+        if 'mustang_install_status' not in st.session_state:
+            mustang_ok, mustang_msg = st.session_state.mustang_runner.check_installation()
+            st.session_state.mustang_install_status = (mustang_ok, mustang_msg)
+            
+        if 'guided_mode' not in st.session_state:
+            st.session_state.guided_mode = False
+            
+        if 'chain_selection_mode' not in st.session_state:
+            st.session_state.chain_selection_mode = "Auto (use first chain)"
+            
+        if 'selected_chain' not in st.session_state:
+            st.session_state.selected_chain = "A"
+            
+        if 'manual_chain_selections' not in st.session_state:
+            st.session_state.manual_chain_selections = {}
+            
+        if 'metadata_fetched' not in st.session_state:
+            st.session_state.metadata_fetched = False
+            
+        if 'metadata' not in st.session_state:
+            st.session_state.metadata = {}
+            
+        if 'remove_water' not in st.session_state:
+            st.session_state.remove_water = True
+            
+        if 'remove_hetero' not in st.session_state:
+            st.session_state.remove_hetero = True
+            
+        if 'input_method_radio' not in st.session_state:
+            st.session_state.input_method_radio = "Manual Entry"
         
     # Auto-recovery: If results is None, try to load the latest successful run
     # ONLY if we haven't already attempted recovery in this session

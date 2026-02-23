@@ -211,6 +211,13 @@ def render_dashboard() -> None:
     st.caption("Perform rigorous structural alignment, RMSD calculations, and phylogenetic analysis.")
 
     results = st.session_state.get('results')
+    pdb_ids = st.session_state.get('pdb_ids', [])
+
+    # Show Hero Section if nothing is selected yet
+    if not results and not pdb_ids:
+        from src.frontend import home
+        home.render_hero_section()
+        st.divider()
 
     # Top Inputs if not analyzed
     if not results:
@@ -326,7 +333,7 @@ def render_dashboard() -> None:
         
         # Metadata Expander
         with st.expander("📋 Protein Metadata", expanded=True):
-            if not st.session_state.get('metadata_fetched'):
+            if not st.session_state.metadata_fetched:
                 with st.spinner("Fetching protein metadata..."):
                     try:
                         metadata = cached_fetch_metadata(st.session_state.pdb_manager, st.session_state.pdb_ids)
@@ -334,7 +341,6 @@ def render_dashboard() -> None:
                         st.session_state.metadata_fetched = True
                     except Exception as e:
                         st.error(f"Metadata fetch failed: {str(e)}")
-                        st.session_state.metadata = {}
             
             if st.session_state.metadata:
                 data = []
@@ -386,8 +392,6 @@ def render_dashboard() -> None:
         if 'chain_info' in st.session_state and st.session_state.chain_info:
             st.success("✓ Chain analysis complete!")
             with st.expander("🔗 Chain Information & Selection", expanded=True):
-                if 'manual_chain_selections' not in st.session_state:
-                    st.session_state.manual_chain_selections = {}
                 
                 for pdb_id, info in st.session_state.chain_info.items():
                     # Create a card-like container for each protein
