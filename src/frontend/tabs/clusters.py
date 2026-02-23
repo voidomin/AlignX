@@ -47,7 +47,7 @@ def render_clusters_tab(results: Dict[str, Any]) -> None:
             with st.expander(f"📁 Cluster {cid} ({len(members)} members, Avg RMSD: {avg_rmsd:.2f} Å)", expanded=True):
                 member_data = []
                 for m in members:
-                    title = st.session_state.metadata.get(m, {}).get('title', 'Unknown Title') if hasattr(st.session_state, 'metadata') else 'N/A'
+                    title = st.session_state.get('metadata', {}).get(m, {}).get('title', 'Unknown Title')
                     member_data.append({"PDB ID": m, "Description": title})
                 
                 st.table(pd.DataFrame(member_data))

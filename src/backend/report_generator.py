@@ -52,10 +52,11 @@ class ReportGenerator:
             # Helper to clean text for FPDF (Latin-1)
             def clean_text(text):
                 if not isinstance(text, str): return str(text)
-                # Try to preserve as much as possible, mapping common symbols
-                # or just using ignore to prevent crashing
+                # Map common structural biology symbols to Latin-1
+                # Å (Angstrom) is \xc5 in Latin-1
+                text = text.replace("Å", chr(197))
                 try:
-                    return text.encode('latin-1', 'ignore').decode('latin-1')
+                    return text.encode('latin-1', 'replace').decode('latin-1')
                 except Exception:
                     return "".join(c for c in text if ord(c) < 128)
 
@@ -77,9 +78,9 @@ class ReportGenerator:
                     pdf.set_font("Arial", 'B', 10)
                     pdf.cell(40, 7, clean_text("RMSD Statistics:"), 0, 1)
                     pdf.set_font("Arial", '', 10)
-                    pdf.cell(50, 7, clean_text(f"Mean RMSD: {stats.get('mean_rmsd', 0):.2f} A"), 0, 1)
-                    pdf.cell(50, 7, clean_text(f"Median RMSD: {stats.get('median_rmsd', 0):.2f} A"), 0, 1)
-                    pdf.cell(50, 7, clean_text(f"Min/Max RMSD: {stats.get('min_rmsd', 0):.2f} / {stats.get('max_rmsd', 0):.2f} A"), 0, 1)
+                    pdf.cell(50, 7, clean_text(f"Mean RMSD: {stats.get('mean_rmsd', 0):.2f} Å"), 0, 1)
+                    pdf.cell(50, 7, clean_text(f"Median RMSD: {stats.get('median_rmsd', 0):.2f} Å"), 0, 1)
+                    pdf.cell(50, 7, clean_text(f"Min/Max RMSD: {stats.get('min_rmsd', 0):.2f} / {stats.get('max_rmsd', 0):.2f} Å"), 0, 1)
                 pdf.ln(5)
             
             # 2. Automated Insights (Key Findings)

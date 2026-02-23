@@ -21,6 +21,9 @@ from src.backend.report_generator import ReportGenerator
 from src.backend.notebook_exporter import NotebookExporter
 from src.backend.ligand_analyzer import LigandAnalyzer
 from src.frontend.tabs.common import render_progress_stepper
+from src.frontend.components.input_section import render_input_section
+from src.frontend.components.metadata_viewer import render_metadata_viewer
+from src.frontend.components.chain_selector import render_chain_selector
 
 logger = get_logger()
 
@@ -211,65 +214,17 @@ def render_dashboard() -> None:
     st.caption("Perform rigorous structural alignment, RMSD calculations, and phylogenetic analysis.")
 
     results = st.session_state.get('results')
+    pdb_ids = st.session_state.get('pdb_ids', [])
+
+    # Show Hero Section if nothing is selected yet
+    if not results and not pdb_ids:
+        from src.frontend import home
+        home.render_hero_section()
+        st.divider()
 
     # Top Inputs if not analyzed
     if not results:
-        with st.container():
-            # Use tabs for different input methods
-            tab_input, tab_upload, tab_example = st.tabs(["✍️ Enter IDs", "📂 Upload Files", "🧪 Load Example"])
-            
-            # --- Tab 1: Direct Text Input ---
-            with tab_input:
-                pdb_input = st.text_input(
-                    "Enter PDB IDs (comma-separated)", 
-                    placeholder="e.g., 1L2Y, 1A6M, 1BKV",
-                    help="Enter 4-letter PDB codes. The tool handles fetching and cleaning automatically.",
-                    key="input_pdb_text_dashboard"
-                )
-                if pdb_input:
-                    # Basic parsing
-                    raw_ids = [pid.strip().upper() for pid in pdb_input.split(",") if pid.strip()]
-                    if raw_ids != st.session_state.pdb_ids:
-                         st.session_state.pdb_ids = raw_ids
-                         st.session_state.metadata_fetched = False # Reset metadata on change
-            
-            # --- Tab 2: File Upload ---
-            with tab_upload:
-                uploaded_files = st.file_uploader(
-                    "Upload .pdb files", 
-                    accept_multiple_files=True,
-                    type=['pdb'],
-                    help="Upload local structure files for analysis."
-                )
-                if uploaded_files:
-                    # Logic to handle uploaded files
-                    new_ids = []
-                    for uploaded_file in uploaded_files:
-                        success, msg, path = st.session_state.pdb_manager.save_uploaded_file(uploaded_file)
-                        if success:
-                            new_ids.append(path.stem)
-                        else:
-                            st.error(f"Failed to save {uploaded_file.name}: {msg}")
-                    
-                    if new_ids:
-                        st.info(f"Loaded {len(new_ids)} files: {', '.join(new_ids)}")
-                        # Update state if new files loaded
-                        current_ids = set(st.session_state.pdb_ids)
-                        current_ids.update(new_ids)
-                        st.session_state.pdb_ids = list(current_ids)
-                        st.session_state.metadata_fetched = False
-
-            # --- Tab 3: Examples ---
-            with tab_example:
-                # Use EXAMPLES from examples.protein_sets
-                example_names = ["Select an example..."] + list(EXAMPLES.keys())
-                selected_example = st.selectbox("Choose a dataset:", example_names)
-                
-                if selected_example != "Select an example...":
-                    if st.button(f"Load {selected_example}"):
-                        st.session_state.pdb_ids = EXAMPLES[selected_example]
-                        st.session_state.metadata_fetched = False
-                        st.rerun()
+        render_input_section(st.session_state.pdb_manager)
 
     # 2. Status & Metrics Bar
     st.divider()
@@ -326,7 +281,7 @@ def render_dashboard() -> None:
         
         # Metadata Expander
         with st.expander("📋 Protein Metadata", expanded=True):
-            if not st.session_state.get('metadata_fetched'):
+            if not st.session_state.metadata_fetched:
                 with st.spinner("Fetching protein metadata..."):
                     try:
                         metadata = cached_fetch_metadata(st.session_state.pdb_manager, st.session_state.pdb_ids)
@@ -334,30 +289,8 @@ def render_dashboard() -> None:
                         st.session_state.metadata_fetched = True
                     except Exception as e:
                         st.error(f"Metadata fetch failed: {str(e)}")
-                        st.session_state.metadata = {}
             
-            if st.session_state.metadata:
-                data = []
-                for pid in st.session_state.pdb_ids:
-                    info = st.session_state.metadata.get(pid, {})
-                    data.append({
-                        'PDB ID': pid,
-                        'Title': info.get('title', 'N/A'),
-                        'Organism': info.get('organism', 'N/A'),
-                        'Method': info.get('method', 'N/A'),
-                        'Resolution': info.get('resolution', 'N/A')
-                    })
-                
-                df = pd.DataFrame(data)
-                st.dataframe(
-                    df, 
-                    column_config={
-                        "PDB ID": st.column_config.TextColumn(width="small"),
-                        "Title": st.column_config.TextColumn(width="large"),
-                    },
-                    hide_index=True,
-                    use_container_width=True
-                )
+            render_metadata_viewer(st.session_state.pdb_ids, st.session_state.metadata)
         
         # Action Buttons
         col1, col2 = st.columns([1, 1])
@@ -383,42 +316,8 @@ def render_dashboard() -> None:
                 run_analysis()
         
         # Chain Info Display
-        if 'chain_info' in st.session_state and st.session_state.chain_info:
-            st.success("✓ Chain analysis complete!")
-            with st.expander("🔗 Chain Information & Selection", expanded=True):
-                if 'manual_chain_selections' not in st.session_state:
-                    st.session_state.manual_chain_selections = {}
-                
-                for pdb_id, info in st.session_state.chain_info.items():
-                    # Create a card-like container for each protein
-                    st.markdown(f"#### {pdb_id}")
-                    
-                    c1, c2 = st.columns([1, 2])
-                    
-                    with c1:
-                        # Allow selecting chain for THIS PDB
-                        chain_ids = [c['id'] for c in info['chains']]
-                        current_sel = st.session_state.manual_chain_selections.get(pdb_id, chain_ids[0] if chain_ids else "A")
-                        
-                        new_sel = st.selectbox(
-                            f"Select Chain for {pdb_id}",
-                            options=chain_ids,
-                            index=chain_ids.index(current_sel) if current_sel in chain_ids else 0,
-                            key=f"sel_chain_{pdb_id}",
-                            label_visibility="collapsed"
-                        )
-                        st.session_state.manual_chain_selections[pdb_id] = new_sel
-                    
-                    with c2:
-                        cols = st.columns(len(info['chains']) if len(info['chains']) <= 4 else 4)
-                        for idx, chain in enumerate(info['chains']):
-                            with cols[idx % 4]:
-                                # Highlight the selected chain
-                                label = f"Chain {chain['id']}"
-                                if chain['id'] == st.session_state.manual_chain_selections[pdb_id]:
-                                    label = f"🎯 {label}"
-                                st.metric(label, f"{chain['residue_count']} res")
-                    st.divider()
+        if 'chain_info' in st.session_state:
+            render_chain_selector(st.session_state.chain_info)
 
     # 4. Console
     log_file = st.session_state.get('log_file')

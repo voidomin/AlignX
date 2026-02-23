@@ -7,71 +7,50 @@ from src.utils.logger import get_logger
 
 logger = get_logger()
 
-def calculate_rmsd_from_alignment(pdb_file: Path) -> Optional[pd.DataFrame]:
+def calculate_rmsd_from_superposition(pdb_file: Path, num_expected: int) -> Optional[pd.DataFrame]:
     """
-    Calculate pairwise RMSD matrix from a multi-model/multi-chain PDB file 
-    containing superimposed structures (output from Mustang).
-    
-    Mustang's output PDB usually contains one MODEL per structure, 
-    or one CHAIN per structure if merged. 
-    Standard Mustang behaviour: writes structures as separate MODELs.
+    Fallback: Calculate pairwise RMSD matrix directly from superimposed PDB coordinates
+    assuming sequential atom matching (only for structures with identical residue/atom counts).
     
     Args:
-        pdb_file: Path to the alignment.pdb file
-        
-    Returns:
-        pd.DataFrame: Symmetric RMSD matrix with protein indices/names
+        pdb_file: Path to superimposed PDB
+        num_expected: Number of structures to expect
     """
     try:
         parser = PDBParser(QUIET=True)
-        structure = parser.get_structure("alignment", str(pdb_file))
+        structure = parser.get_structure("aln", str(pdb_file))
         
-        # Extract models (assuming each model is a structure)
+        # Extract entities (Models or Chains)
         models = list(structure.get_models())
-        if len(models) < 2:
-            logger.warning("RMSD Calculation: Fewer than 2 models found in PDB. Trying chains...")
-            # Fallback: check chains in first model
-            chains = list(models[0].get_chains())
-            if len(chains) < 2:
-                logger.error("RMSD Calculation: Fewer than 2 chains/models found.")
-                return None
-            entities = chains
-            entity_type = "chain"
+        if len(models) >= num_expected:
+            entities = models[:num_expected]
         else:
-            entities = models
-            entity_type = "model"
-            
-        n = len(entities)
-        rmsd_matrix = np.zeros((n, n))
+            # Try chains in model 0
+            chains = list(models[0].get_chains())
+            if len(chains) >= num_expected:
+                entities = chains[:num_expected]
+            else:
+                return None
+                
+        # Extract CA coords
+        coords = []
+        for e in entities:
+            cas = [a.coord for a in e.get_atoms() if a.name == 'CA']
+            coords.append(np.array(cas))
         
-        # Get CA coordinates for each entity
-        # Note: Mustang aligns structures, so coordinates are already superimposed.
-        # However, to compute RMSD, we need to match residue-to-residue.
-        # Mustang enables this by outputting structurally equivalent residues?
-        # Actually, standard RMSD requires 1-to-1 atom matching. 
-        # Mustang's alignment.pdb contains the FULL structures rotated.
-        # To get the RMSD of the *alignment*, we usually only consider the 'core' aligned columns.
-        # But commonly, for these pipelines, we want the RMSD of the whole structural overlap or the core.
-        
-        # SIMPLIFICATION:
-        # Bio3D's `rmsd` function computes RMSD based on equivalent atoms.
-        # If we just extract all C-alphas, they might have different counts!
-        # We need the sequence alignment to know which C-alphas match.
-        
-        # For now, as a robust approximation matching standard pipeline needs:
-        # We will use the common set of residues if possible, OR
-        # If Mustang output makes them same length (with gaps?), PDB doesn't have gaps.
-        
-        # CRITICAL: Without the alignment mapping (FASTA), we can't strictly compute RMSD of aligned residues only 
-        # unless the PDB residues are renumbered or filtered.
-        # Mustang's -r ON option (which we use) writes "a PDB file containing the superposition of structures based on the alignment."
-        # It does NOT necessarily filter to core.
-        
-        # Implementing a heuristic: exact sequence matching is hard without parsing FASTA.
-        # But typically, `Mustang` reports RMSD in its logs.
-        # Let's try to parse the LOG file first?
-        # Use pandas to dataframe for now.
-        pass
+        # Verify identical lengths for simple subtraction
+        n = len(coords)
+        matrix = np.zeros((n, n))
+        for i in range(n):
+            for j in range(i+1, n):
+                if len(coords[i]) == len(coords[j]) and len(coords[i]) > 0:
+                    diff = coords[i] - coords[j]
+                    rmsd = np.sqrt(np.mean(np.sum(diff**2, axis=1)))
+                    matrix[i, j] = matrix[j, i] = rmsd
+        return pd.DataFrame(matrix)
+    except Exception as e:
+        logger.error(f"Manual RMSD calc failed: {e}")
+        return None
 
     except Exception as e:
         logger.error(f"RMSD Calculation failed: {e}")
@@ -87,7 +66,6 @@ def parse_mustang_log_for_rmsd(log_file: Path) -> Optional[pd.DataFrame]:
     2   0.85   0.00   0.90
     3   1.20   0.90   0.00
     """
-    import re
     try:
         if not log_file.exists():
             return None
@@ -100,15 +78,37 @@ def parse_mustang_log_for_rmsd(log_file: Path) -> Optional[pd.DataFrame]:
         
         potential_matrix = []
         for line in lines:
-            matches = re.findall(r'(\d+\.\d+|---)', line)
-            if matches:
-                row = []
-                for m in matches:
-                    if m == '---':
-                        row.append(0.0)
-                    else:
-                        row.append(float(m))
-                potential_matrix.append(row)
+            line = line.strip()
+            if not line:
+                continue
+                
+            # The RMSD table in Mustang logs usually starts with a numeric index
+            # followed by the RMSD values. Let's try to detect those lines.
+            parts = line.split()
+            if not parts:
+                continue
+                
+            # Check if the first part looks like a row index (usually 1, 2, 3...)
+            # and the rest look like floats or '---'
+            try:
+                # Basic heuristic: if the first part is an integer and there are multiple parts
+                # it's likely a row of the RMSD matrix.
+                int(parts[0])
+                if len(parts) > 1:
+                    row = []
+                    for p in parts[1:]:
+                        if p == '---':
+                            row.append(0.0)
+                        else:
+                            try:
+                                row.append(float(p))
+                            except ValueError:
+                                # Not a float, might be part of another line
+                                break
+                    if row:
+                        potential_matrix.append(row)
+            except (ValueError, IndexError):
+                continue
         
         if not potential_matrix:
             return None
@@ -127,44 +127,35 @@ def parse_mustang_log_for_rmsd(log_file: Path) -> Optional[pd.DataFrame]:
 
 def parse_rmsd_matrix(output_dir: Path, pdb_ids: List[str]) -> Optional[pd.DataFrame]:
     """
-    Unified entry point for parsing RMSD matrix from various Mustang output formats.
-    
-    Args:
-        output_dir: Directory containing Mustang outputs
-        pdb_ids: List of PDB IDs (for labeling)
-        
-    Returns:
-        DataFrame with RMSD matrix or None if parsing fails
+    Unified entry point for extracting structural similarity data.
+    Strategies:
+    1. Parse Mustang .rms_rot (Most precise)
+    2. Parse Mustang .log (Standard)
+    3. Bio3D CSV (Legacy/Fallback)
+    4. Calculate from superposition (Absolute fallback)
     """
-    # 1. Try Bio3D CSV format (if legacy results exist)
-    csv_file = output_dir / 'rmsd_matrix.csv'
-    if csv_file.exists():
-        try:
-            df = pd.read_csv(csv_file, index_col=0)
-            if len(df) == len(pdb_ids):
-                df.index = pdb_ids
-                df.columns = pdb_ids
-                return df
-        except Exception:
-            pass
+    # 1. Mustang's precise .rms_rot file
+    rms_rot = output_dir / 'alignment.rms_rot'
+    if rms_rot.exists():
+        df = parse_rms_rot_file(rms_rot, pdb_ids)
+        if df is not None: return df
     
-    # 2. Try Mustang's robust .rms_rot file
-    rms_rot_file = output_dir / 'alignment.rms_rot'
-    if rms_rot_file.exists():
-        df = parse_rms_rot_file(rms_rot_file, pdb_ids)
-        if df is not None:
-            return df
-    
-    # 3. Try parsing from Mustang log
+    # 2. Mustang's log file output
     log_file = output_dir / 'mustang.log'
     if log_file.exists():
         df = parse_mustang_log_for_rmsd(log_file)
         if df is not None and len(df) == len(pdb_ids):
-            df.index = pdb_ids
-            df.columns = pdb_ids
+            df.index, df.columns = pdb_ids, pdb_ids
             return df
+
+    # 3. Calculation from PDB/FASTA (PyRMSD)
+    alignment_pdb = output_dir / 'alignment.pdb'
+    alignment_fasta = output_dir / 'alignment.afasta'
+    if alignment_pdb.exists() and alignment_fasta.exists():
+        df = calculate_structure_rmsd(alignment_pdb, alignment_fasta)
+        if df is not None: return df
             
-    logger.error("Could not find or parse RMSD matrix in output")
+    logger.error("All RMSD parsing strategies failed.")
     return None
 
 def parse_rms_rot_file(rms_rot_file: Path, pdb_ids: List[str]) -> Optional[pd.DataFrame]:

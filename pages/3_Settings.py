@@ -12,6 +12,16 @@ st.set_page_config(
 
 load_css()
 
+# Default values mapping for "Restore Defaults"
+DEFAULT_SETTINGS = {
+    "mustang_backend": "auto",
+    "mustang_timeout": 600,
+    "max_proteins": 20,
+    "max_file_size": 500,
+    "heatmap_cmap": "viridis",
+    "viewer_style": "cartoon"
+}
+
 def render_settings_page():
     st.markdown('<h1 style="font-size: 2.5rem;">⚙️ System Configuration</h1>', unsafe_allow_html=True)
     st.caption("Manage pipeline settings, execution backends, and visual preferences.")
@@ -31,13 +41,13 @@ def render_settings_page():
             
             with st.expander("Backend Settings", expanded=True):
                 current_backend = config.get('mustang', {}).get('backend', 'auto')
-                backend_options = ["auto", "native", "wsl", "bio3d"]
+                backend_options = ["auto", "native", "wsl"]
                 
                 new_backend = st.selectbox(
                     "Execution Backend",
                     options=backend_options,
                     index=backend_options.index(current_backend) if current_backend in backend_options else 0,
-                    help="Auto: Tries native then WSL. Native: Local binary. WSL: Windows Subsystem for Linux. Bio3D: R package."
+                    help="Auto: Tries native then WSL. Native: Local binary. WSL: Windows Subsystem for Linux (recommended for Windows)."
                 )
                 
                 current_timeout = config.get('mustang', {}).get('timeout', 600)
@@ -50,9 +60,6 @@ def render_settings_page():
                     help="Max time to wait for alignment to complete."
                 )
                 
-                # Checkbox for cleaning
-                # current_clean = config.get('filtering', {}).get('remove_water', True)
-                # new_clean = st.checkbox("Remove Water Molecules", value=current_clean)
 
         # --- Column 2: Application Limits ---
         with col2:
@@ -76,9 +83,44 @@ def render_settings_page():
                     value=current_size_limit
                 )
 
-    # --- Save Actions ---
+            st.subheader("🎨 Visualization")
+            with st.expander("UI Appearance & Plots", expanded=True):
+                st.info("💡 Changes here will affect how new and existing results are displayed in the dashboard.")
+                
+                # Colormap Mapping (Display -> Internal)
+                cmap_options = {
+                    "Viridis (Default)": "viridis",
+                    "Plasma": "plasma",
+                    "Inferno": "inferno",
+                    "Magma": "magma",
+                    "Cividis": "cividis",
+                    "Red-Blue (Divergent)": "RdBu_r",
+                    "Spectral": "Spectral_r"
+                }
+                
+                current_cmap = config.get('visualization', {}).get('heatmap_colormap', 'viridis').lower()
+                # Find current display name
+                curr_display = next((k for k, v in cmap_options.items() if v == current_cmap), "Viridis (Default)")
+                
+                new_cmap_display = st.selectbox(
+                    "Heatmap Colormap",
+                    options=list(cmap_options.keys()),
+                    index=list(cmap_options.keys()).index(curr_display),
+                    help="Color scheme for the RMSD similarity matrices."
+                )
+                new_cmap = cmap_options[new_cmap_display]
+                
+                current_style = config.get('visualization', {}).get('viewer_default_style', 'cartoon')
+                new_style = st.selectbox(
+                    "Default 3D Style",
+                    options=["cartoon", "stick", "sphere", "line"],
+                    index=["cartoon", "stick", "sphere", "line"].index(current_style) if current_style in ["cartoon", "stick", "sphere", "line"] else 0,
+                    help="Initial representation style when opening the 3D Structure Viewer."
+                )
+
+    # --- Actions ---
     st.divider()
-    col_save, col_reset = st.columns([1, 5])
+    col_save, col_defaults, col_reset = st.columns([1, 1, 4])
     
     with col_save:
         if st.button("💾 Save Changes", type="primary", use_container_width=True):
@@ -88,16 +130,37 @@ def render_settings_page():
             config['app']['max_proteins'] = new_max
             config['pdb']['max_file_size_mb'] = new_size_limit
             
+            # Nested update for visualization
+            if 'visualization' not in config: config['visualization'] = {}
+            config['visualization']['heatmap_colormap'] = new_cmap
+            config['visualization']['viewer_default_style'] = new_style
+            
             # Save to file
             try:
                 save_config(config)
                 st.session_state.config = config # Update session
-                # If backend changed, might need to re-init runner
                 if 'mustang_runner' in st.session_state:
                     del st.session_state.mustang_runner
                 st.toast("Settings saved successfully!", icon="✅")
             except Exception as e:
                 st.error(f"Failed to save settings: {e}")
+
+    with col_defaults:
+        if st.button("🔄 Restore Defaults", use_container_width=True):
+            # Apply DEFAULT_SETTINGS to the current config
+            config['mustang']['backend'] = DEFAULT_SETTINGS['mustang_backend']
+            config['mustang']['timeout'] = DEFAULT_SETTINGS['mustang_timeout']
+            config['app']['max_proteins'] = DEFAULT_SETTINGS['max_proteins']
+            config['pdb']['max_file_size_mb'] = DEFAULT_SETTINGS['max_file_size']
+            
+            if 'visualization' not in config: config['visualization'] = {}
+            config['visualization']['heatmap_colormap'] = DEFAULT_SETTINGS['heatmap_cmap']
+            config['visualization']['viewer_default_style'] = DEFAULT_SETTINGS['viewer_style']
+            
+            save_config(config)
+            st.session_state.config = config
+            st.success("Defaults restored. Reloading...")
+            st.rerun()
 
 if __name__ == "__main__":
     render_settings_page()

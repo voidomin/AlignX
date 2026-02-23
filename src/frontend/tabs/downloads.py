@@ -11,9 +11,6 @@ def render_downloads_tab(results: Dict[str, Any]) -> None:
     Args:
         results: The results dictionary containing paths to all exportable artifacts.
     """
-    # Telemetry to confirm reload in user console
-    print(f"DEBUG: Rendering downloads tab for run {results.get('id', 'unknown')}")
-    
     st.subheader("Data Downloads")
     
     # Defensive metadata retrieval

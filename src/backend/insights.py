@@ -4,6 +4,14 @@ class InsightsGenerator:
     """
     def __init__(self, config):
         self.config = config
+        self._analyzer = None
+
+    @property
+    def analyzer(self):
+        if self._analyzer is None:
+            from src.backend.rmsd_analyzer import RMSDAnalyzer
+            self._analyzer = RMSDAnalyzer(self.config)
+        return self._analyzer
 
     def generate_insights(self, results):
         """
@@ -96,9 +104,7 @@ class InsightsGenerator:
         
         # 6. Cluster Insights
         # Using a default threshold to glimpse structure
-        from src.backend.rmsd_analyzer import RMSDAnalyzer
-        analyzer = RMSDAnalyzer(self.config)
-        clusters = analyzer.identify_clusters(rmsd_df, threshold=2.0)
+        clusters = self.analyzer.identify_clusters(rmsd_df, threshold=2.0)
         if len(clusters) > 1:
              insights.append(f"🔍 **Structural Families**: At 2.0 Å threshold, structures fall into **{len(clusters)} distinct clusters**.")
              

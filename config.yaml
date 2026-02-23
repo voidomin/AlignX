@@ -1,6 +1,7 @@
 app:
   name: Mustang Structural Alignment Pipeline
   version: 2.1.0
+  max_proteins: 20
 core:
   max_proteins: 20
 pdb:
@@ -34,12 +35,12 @@ output:
   base_dir: results
   keep_intermediates: true
   formats:
-    - html
+  - html
 visualization:
-  heatmap_colormap: RdYlBu_r
-  viewer_default_style: cartoon
+  heatmap_colormap: viridis
   tree_format: rectangular
   dpi: 300
+  viewer_default_style: cartoon
 performance:
   max_workers: 4
   chunk_size: 8192

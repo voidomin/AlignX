@@ -31,7 +31,7 @@ def display_results(results: Optional[Dict[str, Any]] = None) -> None:
         "🧬 Sequence Alignment", 
         "🌳 Structural Tree", 
         "🔍 Structural Clusters",
-        "3D Visualization", 
+        "🔮 3D Visualization", 
         "💊 Ligand Hunter",
         "📥 Downloads"
     ]
@@ -43,25 +43,46 @@ def display_results(results: Optional[Dict[str, Any]] = None) -> None:
         results['id'] = results.get('run_id', 'latest')
     
     with t1:
-        rmsd.render_rmsd_tab(results)
+        try:
+            rmsd.render_rmsd_tab(results)
+        except Exception as e:
+            st.error(f"Error rendering Summary tab: {e}")
         
     with t2:
-        sequence.render_sequences_tab(results)
+        try:
+            sequence.render_sequences_tab(results)
+        except Exception as e:
+            st.error(f"Error rendering Sequence tab: {e}")
         
     with t3:
-        phylo.render_phylo_tree_tab(results)
+        try:
+            phylo.render_phylo_tree_tab(results)
+        except Exception as e:
+            st.error(f"Error rendering Phylogeny tab: {e}")
         
     with t4:
-        clusters.render_clusters_tab(results)
+        try:
+            clusters.render_clusters_tab(results)
+        except Exception as e:
+            st.error(f"Error rendering Clusters tab: {e}")
         
     with t5:
-        structure.render_3d_viewer_tab(results)
+        try:
+            structure.render_3d_viewer_tab(results)
+        except Exception as e:
+            st.error(f"Error rendering 3D Viewer tab: {e}")
         
     with t6:
-        ligand.render_ligand_tab(results)
+        try:
+            ligand.render_ligand_tab(results)
+        except Exception as e:
+            st.error(f"Error rendering Ligand tab: {e}")
         
     with t7:
-        downloads.render_downloads_tab(results)
+        try:
+            downloads.render_downloads_tab(results)
+        except Exception as e:
+            st.error(f"Error rendering Downloads tab: {e}")
 
 def render_compact_summary(results: Optional[Dict[str, Any]] = None) -> None:
     """

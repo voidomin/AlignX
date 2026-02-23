@@ -13,11 +13,13 @@ logger = get_logger()
 
 class SequenceViewer:
     def __init__(self):
+        # Use CSS variables for theme-aware colors
+        # These will be defined in the HTML/CSS 
         self.colors = {
-            'identity': '#ff6b6b',  # Red for 100% match
-            'high_similarity': '#feca57', # Yellow for high similarity
-            'gap': '#dfe6e9',       # Grey for gaps
-            'default': '#ffffff'    # White for others
+            'identity': 'var(--seq-identity, #ff6b6b)',
+            'high_similarity': 'var(--seq-high-sim, #feca57)',
+            'gap': 'var(--seq-gap, #dfe6e9)',
+            'default': 'var(--seq-default, transparent)'
         }
 
     def parse_afasta(self, file_path: Path) -> Optional[Dict[str, str]]:
@@ -116,11 +118,12 @@ class SequenceViewer:
                 elif score > 0.7: # High similarity
                     bg_color = self.colors['high_similarity']
                 
-                residues_html += f'<td style="background-color: {bg_color}; font-family: monospace; width: 20px; text-align: center;">{char}</td>'
+                res_class = "res-val" if score > 0.5 or char == '-' else ""
+                residues_html += f'<td class="{res_class}" style="background-color: {bg_color}; font-family: monospace; width: 20px; text-align: center;">{char}</td>'
                 
             rows_html += f"""
             <tr>
-                <td style="position: sticky; left: 0; background: white; z-index: 1; padding-right: 10px; font-weight: bold; border-right: 2px solid #ddd;">{header}</td>
+                <td style="position: sticky; left: 0; background: var(--st-sticky-bg, #fff); color: var(--st-text-color, black); z-index: 2; padding-right: 15px; font-weight: bold; border-right: 2px solid var(--st-divider-color, #ddd); white-space: nowrap; min-width: 150px;">{header}</td>
                 {residues_html}
             </tr>
             """
@@ -136,15 +139,45 @@ class SequenceViewer:
             cons_html += f'<td style="text-align: center; font-weight: bold;">{symbol}</td>'
             
         rows_html += f"""
-        <tr style="background-color: #f1f2f6;">
-            <td style="position: sticky; left: 0; background: #f1f2f6; border-right: 2px solid #ddd;">Consensus</td>
+        <tr style="background-color: var(--st-secondary-bg, #f1f2f6);">
+            <td style="position: sticky; left: 0; background: var(--st-secondary-bg, #f1f2f6); border-right: 2px solid var(--st-divider-color, #ddd); color: var(--st-text-color, black); white-space: nowrap; font-weight: bold; z-index: 2;">Consensus</td>
             {cons_html}
         </tr>
         """
 
         html = f"""
-        <div style="overflow-x: auto; font-family: 'Courier New', monospace; font-size: 14px;">
-            <table style="border-collapse: collapse; min-width: 100%;">
+        <style>
+            :root {{
+                --seq-identity: #ff4757;
+                --seq-high-sim: #ffa502;
+                --seq-gap: #ced6e0;
+                --st-sticky-bg: #1e1e1e; /* Default dark context, will be overridden if in light */
+                --st-text-color: #f1f2f6;
+                --st-divider-color: rgba(255, 255, 255, 0.1);
+                --st-secondary-bg: #2f3542;
+            }}
+            
+            @media (prefers-color-scheme: light) {{
+                :root {{
+                    --st-sticky-bg: #ffffff;
+                    --st-text-color: #2f3542;
+                    --st-divider-color: #ddd;
+                    --st-secondary-bg: #f1f2f6;
+                    --seq-gap: #dfe6e9;
+                }}
+            }}
+
+            /* High contrast for colored cells */
+            .res-val {{ color: #ffffff !important; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.5); }}
+            
+            /* Ensure the table doesn't collapse */
+            .alignment-table th, .alignment-table td {{
+                padding: 2px 4px;
+                border: 0.1px solid rgba(128,128,128,0.1);
+            }}
+        </style>
+        <div style="overflow-x: auto; font-family: 'Courier New', monospace; font-size: 14px; color: var(--st-text-color); background: var(--st-sticky-bg);">
+            <table class="alignment-table" style="border-collapse: collapse; min-width: 100%; table-layout: fixed;">
                 {rows_html}
             </table>
         </div>

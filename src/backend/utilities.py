@@ -28,7 +28,6 @@ class SystemManager:
         """
         results = {
             "Mustang": {"status": "FAILED", "version": "Unknown"},
-            "R environment": {"status": "FAILED", "version": "Unknown"},
             "Platform": sys.platform,
             "Python Version": sys.version.split()[0]
         }
@@ -49,15 +48,6 @@ class SystemManager:
                         break
         except Exception:
             # Try to find it in common paths or session state binary
-            pass
-
-        # 2. Check R (for Bio3D)
-        try:
-            proc = subprocess.run(["R", "--version"], capture_output=True, text=True, timeout=5)
-            if proc.returncode == 0:
-                results["R environment"]["status"] = "PASSED"
-                results["R environment"]["version"] = proc.stdout.split('\n')[0]
-        except Exception:
             pass
             
         return results
@@ -92,3 +82,26 @@ class SystemManager:
                         logger.error(f"Failed to delete {d.name}: {e}")
                         
         return deleted
+        
+    def get_aggregate_stats(self, db: Any) -> Dict[str, Any]:
+        """
+        Calculate aggregate statistics from the history database.
+        
+        Args:
+            db: HistoryDatabase instance.
+            
+        Returns:
+            Dictionary with counts.
+        """
+        try:
+            runs = db.get_all_runs()
+            total_runs = len(runs)
+            total_proteins = sum(len(run.get('pdb_ids', [])) for run in runs)
+            
+            return {
+                "total_runs": total_runs,
+                "total_proteins": total_proteins
+            }
+        except Exception as e:
+            logger.error(f"Failed to get aggregate stats: {e}")
+            return {"total_runs": 0, "total_proteins": 0}
