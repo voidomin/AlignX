@@ -8,6 +8,7 @@ Complete audit of the Mustang Pipeline repository. All findings organized by pri
 
 - [x] **Circular Import Chain**: Fixed by removing eager imports in `__init__.py` files.
 - [x] **Stale `__version__` in `src/__init__.py`**: Updated to `"2.1.0"`.
+- [x] **ReDoS Vulnerability in `rmsd_calculator.py`**: Replaced potentially vulnerable regex with secure manual parsing.
 - [x] **Committed `.db` and temp files**: Verified as ignored/untracked.
 - [ ] **Pinned Dependency Versions**: `requirements.txt` pins old versions...
 

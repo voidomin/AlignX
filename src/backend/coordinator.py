@@ -16,6 +16,7 @@ from src.backend.rmsd_analyzer import RMSDAnalyzer
 from src.backend.phylo_tree import PhyloTreeGenerator
 from src.backend.rmsd_calculator import parse_rmsd_matrix
 from src.backend.database import HistoryDatabase
+from src.backend.sequence_viewer import SequenceViewer
 from src.utils.cache_manager import CacheManager
 
 logger = get_logger()
@@ -32,6 +33,7 @@ class AnalysisCoordinator:
         self.pdb_manager = PDBManager(config, self.cache_manager)
         self.mustang_runner = MustangRunner(config)
         self.rmsd_analyzer = RMSDAnalyzer(config)
+        self.sequence_viewer = SequenceViewer()
         
         # Eagerly check installation to set up the correct backend
         success, msg = self.mustang_runner.check_installation()
@@ -172,6 +174,13 @@ class AnalysisCoordinator:
             # Calculations
             self.rmsd_analyzer.generate_heatmap(rmsd_df, heatmap_path)
             stats = self.rmsd_analyzer.calculate_statistics(rmsd_df)
+            
+            # Calculate sequence identity
+            if alignment_afasta.exists():
+                sequences = self.sequence_viewer.parse_afasta(alignment_afasta)
+                if sequences:
+                    stats['seq_identity'] = self.sequence_viewer.calculate_identity(sequences)
+            
             clusters = self.rmsd_analyzer.identify_clusters(rmsd_df)
             
             phylo = PhyloTreeGenerator(self.config)

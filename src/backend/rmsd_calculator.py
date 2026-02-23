@@ -87,7 +87,6 @@ def parse_mustang_log_for_rmsd(log_file: Path) -> Optional[pd.DataFrame]:
     2   0.85   0.00   0.90
     3   1.20   0.90   0.00
     """
-    import re
     try:
         if not log_file.exists():
             return None
@@ -100,15 +99,37 @@ def parse_mustang_log_for_rmsd(log_file: Path) -> Optional[pd.DataFrame]:
         
         potential_matrix = []
         for line in lines:
-            matches = re.findall(r'(\d+\.\d+|---)', line)
-            if matches:
-                row = []
-                for m in matches:
-                    if m == '---':
-                        row.append(0.0)
-                    else:
-                        row.append(float(m))
-                potential_matrix.append(row)
+            line = line.strip()
+            if not line:
+                continue
+                
+            # The RMSD table in Mustang logs usually starts with a numeric index
+            # followed by the RMSD values. Let's try to detect those lines.
+            parts = line.split()
+            if not parts:
+                continue
+                
+            # Check if the first part looks like a row index (usually 1, 2, 3...)
+            # and the rest look like floats or '---'
+            try:
+                # Basic heuristic: if the first part is an integer and there are multiple parts
+                # it's likely a row of the RMSD matrix.
+                int(parts[0])
+                if len(parts) > 1:
+                    row = []
+                    for p in parts[1:]:
+                        if p == '---':
+                            row.append(0.0)
+                        else:
+                            try:
+                                row.append(float(p))
+                            except ValueError:
+                                # Not a float, might be part of another line
+                                break
+                    if row:
+                        potential_matrix.append(row)
+            except (ValueError, IndexError):
+                continue
         
         if not potential_matrix:
             return None

@@ -337,7 +337,7 @@ class PDBManager:
             }
             
             with tqdm(total=len(pdb_files), desc="Cleaning PDB files") as pbar:
-                for future in as_completed(future_to_file):
+                for future in as_completed(list(future_to_file.keys())):
                     pdb_file = future_to_file[future]
                     try:
                         results[pdb_file.name] = future.result()
@@ -392,26 +392,27 @@ class PDBManager:
             
             if response.status_code == 200:
                 data = response.json()
-                entries = data.get('data', {}).get('entries', [])
+                entries = (data.get('data') or {}).get('entries') or []
                 
                 for entry in entries:
                     bid = entry.get('rcsb_id')
                     if not bid: continue
                     
-                    struct = entry.get('struct', {})
-                    title = struct.get('title', 'N/A') if struct else 'N/A'
+                    struct = entry.get('struct') or {}
+                    title = struct.get('title', 'N/A')
                     
-                    exptl = entry.get('exptl', [])
-                    method = exptl[0].get('method', 'N/A') if exptl else 'N/A'
+                    exptl_list = entry.get('exptl') or []
+                    method = exptl_list[0].get('method', 'N/A') if exptl_list else 'N/A'
                     
-                    res_list = entry.get('rcsb_entry_info', {}).get('resolution_combined', [])
+                    info = entry.get('rcsb_entry_info') or {}
+                    res_list = info.get('resolution_combined') or []
                     resolution = f"{res_list[0]:.2f} \u00c5" if res_list else "N/A"
                     
                     organism = "N/A"
-                    entities = entry.get('polymer_entities', [])
+                    entities = entry.get('polymer_entities') or []
                     if entities:
                         for entity in entities:
-                            sources = entity.get('rcsb_entity_source_organism', [])
+                            sources = (entity.get('rcsb_entity_source_organism') or [])
                             if sources:
                                 organism = sources[0].get('scientific_name', 'N/A')
                                 break
