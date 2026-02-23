@@ -1,206 +1,103 @@
-# Mustang Structural Alignment Pipeline
+# 🧬 Mustang Structural Alignment Pipeline (v2.1)
 
-An automated bioinformatics pipeline for multiple structural alignment of **any protein family** using Mustang, with phylogenetic analysis and interactive visualizations.
+An automated, full-stack bioinformatics pipeline for multiple structural alignment of **any protein family** using Mustang, featuring interactive 3D visualizations, phylogenetic analysis, and advanced ligand hunter capabilities.
 
-## 🎯 Features ("Cyber-Bio" Edition)
-
-- 🎨 **High-Impact UI**: "Cyber-Bio" aesthetic with glassmorphism, neon borders, and "Mission Control" dashboard.
-- 🎓 **Guided Mode**: Interactive learning cards explain analysis steps for beginners.
-- 🧬 **Interactive 3D**: Embedded 3D viewer (3Dmol.js) in both App and Exported Notebooks.
-- 💊 **Ligand Hunter**: Auto-detect binding pockets, calculate interaction similarities, and compare pockets side-by-side.
-- 🧠 **Smart Insights**: Automated captions describing RMSD outliers, ligand stats, and structural clusters.
-- 📊 **Plotly Visualizations**: Fully interactive RMSD Heatmaps, RMSF plots, and Phylogenetic Trees.
-- 📒 **Exportable Notebook**: Generate a standalone HTML lab notebook with embedded 3D structures and results.
-- ✅ **Universal**: Works with any protein family from PDB
-- ✅ **Automated**: One-click analysis from PDB IDs to results
-- ✅ **Smart Filtering**: Handles large PDB files efficiently
-- ✅ **Complete Pipeline**: Download → Clean → Align → Analyze → Visualize
-
-## 🚀 Quick Start
-
-### 1. Install Dependencies
-
-```bash
-# Create virtual environment (recommended)
-python -m venv venv
-venv\Scripts\activate  # Windows
-# or: source venv/bin/activate  # Mac/Linux
-
-# Install packages
-pip install -r requirements.txt
-```
-
-### 2. Install External Tools
-
-See **[WINDOWS_SETUP.md](WINDOWS_SETUP.md)** for detailed instructions on installing:
-
-- Mustang (via WSL or Bio3D R package)
-- Phylip (optional, for phylogenetic trees)
-- PyMOL (optional, for 3D visualization)
-
-### 3. Run the Application
-
-```bash
-# Start Streamlit app
-streamlit run app.py
-
-# Opens automatically in browser at http://localhost:8501
-```
-
-## 📖 Usage
-
-1. **Enter PDB IDs** or **load an example** (GPCR, Kinases, Lysozymes, etc.)
-2. Click **"Run Analysis"**
-3. View **RMSD heatmaps**, **clusters**, and **statistics**
-4. **Download** results (CSV, PNG, reports)
-
-## 📁 Project Structure
-
-```
-mustang_pipeline/
-├── app.py                  # Main Streamlit application
-├── config.yaml             # Configuration settings
-├── requirements.txt        # Python dependencies
-├── WINDOWS_SETUP.md        # Installation guide
-├── UI_UX_DESIGN.md         # UI layout documentation
-├── DEPLOYMENT.md           # Cloud deployment guide
-├── src/
-│   ├── backend/            # Core processing modules
-│   │   ├── pdb_manager.py       # PDB download & cleaning
-│   │   ├── mustang_runner.py    # Mustang wrapper
-│   │   ├── rmsd_analyzer.py     # RMSD & RMSF analysis
-│   │   ├── sequence_viewer.py   # Alignment visualization
-│   │   ├── report_generator.py  # PDF reporting
-│   │   └── phylo_tree.py        # Phylogenetic analysis
-│   └── utils/              # Utilities
-│       ├── config_loader.py     # Config management
-│       └── logger.py            # Logging
-├── examples/               # Example protein datasets
-├── data/                   # PDB files (auto-created)
-├── results/                # Analysis outputs (auto-created)
-└── logs/                   # Log files (auto-created)
-```
-
-## 🌐 Deployment Options
-
-### Option 1: Local (Run on Your Computer)
-
-```bash
-streamlit run app.py
-# Access at: http://localhost:8501
-```
-
-### Option 2: Share Temporarily (Ngrok)
-
-```bash
-pip install pyngrok
-ngrok http 8501
-# Get public URL: https://abc123.ngrok.io
-```
-
-### Option 3: Deploy to Cloud (FREE)
-
-**Google Cloud Platform** (12 months free, $300 credit):
-
-- See deployment guide in [DEPLOYMENT.md](DEPLOYMENT.md)
-
-**Hugging Face Spaces** (Free forever):
-
-- Push code to Hugging Face
-- Auto-deploys at: `https://huggingface.co/spaces/your-username/mustang-pipeline`
-
-## 🔧 Configuration
-
-Edit `config.yaml` to customize:
-
-- PDB download settings
-- Mustang backend (native/bio3d)
-- Visualization preferences
-- Output formats
-
-Or use environment variables (`env.example`).
-
-## 📊 Example Datasets
-
-Included examples:
-
-- **GPCR Channelrhodopsins** (5 proteins)
-- **Hemoglobins** (3 proteins)
-- **Lysozymes** (3 proteins)
-- **Kinases** (3 proteins)
-
-### 🚀 Getting Started
-
-### Prerequisites
-
-- **Python 3.8+**
-- **R Programming Language (v4.0+)** for Bio3D alignment.
-  - Make sure `R` is reachable in your system PATH.
-- **Mustang Executable (v3.2.3)**
-  - Bio3D requires the external `mustang` program to perform alignments.
-  - Download the Mustang binary for Windows and add it to your system PATH, or place `mustang.exe` in `C:\Windows\System32`.
-  - Alternatively, you can compile from source if you have Rtools installed.
-
-## 🐛 Troubleshooting
-
-### "Mustang not found"
-
-- See [WINDOWS_SETUP.md](WINDOWS_SETUP.md) for installation
-- Make sure WSL is enabled (Windows) OR Bio3D R package is installed
-
-### "PDB download failed"
-
-- Check internet connection
-- Verify PDB ID is correct (4 characters)
-- Try again (automatic retry included)
-
-### App won't start
-
-```bash
-# Check Python version (3.10+ required)
-python --version
-
-# Reinstall dependencies
-pip install -r requirements.txt --force-reinstall
-```
-
-## 📝 Citation
-
-If you use this pipeline in your research, please cite:
-
-- **MUSTANG**: Konagurthu AS, Whisstock JC, Stuckey PJ, Lesk AM. MUSTANG: A multiple structural alignment algorithm. Proteins. 2006.
-- This pipeline: [Your citation here]
-
-## 🤝 Contributing
-
-Contributions welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Submit a pull request
-
-## 📄 License
-
-MIT License - see LICENSE file
-
-## 🙋 Support
-
-- **Issues**: Open an issue on GitHub
-- **Documentation**: See `/docs` folder
-- **Examples**: Check `/examples` folder
-
-## 🎓 About
-
-Created as part of a bioinformatics project to automate structural alignment workflows.
-
-**Author**: Akash  
-**Version**: 2.0.0
-**Last Updated**: February 2026
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://mustang-pipeline.streamlit.app)
+[![Version](https://img.shields.io/badge/version-2.1.0-orange.svg)](https://github.com/your-repo/mustang-pipeline/releases/tag/v2.1.0)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
 ---
 
-**Ready to analyze your proteins?** 🧬
+## 🎯 Key Features
+
+### 🎨 High-Impact "Cyber-Bio" UI
+
+- **Mission Control Dashboard**: Glassmorphic interface for orchestrating complex runs.
+- **Guided Mode**: Interactive learning cards that explain analysis steps for beginners.
+- **System Diagnostics**: Real-time health checks for local and cloud environments.
+
+### 🧠 Advanced Analysis
+
+- **Ligand Hunter (v2.1)**: Auto-detect binding pockets, calculate interaction similarities, and visualize SASA (Solvent Accessible Surface Area).
+- **Smart Insights**: Automated captions describing RMSD outliers, structural families, and ligand distributions.
+- **Interactive Phylogeny**: Structural phylogenetic trees generated via average linkage (UPGMA).
+
+### 🚀 Visualization & Export
+
+- **Dynamic 3D Viewer**: Embedded 3Dmol.js viewer with highlighting and spinning controls.
+- **Interactive Heatmaps**: Plotly-powered RMSD matrices with custom colormaps.
+- **Standalone Lab Notebook**: Generate a self-contained HTML notebook with embedded 3D structures.
+- **PDF Reports**: Professional analysis summaries ready for citation.
+
+---
+
+## 🚀 Quick Start
+
+### 1. Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/your-username/mustang-pipeline.git
+cd mustang_pipeline
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 2. External Tools
+
+The pipeline requires the **Mustang** binary (v3.2.3).
+
+- **Cloud**: Pre-configured on Streamlit Cloud.
+- **Windows**: See [WINDOWS_SETUP.md](WINDOWS_SETUP.md) for WSL or native setup instructions.
+
+### 3. Run the App
 
 ```bash
 streamlit run app.py
 ```
+
+_Access at: `http://localhost:8501`_
+
+---
+
+## 📂 Project Architecture
+
+```
+mustang_pipeline/
+├── app.py                # Main Entry Point
+├── config.yaml           # Global Configuration
+├── src/
+│   ├── backend/          # Core Logistics (Coordinator, Runner, Analyzers)
+│   ├── frontend/         # UI Components (Mission Control, Results, Tabs)
+│   └── utils/            # Utilities (Caching, Logging, Config)
+├── data/                 # Raw & Cleaned PDB Storage
+├── results/              # Run History & Artifact Exports
+└── tests/                # Automated Verification Suite
+```
+
+---
+
+## 🔧 Configuration
+
+Customize the pipeline in `config.yaml`:
+
+- **mustang**: Set execution backend (native/wsl) and timeouts.
+- **visualization**: Set default 3D styles and heatmap colormaps.
+- **pdb**: Configure cleaning levels (water removal, renumbering).
+
+---
+
+## 🤝 Citation & Support
+
+If you use this pipeline in your research, please cite:
+
+- **MUSTANG**: Konagurthu AS, et al. _Proteins_. 2006; 64(3):559-74.
+- **BioPython**: Cock PJ, et al. _Bioinformatics_. 2009.
+
+**Issues?** Open a GitHub issue or contact at `akash@example.com`.
+
+---
+
+Developed with ❤️ by **Akash**  
+_Optimized for Structural Biology & Computational Drug Discovery_

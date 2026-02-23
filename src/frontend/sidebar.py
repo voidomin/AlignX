@@ -90,8 +90,6 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
                     st.rerun()
         
         st.divider()
-        
-        st.divider()
         st.info("👈 Use the main dashboard to enter PDB IDs or upload files.")
         
         st.divider()
