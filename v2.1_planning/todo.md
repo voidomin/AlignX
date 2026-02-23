@@ -6,10 +6,10 @@ Complete audit of the Mustang Pipeline repository. All findings organized by pri
 
 ## 🚨 1. Critical Bugs & Deployment Fixes
 
-- [ ] **Circular Import Chain**: `src/backend/__init__.py` eagerly imports `PDBManager`, which triggers `pdb_manager.py → httpx`. `src/utils/__init__.py` similarly imports `config_loader → config_models → pydantic`. This chain is what caused the Streamlit Cloud crash. Fix: make `__init__.py` imports lazy or remove them entirely.
-- [ ] **Stale `__version__` in `src/__init__.py`**: Hardcoded as `"1.0.0"` — must be updated to `"2.1.0"` or read dynamically from `config.yaml`.
-- [ ] **Committed `.db` and temp files**: `run_history.db`, `test_cache.db`, `status.txt`, and `test_raw_pdb/` are tracked in git despite `.gitignore` rules. Run `git rm --cached` on these.
-- [ ] **Pinned Dependency Versions**: `requirements.txt` pins old versions (`streamlit==1.30.0`, `biopython==1.81`, `numpy==1.25.2`). Streamlit Cloud uses Python 3.10 — some pins may conflict. Loosen to `>=` ranges.
+- [x] **Circular Import Chain**: Fixed by removing eager imports in `__init__.py` files.
+- [x] **Stale `__version__` in `src/__init__.py`**: Updated to `"2.1.0"`.
+- [x] **Committed `.db` and temp files**: Verified as ignored/untracked.
+- [ ] **Pinned Dependency Versions**: `requirements.txt` pins old versions...
 
 ---
 
@@ -29,12 +29,12 @@ Complete audit of the Mustang Pipeline repository. All findings organized by pri
 - [ ] **`insights.py` re-creates `RMSDAnalyzer`**: Line 99 creates a new `RMSDAnalyzer(self.config)` on every call to `generate_insights()`. Should accept it as a parameter or cache it.
 - [ ] **`rmsd_calculator.py` has 4 parsing strategies** (330 lines): `calculate_rmsd_from_alignment`, `parse_mustang_log_for_rmsd`, `parse_rms_rot_file`, and `calculate_structure_rmsd`. Consolidate into clear primary + fallback.
 - [ ] **Duplicate `id` check in `results.py`**: Lines 22-24 and 41-43 both do the exact same `if 'id' not in results` check.
-- [ ] **Duplicate `st.divider()` in `sidebar.py`**: Lines 100-101 have two consecutive dividers.
+- [x] **Duplicate `st.divider()` in `sidebar.py`**: Fixed.
 - [ ] **`analysis.py` is 426 lines**: Largest frontend module. Extract PDB input form and progress bar into separate components.
 
 ### Repo Hygiene
 
-- [ ] **README overhaul**: Version says 2.0.0, mentions Python 3.8+, R as prerequisite, and a `docs/` folder that doesn't exist. Project structure section is outdated (missing 10+ new modules).
+- [x] **README overhaul**: Updated for v2.1.0 with modern feature highlights.
 - [ ] **Archive planning docs**: `v2_roadmap.md` and `v2.1_planning/` are from completed versions — move to `docs/archive/`.
 - [ ] **Dockerfile Python version**: Uses `python:3.11-slim` but Streamlit Cloud runs Python 3.10. Align or document.
 
