@@ -317,44 +317,81 @@ class MustangRunner:
         return cmd, run_cwd
 
     def _run_native_mustang(self, pdb_files: List[Path], output_dir: Path) -> Tuple[bool, str, Optional[Path]]:
-        """Run native Mustang binary."""
+        """Run native Mustang binary with live telemetry."""
         try:
             cmd, run_cwd = self._construct_command(pdb_files, output_dir)
             
-            logger.info(f"Running Mustang: {cmd[:2]}... (CWD: {run_cwd})")
+            logger.info(f"EXACT MUSTANG COMMAND: {' '.join(cmd)}")
+            logger.info(f"Running Mustang in CWD: {run_cwd}")
             
-            result = subprocess.run(
+            # Complex diversity (e.g. 1BKV + Large AF) needs much more time
+            # 30 minutes for complex suites, 10 minutes otherwise
+            mustang_timeout = 1800 if any("af-" in p.name.lower() for p in pdb_files) else self.timeout
+            
+            # Use Popen to stream output line-by-line
+            process = subprocess.Popen(
                 cmd,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=self.timeout,
-                cwd=str(run_cwd)
+                cwd=str(run_cwd),
+                bufsize=1,
+                universal_newlines=True
             )
             
-            # Save output to log file regardless of success for debugging
+            stdout_lines = []
+            stderr_lines = []
+            
+            # Use a basic timer for timeout
+            import time
+            start_time = time.time()
+            
+            while True:
+                # Check for timeout
+                if time.time() - start_time > mustang_timeout:
+                    process.kill()
+                    logger.error(f"Mustang timed out after {mustang_timeout}s")
+                    return False, f"Alignment timed out after {mustang_timeout}s. Complex structural diversity may require more time or simpler comparisons.", None
+                
+                # Read line-by-line
+                line = process.stdout.readline()
+                if not line and process.poll() is not None:
+                    break
+                if line:
+                    clean_line = line.strip()
+                    if clean_line:
+                        logger.info(f"[Mustang] {clean_line}")
+                        stdout_lines.append(line)
+            
+            # Capture remaining stderr
+            stderr_out = process.stderr.read()
+            if stderr_out:
+                stderr_lines.append(stderr_out)
+                for l in stderr_out.splitlines():
+                    logger.warning(f"[Mustang-Err] {l}")
+
+            return_code = process.returncode
+            all_stdout = "".join(stdout_lines)
+            all_stderr = "".join(stderr_lines)
+            
+            # Save output to log file
             log_file = output_dir / 'mustang.log'
             with open(log_file, 'w') as f:
-                f.write(result.stdout)
+                f.write(all_stdout)
                 f.write("\n=== STDERR ===\n")
-                f.write(result.stderr)
+                f.write(all_stderr)
             
-            # Check for output files - Mustang creates .afasta or .fasta
-            afasta_file = output_dir / 'alignment.afasta'
-            fasta_file = output_dir / 'alignment.fasta'
+            # Check for output files
             pdb_file = output_dir / 'alignment.pdb'
             
-            # Legacy Mustang often segfaults (139) on exit even if it produced files.
-            # We check if files exist to determine real success.
-            is_definitely_failed = result.returncode != 0 and not pdb_file.exists()
+            is_definitely_failed = return_code != 0 and not pdb_file.exists()
             
             if is_definitely_failed:
-                error_msg = f"Mustang execution failed (Exit {result.returncode})"
-                if result.returncode == 139:
-                    error_msg += ". This often indicates structural divergence (e.g. 1BKV/Collagen vs Globular). Try removing structurally atypical proteins."
+                error_msg = f"Mustang execution failed (Exit {return_code})"
+                if return_code == 139:
+                    error_msg += ". This often indicates extreme structural divergence (e.g. Collagen vs Globular). Try removing structurally atypical proteins."
                 
-                logger.error(f"Mustang failed (Exit {result.returncode}).")
-                logger.error(f"STDOUT: {result.stdout}")
-                logger.error(f"STDERR: {result.stderr}")
+                logger.error(f"Mustang failed (Exit {return_code}).")
                 return False, error_msg, None
             
             if not pdb_file.exists():
