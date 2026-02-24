@@ -43,11 +43,36 @@ def render_rmsd_tab(results: Dict[str, Any]) -> None:
         st.subheader("Statistics")
         stats = results['stats']
         st.metric("Mean RMSD", f"{stats['mean_rmsd']:.2f} Å")
-        st.metric("Median RMSD", f"{stats['median_rmsd']:.2f} Å")
-        st.metric("Min RMSD", f"{stats['min_rmsd']:.2f} Å")
+        
+        # New Scientific Metrics
+        q_metrics = results.get('quality_metrics', {})
+        if q_metrics:
+            # Calculate global averages
+            avg_tm = sum(m['tm_score'] for m in q_metrics.values()) / len(q_metrics)
+            avg_gdt = sum(m['gdt_ts'] for m in q_metrics.values()) / len(q_metrics)
+            
+            st.metric("Avg TM-Score", f"{avg_tm:.3f}", help="Length-independent structural similarity (0-1). >0.5 indicates same fold.")
+            st.metric("Avg GDT-TS", f"{avg_gdt:.3f}", help="Global Distance Test. Higher is better.")
+        
         st.metric("Max RMSD", f"{stats['max_rmsd']:.2f} Å")
         st.metric("Std Dev", f"{stats['std_rmsd']:.2f} Å")
     
+    # Per-Protein Quality Table
+    if results.get('quality_metrics'):
+        st.subheader("🧬 Per-Protein Structural Quality")
+        q_df = pd.DataFrame.from_dict(results['quality_metrics'], orient='index')
+        q_df.columns = ["TM-Score", "GDT-TS"]
+        q_df.index.name = "Structure"
+        
+        # Color formatting
+        def color_quality(val):
+            if val >= 0.7: color = '#4CAF50' # Green
+            elif val >= 0.5: color = '#FFC107' # Amber
+            else: color = '#F44336' # Red
+            return f'color: {color}; font-weight: bold'
+            
+        st.table(q_df.style.format("{:.3f}").applymap(color_quality))
+        
     st.subheader("RMSD Matrix")
     colormap = st.session_state.config.get('visualization', {}).get('heatmap_colormap', 'RdYlBu_r')
     st.dataframe(results['rmsd_df'].style.background_gradient(cmap=colormap))

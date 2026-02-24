@@ -9,7 +9,7 @@ from src.utils.logger import get_logger
 logger = get_logger()
 
 
-def render_3d_structure(pdb_file: Path, width: Any = "100%", height: int = 400, style: str = 'cartoon', unique_id: str = '1', highlight_residues = None, visible_chains = None, color_by_plddt: bool = False) -> Optional[str]:
+def render_3d_structure(pdb_file: Path, width: Any = "100%", height: int = 400, style: str = 'cartoon', unique_id: str = '1', highlight_residues = None, visible_chains = None, color_by_plddt: bool = False, style_mode: str = 'Neon Pro') -> Optional[str]:
     """
     Render 3D structure using py3Dmol in Streamlit.
     
@@ -70,6 +70,12 @@ def render_3d_structure(pdb_file: Path, width: Any = "100%", height: int = 400, 
                     '#FF1493', '#1E90FF'
                 ];
                 
+                const spectralColors = [
+                    '#e6194B', '#3cb44b', '#ffe119', '#4363d8', '#f58231', 
+                    '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#fabed4', 
+                    '#469990', '#dcbeff'
+                ];
+                
                 let m = viewer.getModel(0);
                 let atoms = m.selectedAtoms({{}});
                 
@@ -84,14 +90,18 @@ def render_3d_structure(pdb_file: Path, width: Any = "100%", height: int = 400, 
                 
                 // Apply base color per chain
                 for(let i=0; i<chains.length; i++) {{
-                    let color = neonColors[i % neonColors.length];
+                    let color;
+                    if ("{style_mode}" === "Scientific Spectral") {{
+                        color = spectralColors[i % spectralColors.length];
+                    }} else {{
+                        color = neonColors[i % neonColors.length];
+                    }}
+                    
                     let sel = {{chain: chains[i]}};
-                    // Make base structure translucent if highlights exist for better contrast
-                    // 0.6 provides a good balance (not too faint)
                     let opacity = hasHighlights ? 0.6 : 1.0;
                     
-                    if ({'true' if color_by_plddt else 'false'}) {{
-                         // AlphaFold pLDDT coloring (Blue > 90, LtBlue 70-90, Yellow 50-70, Orange < 50)
+                    if ("{style_mode}" === "AlphaFold Confidence" || {'true' if color_by_plddt else 'false'}) {{
+                         // AlphaFold pLDDT coloring
                          viewer.setStyle(sel, {{
                              cartoon: {{
                                  colorscheme: {{
@@ -152,8 +162,22 @@ def render_3d_structure(pdb_file: Path, width: Any = "100%", height: int = 400, 
                 viewer.zoomTo();
                 viewer.render();
                 viewer.zoom(0.8, 1000);
-                viewer.spin('y', 0.5);
+                
+                // Snapshot Function
+                window.takeSnapshot = function() {{
+                    const canvas = document.querySelector("#container_{unique_id} canvas");
+                    if (canvas) {{
+                        const link = document.createElement('a');
+                        link.download = 'structure_snapshot.png';
+                        link.href = canvas.toDataURL("image/png");
+                        link.click();
+                    }}
+                }};
             </script>
+            
+            <button onclick="takeSnapshot()" style="position: absolute; bottom: 10px; right: 10px; z-index: 1000; padding: 8px 12px; border: none; border-radius: 6px; background: rgba(255,255,255,0.2); backdrop-filter: blur(5px); color: white; font-family: sans-serif; cursor: pointer; border: 1px solid rgba(255,255,255,0.3); transition: 0.2s;">
+                📸 Save Snapshot
+            </button>
         </body>
         </html>
         """
@@ -244,7 +268,7 @@ def render_ligand_view(pdb_file: Path, ligand_data: dict, width: int = 800, heig
         logger.error(f"Failed to render ligand view: {e}")
         return None
 
-def show_structure_in_streamlit(pdb_file: Path, width: Any = "100%", height: int = 400, style: str = 'cartoon', key: str = '1', highlight_residues=None, visible_chains=None, color_by_plddt: bool = False):
+def show_structure_in_streamlit(pdb_file: Path, width: Any = "100%", height: int = 400, style: str = 'cartoon', key: str = '1', highlight_residues=None, visible_chains=None, color_by_plddt: bool = False, style_mode: str = 'Neon Pro'):
     """
     Display 3D structure in Streamlit app.
     
@@ -257,8 +281,9 @@ def show_structure_in_streamlit(pdb_file: Path, width: Any = "100%", height: int
         highlight_residues: Dict of {chain: [residues]} or list or None
         visible_chains: List of chain IDs to show or None
         color_by_plddt: Whether to color by pLDDT (AlphaFold confidence)
+        style_mode: 'Neon Pro', 'Spectral', or 'AlphaFold'
     """
-    html = render_3d_structure(pdb_file, width, height, style, key, highlight_residues, visible_chains, color_by_plddt)
+    html = render_3d_structure(pdb_file, width, height, style, key, highlight_residues, visible_chains, color_by_plddt, style_mode)
     if html:
         components.html(html, height=height, scrolling=False)
     else:

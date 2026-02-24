@@ -318,3 +318,136 @@ def calculate_structure_rmsd(pdb_file: Path, fasta_file: Path) -> Optional[pd.Da
         import traceback
         logger.error(traceback.format_exc())
         return None
+# --- SCIENTIFIC QUALITY METRICS ---
+
+def calculate_tm_score(coords1: np.ndarray, coords2: np.ndarray, L_target: int) -> float:
+    """
+    Calculate TM-score between two set of CA coordinates.
+    Formula: TM = (1/L_target) * sum(1 / (1 + (d_i/d0)^2))
+    """
+    if len(coords1) == 0 or L_target == 0:
+        return 0.0
+        
+    # Standard TM-score normalization factor
+    if L_target > 15:
+        d0 = 1.24 * (L_target - 15)**(1/3) - 1.8
+    else:
+        d0 = 0.5
+        
+    d0_sq = d0**2
+    distances_sq = np.sum((coords1 - coords2)**2, axis=1)
+    
+    score = np.sum(1.0 / (1.0 + distances_sq / d0_sq))
+    return score / L_target
+
+def calculate_gdt_ts(coords1: np.ndarray, coords2: np.ndarray, L_target: int) -> float:
+    """
+    Calculate Global Distance Test - Total Score (GDT-TS).
+    Formula: (P1 + P2 + P4 + P8) / 4
+    where Px is the percentage of residues with distance < x Angstroms.
+    """
+    if len(coords1) == 0 or L_target == 0:
+        return 0.0
+        
+    distances = np.sqrt(np.sum((coords1 - coords2)**2, axis=1))
+    
+    p1 = np.sum(distances < 1.0) / L_target
+    p2 = np.sum(distances < 2.0) / L_target
+    p4 = np.sum(distances < 4.0) / L_target
+    p8 = np.sum(distances < 8.0) / L_target
+    
+    return (p1 + p2 + p4 + p8) / 4.0
+
+def calculate_alignment_quality_metrics(pdb_file: Path, fasta_file: Path) -> Optional[Dict[str, Dict[str, float]]]:
+    """
+    Calculate scientific quality metrics for each structure in the alignment.
+    Returns: { 'pdb_id': {'tm_score': 0.85, 'gdt_ts': 0.92, 'rmsd': 1.2} }
+    """
+    try:
+        from Bio import SeqIO
+        alignment = list(SeqIO.parse(fasta_file, "fasta"))
+        if len(alignment) < 2:
+            return None
+            
+        # Parse PDB for coordinates
+        parser = PDBParser(QUIET=True)
+        structure = parser.get_structure("aln", str(pdb_file))
+        
+        # Extract models or chains
+        models = list(structure.get_models())
+        if len(models) == len(alignment):
+            entities = models
+        else:
+            chains = list(models[0].get_chains())
+            entities = chains[:len(alignment)]
+            
+        # Extract CA coords and sequence mapping
+        # We compute score for each sequence relative to the "Consensus Reference"
+        # Since Mustang gives a global superposition, we can calculate the 
+        # average TM-score of each structure against all others in the aligned core.
+        
+        structure_data = [] # List of (id, coords, L_orig)
+        seq_len = len(alignment[0].seq)
+        
+        for i, (record, entity) in enumerate(zip(alignment, entities)):
+            # Original length (excluding gaps)
+            L_orig = len(str(record.seq).replace("-", ""))
+            
+            # Map aligned columns to actual CA atoms
+            cas = [atom.coord for atom in entity.get_atoms() if atom.name == 'CA']
+            
+            # aligned_coords[col] = coord or None
+            aligned_coords = [None] * seq_len
+            res_idx = 0
+            for col, char in enumerate(record.seq):
+                if char != '-':
+                    if res_idx < len(cas):
+                        aligned_coords[col] = cas[res_idx]
+                        res_idx += 1
+            
+            structure_data.append({
+                'id': record.id,
+                'aligned_coords': aligned_coords,
+                'L_orig': L_orig
+            })
+            
+        results = {}
+        n = len(structure_data)
+        
+        for i in range(n):
+            tm_scores = []
+            gdt_scores = []
+            
+            target = structure_data[i]
+            
+            for j in range(n):
+                if i == j: continue
+                other = structure_data[j]
+                
+                # Find common columns
+                c1 = []
+                c2 = []
+                for col in range(seq_len):
+                    if target['aligned_coords'][col] is not None and other['aligned_coords'][col] is not None:
+                        c1.append(target['aligned_coords'][col])
+                        c2.append(other['aligned_coords'][col])
+                
+                if c1:
+                    c1 = np.array(c1)
+                    c2 = np.array(c2)
+                    tm_scores.append(calculate_tm_score(c1, c2, target['L_orig']))
+                    gdt_scores.append(calculate_gdt_ts(c1, c2, target['L_orig']))
+            
+            if tm_scores:
+                results[target['id']] = {
+                    'tm_score': float(np.mean(tm_scores)),
+                    'gdt_ts': float(np.mean(gdt_scores))
+                }
+            else:
+                results[target['id']] = {'tm_score': 0.0, 'gdt_ts': 0.0}
+                
+        return results
+        
+    except Exception as e:
+        logger.error(f"Failed to calculate quality metrics: {e}")
+        return None

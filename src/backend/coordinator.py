@@ -14,7 +14,7 @@ from src.backend.pdb_manager import PDBManager
 from src.backend.mustang_runner import MustangRunner
 from src.backend.rmsd_analyzer import RMSDAnalyzer
 from src.backend.phylo_tree import PhyloTreeGenerator
-from src.backend.rmsd_calculator import parse_rmsd_matrix
+from src.backend.rmsd_calculator import parse_rmsd_matrix, calculate_alignment_quality_metrics
 from src.backend.database import HistoryDatabase
 from src.backend.sequence_viewer import SequenceViewer
 from src.utils.cache_manager import CacheManager
@@ -190,6 +190,11 @@ class AnalysisCoordinator:
             self.rmsd_analyzer.generate_heatmap(rmsd_df, heatmap_path)
             stats = self.rmsd_analyzer.calculate_statistics(rmsd_df)
             
+            # Quality Metrics (TM-score / GDT-TS)
+            quality_metrics = None
+            if alignment_pdb.exists() and alignment_afasta.exists():
+                quality_metrics = calculate_alignment_quality_metrics(alignment_pdb, alignment_afasta)
+            
             # Calculate sequence identity
             if alignment_afasta.exists():
                 sequences = self.sequence_viewer.parse_afasta(alignment_afasta)
@@ -226,7 +231,8 @@ class AnalysisCoordinator:
                 'tree_fig': tree_fig,
                 'alignment_pdb': alignment_pdb,
                 'alignment_afasta': alignment_afasta,
-                'rmsf_values': rmsf_values
+                'rmsf_values': rmsf_values,
+                'quality_metrics': quality_metrics
             }
         except Exception as e:
             logger.error(f"Data processing failed: {e}")

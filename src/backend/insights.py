@@ -107,5 +107,24 @@ class InsightsGenerator:
         clusters = self.analyzer.identify_clusters(rmsd_df, threshold=2.0)
         if len(clusters) > 1:
              insights.append(f"🔍 **Structural Families**: At 2.0 Å threshold, structures fall into **{len(clusters)} distinct clusters**.")
+
+        # 7. Structural Confidence (TM-Score/GDT-TS)
+        q_metrics = results.get('quality_metrics')
+        if q_metrics:
+            avg_tm = np.mean([m['tm_score'] for m in q_metrics.values()])
+            if avg_tm > 0.7:
+                insights.append(f"🛡️ **High Confidence**: Average TM-score of {avg_tm:.3f} indicates a highly reliable structural consensus.")
+            elif avg_tm < 0.5:
+                insights.append(f"⚠️ **Low Confidence**: Average TM-score of {avg_tm:.3f} suggests the structures may belong to different folds or have poor alignment.")
+            
+            # Identify highest and lowest quality
+            sorted_q = sorted(q_metrics.items(), key=lambda x: x[1]['tm_score'], reverse=True)
+            best_id, best_m = sorted_q[0]
+            worst_id, worst_m = sorted_q[-1]
+            
+            if best_m['tm_score'] > 0.9:
+                insights.append(f"🌟 **Top Fit**: `{best_id}` is the most representative structure (TM-score: {best_m['tm_score']:.3f}).")
+            if worst_m['tm_score'] < 0.4:
+                insights.append(f"📉 **Weak Fit**: `{worst_id}` shows significant structural divergence (TM-score: {worst_m['tm_score']:.3f}).")
              
         return insights
