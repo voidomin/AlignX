@@ -90,12 +90,9 @@ class PDBManager:
         """
         Download a structural file (PDB or AlphaFold CIF) (Asynchronous).
         """
-        pdb_id = pdb_id.strip()
-        is_af = pdb_id.upper().startswith("AF-")
-        ext = ".cif" if is_af else ".pdb"
-        
-        # Check if already exists
-        output_file = self.raw_dir / f"{pdb_id}{ext}"
+        # Use lower-case filenames internally to avoid WSL case-sensitivity issues
+        safe_id = pdb_id.strip().lower()
+        output_file = self.raw_dir / f"{safe_id}{ext}"
         if output_file.exists() and not force:
             file_size_mb = output_file.stat().st_size / (1024 * 1024)
             if self.cache_manager:
@@ -373,14 +370,15 @@ class PDBManager:
         af_ids = []
         
         for pid in pdb_ids:
+            # Preserve original casing in mapping keys
             clean_id = pid.strip().upper()
             if clean_id.startswith("AF-"):
                 af_ids.append(clean_id)
-                original_to_base[clean_id] = clean_id
+                original_to_base[pid] = clean_id
             else:
                 base_id = clean_id[:4]
                 unique_base_ids.append(base_id)
-                original_to_base[clean_id] = base_id
+                original_to_base[pid] = base_id
         
         unique_base_ids = list(set(unique_base_ids))
         af_ids = list(set(af_ids))
@@ -448,12 +446,24 @@ class PDBManager:
                     up_id = af_id.split("-")[1]
                     up_url = f"https://rest.uniprot.org/uniprotkb/{up_id}.json"
                     up_resp = await client.get(up_url, timeout=5)
+                    
                     if up_resp.status_code == 200:
                         up_data = up_resp.json()
-                        title = up_data.get('proteinDescription', {}).get('recommendedName', {}).get('fullName', {}).get('value', 'AF Model')
+                        desc = up_data.get('proteinDescription', {})
+                        
+                        # Try various name sources
+                        name = (desc.get('recommendedName') or 
+                                desc.get('submissionNames', [{}])[0] or 
+                                desc.get('alternativeNames', [{}])[0]).get('fullName', {}).get('value')
+                        
+                        if not name:
+                            # Try gene name as fallback
+                            genes = up_data.get('genes', [{}])
+                            name = genes[0].get('geneName', {}).get('value', 'AF Model')
+                            
                         organism = up_data.get('organism', {}).get('scientificName', 'N/A')
                         base_results[af_id] = {
-                            'title': f"[AlphaFold] {title}",
+                            'title': f"[AlphaFold] {name}",
                             'method': 'Predicted (AF2)',
                             'resolution': 'pLDDT Scored',
                             'organism': organism
@@ -464,12 +474,14 @@ class PDBManager:
 
             if manage_client: await client.aclose()
             
-            # Map back to original IDs
+            # Map back to original IDs (case-insensitive lookup)
             final_results = {}
             for orig_id, b_id in original_to_base.items():
-                final_results[orig_id] = base_results.get(b_id, {
+                # Try uppercase match first, then exact
+                meta = base_results.get(b_id) or base_results.get(b_id.upper())
+                final_results[orig_id] = meta or {
                     'title': 'N/A', 'method': 'N/A', 'resolution': 'N/A', 'organism': 'N/A'
-                })
+                }
                 
             return final_results
             
