@@ -355,6 +355,7 @@ class PDBManager:
         if not pdb_ids:
             return {}
             
+        original_to_base = {}
         unique_base_ids = []
         af_ids = []
         for pid in pdb_ids:
