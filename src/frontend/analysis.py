@@ -214,16 +214,17 @@ def render_dashboard() -> None:
     results = st.session_state.get("results")
     pdb_ids = st.session_state.get("pdb_ids", [])
 
-    # Show Hero Section if nothing is selected yet
+    # Top Inputs FIRST — always visible before analysis
+    if not results:
+        render_input_section(st.session_state.pdb_manager)
+        st.divider()
+
+    # Show Hero Dashboard toggle if nothing is selected yet
     if not results and not pdb_ids:
         from src.frontend import home
 
-        home.render_hero_section()
-        st.divider()
-
-    # Top Inputs if not analyzed
-    if not results:
-        render_input_section(st.session_state.pdb_manager)
+        if st.toggle("📊 Show Mission Control Dashboard", value=False):
+            home.render_hero_section()
 
     # 2. Status & Metrics Bar
     st.divider()
@@ -276,11 +277,40 @@ def render_dashboard() -> None:
             "🧹 DEEP CLEAN CACHE",
             type="secondary",
             use_container_width=True,
-            help="Wipe all structural and metadata caches to resolve sync errors.",
+            help="Wipe all downloaded/cleaned PDB files and reset everything.",
         ):
+            # 1. Delete structural files from disk
+            import shutil
+
+            for data_dir in [Path("data/raw"), Path("data/cleaned")]:
+                if data_dir.exists():
+                    for f in data_dir.iterdir():
+                        if f.is_file():
+                            f.unlink()
+                    logger.info(f"Deep clean: wiped {data_dir}")
+
+            # 2. Clear ALL caches
             st.cache_data.clear()
+            try:
+                st.cache_resource.clear()
+            except Exception:
+                pass
+
+            # 3. Full session state reset
+            st.session_state.pdb_ids = []
+            st.session_state.results = None
             st.session_state.metadata = {}
             st.session_state.metadata_fetched = False
+            st.session_state.highlighted_residues = []
+            st.session_state.highlight_protein = "All Proteins"
+            st.session_state.residue_selections = {}
+            st.session_state.highlight_chains = {}
+            st.session_state.insights = None
+            st.session_state.insights_run_id = None
+            if "chain_info" in st.session_state:
+                del st.session_state.chain_info
+
+            st.toast("🧹 Deep clean complete! All caches and files wiped.", icon="✅")
             st.rerun()
 
     # 3. Main Content Area

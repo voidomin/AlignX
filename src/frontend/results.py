@@ -35,15 +35,43 @@ def display_results(results: Optional[Dict[str, Any]] = None) -> None:
     timestamp = results.get("timestamp", "N/A")
     st.caption(f"Run ID: `{run_id}` | Timestamp: {timestamp}")
 
-    # Define tabs
+    # Inject CSS for horizontally scrollable tab bar
+    st.markdown(
+        """
+        <style>
+        /* Make tab bar scrollable on narrow viewports */
+        div[data-testid="stTabs"] > div[role="tablist"] {
+            overflow-x: auto;
+            flex-wrap: nowrap !important;
+            scrollbar-width: thin;
+            -ms-overflow-style: auto;
+            gap: 0 !important;
+        }
+        div[data-testid="stTabs"] > div[role="tablist"]::-webkit-scrollbar {
+            height: 4px;
+        }
+        div[data-testid="stTabs"] > div[role="tablist"]::-webkit-scrollbar-thumb {
+            background: #4a69bd;
+            border-radius: 4px;
+        }
+        div[data-testid="stTabs"] > div[role="tablist"] button {
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Define tabs (shortened labels for better fit)
     tab_list = [
-        "📊 Summary & RMSD",
-        "🧬 Sequence Alignment",
-        "🌳 Structural Tree",
-        "🔍 Structural Clusters",
-        "🔮 3D Visualization",
-        "💊 Ligand Hunter",
-        "🔄 Batch Comparison",
+        "📊 Summary",
+        "🧬 Sequences",
+        "🌳 Tree",
+        "🔍 Clusters",
+        "🔮 3D Viewer",
+        "💊 Ligands",
+        "🔄 Comparison",
         "📥 Downloads",
     ]
 

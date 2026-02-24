@@ -1,6 +1,6 @@
 app:
   name: Mustang Structural Alignment Pipeline
-  version: 2.1.0
+  version: 2.3.0
   max_proteins: 20
 core:
   max_proteins: 20
@@ -35,7 +35,7 @@ output:
   base_dir: results
   keep_intermediates: true
   formats:
-  - html
+    - html
 visualization:
   heatmap_colormap: viridis
   tree_format: rectangular

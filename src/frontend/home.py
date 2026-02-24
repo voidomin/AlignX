@@ -100,14 +100,4 @@ def render_hero_section():
             language="markdown",
         )
 
-    st.divider()
-    st.markdown("### 🎨 Visual Overview")
-    v_col1, v_col2 = st.columns(2)
-    with v_col1:
-        st.info(
-            "📊 **Rigorous Metrics**: Pairwise RMSD matrices and hierarchical clustering."
-        )
-    with v_col2:
-        st.info(
-            "🌳 **Evolutionary Insights**: Structural phylogeny trees generated from alignment scores."
-        )
+
