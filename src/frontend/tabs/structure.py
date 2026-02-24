@@ -54,20 +54,27 @@ def render_3d_viewer_tab(results: Dict[str, Any]) -> None:
                 
                 col1, col2 = st.columns(2)
                 hl_chains = st.session_state.get('highlight_chains', {})
+                
+                # Check if any AlphaFold IDs are present in the current results
+                has_af = any(pid.upper().startswith("AF-") for pid in results.get('pdb_ids', []))
+                color_af = False
+                if has_af:
+                    color_af = st.checkbox("🌈 Color by Confidence (AlphaFold pLDDT)", value=True, help="Color structures based on AlphaFold confidence scores (B-factor column).")
+                
                 with col1:
                     st.markdown("**Cartoon (Secondary Structure)**")
-                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='cartoon', key='view_cartoon', highlight_residues=hl_chains, visible_chains=visible_chains)
+                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='cartoon', key='view_cartoon', highlight_residues=hl_chains, visible_chains=visible_chains, color_by_plddt=color_af)
                 with col2:
                     st.markdown("**Sphere (Spacefill)**")
-                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='sphere', key='view_sphere', highlight_residues=hl_chains, visible_chains=visible_chains)
+                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='sphere', key='view_sphere', highlight_residues=hl_chains, visible_chains=visible_chains, color_by_plddt=color_af)
                     
                 col3, col4 = st.columns(2)
                 with col3:
                     st.markdown("**Stick (Bonds & Atoms)**")
-                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='stick', key='view_stick', highlight_residues=hl_chains, visible_chains=visible_chains)
+                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='stick', key='view_stick', highlight_residues=hl_chains, visible_chains=visible_chains, color_by_plddt=color_af)
                 with col4:
                     st.markdown("**Line/Trace (Backbone)**")
-                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='line', key='view_line', highlight_residues=hl_chains, visible_chains=visible_chains)
+                    show_structure_in_streamlit(pdb_path, width=400, height=300, style='line', key='view_line', highlight_residues=hl_chains, visible_chains=visible_chains, color_by_plddt=color_af)
                 
                 st.caption("""
                 **Controls:**

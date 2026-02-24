@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict, Any
 from Bio import PDB
-from Bio.PDB import PDBIO, Select
+from Bio.PDB import PDBIO, Select, MMCIFParser, PDBParser
 import gzip
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
@@ -47,16 +47,17 @@ class PDBManager:
     @staticmethod
     def validate_pdb_id(pdb_id: str) -> bool:
         """
-        Validate PDB ID format (4 characters: letter followed by 3 alphanumeric).
-        
-        Args:
-            pdb_id: PDB identifier
-            
-        Returns:
-            True if valid, False otherwise
+        Validate PDB ID format.
+        Supports standard 4-char PDB IDs and AlphaFold IDs (AF-UniProt-F1).
         """
-        pattern = r'^[0-9][A-Za-z0-9]{3}$'
-        return bool(re.match(pattern, pdb_id.strip()))
+        pdb_id = pdb_id.strip().upper()
+        # Standard PDB ID
+        if re.match(r'^[0-9][A-Z0-9]{3}$', pdb_id):
+            return True
+        # AlphaFold ID
+        if re.match(r'^AF-[A-Z0-9]+-F[0-9]+$', pdb_id):
+            return True
+        return False
     
     def save_uploaded_file(self, uploaded_file: Any) -> Tuple[bool, str, Optional[Path]]:
         """
@@ -87,24 +88,31 @@ class PDBManager:
 
     async def download_pdb(self, pdb_id: str, force: bool = False, client: Optional[httpx.AsyncClient] = None) -> Tuple[bool, str, Optional[Path]]:
         """
-        Download a PDB file from RCSB (Asynchronous).
+        Download a structural file (PDB or AlphaFold CIF) (Asynchronous).
         """
         pdb_id = pdb_id.strip()
+        is_af = pdb_id.upper().startswith("AF-")
+        ext = ".cif" if is_af else ".pdb"
         
         # Check if already exists
-        output_file = self.raw_dir / f"{pdb_id}.pdb"
+        output_file = self.raw_dir / f"{pdb_id}{ext}"
         if output_file.exists() and not force:
             file_size_mb = output_file.stat().st_size / (1024 * 1024)
             if self.cache_manager:
                 self.cache_manager.update_access(pdb_id)
             return True, f"Using local file ({file_size_mb:.2f} MB)", output_file
         
-        pdb_id = pdb_id.upper()
         if not self.validate_pdb_id(pdb_id):
-            return False, f"Invalid PDB ID format: {pdb_id}", None
+            return False, f"Invalid ID format: {pdb_id}", None
         
-        output_file = self.raw_dir / f"{pdb_id}.pdb"
-        url = f"{self.pdb_source}{pdb_id}.pdb"
+        if is_af:
+            # AlphaFold DB URL (v4)
+            uniprot_id = pdb_id.split("-")[1].upper()
+            fragment = pdb_id.split("-")[2].upper()
+            url = f"https://alphafold.ebi.ac.uk/files/AF-{uniprot_id}-{fragment}-model_v4.cif"
+        else:
+            pdb_id = pdb_id.upper()
+            url = f"{self.pdb_source}{pdb_id}.pdb"
         
         try:
             manage_client = client is None
@@ -149,18 +157,19 @@ class PDBManager:
                 
         return results
     
+    def _get_structure(self, file_path: Path) -> Any:
+        """Hybrid parser for PDB and mmCIF formats."""
+        if file_path.suffix.lower() == '.cif':
+            parser = MMCIFParser(QUIET=True)
+        else:
+            parser = PDBParser(QUIET=True)
+        return parser.get_structure('protein', str(file_path))
+
     def analyze_structure(self, pdb_file: Path) -> Dict:
         """
-        Analyze PDB structure and return information.
-        
-        Args:
-            pdb_file: Path to PDB file
-            
-        Returns:
-            Dictionary with structure information
+        Analyze structural file and return information.
         """
-        parser = PDB.PDBParser(QUIET=True)
-        structure = parser.get_structure('protein', str(pdb_file))
+        structure = self._get_structure(pdb_file)
         
         chains = []
         total_residues = 0
@@ -190,20 +199,10 @@ class PDBManager:
                   remove_heteroatoms: bool = True,
                   remove_water: bool = True) -> Tuple[bool, str, Optional[Path]]:
         """
-        Clean PDB file by removing unwanted components.
-        
-        Args:
-            pdb_file: Input PDB file
-            chain: Specific chain to extract (None = keep all)
-            remove_heteroatoms: Remove heteroatoms (ligands, ions)
-            remove_water: Remove water molecules
-            
-        Returns:
-            Tuple of (success, message, output_path)
+        Clean structural file (PDB/CIF) and sanitize into standard PDB.
         """
         try:
-            parser = PDB.PDBParser(QUIET=True)
-            structure = parser.get_structure('protein', str(pdb_file))
+            structure = self._get_structure(pdb_file)
             
             class CleanSelect(Select):
                 def accept_residue(self, residue):
@@ -299,7 +298,8 @@ class PDBManager:
                     res_count += 1
             
             # Save cleaned structure with LF line endings
-            output_file = self.cleaned_dir / pdb_file.name
+            # Force .pdb extension for Mustang compatibility
+            output_file = self.cleaned_dir / f"{pdb_file.stem}.pdb"
             with open(str(output_file), 'w', newline='\n') as f:
                 io = PDBIO()
                 io.set_structure(new_structure)
@@ -355,13 +355,20 @@ class PDBManager:
         if not pdb_ids:
             return {}
             
-        original_to_base = {}
+        unique_base_ids = []
+        af_ids = []
         for pid in pdb_ids:
             clean_id = pid.strip().upper()
-            base_id = clean_id[:4]
-            original_to_base[clean_id] = base_id
-            
-        unique_base_ids = list(set(original_to_base.values()))
+            if clean_id.startswith("AF-"):
+                af_ids.append(clean_id)
+                original_to_base[clean_id] = clean_id
+            else:
+                base_id = clean_id[:4]
+                unique_base_ids.append(base_id)
+                original_to_base[clean_id] = base_id
+        
+        unique_base_ids = list(set(unique_base_ids))
+        af_ids = list(set(af_ids))
         
         query = """
         query($ids: [String!]!) {
@@ -424,6 +431,33 @@ class PDBManager:
                         'organism': organism
                     }
             
+            # 2. Fetch AlphaFold Metadata (via UniProt)
+            for af_id in af_ids:
+                try:
+                    uniprot_id = af_id.split("-")[1]
+                    # Use UniProt API
+                    up_url = f"https://rest.uniprot.org/uniprotkb/{uniprot_id}.json"
+                    up_resp = await client.get(up_url, timeout=5)
+                    if up_resp.status_code == 200:
+                        up_data = up_resp.json()
+                        title = up_data.get('proteinDescription', {}).get('recommendedName', {}).get('fullName', {}).get('value', 'AF Model')
+                        organism = up_data.get('organism', {}).get('scientificName', 'N/A')
+                        base_results[af_id] = {
+                            'title': f"[AlphaFold] {title}",
+                            'method': 'Predicted (AF2)',
+                            'resolution': 'pLDDT Scored',
+                            'organism': organism
+                        }
+                    else:
+                        base_results[af_id] = {
+                            'title': f"AlphaFold model {uniprot_id}",
+                            'method': 'Predicted',
+                            'resolution': 'N/A',
+                            'organism': 'N/A'
+                        }
+                except Exception:
+                    continue
+
             if manage_client: await client.aclose()
             
             final_results = {}

@@ -9,7 +9,7 @@ from src.utils.logger import get_logger
 logger = get_logger()
 
 
-def render_3d_structure(pdb_file: Path, width: Any = "100%", height: int = 400, style: str = 'cartoon', unique_id: str = '1', highlight_residues = None, visible_chains = None) -> Optional[str]:
+def render_3d_structure(pdb_file: Path, width: Any = "100%", height: int = 400, style: str = 'cartoon', unique_id: str = '1', highlight_residues = None, visible_chains = None, color_by_plddt: bool = False) -> Optional[str]:
     """
     Render 3D structure using py3Dmol in Streamlit.
     
@@ -90,7 +90,20 @@ def render_3d_structure(pdb_file: Path, width: Any = "100%", height: int = 400, 
                     // 0.6 provides a good balance (not too faint)
                     let opacity = hasHighlights ? 0.6 : 1.0;
                     
-                    if ("{style}" === "cartoon") {{
+                    if ({'true' if color_by_plddt else 'false'}) {{
+                         // AlphaFold pLDDT coloring (Blue > 90, LtBlue 70-90, Yellow 50-70, Orange < 50)
+                         viewer.setStyle(sel, {{
+                             cartoon: {{
+                                 colorscheme: {{
+                                     prop: 'b',
+                                     gradient: 'rwb',
+                                     min: 50,
+                                     max: 90
+                                 }},
+                                 opacity: opacity
+                             }}
+                         }});
+                    }} else if ("{style}" === "cartoon") {{
                         viewer.setStyle(sel, {{cartoon: {{color: color, opacity: opacity}}}});
                     }} else if ("{style}" === "sphere") {{
                         viewer.setStyle(sel, {{sphere: {{scale: 0.3, color: color, opacity: opacity}}}});
@@ -231,7 +244,7 @@ def render_ligand_view(pdb_file: Path, ligand_data: dict, width: int = 800, heig
         logger.error(f"Failed to render ligand view: {e}")
         return None
 
-def show_structure_in_streamlit(pdb_file: Path, width: Any = "100%", height: int = 400, style: str = 'cartoon', key: str = '1', highlight_residues=None, visible_chains=None):
+def show_structure_in_streamlit(pdb_file: Path, width: Any = "100%", height: int = 400, style: str = 'cartoon', key: str = '1', highlight_residues=None, visible_chains=None, color_by_plddt: bool = False):
     """
     Display 3D structure in Streamlit app.
     
@@ -243,8 +256,9 @@ def show_structure_in_streamlit(pdb_file: Path, width: Any = "100%", height: int
         key: Unique key for component
         highlight_residues: Dict of {chain: [residues]} or list or None
         visible_chains: List of chain IDs to show or None
+        color_by_plddt: Whether to color by pLDDT (AlphaFold confidence)
     """
-    html = render_3d_structure(pdb_file, width, height, style, key, highlight_residues, visible_chains)
+    html = render_3d_structure(pdb_file, width, height, style, key, highlight_residues, visible_chains, color_by_plddt)
     if html:
         components.html(html, height=height, scrolling=False)
     else:
