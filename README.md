@@ -95,7 +95,7 @@ If you use this pipeline in your research, please cite:
 - **MUSTANG**: Konagurthu AS, et al. _Proteins_. 2006; 64(3):559-74.
 - **BioPython**: Cock PJ, et al. _Bioinformatics_. 2009.
 
-**Issues?** Open a GitHub issue or contact at `akash@example.com`.
+**Issues?** Open a GitHub issue or contact at `akashkbhat4414@gmail.com`.
 
 ---
 
