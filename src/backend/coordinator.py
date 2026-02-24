@@ -15,6 +15,7 @@ from src.backend.mustang_runner import MustangRunner
 from src.backend.rmsd_analyzer import RMSDAnalyzer
 from src.backend.phylo_tree import PhyloTreeGenerator
 from src.backend.rmsd_calculator import parse_rmsd_matrix, calculate_alignment_quality_metrics
+from src.backend.ramachandran_service import RamachandranService
 from src.backend.database import HistoryDatabase
 from src.backend.sequence_viewer import SequenceViewer
 from src.utils.cache_manager import CacheManager
@@ -29,6 +30,7 @@ class AnalysisCoordinator:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.history_db = HistoryDatabase()
+        self.ramachandran_service = RamachandranService()
         self.cache_manager = CacheManager(config, self.history_db)
         self.pdb_manager = PDBManager(config, self.cache_manager)
         self.mustang_runner = MustangRunner(config)
@@ -194,6 +196,14 @@ class AnalysisCoordinator:
             quality_metrics = None
             if alignment_pdb.exists() and alignment_afasta.exists():
                 quality_metrics = calculate_alignment_quality_metrics(alignment_pdb, alignment_afasta)
+                
+            # Ramachandran (Torsion) Analysis
+            torsion_data = None
+            ramachandran_stats = None
+            if alignment_pdb.exists():
+                torsion_data = self.ramachandran_service.calculate_torsion_angles(alignment_pdb)
+                if torsion_data:
+                    ramachandran_stats = self.ramachandran_service.aggregate_metrics(torsion_data)
             
             # Calculate sequence identity
             if alignment_afasta.exists():
@@ -232,7 +242,9 @@ class AnalysisCoordinator:
                 'alignment_pdb': alignment_pdb,
                 'alignment_afasta': alignment_afasta,
                 'rmsf_values': rmsf_values,
-                'quality_metrics': quality_metrics
+                'quality_metrics': quality_metrics,
+                'torsion_data': torsion_data,
+                'ramachandran_stats': ramachandran_stats
             }
         except Exception as e:
             logger.error(f"Data processing failed: {e}")
