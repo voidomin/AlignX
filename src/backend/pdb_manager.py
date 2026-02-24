@@ -54,8 +54,8 @@ class PDBManager:
         # Standard PDB ID
         if re.match(r'^[0-9][A-Z0-9]{3}$', pdb_id):
             return True
-        # AlphaFold ID
-        if re.match(r'^AF-[A-Z0-9]+-F[0-9]+$', pdb_id):
+        # AlphaFold ID (Supports AF-UniProt-F[Fragment] and optional -v[Version])
+        if re.match(r'^AF-[A-Z0-9]+-F[0-9]+(-V[0-9]+)?$', pdb_id):
             return True
         return False
     
@@ -106,10 +106,17 @@ class PDBManager:
             return False, f"Invalid ID format: {pdb_id}", None
         
         if is_af:
-            # AlphaFold DB URL (v4)
-            uniprot_id = pdb_id.split("-")[1].upper()
-            fragment = pdb_id.split("-")[2].upper()
-            url = f"https://alphafold.ebi.ac.uk/files/AF-{uniprot_id}-{fragment}-model_v4.cif"
+            # AlphaFold DB URL support
+            parts = pdb_id.upper().split("-")
+            uniprot_id = parts[1]
+            # Handle fragment and version (e.g., AF-P12345-F1-v6)
+            fragment = parts[2] if len(parts) > 2 else "F1"
+            # Extract version if present (e.g., v6 -> 6), else default to 4
+            version = "4"
+            if len(parts) > 3 and parts[3].startswith("V"):
+                version = parts[3].replace("V", "")
+            
+            url = f"https://alphafold.ebi.ac.uk/files/AF-{uniprot_id}-{fragment}-model_v{version}.cif"
         else:
             pdb_id = pdb_id.upper()
             url = f"{self.pdb_source}{pdb_id}.pdb"
@@ -119,8 +126,10 @@ class PDBManager:
             if manage_client:
                 client = httpx.AsyncClient(timeout=self.timeout)
             
+            logger.info(f"Attempting download from: {url}")
             response = await client.get(url, follow_redirects=True)
             if response.status_code != 200:
+                logger.error(f"Download for {pdb_id} failed with status code {response.status_code}")
                 if manage_client: await client.aclose()
                 return False, f"Download failed (Status {response.status_code})", None
             
@@ -139,6 +148,9 @@ class PDBManager:
             logger.info(f"Downloaded {pdb_id} successfully ({file_size_mb:.2f} MB)")
             return True, f"Downloaded ({file_size_mb:.2f} MB)", output_file
             
+        except httpx.TimeoutException:
+            logger.error(f"Timeout while downloading {pdb_id}")
+            return False, f"Download failed: Connection timeout", None
         except Exception as e:
             logger.error(f"Failed to download {pdb_id}: {str(e)}")
             return False, f"Download failed: {str(e)}", None
@@ -355,9 +367,11 @@ class PDBManager:
         if not pdb_ids:
             return {}
             
+        # State mapping
         original_to_base = {}
         unique_base_ids = []
         af_ids = []
+        
         for pid in pdb_ids:
             clean_id = pid.strip().upper()
             if clean_id.startswith("AF-"):
@@ -385,59 +399,54 @@ class PDBManager:
         }
         """
         
-        base_results = {bid: {'title': 'N/A', 'method': 'N/A', 'resolution': 'N/A', 'organism': 'N/A'} for bid in unique_base_ids}
+        base_results = {bid: {'title': 'N/A', 'method': 'N/A', 'resolution': 'N/A', 'organism': 'N/A'} for bid in (unique_base_ids + af_ids)}
             
         try:
             manage_client = client is None
             if manage_client:
-                client = httpx.AsyncClient(timeout=10)
+                client = httpx.AsyncClient(timeout=15)
                 
-            url = "https://data.rcsb.org/graphql"
-            payload = {"query": query, "variables": {"ids": unique_base_ids}}
-            
-            logger.info(f"Fetching metadata for {len(unique_base_ids)} entries via GraphQL (Async)")
-            response = await client.post(url, json=payload)
-            
-            if response.status_code == 200:
-                data = response.json()
-                entries = (data.get('data') or {}).get('entries') or []
+            # 1. Fetch RCSB Metadata
+            if unique_base_ids:
+                url = "https://data.rcsb.org/graphql"
+                payload = {"query": query, "variables": {"ids": unique_base_ids}}
+                logger.info(f"Fetching metadata for {len(unique_base_ids)} PDB entries")
+                response = await client.post(url, json=payload)
                 
-                for entry in entries:
-                    bid = entry.get('rcsb_id')
-                    if not bid: continue
-                    
-                    struct = entry.get('struct') or {}
-                    title = struct.get('title', 'N/A')
-                    
-                    exptl_list = entry.get('exptl') or []
-                    method = exptl_list[0].get('method', 'N/A') if exptl_list else 'N/A'
-                    
-                    info = entry.get('rcsb_entry_info') or {}
-                    res_list = info.get('resolution_combined') or []
-                    resolution = f"{res_list[0]:.2f} \u00c5" if res_list else "N/A"
-                    
-                    organism = "N/A"
-                    entities = entry.get('polymer_entities') or []
-                    if entities:
-                        for entity in entities:
-                            sources = (entity.get('rcsb_entity_source_organism') or [])
-                            if sources:
-                                organism = sources[0].get('scientific_name', 'N/A')
-                                break
-                    
-                    base_results[bid] = {
-                        'title': title,
-                        'method': method,
-                        'resolution': resolution,
-                        'organism': organism
-                    }
+                if response.status_code == 200:
+                    data = response.json()
+                    entries = (data.get('data') or {}).get('entries') or []
+                    for entry in entries:
+                        bid = entry.get('rcsb_id')
+                        if not bid: continue
+                        
+                        struct = entry.get('struct') or {}
+                        exptl_list = entry.get('exptl') or []
+                        info = entry.get('rcsb_entry_info') or {}
+                        res_list = info.get('resolution_combined') or []
+                        
+                        organism = "N/A"
+                        entities = entry.get('polymer_entities') or []
+                        if entities:
+                            for entity in entities:
+                                sources = (entity.get('rcsb_entity_source_organism') or [])
+                                if sources:
+                                    organism = sources[0].get('scientific_name', 'N/A')
+                                    break
+                        
+                        base_results[bid] = {
+                            'title': struct.get('title', 'N/A'),
+                            'method': exptl_list[0].get('method', 'N/A') if exptl_list else 'N/A',
+                            'resolution': f"{res_list[0]:.2f} \u00c5" if res_list else "N/A",
+                            'organism': organism
+                        }
             
             # 2. Fetch AlphaFold Metadata (via UniProt)
             for af_id in af_ids:
                 try:
-                    uniprot_id = af_id.split("-")[1]
-                    # Use UniProt API
-                    up_url = f"https://rest.uniprot.org/uniprotkb/{uniprot_id}.json"
+                    # Extract UniProt ID (AF-P12345-F1 -> P12345)
+                    up_id = af_id.split("-")[1]
+                    up_url = f"https://rest.uniprot.org/uniprotkb/{up_id}.json"
                     up_resp = await client.get(up_url, timeout=5)
                     if up_resp.status_code == 200:
                         up_data = up_resp.json()
@@ -449,26 +458,22 @@ class PDBManager:
                             'resolution': 'pLDDT Scored',
                             'organism': organism
                         }
-                    else:
-                        base_results[af_id] = {
-                            'title': f"AlphaFold model {uniprot_id}",
-                            'method': 'Predicted',
-                            'resolution': 'N/A',
-                            'organism': 'N/A'
-                        }
-                except Exception:
+                except Exception as e:
+                    logger.warning(f"Failed to fetch UniProt meta for {af_id}: {e}")
                     continue
 
             if manage_client: await client.aclose()
             
+            # Map back to original IDs
             final_results = {}
-            for original_id, base_id in original_to_base.items():
-                final_results[original_id] = base_results.get(base_id, base_results.get(base_id.upper(), {
+            for orig_id, b_id in original_to_base.items():
+                final_results[orig_id] = base_results.get(b_id, {
                     'title': 'N/A', 'method': 'N/A', 'resolution': 'N/A', 'organism': 'N/A'
-                }))
+                })
                 
             return final_results
             
         except Exception as e:
-            logger.error(f"Metadata fetch failed: {str(e)}")
+            logger.error(f"Metadata fetch critical failure: {str(e)}")
+            # Fallback for all IDs to prevent UI crash
             return {pid: {'title': 'N/A', 'method': 'N/A', 'resolution': 'N/A', 'organism': 'N/A'} for pid in pdb_ids}
