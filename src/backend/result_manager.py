@@ -14,34 +14,30 @@ class ResultManager:
     def __init__(self, results_dir: Path):
         self.results_dir = results_dir
         self.results_dir.mkdir(parents=True, exist_ok=True)
+        from src.backend.database import HistoryDatabase
+        self.db = HistoryDatabase()
 
     def list_runs(self) -> List[Dict[str, Any]]:
         """
-        Scan results directory and return a list of valid past runs.
+        Retrieve valid past runs from the database.
         """
         runs = []
-        for run_path in self.results_dir.iterdir():
-            if not run_path.is_dir():
-                continue
-            
-            metadata_path = run_path / "metadata.json"
-            if metadata_path.exists():
-                try:
-                    with open(metadata_path, 'r') as f:
-                        meta = json.load(f)
-                    
-                    runs.append({
-                        "id": run_path.name,
-                        "timestamp": meta.get("timestamp", "Unknown"),
-                        "protein_count": meta.get("protein_count", 0),
-                        "proteins": meta.get("proteins", []),
-                        "path": run_path
-                    })
-                except Exception as e:
-                    logger.warning(f"Failed to read metadata for run {run_path.name}: {e}")
+        db_runs = self.db.get_all_runs()
         
-        # Sort by timestamp (desc) if available
-        return sorted(runs, key=lambda x: x['timestamp'], reverse=True)
+        for run in db_runs:
+            run_path = Path(run['result_path'])
+            # Verify the directory still exists and has the RMSD matrix
+            # If the database entry exists, we consider it a valid run for indexing
+            if run_path.exists() and (run_path / "rmsd_matrix.csv").exists():
+                runs.append({
+                    "id": run['id'],
+                    "timestamp": run['timestamp'],
+                    "protein_count": len(run['pdb_ids']),
+                    "proteins": run['pdb_ids'],
+                    "path": run_path
+                })
+        
+        return runs
 
     def get_run_rmsd(self, run_id: str) -> Optional[pd.DataFrame]:
         """
@@ -63,7 +59,7 @@ class ResultManager:
     def calculate_difference(self, run_id_1: str, run_id_2: str) -> Optional[pd.DataFrame]:
         """
         Calculate the difference between two RMSD matrices (run1 - run2).
-        Only works if both runs have identical protein sets.
+        Aligns dataframes automatically and returns the difference for the overlapping proteins.
         """
         rmsd1 = self.get_run_rmsd(run_id_1)
         rmsd2 = self.get_run_rmsd(run_id_2)
@@ -71,9 +67,12 @@ class ResultManager:
         if rmsd1 is None or rmsd2 is None:
             return None
             
-        # Ensure identical overlap
-        if not (rmsd1.index.equals(rmsd2.index) and rmsd1.columns.equals(rmsd2.columns)):
-            logger.warning(f"Cannot compare runs {run_id_1} and {run_id_2}: Indices do not match.")
+        # Align dataframes on common proteins
+        # This handles cases where order is different or sets only partially overlap
+        rmsd1_aligned, rmsd2_aligned = rmsd1.align(rmsd2, join='inner', axis=None)
+        
+        if rmsd1_aligned.empty:
+            logger.warning(f"Cannot compare runs {run_id_1} and {run_id_2}: No overlapping proteins.")
             return None
             
-        return rmsd1 - rmsd2
+        return rmsd1_aligned - rmsd2_aligned

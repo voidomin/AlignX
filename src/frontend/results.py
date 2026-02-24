@@ -1,6 +1,6 @@
 import streamlit as st
 from typing import Optional, Dict, Any
-from src.frontend.tabs import rmsd, sequence, phylo, clusters, structure, ligand, downloads
+from src.frontend.tabs import rmsd, sequence, phylo, clusters, structure, ligand, downloads, comparison
 
 def display_results(results: Optional[Dict[str, Any]] = None) -> None:
     """

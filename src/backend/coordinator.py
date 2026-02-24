@@ -65,7 +65,14 @@ class AnalysisCoordinator:
         """
         try:
             if not output_dir:
-                output_dir = Path("results/latest_run")
+                now = datetime.now()
+                run_id = f"run_{int(now.timestamp())}"
+                run_name = f"Analysis of {len(pdb_ids)} structures ({now.strftime('%H:%M')})"
+                output_dir = Path("results") / run_id
+            else:
+                run_id = output_dir.name
+                now = datetime.now()
+                run_name = f"Custom Run ({now.strftime('%H:%M')})"
             
             # 1. DATA PREPARATION (Step 1)
             if progress_callback: progress_callback(0.1, "📥 Downloading PDB files...", 1)
@@ -130,17 +137,25 @@ class AnalysisCoordinator:
             if not results:
                 return False, "Failed to process result directory", None
             
-            # 5. SAVE TO HISTORY
-            now = datetime.now()
-            run_id = f"run_{int(now.timestamp())}"
-            run_name = f"Analysis of {len(pdb_ids)} structures ({now.strftime('%H:%M')})"
-            
+            # 5. SAVE TO HISTORY & WRITE METADATA
             self.history_db.save_run(
                 run_id,
                 run_name,
                 pdb_ids,
                 result_dir
             )
+            
+            # Write metadata.json for portability and indexing stability
+            import json
+            metadata = {
+                "id": run_id,
+                "name": run_name,
+                "timestamp": now.strftime('%Y-%m-%d %H:%M:%S'),
+                "protein_count": len(pdb_ids),
+                "proteins": pdb_ids
+            }
+            with open(result_dir / "metadata.json", 'w') as f:
+                json.dump(metadata, f, indent=4)
             
             # Inject metadata into results for UI
             results['id'] = run_id

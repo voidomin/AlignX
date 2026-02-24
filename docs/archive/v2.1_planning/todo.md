@@ -58,6 +58,7 @@ Complete audit of the Mustang Pipeline repository. All findings organized by pri
 - [ ] **Batch Comparison Mode**: Compare two separate alignment runs side-by-side (e.g., family A vs family B), showing differential RMSD and overlap.
 - [ ] **AlphaFold Integration**: Accept AlphaFold DB IDs or `.cif` file uploads — auto-convert CIF→PDB for Mustang.
 - [ ] **Alignment Quality Score**: Per-structure confidence score (TM-score or GDT-TS) showing how well each structure fits the consensus.
+- [ ] **ramachandran plot**: Add ramachandran plot for the aligned structures. user should be able to select the protein and alligned protein to plot.
 - [ ] **CI/CD Pipeline**: GitHub Actions for `pytest`, `mypy`, and auto-deploy on merge to `main`.
 
 ---
