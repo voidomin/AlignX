@@ -45,7 +45,7 @@ def render_phylo_tree_tab(results: Dict[str, Any]) -> None:
         
         protein_names = sorted(all_data['protein_name'].unique())
 
-        col_ctrl1, col_ctrl2 = st.columns([2, 1])
+        col_ctrl1, col_ctrl2, col_ctrl3 = st.columns([2, 1, 1])
         with col_ctrl1:
             selected_proteins = st.multiselect(
                 "🎯 Highlight Specific Proteins",
@@ -56,6 +56,9 @@ def render_phylo_tree_tab(results: Dict[str, Any]) -> None:
         with col_ctrl2:
             st.write("") # Spacer
             show_all = st.toggle("Show Residue Labels", value=False, help="Display residue names (e.g. GLY35) directly on the plot.")
+        with col_ctrl3:
+            st.write("") # Spacer
+            show_regions = st.toggle("Show Regions", value=True, help="Display shaded reference regions for Alpha-Helices and Beta-Sheets.")
 
         # Dynamic Opacity & Size
         all_data['opacity'] = 1.0
@@ -68,10 +71,11 @@ def render_phylo_tree_tab(results: Dict[str, Any]) -> None:
         fig = go.Figure()
 
         # 1. Add Background Regions (Rectangles as a proxy for shaded areas)
-        # Favored Alpha (The "Green Region")
-        fig.add_vrect(x0=-100, x1=-30, y0=-80, y1=20, fillcolor="rgba(76, 175, 80, 0.08)", line_width=0, layer="below", annotation_text="Alpha-Helix", annotation_position="bottom left")
-        # Favored Beta (The "Blue Region")
-        fig.add_vrect(x0=-160, x1=-50, y0=90, y1=180, fillcolor="rgba(33, 150, 243, 0.08)", line_width=0, layer="below", annotation_text="Beta-Sheet", annotation_position="top left")
+        if show_regions:
+            # Favored Alpha (The "Green Region")
+            fig.add_vrect(x0=-100, x1=-30, y0=-80, y1=20, fillcolor="rgba(76, 175, 80, 0.08)", line_width=0, layer="below", annotation_text="Alpha-Helix", annotation_position="bottom left")
+            # Favored Beta (The "Blue Region")
+            fig.add_vrect(x0=-160, x1=-50, y0=90, y1=180, fillcolor="rgba(33, 150, 243, 0.08)", line_width=0, layer="below", annotation_text="Beta-Sheet", annotation_position="top left")
         
         # 2. Add Data Trace
         for region in all_data['region'].unique():
