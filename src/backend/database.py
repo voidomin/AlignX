@@ -7,21 +7,22 @@ from typing import List, Dict, Optional, Any
 
 logger = logging.getLogger(__name__)
 
+
 class HistoryDatabase:
     """
     Manages a SQLite database to store and retrieve analysis history.
     """
-    
+
     def __init__(self, db_path: str = "run_history.db"):
         """
         Initialize the database connection.
-        
+
         Args:
             db_path: Path to the SQLite database file
         """
         self.db_path = db_path
         self._init_db()
-        
+
     def _init_db(self):
         """Create the runs table if it doesn't exist."""
         try:
@@ -50,10 +51,18 @@ class HistoryDatabase:
         except Exception as e:
             logger.error(f"Failed to initialize database: {e}")
 
-    def save_run(self, run_id: str, name: str, pdb_ids: List[str], result_path: Path, status: str = "completed", metadata: Dict = None) -> bool:
+    def save_run(
+        self,
+        run_id: str,
+        name: str,
+        pdb_ids: List[str],
+        result_path: Path,
+        status: str = "completed",
+        metadata: Dict = None,
+    ) -> bool:
         """
         Save a new run to the database.
-        
+
         Args:
             run_id: Unique identifier for the run
             name: Human-readable name (e.g., "GPCR Analysis")
@@ -61,7 +70,7 @@ class HistoryDatabase:
             result_path: Path to the results directory
             status: Status of the run (completed, failed)
             metadata: Additional JSON serializable metadata
-            
+
         Returns:
             True if successful, False otherwise
         """
@@ -69,15 +78,26 @@ class HistoryDatabase:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             pdb_ids_json = json.dumps(pdb_ids)
             metadata_json = json.dumps(metadata or {})
-            
+
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT OR REPLACE INTO runs (id, timestamp, name, pdb_ids, status, result_path, metadata)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (run_id, timestamp, name, pdb_ids_json, status, str(result_path), metadata_json))
+                """,
+                    (
+                        run_id,
+                        timestamp,
+                        name,
+                        pdb_ids_json,
+                        status,
+                        str(result_path),
+                        metadata_json,
+                    ),
+                )
                 conn.commit()
-            
+
             logger.info(f"Saved run {run_id} to history")
             return True
         except Exception as e:
@@ -87,10 +107,10 @@ class HistoryDatabase:
     def get_all_runs(self, limit: int = None) -> List[Dict[str, Any]]:
         """
         Retrieve saved runs, sorted by timestamp (newest first).
-        
+
         Args:
             limit: Maximum number of runs to return (None for all)
-            
+
         Returns:
             List of run dictionaries
         """
@@ -98,22 +118,24 @@ class HistoryDatabase:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
-                
+
                 query = "SELECT * FROM runs ORDER BY timestamp DESC"
                 params = ()
-                
+
                 if limit:
                     query += " LIMIT ?"
                     params = (limit,)
-                    
+
                 cursor.execute(query, params)
                 rows = cursor.fetchall()
-                
+
                 runs = []
                 for row in rows:
                     run = dict(row)
-                    run['pdb_ids'] = json.loads(run['pdb_ids'])
-                    run['metadata'] = json.loads(run['metadata']) if run['metadata'] else {}
+                    run["pdb_ids"] = json.loads(run["pdb_ids"])
+                    run["metadata"] = (
+                        json.loads(run["metadata"]) if run["metadata"] else {}
+                    )
                     runs.append(run)
                 return runs
         except Exception as e:
@@ -130,11 +152,13 @@ class HistoryDatabase:
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM runs WHERE id = ?", (run_id,))
                 row = cursor.fetchone()
-                
+
                 if row:
                     run = dict(row)
-                    run['pdb_ids'] = json.loads(run['pdb_ids'])
-                    run['metadata'] = json.loads(run['metadata']) if run['metadata'] else {}
+                    run["pdb_ids"] = json.loads(run["pdb_ids"])
+                    run["metadata"] = (
+                        json.loads(run["metadata"]) if run["metadata"] else {}
+                    )
                     return run
                 return None
         except Exception as e:
@@ -161,13 +185,17 @@ class HistoryDatabase:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
-                cursor.execute("SELECT * FROM runs WHERE status = 'completed' ORDER BY timestamp DESC LIMIT 1")
+                cursor.execute(
+                    "SELECT * FROM runs WHERE status = 'completed' ORDER BY timestamp DESC LIMIT 1"
+                )
                 row = cursor.fetchone()
-                
+
                 if row:
                     run = dict(row)
-                    run['pdb_ids'] = json.loads(run['pdb_ids'])
-                    run['metadata'] = json.loads(run['metadata']) if run['metadata'] else {}
+                    run["pdb_ids"] = json.loads(run["pdb_ids"])
+                    run["metadata"] = (
+                        json.loads(run["metadata"]) if run["metadata"] else {}
+                    )
                     return run
                 return None
         except Exception as e:
@@ -196,10 +224,13 @@ class HistoryDatabase:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT OR REPLACE INTO pdb_cache (id, path, size_bytes, last_accessed)
                     VALUES (?, ?, ?, ?)
-                """, (item_id, path, size_bytes, now))
+                """,
+                    (item_id, path, size_bytes, now),
+                )
                 conn.commit()
             return True
         except Exception as e:
@@ -212,7 +243,10 @@ class HistoryDatabase:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("UPDATE pdb_cache SET last_accessed = ? WHERE id = ?", (now, item_id))
+                cursor.execute(
+                    "UPDATE pdb_cache SET last_accessed = ? WHERE id = ?",
+                    (now, item_id),
+                )
                 conn.commit()
             return True
         except Exception as e:

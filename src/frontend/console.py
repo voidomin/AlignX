@@ -4,11 +4,12 @@ import streamlit as st
 from pathlib import Path
 from typing import Optional
 
+
 def render_console(log_file_path: Optional[Path] = None) -> None:
     """
     Render a compact, styled command console log viewer.
     Shows last 30 lines in a collapsible expander with a clear button.
-    
+
     Args:
         log_file_path: Path to the log file to read.
     """
@@ -33,7 +34,9 @@ def render_console(log_file_path: Optional[Path] = None) -> None:
                 st.rerun()
 
         # Render inside a height-limited styled div
-        escaped = log_content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        escaped = (
+            log_content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        )
         st.markdown(
             f"""<div class="console-container fade-in"><pre class="console-text">{escaped}</pre></div>""",
             unsafe_allow_html=True,

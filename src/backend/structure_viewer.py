@@ -9,10 +9,20 @@ from src.utils.logger import get_logger
 logger = get_logger()
 
 
-def render_3d_structure(pdb_file: Path, width: Any = "100%", height: int = 400, style: str = 'cartoon', unique_id: str = '1', highlight_residues = None, visible_chains = None, color_by_plddt: bool = False, style_mode: str = 'Neon Pro') -> Optional[str]:
+def render_3d_structure(
+    pdb_file: Path,
+    width: Any = "100%",
+    height: int = 400,
+    style: str = "cartoon",
+    unique_id: str = "1",
+    highlight_residues=None,
+    visible_chains=None,
+    color_by_plddt: bool = False,
+    style_mode: str = "Neon Pro",
+) -> Optional[str]:
     """
     Render 3D structure using py3Dmol in Streamlit.
-    
+
     Args:
         pdb_file: Path to PDB file
         width: Viewer width in pixels
@@ -23,29 +33,30 @@ def render_3d_structure(pdb_file: Path, width: Any = "100%", height: int = 400, 
                            or list of residue nums for global highlights (backward compat),
                            or None/empty for no highlights
         visible_chains: List of chain IDs to show. If None, show all.
-        
+
     Returns:
         HTML string for embedding or None if failed
     """
     if highlight_residues is None:
         highlight_residues = {}
-    
+
     # Backward compat: convert flat list to global dict
     if isinstance(highlight_residues, list):
         if highlight_residues:
             highlight_residues = {"__all__": highlight_residues}
         else:
             highlight_residues = {}
-    
+
     try:
         # Read PDB file
-        with open(pdb_file, 'r') as f:
+        with open(pdb_file, "r") as f:
             pdb_content = f.read()
-        
+
         import json
+
         highlights_json = json.dumps(highlight_residues)
         has_highlights = len(highlight_residues) > 0
-        
+
         # Create py3Dmol HTML viewer
         html = f"""
         <!DOCTYPE html>
@@ -181,21 +192,27 @@ def render_3d_structure(pdb_file: Path, width: Any = "100%", height: int = 400, 
         </body>
         </html>
         """
-        
+
         logger.info(f"Generated High-Impact 3D viewer for {pdb_file.name}")
         return html
-        
+
         return html
-        
+
     except Exception as e:
         logger.error(f"Failed to generate 3D viewer: {str(e)}")
         return None
 
 
-def render_ligand_view(pdb_file: Path, ligand_data: dict, width: int = 800, height: int = 600, unique_id: str = 'ligand') -> Optional[str]:
+def render_ligand_view(
+    pdb_file: Path,
+    ligand_data: dict,
+    width: int = 800,
+    height: int = 600,
+    unique_id: str = "ligand",
+) -> Optional[str]:
     """
     Render 3D view focused on ligand and interactions.
-    
+
     Args:
         pdb_file: Path to PDB file
         ligand_data: Interaction data from LigandAnalyzer
@@ -204,22 +221,22 @@ def render_ligand_view(pdb_file: Path, ligand_data: dict, width: int = 800, heig
         unique_id: Unique ID for div
     """
     try:
-        with open(pdb_file, 'r') as f:
+        with open(pdb_file, "r") as f:
             pdb_content = f.read()
-            
+
         # Extract ligand ID details
-        ligand_id = ligand_data['ligand'] # e.g. RET_A_296
-        parts = ligand_id.split('_')
+        ligand_id = ligand_data["ligand"]  # e.g. RET_A_296
+        parts = ligand_id.split("_")
         l_name = "_".join(parts[:-2])
         l_chain = parts[-2]
         l_resi = parts[-1]
-        
+
         # Build interaction selection JSON
         active_site_residues = [
-            {'chain': i['chain'], 'resi': i['resi']} 
-            for i in ligand_data['interactions']
+            {"chain": i["chain"], "resi": i["resi"]}
+            for i in ligand_data["interactions"]
         ]
-        
+
         html = f"""
         <!DOCTYPE html>
         <html>
@@ -268,10 +285,21 @@ def render_ligand_view(pdb_file: Path, ligand_data: dict, width: int = 800, heig
         logger.error(f"Failed to render ligand view: {e}")
         return None
 
-def show_structure_in_streamlit(pdb_file: Path, width: Any = "100%", height: int = 400, style: str = 'cartoon', key: str = '1', highlight_residues=None, visible_chains=None, color_by_plddt: bool = False, style_mode: str = 'Neon Pro'):
+
+def show_structure_in_streamlit(
+    pdb_file: Path,
+    width: Any = "100%",
+    height: int = 400,
+    style: str = "cartoon",
+    key: str = "1",
+    highlight_residues=None,
+    visible_chains=None,
+    color_by_plddt: bool = False,
+    style_mode: str = "Neon Pro",
+):
     """
     Display 3D structure in Streamlit app.
-    
+
     Args:
         pdb_file: Path to PDB file
         width: Viewer width (int or "100%")
@@ -283,18 +311,37 @@ def show_structure_in_streamlit(pdb_file: Path, width: Any = "100%", height: int
         color_by_plddt: Whether to color by pLDDT (AlphaFold confidence)
         style_mode: 'Neon Pro', 'Spectral', or 'AlphaFold'
     """
-    html = render_3d_structure(pdb_file, width, height, style, key, highlight_residues, visible_chains, color_by_plddt, style_mode)
+    html = render_3d_structure(
+        pdb_file,
+        width,
+        height,
+        style,
+        key,
+        highlight_residues,
+        visible_chains,
+        color_by_plddt,
+        style_mode,
+    )
     if html:
         components.html(html, height=height, scrolling=False)
     else:
         import streamlit as st
+
         st.error(f"Failed to load {style} viewer")
 
-def show_ligand_view_in_streamlit(pdb_file: Path, ligand_data: dict, width: Any = "100%", height: int = 600, key: str = 'ligand'):
+
+def show_ligand_view_in_streamlit(
+    pdb_file: Path,
+    ligand_data: dict,
+    width: Any = "100%",
+    height: int = 600,
+    key: str = "ligand",
+):
     """Wrapper for displaying ligand view in Streamlit"""
     html = render_ligand_view(pdb_file, ligand_data, width, height, key)
     if html:
         components.html(html, height=height, scrolling=False)
     else:
         import streamlit as st
+
         st.error("Failed to render ligand visualization")

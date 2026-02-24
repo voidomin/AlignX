@@ -10,6 +10,7 @@ class CacheConfig(BaseModel):
     max_cache_size_mb: int = Field(1000, description="Maximum size of PDB cache in MB")
     enabled: bool = Field(True, description="Whether persistent caching is enabled")
 
+
 class AppConfig(BaseModel):
     name: str = Field(..., description="Application name")
     version: str = Field(..., description="Application version")
@@ -40,10 +41,10 @@ class MustangConfig(BaseModel):
     executable_path: str = "mustang"
     timeout: int = Field(600, ge=1)
 
-    @field_validator('backend')
+    @field_validator("backend")
     @classmethod
     def validate_backend(cls, v: str) -> str:
-        if v.lower() not in ('auto', 'native', 'wsl'):
+        if v.lower() not in ("auto", "native", "wsl"):
             raise ValueError("backend must be 'auto', 'native', or 'wsl'")
         return v.lower()
 
@@ -87,6 +88,7 @@ class DebugConfig(BaseModel):
 
 class PipelineConfig(BaseModel):
     """Root configuration model."""
+
     app: AppConfig
     core: CoreConfig
     pdb: PDBConfig

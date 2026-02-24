@@ -1,6 +1,7 @@
 import streamlit as st
 from pathlib import Path
 
+
 def load_css() -> None:
     """
     Load custom CSS styles from static/style.css.

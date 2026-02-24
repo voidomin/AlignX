@@ -3,29 +3,31 @@ import pandas as pd
 from typing import List, Dict, Any
 from src.frontend.tabs.common import render_learning_card
 
+
 def _parse_range_str(range_str: str, max_val: int) -> List[int]:
     """
     Parse a range string like '1-20, 23-25, 30' into a sorted list of ints.
-    
+
     Args:
         range_str: User input range string.
         max_val: Maximum allowed residue index.
-        
+
     Returns:
         Sorted list of unique integer residue indices.
     """
     if not range_str.strip():
         return []
-    
+
     result = set()
-    parts = range_str.split(',')
+    parts = range_str.split(",")
     for part in parts:
         part = part.strip()
-        if not part: continue
-        
-        if '-' in part:
+        if not part:
+            continue
+
+        if "-" in part:
             try:
-                start_str, end_str = part.split('-')
+                start_str, end_str = part.split("-")
                 start = max(1, int(start_str))
                 end = min(max_val, int(end_str))
                 if start <= end:
@@ -42,24 +44,26 @@ def _parse_range_str(range_str: str, max_val: int) -> List[int]:
                 pass
     return sorted(list(result))
 
+
 def _gaps_to_ranges_str(gaps: List[int]) -> str:
     """
     Convert a list of gap positions to a compact range string like '21-22, 26-29'.
-    
+
     Args:
         gaps: Sorted list of gap positions.
-        
+
     Returns:
         Compact string representation of ranges.
     """
     if not gaps:
         return "None"
     ranges = []
-    if not gaps: return "None"
-    
+    if not gaps:
+        return "None"
+
     start = gaps[0]
     end = gaps[0]
-    
+
     for i in range(1, len(gaps)):
         if gaps[i] == end + 1:
             end = gaps[i]
@@ -70,13 +74,14 @@ def _gaps_to_ranges_str(gaps: List[int]) -> str:
     ranges.append(f"{start}-{end}" if start != end else str(start))
     return ", ".join(ranges)
 
+
 def _selection_to_range_str(residues: List[int]) -> str:
     """
     Convert a list of residue numbers to a compact range string.
-    
+
     Args:
         residues: List of residue numbers.
-        
+
     Returns:
         Compact string representation.
     """
@@ -96,149 +101,193 @@ def _selection_to_range_str(residues: List[int]) -> str:
     ranges.append(f"{start}-{end}" if start != end else str(start))
     return ", ".join(ranges)
 
+
 def render_sequences_tab(results: Dict[str, Any]) -> None:
     """
     Render the Sequence Analysis tab.
-    
+
     Args:
         results: The results dictionary containing sequence alignment info.
     """
     render_learning_card("Sequence")
     st.subheader("🧬 Sequence Alignment")
-    
+
     # Show Global Metrics
-    identity = results['stats'].get('seq_identity', 0.0)
-    st.metric("Global Sequence Identity", f"{identity:.1f}%", help="Average pairwise identity across all aligned structures.")
-    
+    identity = results["stats"].get("seq_identity", 0.0)
+    st.metric(
+        "Global Sequence Identity",
+        f"{identity:.1f}%",
+        help="Average pairwise identity across all aligned structures.",
+    )
+
     st.info("🧬 Color code: Red = 100% Identity, Yellow = High Similarity (>70%)")
-    
-    if results.get('alignment_afasta') and results['alignment_afasta'].exists():
-        sequences = st.session_state.sequence_viewer.parse_afasta(results['alignment_afasta'])
+
+    if results.get("alignment_afasta") and results["alignment_afasta"].exists():
+        sequences = st.session_state.sequence_viewer.parse_afasta(
+            results["alignment_afasta"]
+        )
         if sequences:
             # 1. Visualization
-            conservation = st.session_state.sequence_viewer.calculate_conservation(sequences)
-            html_view = st.session_state.sequence_viewer.generate_html(sequences, conservation)
-            
+            conservation = st.session_state.sequence_viewer.calculate_conservation(
+                sequences
+            )
+            html_view = st.session_state.sequence_viewer.generate_html(
+                sequences, conservation
+            )
+
             # Dynamic Height Calculation to fix UI gap
             n_seqs = len(sequences)
             viz_height = min(600, max(150, 60 + (n_seqs * 30)))
             st.components.v1.html(html_view, height=viz_height, scrolling=True)
-            
+
             # 2. Alignment Table with Gap Indicators
             st.markdown("#### Alignment Details & Gaps")
             table_data = []
             for name, seq in sequences.items():
-                gaps = [i+1 for i, char in enumerate(seq) if char == '-']
-                raw_seq = seq.replace('-', '')
-                table_data.append({
-                    "PDB ID": name,
-                    "Total Length": len(raw_seq),
-                    "Gap Count": len(gaps),
-                    "Gap Positions": _gaps_to_ranges_str(gaps)
-                })
+                gaps = [i + 1 for i, char in enumerate(seq) if char == "-"]
+                raw_seq = seq.replace("-", "")
+                table_data.append(
+                    {
+                        "PDB ID": name,
+                        "Total Length": len(raw_seq),
+                        "Gap Count": len(gaps),
+                        "Gap Positions": _gaps_to_ranges_str(gaps),
+                    }
+                )
             st.table(pd.DataFrame(table_data))
-            
+
             # 3. Conserved Residue Highlighting
             st.divider()
             st.markdown("#### 🎯 Selective Extraction & Pocket Analysis")
-            st.caption("Identify 100% conserved residues and highlight them in the 3D viewer.")
-            
+            st.caption(
+                "Identify 100% conserved residues and highlight them in the 3D viewer."
+            )
+
             # Find 100% conserved columns (using conservation from sequence_viewer)
             conserved_cols = [i for i, val in enumerate(conservation) if val == 1.0]
-            
+
             if conserved_cols:
                 n_total = len(conservation)
-                st.success(f"Found {len(conserved_cols)} strictly conserved residues ({(len(conserved_cols)/n_total)*100:.1f}% of alignment)")
-                
-                if 'residue_selections' not in st.session_state:
+                st.success(
+                    f"Found {len(conserved_cols)} strictly conserved residues ({(len(conserved_cols)/n_total)*100:.1f}% of alignment)"
+                )
+
+                if "residue_selections" not in st.session_state:
                     st.session_state.residue_selections = {}
-                
+
                 sel_col1, sel_col2 = st.columns(2)
-                
+
                 with sel_col1:
                     st.write("**Selection Target**")
                     target_protein = st.selectbox(
-                        "Apply selection to:", 
+                        "Apply selection to:",
                         ["All Proteins (Alignment Columns)"] + list(sequences.keys()),
                         index=0,
-                        help="Choose 'All Proteins' to select columns in the alignment, or a specific protein to use its internal numbering."
+                        help="Choose 'All Proteins' to select columns in the alignment, or a specific protein to use its internal numbering.",
                     )
-                    
+
                     col1_btn, col2_btn = st.columns(2)
                     with col1_btn:
-                        if st.button("⭐ Select All strictly Conserved columns", use_container_width=True):
-                            cons_str = _selection_to_range_str([i+1 for i in conserved_cols])
-                            st.session_state.residue_selections["All Proteins (Alignment Columns)"] = cons_str
+                        if st.button(
+                            "⭐ Select All strictly Conserved columns",
+                            use_container_width=True,
+                        ):
+                            cons_str = _selection_to_range_str(
+                                [i + 1 for i in conserved_cols]
+                            )
+                            st.session_state.residue_selections[
+                                "All Proteins (Alignment Columns)"
+                            ] = cons_str
                             st.rerun()
                     with col2_btn:
-                        if st.button("🗑️ Clear All Selections", use_container_width=True):
+                        if st.button(
+                            "🗑️ Clear All Selections", use_container_width=True
+                        ):
                             st.session_state.residue_selections = {}
-                            if 'highlight_chains' in st.session_state:
+                            if "highlight_chains" in st.session_state:
                                 del st.session_state.highlight_chains
                             st.rerun()
-                
+
                 with sel_col2:
                     st.write("**Residue Ranges**")
                     # Retrieve previous input for this selection
-                    prev_input = st.session_state.residue_selections.get(target_protein, "")
+                    prev_input = st.session_state.residue_selections.get(
+                        target_protein, ""
+                    )
                     user_input = st.text_input(
-                        f"Sequence Indices for {target_protein}", 
+                        f"Sequence Indices for {target_protein}",
                         value=prev_input,
                         placeholder="e.g. 1-10, 25, 30-45",
-                        key=f"input_{target_protein}"
+                        key=f"input_{target_protein}",
                     )
                     # Update state
                     if user_input != prev_input:
                         st.session_state.residue_selections[target_protein] = user_input
-                    
+
                     # Highlight what is currently selected for THIS protein
                     current_selected = _parse_range_str(user_input, n_total)
                     if current_selected:
-                        st.caption(f"📍 {len(current_selected)} residues active for this target.")
-                
+                        st.caption(
+                            f"📍 {len(current_selected)} residues active for this target."
+                        )
+
                 # Check if we have any active selections to show the project button
-                active_entries = {k: v for k, v in st.session_state.residue_selections.items() if v.strip()}
-                
+                active_entries = {
+                    k: v
+                    for k, v in st.session_state.residue_selections.items()
+                    if v.strip()
+                }
+
                 if active_entries:
                     st.markdown("#### 📋 Selective Extraction Summary")
                     # Build summary table
                     summary_data = []
                     for target, ranges in active_entries.items():
-                        summary_data.append({
-                            "Target": target,
-                            "Residue Ranges": ranges
-                        })
+                        summary_data.append(
+                            {"Target": target, "Residue Ranges": ranges}
+                        )
                     st.table(pd.DataFrame(summary_data))
-                    
-                    st.info("💡 Click the button below to project these selections onto the 3D structures.")
-                    
-                    if st.button("✨ Project Selection to 3D Viewer", use_container_width=True, type="primary"):
+
+                    st.info(
+                        "💡 Click the button below to project these selections onto the 3D structures."
+                    )
+
+                    if st.button(
+                        "✨ Project Selection to 3D Viewer",
+                        use_container_width=True,
+                        type="primary",
+                    ):
                         # Combine all entries from residue_selections
-                        all_members = list(results['rmsd_df'].index)
+                        all_members = list(results["rmsd_df"].index)
                         all_headers = list(sequences.keys())
                         final_mapping = {}
-                        
+
                         # Initialize mapping with empty lists for all chains
                         for i in range(len(all_headers)):
-                            c_id = chr(ord('A') + i)
+                            c_id = chr(ord("A") + i)
                             final_mapping[c_id] = []
-                        
+
                         # Process each entry in selections
-                        for target, input_str in st.session_state.residue_selections.items():
-                            if not input_str.strip(): continue
-                            
+                        for (
+                            target,
+                            input_str,
+                        ) in st.session_state.residue_selections.items():
+                            if not input_str.strip():
+                                continue
+
                             indices = _parse_range_str(input_str, n_total)
-                            
+
                             if target == "All Proteins (Alignment Columns)":
                                 # Apply columns to EVERY protein
                                 for p_idx, (pid, seq) in enumerate(sequences.items()):
-                                    chain_id = chr(ord('A') + p_idx)
-                                    
+                                    chain_id = chr(ord("A") + p_idx)
+
                                     res_nums = []
                                     current_res = 1
                                     for i, char in enumerate(seq):
-                                        if char != '-':
-                                            if (i + 1) in indices: res_nums.append(current_res)
+                                        if char != "-":
+                                            if (i + 1) in indices:
+                                                res_nums.append(current_res)
                                             current_res += 1
                                     final_mapping[chain_id].extend(res_nums)
                             else:
@@ -246,16 +295,18 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
                                 # Find index of header in sequences
                                 if target in all_headers:
                                     p_idx = all_headers.index(target)
-                                    chain_id = chr(ord('A') + p_idx)
+                                    chain_id = chr(ord("A") + p_idx)
                                     final_mapping[chain_id].extend(indices)
-                        
+
                         # De-duplicate
                         for k in final_mapping:
                             final_mapping[k] = sorted(list(set(final_mapping[k])))
-                        
+
                         st.session_state.highlight_chains = final_mapping
                         st.session_state.show_3d_viewer = True
-                        st.success("Selection transferred. Switch to '3D Visualization' tab to view results.")
+                        st.success(
+                            "Selection transferred. Switch to '3D Visualization' tab to view results."
+                        )
             else:
                 st.warning("No strictly conserved residues found in this alignment.")
     else:

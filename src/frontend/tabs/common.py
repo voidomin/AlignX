@@ -3,23 +3,25 @@ import yaml
 from pathlib import Path
 from typing import Dict, Any
 
+
 @st.cache_data
 def load_guided_data() -> Dict[str, Any]:
     """Load learning and help content from YAML file."""
     path = Path(__file__).parent.parent.parent / "resources" / "guided_data.yaml"
     if path.exists():
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f)
     return {"learning_cards": {}, "help_expanders": {}}
+
 
 def render_learning_card(tab_name: str) -> None:
     """
     Render a context-aware learning card for Guided Mode.
-    
+
     Args:
         tab_name: The name of the current tab (e.g., 'Summary', 'Sequence').
     """
-    if not st.session_state.get('guided_mode', False):
+    if not st.session_state.get("guided_mode", False):
         return
 
     data = load_guided_data()
@@ -31,10 +33,11 @@ def render_learning_card(tab_name: str) -> None:
             st.info(f"**{card['title']}**\n\n{card['body']}")
             st.divider()
 
+
 def render_help_expander(topic: str) -> None:
     """
     Render educational help expanders.
-    
+
     Args:
         topic: The topic key (e.g., 'rmsd', 'tree', 'ligands').
     """
@@ -44,22 +47,19 @@ def render_help_expander(topic: str) -> None:
         with st.expander(helps[topic]["title"], expanded=False):
             st.markdown(helps[topic]["content"])
 
+
 def render_progress_stepper(current_step: int) -> None:
     """
     Render a visual progress stepper for the analysis workflow.
-    
+
     Args:
         current_step: Current step index (1-4).
     """
-    steps = [
-        "🧬 Data Prep",
-        "🚀 Aligning",
-        "📊 Statistics",
-        "📓 Lab Notebook"
-    ]
-    
+    steps = ["🧬 Data Prep", "🚀 Aligning", "📊 Statistics", "📓 Lab Notebook"]
+
     # Custom CSS for the stepper
-    st.markdown("""
+    st.markdown(
+        """
         <style>
         .stepper-container {
             display: flex;
@@ -133,20 +133,26 @@ def render_progress_stepper(current_step: int) -> None:
             background: #4caf50;
         }
         </style>
-    """, unsafe_allow_html=True)
-    
+    """,
+        unsafe_allow_html=True,
+    )
+
     stepper_html = '<div class="stepper-container fade-in">\n'
     for i, label in enumerate(steps):
         idx = i + 1
-        status_class = "complete" if idx < current_step else "active" if idx == current_step else ""
+        status_class = (
+            "complete"
+            if idx < current_step
+            else "active" if idx == current_step else ""
+        )
         bubble_content = "✓" if idx < current_step else str(idx)
-        
+
         stepper_html += f'<div class="step-item {status_class}">\n'
         stepper_html += f'<div class="step-bubble">{bubble_content}</div>\n'
         stepper_html += f'<div class="step-label">{label}</div>\n'
         stepper_html += '<div class="step-line"></div>\n'
-        stepper_html += '</div>\n'
-        
-    stepper_html += '</div>'
-    
+        stepper_html += "</div>\n"
+
+    stepper_html += "</div>"
+
     st.markdown(stepper_html, unsafe_allow_html=True)

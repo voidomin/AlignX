@@ -1,16 +1,12 @@
 """PDB file management: download, validation, and preprocessing."""
 
-import requests
 import httpx
-import shutil
-import logging
 import asyncio
 import re
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict, Any
 from Bio import PDB
 from Bio.PDB import PDBIO, Select, MMCIFParser, PDBParser
-import gzip
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
@@ -22,28 +18,31 @@ logger = get_logger()
 
 class PDBManager:
     """Manages PDB file downloads, validation, and preprocessing."""
-    
-    def __init__(self, config: Dict[str, Any], cache_manager: Optional[CacheManager] = None):
+
+    def __init__(
+        self, config: Dict[str, Any], cache_manager: Optional[CacheManager] = None
+    ):
         """
         Initialize PDB Manager.
-        
+
         Args:
             config: Configuration dictionary
             cache_manager: Optional CacheManager instance
         """
         self.config = config
         self.cache_manager = cache_manager
-        self.pdb_source = config.get('pdb', {}).get('source_url', 
-                                                     'https://files.rcsb.org/download/')
-        self.timeout = config.get('pdb', {}).get('timeout', 60)
-        self.max_size_mb = config.get('pdb', {}).get('max_file_size_mb', 500)
-        self.raw_dir = Path('data/raw')
-        self.cleaned_dir = Path('data/cleaned')
-        
+        self.pdb_source = config.get("pdb", {}).get(
+            "source_url", "https://files.rcsb.org/download/"
+        )
+        self.timeout = config.get("pdb", {}).get("timeout", 60)
+        self.max_size_mb = config.get("pdb", {}).get("max_file_size_mb", 500)
+        self.raw_dir = Path("data/raw")
+        self.cleaned_dir = Path("data/cleaned")
+
         # Create directories
         self.raw_dir.mkdir(parents=True, exist_ok=True)
         self.cleaned_dir.mkdir(parents=True, exist_ok=True)
-    
+
     @staticmethod
     def validate_pdb_id(pdb_id: str) -> bool:
         """
@@ -52,20 +51,22 @@ class PDBManager:
         """
         pdb_id = pdb_id.strip().upper()
         # Standard PDB ID
-        if re.match(r'^[0-9][A-Z0-9]{3}$', pdb_id):
+        if re.match(r"^[0-9][A-Z0-9]{3}$", pdb_id):
             return True
         # AlphaFold ID (Supports AF-UniProt-F[Fragment] and optional -v[Version])
-        if re.match(r'^AF-[A-Z0-9]+-F[0-9]+(-V[0-9]+)?$', pdb_id):
+        if re.match(r"^AF-[A-Z0-9]+-F[0-9]+(-V[0-9]+)?$", pdb_id):
             return True
         return False
-    
-    def save_uploaded_file(self, uploaded_file: Any) -> Tuple[bool, str, Optional[Path]]:
+
+    def save_uploaded_file(
+        self, uploaded_file: Any
+    ) -> Tuple[bool, str, Optional[Path]]:
         """
         Save an uploaded file to the raw directory.
-        
+
         Args:
             uploaded_file: Streamlit UploadedFile object
-            
+
         Returns:
             Tuple of (success, message, file_path)
         """
@@ -73,84 +74,102 @@ class PDBManager:
             # Clean filename
             name = Path(uploaded_file.name).stem
             # Replace spaces with underscores
-            name = re.sub(r'\s+', '_', name)
-            
+            name = re.sub(r"\s+", "_", name)
+
             output_file = self.raw_dir / f"{name}.pdb"
-            
+
             with open(output_file, "wb") as f:
                 f.write(uploaded_file.getbuffer())
-                
+
             logger.info(f"Saved uploaded file: {output_file}")
             return True, "Saved uploaded file", output_file
         except Exception as e:
             logger.error(f"Failed to save upload: {e}")
             return False, str(e), None
 
-    async def download_pdb(self, pdb_id: str, force: bool = False, client: Optional[httpx.AsyncClient] = None) -> Tuple[bool, str, Optional[Path]]:
+    async def download_pdb(
+        self,
+        pdb_id: str,
+        force: bool = False,
+        client: Optional[httpx.AsyncClient] = None,
+    ) -> Tuple[bool, str, Optional[Path]]:
         """
         Download a structural file (PDB or AlphaFold CIF) (Asynchronous).
         """
         pdb_id = pdb_id.strip()
         is_af = pdb_id.upper().startswith("AF-")
         ext = ".cif" if is_af else ".pdb"
-        
+
         # Use lower-case filenames internally to avoid WSL case-sensitivity issues
         safe_id = pdb_id.lower()
         output_file = self.raw_dir / f"{safe_id}{ext}"
-        
+
         if output_file.exists() and not force:
             file_size_mb = output_file.stat().st_size / (1024 * 1024)
             if self.cache_manager:
                 self.cache_manager.update_access(pdb_id)
             return True, f"Using local file ({file_size_mb:.2f} MB)", output_file
-        
+
         if not self.validate_pdb_id(pdb_id):
             return False, f"Invalid ID format: {pdb_id}", None
-        
+
         if is_af:
             # AlphaFold DB URL support
             parts = pdb_id.upper().split("-")
             uniprot_id = parts[1]
             fragment = parts[2] if len(parts) > 2 else "F1"
-            
+
             # Use v6 as new default standard, but allow explicit versioning
             version_hint = "6"
             has_explicit_version = False
             if len(parts) > 3 and parts[3].startswith("V"):
                 version_hint = parts[3].replace("V", "")
                 has_explicit_version = True
-            
+
             # Versions to attempt if not found
-            versions_to_try = [version_hint] if has_explicit_version else ["6", "4", "5", "3", "2", "1"]
-            
+            versions_to_try = (
+                [version_hint]
+                if has_explicit_version
+                else ["6", "4", "5", "3", "2", "1"]
+            )
+
             try:
                 manage_client = client is None
                 if manage_client:
                     client = httpx.AsyncClient(timeout=self.timeout)
-                
+
                 success = False
                 last_response = None
-                
+
                 for v in versions_to_try:
                     url = f"https://alphafold.ebi.ac.uk/files/AF-{uniprot_id}-{fragment}-model_v{v}.cif"
                     logger.info(f"Attempting AlphaFold download (v{v}): {url}")
                     response = await client.get(url, follow_redirects=True)
-                    
+
                     if response.status_code == 200:
                         success = True
                         last_response = response
                         break
                     else:
-                        logger.debug(f"AlphaFold v{v} not found (Status {response.status_code})")
-                
+                        logger.debug(
+                            f"AlphaFold v{v} not found (Status {response.status_code})"
+                        )
+
                 if not success:
-                    logger.error(f"All AlphaFold download attempts for {pdb_id} failed.")
-                    if manage_client: await client.aclose()
-                    return False, f"Not found in AlphaFold DB (Tried versions {', '.join(versions_to_try)})", None
+                    logger.error(
+                        f"All AlphaFold download attempts for {pdb_id} failed."
+                    )
+                    if manage_client:
+                        await client.aclose()
+                    return (
+                        False,
+                        f"Not found in AlphaFold DB (Tried versions {', '.join(versions_to_try)})",
+                        None,
+                    )
 
                 # Proceed with successful response
                 response = last_response
-                
+
             except httpx.TimeoutException:
                 logger.error(f"Timeout while downloading {pdb_id}")
                 return False, "Download failed: Connection timeout", None
@@ -165,13 +184,20 @@ class PDBManager:
                 manage_client = client is None
                 if manage_client:
                     client = httpx.AsyncClient(timeout=self.timeout)
-                
+
                 logger.info(f"Attempting PDB download from: {url}")
                 response = await client.get(url, follow_redirects=True)
                 if response.status_code != 200:
-                    logger.error(f"Download for {pdb_id} failed with status code {response.status_code}")
-                    if manage_client: await client.aclose()
-                    return False, f"Download failed (Status {response.status_code})", None
+                    logger.error(
+                        f"Download for {pdb_id} failed with status code {response.status_code}"
+                    )
+                    if manage_client:
+                        await client.aclose()
+                    return (
+                        False,
+                        f"Download failed (Status {response.status_code})",
+                        None,
+                    )
             except Exception as e:
                 return False, f"PDB Download failed: {e}", None
 
@@ -180,23 +206,26 @@ class PDBManager:
             # Check file size
             file_size = len(response.content)
             file_size_mb = file_size / (1024 * 1024)
-            
-            with open(output_file, 'wb') as f:
+
+            with open(output_file, "wb") as f:
                 f.write(response.content)
-                
-            if manage_client: await client.aclose()
-            
+
+            if manage_client:
+                await client.aclose()
+
             if self.cache_manager:
                 self.cache_manager.register_item(pdb_id, output_file)
-                
+
             logger.info(f"Downloaded {pdb_id} successfully ({file_size_mb:.2f} MB)")
             return True, f"Downloaded ({file_size_mb:.2f} MB)", output_file
-            
+
         except Exception as e:
             logger.error(f"Failed to save {pdb_id}: {str(e)}")
             return False, f"Save failed: {str(e)}", None
 
-    async def batch_download(self, pdb_ids: List[str]) -> Dict[str, Tuple[bool, str, Optional[Path]]]:
+    async def batch_download(
+        self, pdb_ids: List[str]
+    ) -> Dict[str, Tuple[bool, str, Optional[Path]]]:
         """
         Download multiple PDB files in parallel using AsyncIO.
         """
@@ -204,67 +233,68 @@ class PDBManager:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             tasks = [self.download_pdb(pdb_id, client=client) for pdb_id in pdb_ids]
             download_responses = await asyncio.gather(*tasks)
-            
+
             for pdb_id, res in zip(pdb_ids, download_responses):
                 results[pdb_id] = res
-                
+
         return results
-    
+
     def _get_structure(self, file_path: Path) -> Any:
         """Hybrid parser for PDB and mmCIF formats."""
-        if file_path.suffix.lower() == '.cif':
+        if file_path.suffix.lower() == ".cif":
             parser = MMCIFParser(QUIET=True)
         else:
             parser = PDBParser(QUIET=True)
-        return parser.get_structure('protein', str(file_path))
+        return parser.get_structure("protein", str(file_path))
 
     def analyze_structure(self, pdb_file: Path) -> Dict:
         """
         Analyze structural file and return information.
         """
         structure = self._get_structure(pdb_file)
-        
+
         chains = []
         total_residues = 0
-        
+
         for model in structure:
             for chain in model:
                 chain_id = chain.id
                 residues = list(chain.get_residues())
-                chains.append({
-                    'id': chain_id,
-                    'residue_count': len(residues)
-                })
+                chains.append({"id": chain_id, "residue_count": len(residues)})
                 total_residues += len(residues)
-        
+
         file_size_mb = pdb_file.stat().st_size / (1024 * 1024)
-        
+
         return {
-            'file_size_mb': file_size_mb,
-            'chains': chains,
-            'total_residues': total_residues,
-            'num_models': len(structure)
+            "file_size_mb": file_size_mb,
+            "chains": chains,
+            "total_residues": total_residues,
+            "num_models": len(structure),
         }
-    
-    def clean_pdb(self, 
-                  pdb_file: Path, 
-                  chain: Optional[str] = None,
-                  remove_heteroatoms: bool = True,
-                  remove_water: bool = True) -> Tuple[bool, str, Optional[Path]]:
+
+    def clean_pdb(
+        self,
+        pdb_file: Path,
+        chain: Optional[str] = None,
+        remove_heteroatoms: bool = True,
+        remove_water: bool = True,
+    ) -> Tuple[bool, str, Optional[Path]]:
         """
         Clean structural file (PDB/CIF) and sanitize into standard PDB.
         """
         try:
             structure = self._get_structure(pdb_file)
-            
+
             is_af_model = pdb_file.name.lower().startswith("af-")
-            
+
             class CleanSelect(Select):
                 def accept_residue(self, residue):
                     # Remove water
-                    if remove_water and (residue.id[0] == 'W' or residue.resname == 'HOH'):
+                    if remove_water and (
+                        residue.id[0] == "W" or residue.resname == "HOH"
+                    ):
                         return 0
-                    
+
                     # AlphaFold pLDDT Pruning (Strip disordered regions < 50 if it's an AF model)
                     if is_af_model:
                         try:
@@ -276,69 +306,69 @@ class PDBManager:
                             pass
 
                     # Keep standard residues
-                    if residue.id[0] == ' ':
+                    if residue.id[0] == " ":
                         return 1
-                    
+
                     # For non-standard residues (HETATM), keep them if they have a CA atom
-                    if residue.has_id('CA'):
+                    if residue.has_id("CA"):
                         return 1
-                        
+
                     return 0 if remove_heteroatoms else 1
-                
+
                 def accept_atom(self, atom):
                     # Exclude hydrogens (mustang often crashes on them)
-                    if atom.element == 'H' or atom.name.startswith('H'):
+                    if atom.element == "H" or atom.name.startswith("H"):
                         return 0
                     return 1
-            
+
             # Extract model 0
             model = structure[0]
-            
+
             # Create a New sanitized structure
             new_structure = PDB.Structure.Structure(structure.id)
             new_model = PDB.Model.Model(0)
             new_structure.add(new_model)
-            
+
             # Find the chain
             target_chain_obj = None
             for ch in model:
                 if chain is None or ch.id == chain:
                     target_chain_obj = ch
                     break
-            
+
             if not target_chain_obj:
-                 return False, f"Chain {chain} not found", None
-                 
+                return False, f"Chain {chain} not found", None
+
             new_chain = PDB.Chain.Chain(target_chain_obj.id)
             new_model.add(new_chain)
-            
+
             # Mapping of common non-standard residues to standard ones
             RESIDUE_MAPPING = {
-                'HYP': 'PRO',
-                'MSE': 'MET',
-                'CSD': 'ALA',
-                'CAS': 'CYS',
-                'KCX': 'LYS',
-                'LLP': 'LYS',
-                'CME': 'CYS',
-                'MLY': 'LYS',
+                "HYP": "PRO",
+                "MSE": "MET",
+                "CSD": "ALA",
+                "CAS": "CYS",
+                "KCX": "LYS",
+                "LLP": "LYS",
+                "CME": "CYS",
+                "MLY": "LYS",
             }
-            
+
             clean_select = CleanSelect()
             res_count = 1
             for residue in target_chain_obj:
                 # Use our logic to accept residue
                 if not clean_select.accept_residue(residue):
                     continue
-                
+
                 # Standardize residue: remove HETATM prefix, map name, renumber
                 res_name = residue.resname.strip()
                 std_res_name = RESIDUE_MAPPING.get(res_name, res_name)
-                
+
                 # Force to be standard ATOM record: id[0] = ' '
-                new_id = (' ', res_count, ' ')
-                new_res = PDB.Residue.Residue(new_id, std_res_name, ' ')
-                
+                new_id = (" ", res_count, " ")
+                new_res = PDB.Residue.Residue(new_id, std_res_name, " ")
+
                 # Add atoms
                 atoms_added = 0
                 for atom in residue:
@@ -350,57 +380,58 @@ class PDBManager:
                             atom.occupancy,
                             atom.bfactor,
                             atom.altloc,
-                            atom.get_fullname(), # Fix: fullname must be string
+                            atom.get_fullname(),  # Fix: fullname must be string
                             atom.serial_number,
-                            element=atom.element
+                            element=atom.element,
                         )
                         new_res.add(new_atom)
                         atoms_added += 1
-                
+
                 if atoms_added > 0:
                     new_chain.add(new_res)
                     res_count += 1
-            
+
             # Save cleaned structure with LF line endings
             # Force .pdb extension for Mustang compatibility and normalize to lowercase
             clean_name = pdb_file.stem.lower()
             output_file = self.cleaned_dir / f"{clean_name}.pdb"
-            with open(str(output_file), 'w', newline='\n') as f:
+            with open(str(output_file), "w", newline="\n") as f:
                 io = PDBIO()
                 io.set_structure(new_structure)
                 io.save(f)
-            
+
             # Get size reduction
             original_size = pdb_file.stat().st_size / (1024 * 1024)
             cleaned_size = output_file.stat().st_size / (1024 * 1024)
-            
-            logger.info(f"Cleaned {pdb_file.name}: {original_size:.2f}MB -> {cleaned_size:.2f}MB (lowercase: {clean_name}.pdb)")
-            
+
+            logger.info(
+                f"Cleaned {pdb_file.name}: {original_size:.2f}MB -> {cleaned_size:.2f}MB (lowercase: {clean_name}.pdb)"
+            )
+
             return True, "Cleaning and sanitization successful", output_file
-            
+
         except Exception as e:
             logger.error(f"Failed to clean {pdb_file.name}: {str(e)}")
             return False, f"Cleaning failed: {str(e)}", None
 
-    def batch_clean(self, pdb_files: List[Path], max_workers: int = 4) -> Dict[str, Tuple[bool, str, Optional[Path]]]:
+    def batch_clean(
+        self, pdb_files: List[Path], max_workers: int = 4
+    ) -> Dict[str, Tuple[bool, str, Optional[Path]]]:
         """
         Clean multiple PDB files in parallel.
-        
+
         Args:
             pdb_files: List of PDB file paths
             max_workers: Number of parallel workers
-            
+
         Returns:
             Dictionary mapping PDB filename to (success, message, path)
         """
         results = {}
-        
+
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_file = {
-                executor.submit(self.clean_pdb, p): p 
-                for p in pdb_files
-            }
-            
+            future_to_file = {executor.submit(self.clean_pdb, p): p for p in pdb_files}
+
             with tqdm(total=len(pdb_files), desc="Cleaning PDB files") as pbar:
                 for future in as_completed(list(future_to_file.keys())):
                     pdb_file = future_to_file[future]
@@ -410,21 +441,23 @@ class PDBManager:
                         logger.error(f"Error cleaning {pdb_file.name}: {str(e)}")
                         results[pdb_file.name] = (False, f"Error: {str(e)}", None)
                     pbar.update(1)
-        
+
         return results
 
-    async def fetch_metadata(self, pdb_ids: List[str], client: Optional[httpx.AsyncClient] = None) -> Dict[str, Dict]:
+    async def fetch_metadata(
+        self, pdb_ids: List[str], client: Optional[httpx.AsyncClient] = None
+    ) -> Dict[str, Dict]:
         """
         Fetch metadata for multiple PDB IDs from RCSB GraphQL API (Asynchronous).
         """
         if not pdb_ids:
             return {}
-            
+
         # State mapping
         original_to_base = {}
         unique_base_ids = []
         af_ids = []
-        
+
         for pid in pdb_ids:
             # Preserve original casing in mapping keys
             clean_id = pid.strip().upper()
@@ -435,10 +468,10 @@ class PDBManager:
                 base_id = clean_id[:4]
                 unique_base_ids.append(base_id)
                 original_to_base[pid] = base_id
-        
+
         unique_base_ids = list(set(unique_base_ids))
         af_ids = list(set(af_ids))
-        
+
         query = """
         query($ids: [String!]!) {
           entries(entry_ids: $ids) {
@@ -452,49 +485,66 @@ class PDBManager:
           }
         }
         """
-        
-        base_results = {bid: {'title': 'N/A', 'method': 'N/A', 'resolution': 'N/A', 'organism': 'N/A'} for bid in (unique_base_ids + af_ids)}
-            
+
+        base_results = {
+            bid: {
+                "title": "N/A",
+                "method": "N/A",
+                "resolution": "N/A",
+                "organism": "N/A",
+            }
+            for bid in (unique_base_ids + af_ids)
+        }
+
         try:
             manage_client = client is None
             if manage_client:
                 client = httpx.AsyncClient(timeout=15)
-                
+
             # 1. Fetch RCSB Metadata
             if unique_base_ids:
                 url = "https://data.rcsb.org/graphql"
                 payload = {"query": query, "variables": {"ids": unique_base_ids}}
                 logger.info(f"Fetching metadata for {len(unique_base_ids)} PDB entries")
                 response = await client.post(url, json=payload)
-                
+
                 if response.status_code == 200:
                     data = response.json()
-                    entries = (data.get('data') or {}).get('entries') or []
+                    entries = (data.get("data") or {}).get("entries") or []
                     for entry in entries:
-                        bid = entry.get('rcsb_id')
-                        if not bid: continue
-                        
-                        struct = entry.get('struct') or {}
-                        exptl_list = entry.get('exptl') or []
-                        info = entry.get('rcsb_entry_info') or {}
-                        res_list = info.get('resolution_combined') or []
-                        
+                        bid = entry.get("rcsb_id")
+                        if not bid:
+                            continue
+
+                        struct = entry.get("struct") or {}
+                        exptl_list = entry.get("exptl") or []
+                        info = entry.get("rcsb_entry_info") or {}
+                        res_list = info.get("resolution_combined") or []
+
                         organism = "N/A"
-                        entities = entry.get('polymer_entities') or []
+                        entities = entry.get("polymer_entities") or []
                         if entities:
                             for entity in entities:
-                                sources = (entity.get('rcsb_entity_source_organism') or [])
+                                sources = (
+                                    entity.get("rcsb_entity_source_organism") or []
+                                )
                                 if sources:
-                                    organism = sources[0].get('scientific_name', 'N/A')
+                                    organism = sources[0].get("scientific_name", "N/A")
                                     break
-                        
+
                         base_results[bid] = {
-                            'title': struct.get('title', 'N/A'),
-                            'method': exptl_list[0].get('method', 'N/A') if exptl_list else 'N/A',
-                            'resolution': f"{res_list[0]:.2f} \u00c5" if res_list else "N/A",
-                            'organism': organism
+                            "title": struct.get("title", "N/A"),
+                            "method": (
+                                exptl_list[0].get("method", "N/A")
+                                if exptl_list
+                                else "N/A"
+                            ),
+                            "resolution": (
+                                f"{res_list[0]:.2f} \u00c5" if res_list else "N/A"
+                            ),
+                            "organism": organism,
                         }
-            
+
             # 2. Fetch AlphaFold Metadata (via UniProt)
             for af_id in af_ids:
                 try:
@@ -503,60 +553,79 @@ class PDBManager:
                     if len(parts) < 2:
                         continue
                     up_id = parts[1]
-                    
+
                     up_url = f"https://rest.uniprot.org/uniprotkb/{up_id}.json"
                     # Increase timeout for more stable fetching
                     up_resp = await client.get(up_url, timeout=10)
-                    
+
                     if up_resp.status_code == 200:
                         up_data = up_resp.json()
-                        desc = up_data.get('proteinDescription', {})
-                        
+                        desc = up_data.get("proteinDescription", {})
+
                         # Try various name sources more robustly
                         name = None
                         name_sources = [
-                            desc.get('recommendedName'),
-                            desc.get('submissionNames', [{}])[0],
-                            desc.get('alternativeNames', [{}])[0]
+                            desc.get("recommendedName"),
+                            desc.get("submissionNames", [{}])[0],
+                            desc.get("alternativeNames", [{}])[0],
                         ]
-                        
+
                         for source in name_sources:
                             if source and isinstance(source, dict):
-                                name = source.get('fullName', {}).get('value')
-                                if name: break
-                        
+                                name = source.get("fullName", {}).get("value")
+                                if name:
+                                    break
+
                         if not name:
                             # Try gene name as fallback
-                            genes = up_data.get('genes', [{}])
-                            name = genes[0].get('geneName', {}).get('value', 'AF Model')
-                            
-                        organism = up_data.get('organism', {}).get('scientificName', 'N/A')
+                            genes = up_data.get("genes", [{}])
+                            name = genes[0].get("geneName", {}).get("value", "AF Model")
+
+                        organism = up_data.get("organism", {}).get(
+                            "scientificName", "N/A"
+                        )
                         base_results[af_id] = {
-                            'title': f"[AlphaFold] {name}",
-                            'method': 'Predicted (AF2)',
-                            'resolution': 'pLDDT Scored',
-                            'organism': organism
+                            "title": f"[AlphaFold] {name}",
+                            "method": "Predicted (AF2)",
+                            "resolution": "pLDDT Scored",
+                            "organism": organism,
                         }
                     else:
-                        logger.warning(f"UniProt API returned {up_resp.status_code} for {up_id}")
+                        logger.warning(
+                            f"UniProt API returned {up_resp.status_code} for {up_id}"
+                        )
                 except Exception as e:
-                    logger.warning(f"Failed to fetch UniProt meta for {af_id}: ({type(e).__name__}) {e}")
+                    logger.warning(
+                        f"Failed to fetch UniProt meta for {af_id}: ({type(e).__name__}) {e}"
+                    )
                     continue
 
-            if manage_client: await client.aclose()
-            
+            if manage_client:
+                await client.aclose()
+
             # Map back to original IDs (case-insensitive lookup)
             final_results = {}
             for orig_id, b_id in original_to_base.items():
                 # Try uppercase match first, then exact
                 meta = base_results.get(b_id) or base_results.get(b_id.upper())
                 final_results[orig_id] = meta or {
-                    'title': 'N/A', 'method': 'N/A', 'resolution': 'N/A', 'organism': 'N/A'
+                    "title": "N/A",
+                    "method": "N/A",
+                    "resolution": "N/A",
+                    "organism": "N/A",
                 }
-                
+
             return final_results
-            
+
         except Exception as e:
             logger.error(f"Metadata fetch critical failure: {str(e)}")
             # Fallback for all IDs to prevent UI crash
-            return {pid: {'title': 'N/A', 'method': 'N/A', 'resolution': 'N/A', 'organism': 'N/A'} for pid in pdb_ids}
+            return {
+                pid: {
+                    "title": "N/A",
+                    "method": "N/A",
+                    "resolution": "N/A",
+                    "organism": "N/A",
+                }
+                for pid in pdb_ids
+            }
