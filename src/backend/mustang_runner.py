@@ -382,6 +382,8 @@ class MustangRunner:
                 f.write(all_stderr)
             
             # Check for output files
+            afasta_file = output_dir / 'alignment.afasta'
+            fasta_file = output_dir / 'alignment.fasta'
             pdb_file = output_dir / 'alignment.pdb'
             
             is_definitely_failed = return_code != 0 and not pdb_file.exists()
