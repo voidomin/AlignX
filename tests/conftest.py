@@ -1,33 +1,25 @@
 import pytest
-import shutil
-from pathlib import Path
-from unittest.mock import MagicMock
 from src.utils.logger import get_logger
 
 # Disable logging during tests to keep output clean
 logger = get_logger()
 logger.disabled = True
 
+
 @pytest.fixture
 def mock_config():
     """Return a standard configuration dictionary for testing."""
     return {
-        'app': {'name': 'Test App', 'max_proteins': 5},
-        'pdb': {
-            'source_url': 'https://files.rcsb.org/download/',
-            'timeout': 5,
-            'max_file_size_mb': 10
+        "app": {"name": "Test App", "max_proteins": 5},
+        "pdb": {
+            "source_url": "https://files.rcsb.org/download/",
+            "timeout": 5,
+            "max_file_size_mb": 10,
         },
-        'mustang': {
-            'backend': 'native',
-            'executable_path': 'mustang',
-            'timeout': 10
-        },
-        'filtering': {
-            'remove_water': True,
-            'remove_heteroatoms': True
-        }
+        "mustang": {"backend": "native", "executable_path": "mustang", "timeout": 10},
+        "filtering": {"remove_water": True, "remove_heteroatoms": True},
     }
+
 
 @pytest.fixture
 def temp_workspace(tmp_path):
@@ -36,17 +28,18 @@ def temp_workspace(tmp_path):
     raw_dir = data_dir / "raw"
     cleaned_dir = data_dir / "cleaned"
     results_dir = tmp_path / "results"
-    
+
     raw_dir.mkdir(parents=True)
     cleaned_dir.mkdir(parents=True)
     results_dir.mkdir(parents=True)
-    
+
     return {
-        'root': tmp_path,
-        'raw': raw_dir,
-        'cleaned': cleaned_dir,
-        'results': results_dir
+        "root": tmp_path,
+        "raw": raw_dir,
+        "cleaned": cleaned_dir,
+        "results": results_dir,
     }
+
 
 @pytest.fixture
 def dummy_pdb_content():

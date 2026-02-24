@@ -32,7 +32,8 @@ rich>=13.5.0
 # Optional: R integration for Bio3D (Mustang alternative)
 # rpy2>=3.5.0
 
-# Development Dependencies (optional)
+# Development & CI
 pytest>=7.4.0
+pytest-asyncio>=0.21.0
 black>=23.9.0
-flake8>=6.1.0
+ruff>=0.1.0
