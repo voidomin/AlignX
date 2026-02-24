@@ -213,18 +213,29 @@ class PDBManager:
         try:
             structure = self._get_structure(pdb_file)
             
+            is_af_model = pdb_file.name.lower().startswith("af-")
+            
             class CleanSelect(Select):
                 def accept_residue(self, residue):
                     # Remove water
                     if remove_water and (residue.id[0] == 'W' or residue.resname == 'HOH'):
                         return 0
                     
+                    # AlphaFold pLDDT Pruning (Strip disordered regions < 50 if it's an AF model)
+                    if is_af_model:
+                        try:
+                            # Bio.PDB residues don't have a single B-factor, we check the first atom (usually N or CA)
+                            atoms = list(residue.get_atoms())
+                            if atoms and atoms[0].bfactor < 50:
+                                return 0
+                        except (AttributeError, IndexError):
+                            pass
+
                     # Keep standard residues
                     if residue.id[0] == ' ':
                         return 1
                     
                     # For non-standard residues (HETATM), keep them if they have a CA atom
-                    # (prevents gaps in structures like Collagen with HYP)
                     if residue.has_id('CA'):
                         return 1
                         
@@ -307,8 +318,9 @@ class PDBManager:
                     res_count += 1
             
             # Save cleaned structure with LF line endings
-            # Force .pdb extension for Mustang compatibility
-            output_file = self.cleaned_dir / f"{pdb_file.stem}.pdb"
+            # Force .pdb extension for Mustang compatibility and normalize to lowercase
+            clean_name = pdb_file.stem.lower()
+            output_file = self.cleaned_dir / f"{clean_name}.pdb"
             with open(str(output_file), 'w', newline='\n') as f:
                 io = PDBIO()
                 io.set_structure(new_structure)
@@ -318,7 +330,7 @@ class PDBManager:
             original_size = pdb_file.stat().st_size / (1024 * 1024)
             cleaned_size = output_file.stat().st_size / (1024 * 1024)
             
-            logger.info(f"Cleaned {pdb_file.name}: {original_size:.2f}MB -> {cleaned_size:.2f}MB")
+            logger.info(f"Cleaned {pdb_file.name}: {original_size:.2f}MB -> {cleaned_size:.2f}MB (lowercase: {clean_name}.pdb)")
             
             return True, "Cleaning and sanitization successful", output_file
             
