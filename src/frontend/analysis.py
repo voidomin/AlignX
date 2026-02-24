@@ -266,8 +266,15 @@ def render_dashboard() -> None:
             st.session_state.insights_run_id = None
             if 'chain_info' in st.session_state:
                 del st.session_state.chain_info
-            # Clear all @st.cache_data caches so new proteins get fresh runs
+            
+            # Explicit Deep Cache Bust
             st.cache_data.clear()
+            st.rerun()
+        
+        if st.button("🧹 DEEP CLEAN CACHE", type="secondary", use_container_width=True, help="Wipe all structural and metadata caches to resolve sync errors."):
+            st.cache_data.clear()
+            st.session_state.metadata = {}
+            st.session_state.metadata_fetched = False
             st.rerun()
 
     # 3. Main Content Area
@@ -289,6 +296,7 @@ def render_dashboard() -> None:
                         st.session_state.metadata_fetched = True
                     except Exception as e:
                         st.error(f"Metadata fetch failed: {str(e)}")
+                        st.info("💡 Try clicking **🧹 DEEP CLEAN CACHE** in the top-right metrics bar to resolve this.")
             
             render_metadata_viewer(st.session_state.pdb_ids, st.session_state.metadata)
         

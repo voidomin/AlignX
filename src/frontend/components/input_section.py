@@ -38,6 +38,7 @@ def render_input_section(pdb_manager: Any):
                 if clean_ids != st.session_state.pdb_ids:
                      st.session_state.pdb_ids = clean_ids
                      st.session_state.metadata_fetched = False
+                     st.session_state.metadata = {}  # Explicitly clear metadata
         
         # --- Tab 2: File Upload ---
         with tab_upload:
@@ -62,6 +63,7 @@ def render_input_section(pdb_manager: Any):
                     current_ids.update(new_ids)
                     st.session_state.pdb_ids = list(current_ids)
                     st.session_state.metadata_fetched = False
+                    st.session_state.metadata = {}
 
         # --- Tab 3: Examples ---
         with tab_example:
@@ -73,4 +75,5 @@ def render_input_section(pdb_manager: Any):
                 if st.button(f"Load {selected_example}"):
                     st.session_state.pdb_ids = EXAMPLES[selected_example]
                     st.session_state.metadata_fetched = False
+                    st.session_state.metadata = {}
                     st.rerun()
