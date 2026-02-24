@@ -90,9 +90,14 @@ class PDBManager:
         """
         Download a structural file (PDB or AlphaFold CIF) (Asynchronous).
         """
+        pdb_id = pdb_id.strip()
+        is_af = pdb_id.upper().startswith("AF-")
+        ext = ".cif" if is_af else ".pdb"
+        
         # Use lower-case filenames internally to avoid WSL case-sensitivity issues
-        safe_id = pdb_id.strip().lower()
+        safe_id = pdb_id.lower()
         output_file = self.raw_dir / f"{safe_id}{ext}"
+        
         if output_file.exists() and not force:
             file_size_mb = output_file.stat().st_size / (1024 * 1024)
             if self.cache_manager:
@@ -106,30 +111,72 @@ class PDBManager:
             # AlphaFold DB URL support
             parts = pdb_id.upper().split("-")
             uniprot_id = parts[1]
-            # Handle fragment and version (e.g., AF-P12345-F1-v6)
             fragment = parts[2] if len(parts) > 2 else "F1"
-            # Extract version if present (e.g., v6 -> 6), else default to 4
-            version = "4"
-            if len(parts) > 3 and parts[3].startswith("V"):
-                version = parts[3].replace("V", "")
             
-            url = f"https://alphafold.ebi.ac.uk/files/AF-{uniprot_id}-{fragment}-model_v{version}.cif"
+            # Use v6 as new default standard, but allow explicit versioning
+            version_hint = "6"
+            has_explicit_version = False
+            if len(parts) > 3 and parts[3].startswith("V"):
+                version_hint = parts[3].replace("V", "")
+                has_explicit_version = True
+            
+            # Versions to attempt if not found
+            versions_to_try = [version_hint] if has_explicit_version else ["6", "4", "5", "3", "2", "1"]
+            
+            try:
+                manage_client = client is None
+                if manage_client:
+                    client = httpx.AsyncClient(timeout=self.timeout)
+                
+                success = False
+                last_response = None
+                
+                for v in versions_to_try:
+                    url = f"https://alphafold.ebi.ac.uk/files/AF-{uniprot_id}-{fragment}-model_v{v}.cif"
+                    logger.info(f"Attempting AlphaFold download (v{v}): {url}")
+                    response = await client.get(url, follow_redirects=True)
+                    
+                    if response.status_code == 200:
+                        success = True
+                        last_response = response
+                        break
+                    else:
+                        logger.debug(f"AlphaFold v{v} not found (Status {response.status_code})")
+                
+                if not success:
+                    logger.error(f"All AlphaFold download attempts for {pdb_id} failed.")
+                    if manage_client: await client.aclose()
+                    return False, f"Not found in AlphaFold DB (Tried versions {', '.join(versions_to_try)})", None
+
+                # Proceed with successful response
+                response = last_response
+                
+            except httpx.TimeoutException:
+                logger.error(f"Timeout while downloading {pdb_id}")
+                return False, "Download failed: Connection timeout", None
+            except Exception as e:
+                logger.error(f"AlphaFold download crash: {e}")
+                return False, f"Error: {str(e)}", None
         else:
+            # Standard PDB
             pdb_id = pdb_id.upper()
             url = f"{self.pdb_source}{pdb_id}.pdb"
-        
+            try:
+                manage_client = client is None
+                if manage_client:
+                    client = httpx.AsyncClient(timeout=self.timeout)
+                
+                logger.info(f"Attempting PDB download from: {url}")
+                response = await client.get(url, follow_redirects=True)
+                if response.status_code != 200:
+                    logger.error(f"Download for {pdb_id} failed with status code {response.status_code}")
+                    if manage_client: await client.aclose()
+                    return False, f"Download failed (Status {response.status_code})", None
+            except Exception as e:
+                return False, f"PDB Download failed: {e}", None
+
+        # 3. SAVE FILE (Unified for PDB/AF)
         try:
-            manage_client = client is None
-            if manage_client:
-                client = httpx.AsyncClient(timeout=self.timeout)
-            
-            logger.info(f"Attempting download from: {url}")
-            response = await client.get(url, follow_redirects=True)
-            if response.status_code != 200:
-                logger.error(f"Download for {pdb_id} failed with status code {response.status_code}")
-                if manage_client: await client.aclose()
-                return False, f"Download failed (Status {response.status_code})", None
-            
             # Check file size
             file_size = len(response.content)
             file_size_mb = file_size / (1024 * 1024)
@@ -145,12 +192,9 @@ class PDBManager:
             logger.info(f"Downloaded {pdb_id} successfully ({file_size_mb:.2f} MB)")
             return True, f"Downloaded ({file_size_mb:.2f} MB)", output_file
             
-        except httpx.TimeoutException:
-            logger.error(f"Timeout while downloading {pdb_id}")
-            return False, f"Download failed: Connection timeout", None
         except Exception as e:
-            logger.error(f"Failed to download {pdb_id}: {str(e)}")
-            return False, f"Download failed: {str(e)}", None
+            logger.error(f"Failed to save {pdb_id}: {str(e)}")
+            return False, f"Save failed: {str(e)}", None
 
     async def batch_download(self, pdb_ids: List[str]) -> Dict[str, Tuple[bool, str, Optional[Path]]]:
         """
@@ -455,18 +499,31 @@ class PDBManager:
             for af_id in af_ids:
                 try:
                     # Extract UniProt ID (AF-P12345-F1 -> P12345)
-                    up_id = af_id.split("-")[1]
+                    parts = af_id.split("-")
+                    if len(parts) < 2:
+                        continue
+                    up_id = parts[1]
+                    
                     up_url = f"https://rest.uniprot.org/uniprotkb/{up_id}.json"
-                    up_resp = await client.get(up_url, timeout=5)
+                    # Increase timeout for more stable fetching
+                    up_resp = await client.get(up_url, timeout=10)
                     
                     if up_resp.status_code == 200:
                         up_data = up_resp.json()
                         desc = up_data.get('proteinDescription', {})
                         
-                        # Try various name sources
-                        name = (desc.get('recommendedName') or 
-                                desc.get('submissionNames', [{}])[0] or 
-                                desc.get('alternativeNames', [{}])[0]).get('fullName', {}).get('value')
+                        # Try various name sources more robustly
+                        name = None
+                        name_sources = [
+                            desc.get('recommendedName'),
+                            desc.get('submissionNames', [{}])[0],
+                            desc.get('alternativeNames', [{}])[0]
+                        ]
+                        
+                        for source in name_sources:
+                            if source and isinstance(source, dict):
+                                name = source.get('fullName', {}).get('value')
+                                if name: break
                         
                         if not name:
                             # Try gene name as fallback
@@ -480,8 +537,10 @@ class PDBManager:
                             'resolution': 'pLDDT Scored',
                             'organism': organism
                         }
+                    else:
+                        logger.warning(f"UniProt API returned {up_resp.status_code} for {up_id}")
                 except Exception as e:
-                    logger.warning(f"Failed to fetch UniProt meta for {af_id}: {e}")
+                    logger.warning(f"Failed to fetch UniProt meta for {af_id}: ({type(e).__name__}) {e}")
                     continue
 
             if manage_client: await client.aclose()
