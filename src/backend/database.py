@@ -36,7 +36,8 @@ class HistoryDatabase:
                         pdb_ids TEXT NOT NULL,
                         status TEXT,
                         result_path TEXT,
-                        metadata TEXT
+                        metadata TEXT,
+                        session_id TEXT
                     )
                 """)
                 cursor.execute("""
@@ -47,6 +48,12 @@ class HistoryDatabase:
                         last_accessed TEXT NOT NULL
                     )
                 """)
+                # Migration: add session_id column if missing (existing DBs)
+                try:
+                    cursor.execute("ALTER TABLE runs ADD COLUMN session_id TEXT")
+                    logger.info("Migrated runs table: added session_id column")
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
                 conn.commit()
         except Exception as e:
             logger.error(f"Failed to initialize database: {e}")
@@ -59,6 +66,7 @@ class HistoryDatabase:
         result_path: Path,
         status: str = "completed",
         metadata: Dict = None,
+        session_id: str = None,
     ) -> bool:
         """
         Save a new run to the database.
@@ -70,6 +78,7 @@ class HistoryDatabase:
             result_path: Path to the results directory
             status: Status of the run (completed, failed)
             metadata: Additional JSON serializable metadata
+            session_id: Session ID for multi-user isolation
 
         Returns:
             True if successful, False otherwise
@@ -83,8 +92,8 @@ class HistoryDatabase:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
-                    INSERT OR REPLACE INTO runs (id, timestamp, name, pdb_ids, status, result_path, metadata)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO runs (id, timestamp, name, pdb_ids, status, result_path, metadata, session_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                     (
                         run_id,
@@ -94,22 +103,24 @@ class HistoryDatabase:
                         status,
                         str(result_path),
                         metadata_json,
+                        session_id,
                     ),
                 )
                 conn.commit()
 
-            logger.info(f"Saved run {run_id} to history")
+            logger.info(f"Saved run {run_id} to history (session: {session_id})")
             return True
         except Exception as e:
             logger.error(f"Failed to save run {run_id}: {e}")
             return False
 
-    def get_all_runs(self, limit: int = None) -> List[Dict[str, Any]]:
+    def get_all_runs(self, limit: int = None, session_id: str = None) -> List[Dict[str, Any]]:
         """
         Retrieve saved runs, sorted by timestamp (newest first).
 
         Args:
             limit: Maximum number of runs to return (None for all)
+            session_id: If provided, only return runs for this session
 
         Returns:
             List of run dictionaries
@@ -119,12 +130,16 @@ class HistoryDatabase:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
 
-                query = "SELECT * FROM runs ORDER BY timestamp DESC"
-                params = ()
+                if session_id:
+                    query = "SELECT * FROM runs WHERE session_id = ? ORDER BY timestamp DESC"
+                    params = (session_id,)
+                else:
+                    query = "SELECT * FROM runs ORDER BY timestamp DESC"
+                    params = ()
 
                 if limit:
                     query += " LIMIT ?"
-                    params = (limit,)
+                    params = params + (limit,)
 
                 cursor.execute(query, params)
                 rows = cursor.fetchall()
@@ -177,17 +192,28 @@ class HistoryDatabase:
             logger.error(f"Failed to delete run {run_id}: {e}")
             return False
 
-    def get_latest_run(self) -> Optional[Dict[str, Any]]:
+    def get_latest_run(self, session_id: str = None) -> Optional[Dict[str, Any]]:
         """
         Retrieve the most recent successful run.
+
+        Args:
+            session_id: If provided, only return runs for this session
         """
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT * FROM runs WHERE status = 'completed' ORDER BY timestamp DESC LIMIT 1"
-                )
+
+                if session_id:
+                    cursor.execute(
+                        "SELECT * FROM runs WHERE status = 'completed' AND session_id = ? ORDER BY timestamp DESC LIMIT 1",
+                        (session_id,),
+                    )
+                else:
+                    cursor.execute(
+                        "SELECT * FROM runs WHERE status = 'completed' ORDER BY timestamp DESC LIMIT 1"
+                    )
+
                 row = cursor.fetchone()
 
                 if row:

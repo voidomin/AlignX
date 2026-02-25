@@ -258,7 +258,6 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
                         type="primary",
                     ):
                         # Combine all entries from residue_selections
-                        all_members = list(results["rmsd_df"].index)
                         all_headers = list(sequences.keys())
                         final_mapping = {}
 
@@ -279,7 +278,7 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
 
                             if target == "All Proteins (Alignment Columns)":
                                 # Apply columns to EVERY protein
-                                for p_idx, (pid, seq) in enumerate(sequences.items()):
+                                for p_idx, (_, seq) in enumerate(sequences.items()):
                                     chain_id = chr(ord("A") + p_idx)
 
                                     res_nums = []

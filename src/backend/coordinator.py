@@ -32,12 +32,13 @@ class AnalysisCoordinator:
     Decouples UI from backend implementation logic.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], session_id: str = None):
         self.config = config
+        self.session_id = session_id
         self.history_db = HistoryDatabase()
         self.ramachandran_service = RamachandranService()
         self.cache_manager = CacheManager(config, self.history_db)
-        self.pdb_manager = PDBManager(config, self.cache_manager)
+        self.pdb_manager = PDBManager(config, self.cache_manager, session_id=session_id)
         self.mustang_runner = MustangRunner(config)
         self.rmsd_analyzer = RMSDAnalyzer(config)
         self.sequence_viewer = SequenceViewer()
@@ -77,7 +78,11 @@ class AnalysisCoordinator:
                 run_name = (
                     f"Analysis of {len(pdb_ids)} structures ({now.strftime('%H:%M')})"
                 )
-                output_dir = Path("results") / run_id
+                # Namespace results by session ID
+                if self.session_id:
+                    output_dir = Path("results") / self.session_id / run_id
+                else:
+                    output_dir = Path("results") / run_id
             else:
                 run_id = output_dir.name
                 now = datetime.now()
@@ -161,7 +166,7 @@ class AnalysisCoordinator:
                 return False, "Failed to process result directory", None
 
             # 5. SAVE TO HISTORY & WRITE METADATA
-            self.history_db.save_run(run_id, run_name, pdb_ids, result_dir)
+            self.history_db.save_run(run_id, run_name, pdb_ids, result_dir, session_id=self.session_id)
 
             # Write metadata.json for portability and indexing stability
             import json

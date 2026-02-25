@@ -1,3 +1,5 @@
+import asyncio
+
 import streamlit as st
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any
@@ -17,8 +19,6 @@ logger = get_logger()
 # -----------------------------------------------------------------------------
 # Cached Wrappers
 # -----------------------------------------------------------------------------
-
-import asyncio
 
 
 @st.cache_data(show_spinner=False)
@@ -277,24 +277,31 @@ def render_dashboard() -> None:
             "🧹 DEEP CLEAN CACHE",
             type="secondary",
             use_container_width=True,
-            help="Wipe all downloaded/cleaned PDB files and reset everything.",
+            help="Wipe your session's downloaded/cleaned PDB files and reset everything.",
         ):
-            # 1. Delete structural files from disk
-            import shutil
+            # 1. Delete THIS SESSION's structural files from disk
+            session_id = st.session_state.get("session_id")
+            if session_id:
+                session_dirs = [
+                    Path("data/raw") / session_id,
+                    Path("data/cleaned") / session_id,
+                ]
+            else:
+                # Fallback: legacy mode (no session isolation)
+                session_dirs = [Path("data/raw"), Path("data/cleaned")]
 
-            for data_dir in [Path("data/raw"), Path("data/cleaned")]:
+            for data_dir in session_dirs:
                 if data_dir.exists():
-                    for f in data_dir.iterdir():
-                        if f.is_file():
-                            f.unlink()
+                    import shutil
+                    shutil.rmtree(data_dir, ignore_errors=True)
                     logger.info(f"Deep clean: wiped {data_dir}")
 
             # 2. Clear ALL caches
             st.cache_data.clear()
             try:
                 st.cache_resource.clear()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Failed to clear resource cache: {exc}")
 
             # 3. Full session state reset
             st.session_state.pdb_ids = []

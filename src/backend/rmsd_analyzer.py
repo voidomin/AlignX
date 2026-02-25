@@ -247,7 +247,6 @@ class RMSDAnalyzer:
                 logger.error("No sequences found in AFASTA file")
                 return [], []
 
-            seq_keys = list(sequences.keys())
             alignment_length = len(list(sequences.values())[0])
             num_structures = len(sequences)
 

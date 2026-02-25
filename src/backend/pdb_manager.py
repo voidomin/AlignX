@@ -20,7 +20,8 @@ class PDBManager:
     """Manages PDB file downloads, validation, and preprocessing."""
 
     def __init__(
-        self, config: Dict[str, Any], cache_manager: Optional[CacheManager] = None
+        self, config: Dict[str, Any], cache_manager: Optional[CacheManager] = None,
+        session_id: Optional[str] = None,
     ):
         """
         Initialize PDB Manager.
@@ -28,16 +29,24 @@ class PDBManager:
         Args:
             config: Configuration dictionary
             cache_manager: Optional CacheManager instance
+            session_id: Optional session ID for per-user file isolation
         """
         self.config = config
         self.cache_manager = cache_manager
+        self.session_id = session_id
         self.pdb_source = config.get("pdb", {}).get(
             "source_url", "https://files.rcsb.org/download/"
         )
         self.timeout = config.get("pdb", {}).get("timeout", 60)
         self.max_size_mb = config.get("pdb", {}).get("max_file_size_mb", 500)
-        self.raw_dir = Path("data/raw")
-        self.cleaned_dir = Path("data/cleaned")
+
+        # Namespace directories by session ID if provided
+        if session_id:
+            self.raw_dir = Path("data/raw") / session_id
+            self.cleaned_dir = Path("data/cleaned") / session_id
+        else:
+            self.raw_dir = Path("data/raw")
+            self.cleaned_dir = Path("data/cleaned")
 
         # Create directories
         self.raw_dir.mkdir(parents=True, exist_ok=True)

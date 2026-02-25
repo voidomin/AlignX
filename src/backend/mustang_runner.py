@@ -133,8 +133,8 @@ class MustangRunner:
                 )
                 self.use_wsl = False
                 return True, f"Mustang binary found (Native {sys.platform})"
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Native mustang check failed: {exc}")
 
         # 2. Check System-wide WSL Binary (Only on Windows)
         if self.is_windows:
@@ -171,8 +171,8 @@ class MustangRunner:
                             self.use_wsl = True
                             self.mustang_path = bin_path
                             return True, "Compiled Mustang found (WSL)"
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug(f"WSL compiled binary check failed: {exc}")
                 else:
                     # Linux Native
                     try:
@@ -183,10 +183,8 @@ class MustangRunner:
                         self.use_wsl = False
                         self.mustang_path = bin_path
                         return True, "Compiled Mustang found (Native Linux)"
-                    except Exception:
-                        pass
-
-        return False, "Mustang binary not found"
+                    except Exception as exc:
+                        logger.debug(f"Native compiled binary check failed: {exc}")
 
         return False, "Mustang binary not found"
 
@@ -411,8 +409,8 @@ class MustangRunner:
             stderr_out = process.stderr.read()
             if stderr_out:
                 stderr_lines.append(stderr_out)
-                for l in stderr_out.splitlines():
-                    logger.warning(f"[Mustang-Err] {l}")
+                for stderr_line in stderr_out.splitlines():
+                    logger.warning(f"[Mustang-Err] {stderr_line}")
 
             return_code = process.returncode
             all_stdout = "".join(stdout_lines)

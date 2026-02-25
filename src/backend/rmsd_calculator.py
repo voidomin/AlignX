@@ -55,10 +55,6 @@ def calculate_rmsd_from_superposition(
         logger.error(f"Manual RMSD calc failed: {e}")
         return None
 
-    except Exception as e:
-        logger.error(f"RMSD Calculation failed: {e}")
-        return None
-
 
 def parse_mustang_log_for_rmsd(log_file: Path) -> Optional[pd.DataFrame]:
     """
@@ -420,7 +416,7 @@ def calculate_alignment_quality_metrics(
         structure_data = []  # List of (id, coords, L_orig)
         seq_len = len(alignment[0].seq)
 
-        for i, (record, entity) in enumerate(zip(alignment, entities)):
+        for _, (record, entity) in enumerate(zip(alignment, entities, strict=False)):
             # Original length (excluding gaps)
             L_orig = len(str(record.seq).replace("-", ""))
 

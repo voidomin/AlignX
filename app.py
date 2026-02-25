@@ -16,6 +16,7 @@ from src.backend.coordinator import AnalysisCoordinator
 from src.utils.logger import setup_logger
 from src.utils.config_loader import load_config
 from src.utils.cache_manager import CacheManager
+from src.utils.session_manager import get_session_id, cleanup_stale_sessions
 
 # Frontend Modules
 from src.frontend import utils, sidebar, analysis
@@ -35,6 +36,12 @@ def init_session_state():
         st.session_state.config = load_config()
         st.session_state.logger, st.session_state.log_file = setup_logger()
 
+    # Session isolation: generate a unique session ID per browser tab
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = get_session_id()
+
+    session_id = st.session_state.session_id
+
     if "history_db" not in st.session_state:
         st.session_state.history_db = HistoryDatabase()
 
@@ -45,7 +52,8 @@ def init_session_state():
 
     if "pdb_manager" not in st.session_state:
         st.session_state.pdb_manager = PDBManager(
-            st.session_state.config, st.session_state.cache_manager
+            st.session_state.config, st.session_state.cache_manager,
+            session_id=session_id,
         )
 
     if "mustang_runner" not in st.session_state:
@@ -72,7 +80,9 @@ def init_session_state():
         st.session_state.ligand_analyzer = LigandAnalyzer(st.session_state.config)
 
     if "coordinator" not in st.session_state:
-        st.session_state.coordinator = AnalysisCoordinator(st.session_state.config)
+        st.session_state.coordinator = AnalysisCoordinator(
+            st.session_state.config, session_id=session_id
+        )
 
     if "auto_recovered" not in st.session_state:
         st.session_state.auto_recovered = False
@@ -81,6 +91,8 @@ def init_session_state():
             st.session_state.system_manager = SystemManager(st.session_state.config)
             # Perform automated startup cleanup (runs older than 7 days)
             st.session_state.system_manager.cleanup_old_runs(days=7)
+            # TTL cleanup: purge stale session directories (>24h)
+            cleanup_stale_sessions(max_age_hours=24)
 
         # --- NEW CENTRALIZED STATE ---
         if "mustang_install_status" not in st.session_state:
@@ -121,7 +133,9 @@ def init_session_state():
     if st.session_state.get("results") is None and not st.session_state.auto_recovered:
         st.session_state.auto_recovered = True  # Mark as attempted (session-persistent)
         st.session_state.loading_latest = True
-        latest_run = st.session_state.history_db.get_latest_run()
+        latest_run = st.session_state.history_db.get_latest_run(
+            session_id=st.session_state.get("session_id")
+        )
         if latest_run:
             analysis.load_run_from_history(latest_run["id"], is_auto=True)
         st.session_state.loading_latest = False

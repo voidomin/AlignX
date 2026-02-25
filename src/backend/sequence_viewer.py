@@ -96,9 +96,7 @@ class SequenceViewer:
         """
         Generate HTML/CSS for scrollable alignment view.
         """
-        headers = list(sequences.keys())
-        seqs = list(sequences.values())
-        length = len(seqs[0])
+
 
         # Build Grid Rows
         rows_html = ""
@@ -208,7 +206,7 @@ class SequenceViewer:
 
         identities = []
         for s1, s2 in itertools.combinations(seqs, 2):
-            matches = sum(1 for a, b in zip(s1, s2) if a == b and a != "-")
+            matches = sum(1 for a, b in zip(s1, s2, strict=False) if a == b and a != "-")
             length = len(s1)
             # Avoid division by zero
             if length == 0:
