@@ -165,6 +165,16 @@ class AnalysisCoordinator:
             if not results:
                 return False, "Failed to process result directory", None
 
+            # 4.5 GENERATE LLM INSIGHTS (v2.4.1 Optimization)
+            try:
+                from src.backend.insights import InsightsGenerator
+                gen = InsightsGenerator(self.config)
+                results["insights"] = gen.generate_insights(results)
+                logger.info("Pre-generated structural insights.")
+            except Exception as e:
+                logger.warning(f"Failed to generate pre-computed insights: {e}")
+                results["insights"] = []
+
             # 5. SAVE TO HISTORY & WRITE METADATA
             self.history_db.save_run(run_id, run_name, pdb_ids, result_dir, session_id=self.session_id)
 

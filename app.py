@@ -91,8 +91,17 @@ def init_session_state():
             st.session_state.system_manager = SystemManager(st.session_state.config)
             # Perform automated startup cleanup (runs older than 7 days)
             st.session_state.system_manager.cleanup_old_runs(days=7)
-            # TTL cleanup: purge stale session directories (>24h)
-            cleanup_stale_sessions(max_age_hours=24)
+            
+            # TTL cleanup: purge stale session directories (>24h) and their DB records
+            import sqlite3
+            try:
+                # Open a temporary connection specifically for cleanup
+                with sqlite3.connect(st.session_state.history_db.db_path) as conn:
+                    cleanup_stale_sessions(max_age_hours=24, db_conn=conn)
+            except Exception as e:
+                st.session_state.logger.warning(f"Failed to run TTL cleanup with DB connection: {e}")
+                # Fallback to file-only cleanup if DB is locked
+                cleanup_stale_sessions(max_age_hours=24)
 
         # --- NEW CENTRALIZED STATE ---
         if "mustang_install_status" not in st.session_state:

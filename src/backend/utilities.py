@@ -70,17 +70,31 @@ class SystemManager:
         if not self.results_dir.exists():
             return []
 
-        for d in self.results_dir.iterdir():
-            if d.is_dir() and d.name.startswith("run_"):
-                # Check modification time
-                mtime = d.stat().st_mtime
-                if (now - mtime) > threshold:
-                    try:
-                        shutil.rmtree(d)
-                        deleted.append(d.name)
-                        logger.info(f"Cleaned up old run directory: {d.name}")
-                    except Exception as e:
-                        logger.error(f"Failed to delete {d.name}: {e}")
+        # In v2.4, results are nested under session_id: results/{session_id}/run_{timestamp}
+        # Iterate over session directories
+        for session_dir in self.results_dir.iterdir():
+            if not session_dir.is_dir() or session_dir.name.startswith("run_"):
+                # Skip legacy run folders if any, we only process session dirs
+                continue
+
+            for run_dir in session_dir.iterdir():
+                if run_dir.is_dir() and run_dir.name.startswith("run_"):
+                    # Check modification time
+                    mtime = run_dir.stat().st_mtime
+                    if (now - mtime) > threshold:
+                        try:
+                            shutil.rmtree(run_dir)
+                            deleted.append(f"{session_dir.name}/{run_dir.name}")
+                            logger.info(f"Cleaned up old run directory: {run_dir.name}")
+                        except Exception as e:
+                            logger.error(f"Failed to delete {run_dir.name}: {e}")
+
+            # Optional: if session dir is now empty, delete it
+            if not list(session_dir.iterdir()):
+                try:
+                    shutil.rmtree(session_dir)
+                except Exception:
+                    pass
 
         return deleted
 

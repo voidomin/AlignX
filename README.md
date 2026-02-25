@@ -1,9 +1,9 @@
-# 🧬 Mustang Structural Alignment Pipeline (v2.1)
+# 🧬 Mustang Structural Alignment Pipeline (v2.4.1)
 
 An automated, full-stack bioinformatics pipeline for multiple structural alignment of **any protein family** using Mustang, featuring interactive 3D visualizations, phylogenetic analysis, and advanced ligand hunter capabilities.
 
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://mustang-pipeline.streamlit.app)
-[![Version](https://img.shields.io/badge/version-2.1.0-orange.svg)](https://github.com/your-repo/mustang-pipeline/releases/tag/v2.1.0)
+[![Version](https://img.shields.io/badge/version-2.4.1-orange.svg)](https://github.com/your-repo/mustang-pipeline/releases/tag/v2.4.1)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
 ---
@@ -18,7 +18,9 @@ An automated, full-stack bioinformatics pipeline for multiple structural alignme
 
 ### 🧠 Advanced Analysis
 
-- **Ligand Hunter (v2.1)**: Auto-detect binding pockets, calculate interaction similarities, and visualize SASA (Solvent Accessible Surface Area).
+- **Automated Alignment**: Multi-protein superposition powered by Mustang core.
+- **Multi-User Session Isolation (v2.4)**: Full compatibility with stateless deployments like Streamlit Cloud, featuring auto-refreshing sessions and TTL memory management to prevent data overlap.
+- **Ligand Hunter**: Auto-detect binding pockets, calculate interaction similarities, and visualize SASA (Solvent Accessible Surface Area).
 - **Smart Insights**: Automated captions describing RMSD outliers, structural families, and ligand distributions.
 - **Interactive Phylogeny**: Structural phylogenetic trees generated via average linkage (UPGMA).
 

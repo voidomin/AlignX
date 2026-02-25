@@ -85,49 +85,52 @@ def display_results(results: Optional[Dict[str, Any]] = None) -> None:
         try:
             rmsd.render_rmsd_tab(results)
         except Exception as e:
-            st.error(f"Error rendering Summary tab: {e}")
+            st.warning("⚠️ Summary tab unavailable for this run.")
+            st.caption(f"Details: {e}")
 
     with t2:
         try:
             sequence.render_sequences_tab(results)
-        except Exception as e:
-            st.error(f"Error rendering Sequence tab: {e}")
+        except Exception:
+            st.info("🧬 Sequence alignment data unavailable for this run.")
 
     with t3:
         try:
             phylo.render_phylo_tree_tab(results)
-        except Exception as e:
-            st.error(f"Error rendering Phylogeny tab: {e}")
+        except Exception:
+            st.info("🌳 Phylogenetic tree data unavailable for this run.")
 
     with t4:
         try:
             clusters.render_clusters_tab(results)
-        except Exception as e:
-            st.error(f"Error rendering Clusters tab: {e}")
+        except Exception:
+            st.info("🔍 Clustering data unavailable for this run.")
 
     with t5:
         try:
             structure.render_3d_viewer_tab(results)
         except Exception as e:
-            st.error(f"Error rendering 3D Viewer tab: {e}")
+            st.warning("🔮 3D Viewer unavailable for this run.")
+            st.caption(f"Details: {e}")
 
     with t6:
         try:
             ligand.render_ligand_tab(results)
-        except Exception as e:
-            st.error(f"Error rendering Ligand tab: {e}")
+        except Exception:
+            st.info("💊 Ligand analysis unavailable for this run.")
 
     with t7:
         try:
             comparison.render_comparison_tab(results)
-        except Exception as e:
-            st.error(f"Error rendering Comparison tab: {e}")
+        except Exception:
+            st.info("🔄 Comparison data unavailable for this run.")
 
     with t8:
         try:
             downloads.render_downloads_tab(results)
         except Exception as e:
-            st.error(f"Error rendering Downloads tab: {e}")
+            st.warning("📥 Downloads unavailable for this run.")
+            st.caption(f"Details: {e}")
 
 
 def render_compact_summary(results: Optional[Dict[str, Any]] = None) -> None:

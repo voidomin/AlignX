@@ -16,18 +16,10 @@ def render_rmsd_tab(results: Dict[str, Any]) -> None:
     st.subheader("📊 RMSD & Alignment Quality")
     render_learning_card("Summary")
 
-    # Automated Insights — regenerate when results change (keyed by run ID)
-    current_run_id = results.get("id", "unknown")
-    if st.session_state.get("insights_run_id") != current_run_id:
-        from src.backend.insights import InsightsGenerator
-
-        gen = InsightsGenerator(st.session_state.config)
-        st.session_state.insights = gen.generate_insights(results)
-        st.session_state.insights_run_id = current_run_id
-
-    if st.session_state.get("insights"):
+    # Automated Insights
+    if results.get("insights"):
         with st.expander("🧠 Automated Insights (Smart Findings)", expanded=True):
-            for insight in st.session_state.insights:
+            for insight in results["insights"]:
                 st.markdown(insight)
 
     col1, col2 = st.columns([2, 1])

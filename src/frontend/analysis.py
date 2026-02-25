@@ -279,8 +279,9 @@ def render_dashboard() -> None:
             use_container_width=True,
             help="Wipe your session's downloaded/cleaned PDB files and reset everything.",
         ):
-            # 1. Delete THIS SESSION's structural files from disk
-            session_id = st.session_state.get("session_id")
+            with st.spinner("Wiping session data..."):
+                # 1. Delete THIS SESSION's structural files from disk
+                session_id = st.session_state.get("session_id")
             if session_id:
                 session_dirs = [
                     Path("data/raw") / session_id,

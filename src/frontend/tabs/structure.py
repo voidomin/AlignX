@@ -39,7 +39,8 @@ def render_3d_viewer_tab(results: Dict[str, Any]) -> None:
                 st.rerun()
 
             try:
-                pdb_path = results["alignment_pdb"]
+                with st.spinner("Rendering 3D structures..."):
+                    pdb_path = results["alignment_pdb"]
 
                 # Handle Cluster Filtering
                 visible_chains = None

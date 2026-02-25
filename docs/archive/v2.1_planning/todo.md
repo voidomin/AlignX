@@ -96,5 +96,29 @@ Complete audit of the Mustang Pipeline repository. All findings organized by pri
 
 ---
 
-**Status**: ✅ v2.4.0 Released — Multi-User Session Isolation Complete
-**Current Branch**: `feat/v2.4-session-isolation`
+## 🏗️ 7. Next Version (v2.4.1) — Codebase Improvement & UI Polish
+
+Focusing purely on existing functionality, technical debt, and UI/UX polish.
+
+### Phase 1: Data Integrity & Technical Debt
+
+- [x] **Fix Ghost Runs**: Update `cleanup_stale_sessions()` in `session_manager.py` to delete DB rows when purging session directories to prevent DB bloat.
+- [x] **Fix Legacy Cleanup**: Refactor `cleanup_old_runs()` in `system_manager.py` to be session-aware and correctly parse the new folder structure.
+- [x] **App Wiring**: Update `app.py`'s TTL cleanup call to pass the active DB connection.
+
+### Phase 2: UI Performance & UX Polish
+
+- [x] **Caching Sequence Parsing**: Move AFASTA parsing and conservation calculation out of `sequence.py` tab renders and into `coordinator.py` so it isn't repeatedly calculated on tab switches.
+- [x] **Caching Insights**: Move automated LLM insights generation out of `rmsd.py` rendering and into `coordinator.py`.
+- [x] **Deep Clean Spinner**: Add `st.spinner("Wiping session data...")` to the Deep Clean button.
+- [x] **Graceful Degradation**: Replace raw `st.error()` blocks in `results.py` with graceful `st.warning()`/`st.info()` fallbacks for missing tab data.
+- [x] **3D Viewer UX**: Optimize viewer initialization in `structure.py` using UI placeholders to mask loading jank.
+
+### Phase 3: Documentation Updates
+
+- [x] **Update README**: Reflect v2.4.0 versioning, Streamlit Cloud compatibility, and Session Isolation architecture.
+
+---
+
+**Status**: ✅ v2.4.1 Completed
+**Current Branch**: `main`

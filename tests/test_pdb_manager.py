@@ -1,18 +1,17 @@
-from pathlib import Path
-from unittest.mock import patch, Mock, AsyncMock
+from unittest.mock import patch, AsyncMock
 import pytest
 from src.backend.pdb_manager import PDBManager
 
 
 class TestPDBManager:
 
-    def test_initialization(self, mock_config, temp_workspace):
+    @patch("src.backend.pdb_manager.Path.mkdir")
+    def test_initialization(self, _, mock_config, temp_workspace):
         """Test if PDBManager initializes directories correctly."""
         # Patch the hardcoded paths in PDBManager __init__ to use temp_workspace
-        with patch.object(Path, "mkdir") as mock_mkdir:
-            manager = PDBManager(mock_config)
-            assert manager.pdb_source == mock_config["pdb"]["source_url"]
-            assert manager.timeout == 5
+        manager = PDBManager(mock_config)
+        assert manager.pdb_source == mock_config["pdb"]["source_url"]
+        assert manager.timeout == 5
 
     def test_pdb_id_validation(self):
         """Test PDB ID validation logic."""

@@ -51,15 +51,16 @@ def get_session_paths(session_id: str) -> Dict[str, Path]:
     return paths
 
 
-def cleanup_stale_sessions(max_age_hours: int = 24) -> List[str]:
+def cleanup_stale_sessions(max_age_hours: int = 24, db_conn=None) -> List[str]:
     """
-    Remove session directories older than max_age_hours.
+    Remove session directories older than max_age_hours and cleanup DB.
 
     Scans data/raw/, data/cleaned/, and results/ for session subdirectories
     whose modification time exceeds the TTL threshold.
 
     Args:
         max_age_hours: Maximum age in hours before a session directory is purged.
+        db_conn: Optional sqlite3 database connection to clear associated runs.
 
     Returns:
         List of purged session directory names.
@@ -108,6 +109,16 @@ def cleanup_stale_sessions(max_age_hours: int = 24) -> List[str]:
                 except Exception as e:
                     logger.warning(f"TTL cleanup failed for {d}: {e}")
             purged.append(session_id)
+
+            # Cleanup DB records for this session
+            if db_conn is not None:
+                try:
+                    cursor = db_conn.cursor()
+                    cursor.execute("DELETE FROM runs WHERE session_id = ?", (session_id,))
+                    db_conn.commit()
+                    logger.info(f"TTL cleanup: removed DB records for session {session_id}")
+                except Exception as e:
+                    logger.warning(f"TTL DB cleanup failed for session {session_id}: {e}")
 
     if purged:
         logger.info(f"TTL cleanup: purged {len(purged)} stale sessions")
