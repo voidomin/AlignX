@@ -43,8 +43,6 @@ class InsightsGenerator:
 
         if len(upper_tri) > 0:
             avg_rmsd = np.mean(upper_tri)
-            min_rmsd = np.min(upper_tri)
-            max_rmsd = np.max(upper_tri)
 
             if avg_rmsd < 2.0:
                 insights.append(
@@ -105,12 +103,12 @@ class InsightsGenerator:
         if "ligand_analysis" in results:
             ligand_data = results["ligand_analysis"]
             # Count total ligands
-            total_ligands = sum(len(l) for l in ligand_data.values())
+            total_ligands = sum(len(lig_list) for lig_list in ligand_data.values())
             if total_ligands > 0:
                 # Find most common ligand
                 all_ligand_names = []
-                for l_list in ligand_data.values():
-                    all_ligand_names.extend([l["name"] for l in l_list])
+                for lig_list in ligand_data.values():
+                    all_ligand_names.extend([lig["name"] for lig in lig_list])
 
                 from collections import Counter
 

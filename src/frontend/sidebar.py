@@ -61,7 +61,8 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
         with st.expander("📜 History", expanded=False):
             # Limit to latest 6 runs
             try:
-                runs = st.session_state.history_db.get_all_runs(limit=6)
+                session_id = st.session_state.get("session_id")
+                runs = st.session_state.history_db.get_all_runs(limit=6, session_id=session_id)
             except TypeError:
                 runs = st.session_state.history_db.get_all_runs()[:6]
 

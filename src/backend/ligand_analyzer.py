@@ -143,7 +143,7 @@ class LigandAnalyzer:
             l_chain = parts[-2]
             l_resi = int(parts[-1])
             l_name = "_".join(parts[:-2])
-        except:
+        except (ValueError, IndexError):
             logger.error(f"Invalid ligand ID format: {ligand_id}")
             return {"error": "Invalid ID"}
 

@@ -1,8 +1,12 @@
+import logging
+
 import pandas as pd
 import plotly.io as pio
 from pathlib import Path
 from datetime import datetime
 from jinja2 import Template
+
+logger = logging.getLogger(__name__)
 
 
 class NotebookExporter:
@@ -84,7 +88,7 @@ class NotebookExporter:
                     with open(js_path, "r", encoding="utf-8") as f:
                         dmol_js = f.read()
             except Exception as e:
-                print(f"Warning: Could not load local 3Dmol.js: {e}")
+                logger.warning(f"Could not load local 3Dmol.js: {e}")
 
             # 1. Heatmap
             heatmap_fig = results.get("heatmap_fig")
@@ -124,12 +128,12 @@ class NotebookExporter:
             if "ligand_analysis" in results:
                 ligand_list = []
                 for pdb, ligands in results["ligand_analysis"].items():
-                    for l in ligands:
+                    for lig in ligands:
                         ligand_list.append(
                             {
                                 "Structure": pdb,
-                                "Ligand": l["name"],
-                                "Residue ID": l["id"],
+                                "Ligand": lig["name"],
+                                "Residue ID": lig["id"],
                             }
                         )
                 if ligand_list:
@@ -169,6 +173,6 @@ class NotebookExporter:
         except Exception as e:
             import traceback
 
-            print(f"Error generating notebook: {str(e)}")
-            print(traceback.format_exc())
+            logger.error(f"Error generating notebook: {str(e)}")
+            logger.error(traceback.format_exc())
             return None

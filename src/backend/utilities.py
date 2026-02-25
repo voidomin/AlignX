@@ -48,9 +48,8 @@ class SystemManager:
                     if "MUSTANG" in line:
                         results["Mustang"]["version"] = line.strip()
                         break
-        except Exception:
-            # Try to find it in common paths or session state binary
-            pass
+        except Exception as exc:
+            logger.debug(f"Mustang diagnostic check failed: {exc}")
 
         return results
 

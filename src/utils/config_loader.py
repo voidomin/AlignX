@@ -2,11 +2,14 @@
 
 import yaml
 import os
+import logging
 from pathlib import Path
 from typing import Dict, Any
 from dotenv import load_dotenv
 from src.backend.config_models import PipelineConfig
 from pydantic import ValidationError
+
+logger = logging.getLogger(__name__)
 
 
 def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
@@ -39,9 +42,9 @@ def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
         # Convert back to dict for backward compatibility
         config = validated_config.to_dict()
     except ValidationError as e:
-        print("CRITICAL: Configuration validation failed!")
-        print(e)
-        raise SystemExit(1)
+        logger.critical("Configuration validation failed!")
+        logger.critical(str(e))
+        raise SystemExit(1) from e
 
     # Create necessary directories
     _create_directories(config)

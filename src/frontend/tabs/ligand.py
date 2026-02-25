@@ -70,7 +70,7 @@ def render_ligand_tab(results: Dict[str, Any]) -> None:
             else:
                 with sel_col2:
                     st.success(f"Found {len(ligands)} ligands")
-                    ligand_options = {f"{l['name']} ({l['id']})": l for l in ligands}
+                    ligand_options = {f"{lig['name']} ({lig['id']})": lig for lig in ligands}
                     selected_ligand_name = st.selectbox(
                         "Select Ligand", list(ligand_options.keys())
                     )

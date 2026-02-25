@@ -83,18 +83,18 @@ Complete audit of the Mustang Pipeline repository. All findings organized by pri
 > - SQLite History DB is shared (all users see the same run history)
 > - **Deep Clean wipes files for ALL users**
 
-- [ ] **Per-session file storage**: Use session IDs to namespace `data/raw/{session_id}/` and `data/cleaned/{session_id}/`
-- [ ] **Session-aware Deep Clean**: Only clear the current user's files, not everyone's
-- [ ] **User-scoped history**: Filter history DB by session/user ID
-- [ ] **TTL-based auto-cleanup**: Auto-purge stale session files after 24h to manage disk space
+- [x] **Per-session file storage**: Use session IDs to namespace `data/raw/{session_id}/` and `data/cleaned/{session_id}/`
+- [x] **Session-aware Deep Clean**: Only clear the current user's files, not everyone's
+- [x] **User-scoped history**: Filter history DB by session/user ID
+- [x] **TTL-based auto-cleanup**: Auto-purge stale session files after 24h to manage disk space
 
 ### Other Ideas
 
-- [ ] **Archive planning docs**: Move `v2.1_planning/` to `docs/archive/`
-- [ ] **Dockerfile Python version**: Align with Streamlit Cloud (Python 3.10)
+- [x] **Archive planning docs**: Move `v2.1_planning/` to `docs/archive/`
+- [x] **Dockerfile Python version**: Align with Streamlit Cloud (Python 3.10)
 - [ ] **Export to Jupyter Notebook**: One-click export of full analysis pipeline
 
 ---
 
-**Status**: ✅ v2.3.0 Released — v2.4 Multi-User Isolation Next
-**Current Branch**: `feat/v2.2-batch-comparison` merged into `main`
+**Status**: ✅ v2.4.0 Released — Multi-User Session Isolation Complete
+**Current Branch**: `feat/v2.4-session-isolation`

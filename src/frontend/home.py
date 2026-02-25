@@ -1,5 +1,8 @@
 import streamlit as st
+import logging
 from examples.protein_sets import EXAMPLES
+
+logger = logging.getLogger(__name__)
 
 
 def render_hero_section():
@@ -38,8 +41,12 @@ def render_hero_section():
             st.metric("PDB Cache Size", f"{cache_mb:.1f} MB")
         with m_col4:
             st.metric("System Health", "Optimal ✨")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug(f"Failed to load dashboard metrics: {exc}")
+
+    # Session isolation info
+    session_id = st.session_state.get("session_id", "N/A")
+    st.caption(f"🔑 Session: `{session_id}` — refreshing the browser starts a new session. Your files auto-clean after 24h.")
 
     st.divider()
 
@@ -48,7 +55,10 @@ def render_hero_section():
 
     with dash_col1:
         st.markdown("### 🕒 Recent Activity")
-        recent_runs = st.session_state.history_db.get_all_runs(limit=5)
+        session_id = st.session_state.get("session_id")
+        recent_runs = st.session_state.history_db.get_all_runs(
+            limit=5, session_id=session_id
+        )
 
         if recent_runs:
             for idx, run in enumerate(recent_runs):
