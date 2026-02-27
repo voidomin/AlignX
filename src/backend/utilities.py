@@ -19,9 +19,12 @@ class SystemManager:
         self.results_dir = Path("results")
         self.temp_dir = Path("temp")
 
-    def run_diagnostics(self) -> Dict[str, Any]:
+    def run_diagnostics(self, mustang_executable: str = "mustang") -> Dict[str, Any]:
         """
         Check for required system dependencies.
+
+        Args:
+            mustang_executable: Path to the mustang binary to test.
 
         Returns:
             Dictionary of check results.
@@ -38,7 +41,7 @@ class SystemManager:
             # Try to run mustang --version or just mustang
             # Mustang usually prints help to stderr if no args
             proc = subprocess.run(
-                ["mustang"], capture_output=True, text=True, timeout=5
+                [mustang_executable], capture_output=True, text=True, timeout=5
             )
             # Mustang doesn't have a --version flag but help text contains version
             if "MUSTANG" in proc.stderr or "MUSTANG" in proc.stdout:

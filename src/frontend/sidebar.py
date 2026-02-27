@@ -25,7 +25,10 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
         with st.expander("🛠️ System Health", expanded=False):
             if st.button("🔍 Run Diagnostics", use_container_width=True):
                 with st.spinner("Checking dependencies..."):
-                    results = st.session_state.system_manager.run_diagnostics()
+                    executable = getattr(st.session_state.get("mustang_runner"), "executable", "mustang")
+                    results = st.session_state.system_manager.run_diagnostics(
+                        mustang_executable=executable
+                    )
                     st.session_state.diag_results = results
 
             if "diag_results" in st.session_state:
