@@ -28,6 +28,7 @@ class SystemManager:
         """
         results = {
             "Mustang": {"status": "FAILED", "version": "Unknown"},
+            "R environment": {"status": "FAILED", "version": "Unknown"},
             "Platform": sys.platform,
             "Python Version": sys.version.split()[0],
         }

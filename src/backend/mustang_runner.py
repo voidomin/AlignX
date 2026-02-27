@@ -244,7 +244,12 @@ class MustangRunner:
             except Exception as e:
                 logger.warning(f"WSL check exception using {wsl_path}: {e}")
 
-        # 3. Try to Compile
+        # 3. Check for pre-compiled local binary (e.g. from previous run)
+        found, msg = self._check_mustang()
+        if found:
+            return True, msg
+
+        # 4. Try to Compile if completely missing
         if self._compile_from_source():
             # Re-check after compilation
             found, msg = self._check_mustang()
