@@ -159,7 +159,7 @@ def render_3d_structure(
                             let residues = highlightDict[chainID] || highlightDict["__all__"] || [];
                             if (residues.length > 0) {{
                                 let hlColor = hlColors[hlIdx % hlColors.length];
-                                viewer.setStyle({{chain: chainID, resi: residues}}, {{
+                                viewer.addStyle({{chain: chainID, resi: residues}}, {{
                                     sphere: {{color: hlColor, scale: 1.0, opacity: 1.0}},
                                     stick: {{color: hlColor, radius: 0.5, opacity: 1.0}},
                                     cartoon: {{color: hlColor, opacity: 1.0}}
