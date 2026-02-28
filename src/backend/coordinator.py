@@ -221,7 +221,8 @@ class AnalysisCoordinator:
             tree_path = result_dir / "phylogenetic_tree.png"
             newick_path = result_dir / "tree.newick"
             alignment_pdb = result_dir / "alignment.pdb"
-            alignment_afasta = result_dir / "alignment.afasta"
+            # mustang_runner guarantees alignment.fasta exists (standardized)
+            alignment_fasta = result_dir / "alignment.fasta"
 
             # Calculations
             self.rmsd_analyzer.generate_heatmap(rmsd_df, heatmap_path)
@@ -229,9 +230,9 @@ class AnalysisCoordinator:
 
             # Quality Metrics (TM-score / GDT-TS)
             quality_metrics = None
-            if alignment_pdb.exists() and alignment_afasta.exists():
+            if alignment_pdb.exists() and alignment_fasta.exists():
                 quality_metrics = calculate_alignment_quality_metrics(
-                    alignment_pdb, alignment_afasta
+                    alignment_pdb, alignment_fasta
                 )
 
             # Ramachandran (Torsion) Analysis
@@ -246,13 +247,16 @@ class AnalysisCoordinator:
                         torsion_data
                     )
 
-            # Calculate sequence identity
-            if alignment_afasta.exists():
-                sequences = self.sequence_viewer.parse_afasta(alignment_afasta)
+            # Calculate sequence identity and save parsed alignments for UI
+            sequences = None
+            conservation = None
+            if alignment_fasta.exists():
+                sequences = self.sequence_viewer.parse_afasta(alignment_fasta)
                 if sequences:
                     stats["seq_identity"] = self.sequence_viewer.calculate_identity(
                         sequences
                     )
+                    conservation = self.sequence_viewer.calculate_conservation(sequences)
 
             clusters = self.rmsd_analyzer.identify_clusters(rmsd_df)
 
@@ -268,7 +272,7 @@ class AnalysisCoordinator:
             rmsf_values = []
             try:
                 rmsf_values, _ = self.rmsd_analyzer.calculate_residue_rmsf(
-                    alignment_pdb, alignment_afasta
+                    alignment_pdb, alignment_fasta
                 )
             except Exception as e:
                 logger.warning(f"Residue RMSF failed: {e}")
@@ -285,7 +289,9 @@ class AnalysisCoordinator:
                 "heatmap_fig": heatmap_fig,
                 "tree_fig": tree_fig,
                 "alignment_pdb": alignment_pdb,
-                "alignment_afasta": alignment_afasta,
+                "alignment_afasta": alignment_fasta, # Pass down the real fasta path
+                "sequences": sequences,
+                "conservation": conservation,
                 "rmsf_values": rmsf_values,
                 "quality_metrics": quality_metrics,
                 "torsion_data": torsion_data,
