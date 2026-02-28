@@ -82,11 +82,13 @@ class TestPDBManager:
         manager = PDBManager(mock_config)
         manager.cleaned_dir = temp_workspace["cleaned"]
 
-        # Create multi-chain content
+        # Create multi-chain content with CA atoms
         multi_content = (
             "ATOM      1  N   ALA A   1      11.104  13.203   7.334  1.00 20.00           N\n"
+            "ATOM      2  CA  ALA A   1      12.104  14.203   8.334  1.00 20.00           C\n"
             "TER\n"
-            "ATOM      2  N   ALA B   1      21.104  23.203  17.334  1.00 20.00           N\n"
+            "ATOM      3  N   ALA B   1      21.104  23.203  17.334  1.00 20.00           N\n"
+            "ATOM      4  CA  ALA B   1      22.104  24.203  18.334  1.00 20.00           C\n"
             "TER"
         )
 

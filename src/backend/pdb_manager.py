@@ -400,6 +400,12 @@ class PDBManager:
                     new_chain.add(new_res)
                     res_count += 1
 
+            # Check if there are any Alpha Carbons (required by Mustang)
+            ca_atoms = sum(1 for atom in new_chain.get_atoms() if atom.name == "CA")
+            if ca_atoms == 0:
+                chain_desc = f"Chain {target_chain_obj.id}" if chain else "The selected chain"
+                return False, f"{chain_desc} contains 0 Alpha Carbon (CA) atoms. Mustang only aligns protein structures (DNA, RNA, and small molecules are unsupported).", None
+
             # Save cleaned structure with LF line endings
             # Force .pdb extension for Mustang compatibility and normalize to lowercase
             clean_name = pdb_file.stem.lower()
