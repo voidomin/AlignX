@@ -191,15 +191,19 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
                         cons_str = _selection_to_range_str(
                             [i + 1 for i in conserved_cols]
                         )
-                        st.session_state.residue_selections[
-                            "All Proteins (Alignment Columns)"
-                        ] = cons_str
+                        target_k = "All Proteins (Alignment Columns)"
+                        st.session_state.residue_selections[target_k] = cons_str
+                        st.session_state[f"text_input_{target_k}"] = cons_str
                         st.rerun()
                 with col2_btn:
                     if st.button(
                         "🗑️ Clear All Selections", use_container_width=True
                     ):
                         st.session_state.residue_selections.clear()
+                        # Clear text input widget states
+                        for k in list(st.session_state.keys()):
+                            if k.startswith("text_input_"):
+                                st.session_state[k] = ""
                         # Also clear 3D viewer highlights if active
                         if "highlight_chains" in st.session_state:
                             st.session_state.highlight_chains.clear()
