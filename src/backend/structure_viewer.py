@@ -174,6 +174,9 @@ def render_3d_structure(
                 viewer.render();
                 viewer.zoom(0.8, 1000);
                 
+                // Enable gentle auto-rotation
+                viewer.spin("y", 0.5);
+                
                 // Snapshot Function
                 window.takeSnapshot = function() {{
                     const canvas = document.querySelector("#container_{unique_id} canvas");
@@ -276,6 +279,9 @@ def render_ligand_view(
                 viewer.zoomTo(ligandSel, 1000);
                 
                 viewer.render();
+                
+                // Enable gentle auto-rotation
+                viewer.spin("y", 0.5);
             </script>
         </body>
         </html>
