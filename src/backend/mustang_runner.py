@@ -182,6 +182,7 @@ class MustangRunner:
                         )
                         self.use_wsl = False
                         self.mustang_path = bin_path
+                        self.executable = str(bin_path.absolute())
                         return True, "Compiled Mustang found (Native Linux)"
                     except Exception as exc:
                         logger.debug(f"Native compiled binary check failed: {exc}")

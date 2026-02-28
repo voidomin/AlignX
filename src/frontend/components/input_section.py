@@ -60,6 +60,7 @@ def render_input_section(pdb_manager: Any):
                         st.error(f"Failed to save {uploaded_file.name}: {msg}")
 
                 if new_ids:
+                    st.session_state.input_pdb_text_dashboard = ""
                     st.info(f"Loaded {len(new_ids)} files: {', '.join(new_ids)}")
                     current_ids = set(st.session_state.pdb_ids)
                     current_ids.update(new_ids)
@@ -75,6 +76,7 @@ def render_input_section(pdb_manager: Any):
 
             if selected_example != "Select an example...":
                 if st.button(f"Load {selected_example}"):
+                    st.session_state.input_pdb_text_dashboard = ""
                     st.session_state.pdb_ids = EXAMPLES[selected_example]
                     st.session_state.metadata_fetched = False
                     st.session_state.metadata = {}
