@@ -1,5 +1,5 @@
 import streamlit as st
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from src.frontend.tabs import (
     rmsd,
     sequence,
@@ -34,6 +34,8 @@ def display_results(results: Optional[Dict[str, Any]] = None) -> None:
         results["id"] = results.get("run_id", "latest")
     timestamp = results.get("timestamp", "N/A")
     st.caption(f"Run ID: `{run_id}` | Timestamp: {timestamp}")
+
+    _render_structural_insights(results.get("insights", []))
 
     # Inject CSS for horizontally scrollable tab bar
     st.markdown(
@@ -178,3 +180,32 @@ def render_compact_summary(results: Optional[Dict[str, Any]] = None) -> None:
     ):
         st.session_state.active_tab = "Results"
         st.rerun()
+
+
+def _render_structural_insights(insights: List[str]) -> None:
+    """Helper to render structural insights with formatting."""
+    if not insights:
+        return
+
+    with st.container():
+        st.markdown(
+            """
+            <div style="background-color: rgba(66, 234, 255, 0.05); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(66, 234, 255, 0.2); margin-bottom: 2rem;">
+                <h4 style="margin-top: 0; color: #42eaff;">✨ System Structural Insights</h4>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # Show top 3 by default, others in expander if > 3
+        main_insights = insights[:3]
+        extra_insights = insights[3:]
+
+        for insight in main_insights:
+            st.markdown(f"&nbsp;&nbsp;&nbsp;{insight}")
+
+        if extra_insights:
+            with st.expander("🔍 View more findings..."):
+                for insight in extra_insights:
+                    st.markdown(insight)
+
+        st.markdown("</div>", unsafe_allow_html=True)

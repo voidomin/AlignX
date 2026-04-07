@@ -16,12 +16,6 @@ def render_rmsd_tab(results: Dict[str, Any]) -> None:
     st.subheader("📊 RMSD & Alignment Quality")
     render_learning_card("Summary")
 
-    # Automated Insights
-    if results.get("insights"):
-        with st.expander("🧠 Automated Insights (Smart Findings)", expanded=True):
-            for insight in results["insights"]:
-                st.markdown(insight)
-
     col1, col2 = st.columns([2, 1])
 
     with col1:

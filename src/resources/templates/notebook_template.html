@@ -20,13 +20,8 @@
 
     <!-- 3Dmol JS: Embedded or CDN Fallback -->
     {% if dmol_js %}
-    <script>
-      {
-        {
-          dmol_js | safe;
-        }
-      }
-    </script>
+    <script id="embedded-3dmol" type="text/plain">{{ dmol_js | safe }}</script>
+    <script>eval(document.getElementById('embedded-3dmol').textContent);</script>
     {% else %}
     <script src="https://3dmol.org/build/3Dmol-min.js"></script>
     {% endif %}
@@ -55,6 +50,7 @@
         font-weight: 800;
         background: linear-gradient(135deg, #ff0080, #7b1fa2, #00e5ff);
         -webkit-background-clip: text;
+        background-clip: text;
         -webkit-text-fill-color: transparent;
         font-size: 1.5rem;
       }
@@ -192,6 +188,11 @@
             viewer.zoomTo(); /* set camera */
             viewer.render(); /* render scene */
             viewer.zoom(1.2, 1000); /* slight zoom out animation */
+            
+            // Handle window resize
+            window.addEventListener('resize', () => {
+              viewer.resize();
+            });
           });
         </script>
       </div>

@@ -12,7 +12,7 @@
   --background-dark: #0f1115; /* Almost Black */
   --background-light: #181b21; /* Dark Panel */
   --text-primary: #ffffff;
-  --text-secondary: #a0a0a0;
+  --text-secondary: #c0c0c0; /* Increased contrast for readability */
 
   --glass-border: 1px solid rgba(255, 255, 255, 0.1);
   --neon-glow: 0 0 10px rgba(255, 126, 66, 0.4);
@@ -21,23 +21,32 @@
 
 /* Animations */
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .fade-in {
   animation: fadeIn 0.5s ease-out forwards;
 }
 
-html,
-body,
-[data-testid="stAppViewContainer"] {
+@keyframes terminalPulse {
+  0% { border-color: rgba(66, 234, 255, 0.2); box-shadow: 0 0 10px rgba(66, 234, 255, 0.1); }
+  50% { border-color: rgba(66, 234, 255, 0.6); box-shadow: 0 0 20px rgba(66, 234, 255, 0.3); }
+  100% { border-color: rgba(66, 234, 255, 0.2); box-shadow: 0 0 10px rgba(66, 234, 255, 0.1); }
+}
+
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+@keyframes textGlow {
+  0% { text-shadow: 0 0 5px rgba(66, 234, 255, 0.2); }
+  50% { text-shadow: 0 0 15px rgba(66, 234, 255, 0.6); }
+  100% { text-shadow: 0 0 5px rgba(66, 234, 255, 0.2); }
+}
+
+html, body, [data-testid="stAppViewContainer"] {
   font-family: "Montserrat", sans-serif;
   color: var(--text-primary);
   background-color: var(--background-dark);
@@ -46,16 +55,8 @@ body,
 /* Main Container - Gradient Mesh Background */
 .stApp {
   background:
-    radial-gradient(
-      circle at 10% 20%,
-      rgba(255, 66, 66, 0.05) 0%,
-      transparent 20%
-    ),
-    radial-gradient(
-      circle at 90% 80%,
-      rgba(66, 226, 255, 0.05) 0%,
-      transparent 20%
-    ),
+    radial-gradient(circle at 10% 20%, rgba(255, 66, 66, 0.05) 0%, transparent 20%),
+    radial-gradient(circle at 90% 80%, rgba(66, 226, 255, 0.05) 0%, transparent 20%),
     var(--background-dark);
 }
 
@@ -88,9 +89,7 @@ body,
 }
 
 /* Glassmorphism Cards */
-.streamlit-expanderHeader,
-[data-testid="stMetric"],
-.stTabs [data-baseweb="tab-list"] {
+.streamlit-expanderHeader, [data-testid="stMetric"], .stTabs [data-baseweb="tab-list"] {
   background: rgba(24, 27, 33, 0.7) !important;
   backdrop-filter: blur(10px);
   border: var(--glass-border) !important;
@@ -101,9 +100,7 @@ body,
 [data-testid="stMetric"] {
   border-left: 4px solid var(--primary-color) !important;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 [data-testid="stMetric"]:hover {
@@ -139,13 +136,9 @@ body,
   margin-left: 10px;
 }
 
-/* Buttons - High Impact Neon */
+/* Buttons - Integrated Design System */
 button[kind="primary"] {
-  background: linear-gradient(
-    90deg,
-    var(--primary-color) 0%,
-    #ff5252 100%
-  ) !important;
+  background: linear-gradient(90deg, var(--primary-color) 0%, #ff5252 100%) !important;
   border: none !important;
   color: white !important;
   font-family: "Montserrat", sans-serif !important;
@@ -164,15 +157,19 @@ button[kind="primary"]:hover {
 }
 
 button[kind="secondary"] {
-  background: transparent !important;
-  border: 1px solid rgba(255, 255, 255, 0.2) !important;
-  color: var(--text-secondary) !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  color: #ffffff !important;
   font-family: "Roboto Mono", monospace !important;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.2) !important;
+  transition: all 0.2s ease !important;
 }
 
 button[kind="secondary"]:hover {
   border-color: var(--primary-color) !important;
   color: var(--primary-color) !important;
+  background: rgba(255, 126, 66, 0.1) !important;
+  box-shadow: 0 4px 15px rgba(255, 126, 66, 0.2) !important;
 }
 
 /* Tabs - Futuristic Underline */
@@ -213,7 +210,8 @@ code {
 .console-container {
   max-height: 180px;
   overflow-y: auto;
-  background: #0a0c0f;
+  overflow-x: hidden;
+  background: #0a0c0f !important;
   border: 1px solid rgba(66, 234, 255, 0.2);
   border-radius: 8px;
   padding: 12px 16px;
@@ -221,7 +219,30 @@ code {
   transition: all 0.3s ease;
   scrollbar-width: thin;
   scrollbar-color: var(--accent-cyan) transparent;
-  animation: terminalPulse 3s infinite ease-in-out;
+  animation: terminalPulse 4s infinite ease-in-out;
+  position: relative;
+}
+
+.console-container::before {
+  content: " ";
+  display: block;
+  position: absolute;
+  top: 0; left: 0; bottom: 0; right: 0;
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+  z-index: 2;
+  background-size: 100% 2px, 3px 100%;
+  pointer-events: none;
+}
+
+.console-container::after {
+  content: " ";
+  display: block;
+  position: absolute;
+  top: 0; left: 0; bottom: 0; right: 0;
+  z-index: 2;
+  pointer-events: none;
+  animation: scanline 8s linear infinite;
+  background: linear-gradient(to bottom, transparent 0%, rgba(66, 234, 255, 0.05) 50%, transparent 100%);
 }
 
 .console-container:hover {
@@ -229,14 +250,17 @@ code {
   border-color: rgba(66, 234, 255, 0.5);
 }
 
-.console-container::-webkit-scrollbar {
-  width: 6px;
-}
-
+.console-container::-webkit-scrollbar { width: 6px; }
 .console-container::-webkit-scrollbar-thumb {
   background: var(--accent-cyan);
   border-radius: 10px;
 }
+
+/* System Console Status Indicators */
+.status-idle { color: #888; font-weight: bold; }
+.status-ok { color: #00FF00; font-weight: bold; text-shadow: 0 0 5px rgba(0,255,0,0.5); }
+.status-warn { color: #FFA500; font-weight: bold; text-shadow: 0 0 5px rgba(255,165,0,0.5); }
+.status-error { color: #FF0000; font-weight: bold; text-shadow: 0 0 5px rgba(255,0,0,0.5); }
 
 .console-text {
   font-family: "Roboto Mono", "Courier New", monospace;
@@ -246,4 +270,5 @@ code {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-all;
+  animation: textGlow 2s infinite ease-in-out;
 }

@@ -42,30 +42,19 @@ def render_3d_viewer_tab(results: Dict[str, Any]) -> None:
                 with st.spinner("Rendering 3D structures..."):
                     pdb_path = results["alignment_pdb"]
 
-                # Handle Cluster Filtering
-                visible_chains = None
-                members = st.session_state.get("selected_cluster_members")
-                if members:
-                    # Map protein names/IDs to chain IDs (A, B, C...)
-                    # The order in results['rmsd_df'] index is the chain order
-                    all_members = list(results["rmsd_df"].index)
-                    visible_chains = [
-                        chr(ord("A") + all_members.index(m))
-                        for m in members
-                        if m in all_members
-                    ]
+                    pdb_path = results["alignment_pdb"]
 
-                    st.warning(
-                        f"🎯 Currently viewing Cluster Family ({len(members)} proteins)"
-                    )
+                # Handle Cluster Filtering (Isolation of structural families)
+                visible_chains, members = _get_visible_chains_from_cluster(results)
+                if members:
+                    st.warning(f"🎯 Currently viewing Cluster Family ({len(members)} proteins)")
                     if st.button("🔓 Clear Cluster Filter", use_container_width=True):
                         del st.session_state.selected_cluster_members
                         st.rerun()
 
-                col1, col2 = st.columns(2)
                 hl_chains = st.session_state.get("highlight_chains", {})
 
-                col_styl1, col_styl2 = st.columns([2, 1])
+                col_styl1, col_styl2, col_styl3 = st.columns([2, 2, 1])
                 with col_styl1:
                     style_mode = st.selectbox(
                         "🎨 Visualization Theme",
@@ -78,61 +67,23 @@ def render_3d_viewer_tab(results: Dict[str, Any]) -> None:
                         help="Choose the color scheme for the 3D viewer. 'Neon Pro' is our vibrant signature style.",
                     )
                 with col_styl2:
+                    view_mode = st.radio(
+                        "🔭 View Mode",
+                        options=["Superimposed (All models)", "Side-by-Side (Comparison Grid)"],
+                        horizontal=True,
+                        help="Choose how to see the protein structures. Superimposed shows alignment quality, Grid shows individual shapes.",
+                    )
+                with col_styl3:
                     st.write("")  # Spacer
                     st.write("")  # Spacer
                     if st.button("🔄 Refresh View"):
                         st.rerun()
 
-                with col1:
-                    st.markdown("**Cartoon (Secondary Structure)**")
-                    show_structure_in_streamlit(
-                        pdb_path,
-                        width=400,
-                        height=300,
-                        style="cartoon",
-                        key="view_cartoon",
-                        highlight_residues=hl_chains,
-                        visible_chains=visible_chains,
-                        style_mode=style_mode,
-                    )
-                with col2:
-                    st.markdown("**Sphere (Spacefill)**")
-                    show_structure_in_streamlit(
-                        pdb_path,
-                        width=400,
-                        height=300,
-                        style="sphere",
-                        key="view_sphere",
-                        highlight_residues=hl_chains,
-                        visible_chains=visible_chains,
-                        style_mode=style_mode,
-                    )
-
-                col3, col4 = st.columns(2)
-                with col3:
-                    st.markdown("**Stick (Bonds & Atoms)**")
-                    show_structure_in_streamlit(
-                        pdb_path,
-                        width=400,
-                        height=300,
-                        style="stick",
-                        key="view_stick",
-                        highlight_residues=hl_chains,
-                        visible_chains=visible_chains,
-                        style_mode=style_mode,
-                    )
-                with col4:
-                    st.markdown("**Line/Trace (Backbone)**")
-                    show_structure_in_streamlit(
-                        pdb_path,
-                        width=400,
-                        height=300,
-                        style="line",
-                        key="view_line",
-                        highlight_residues=hl_chains,
-                        visible_chains=visible_chains,
-                        style_mode=style_mode,
-                    )
+                if view_mode == "Superimposed (All models)":
+                    _render_superimposed_view(pdb_path, hl_chains, visible_chains, style_mode)
+                else:
+                    all_members = list(results["rmsd_df"].index)
+                    _render_side_by_side_grid(pdb_path, hl_chains, style_mode, all_members)
 
                 st.caption("""
                 **Controls:**
@@ -157,23 +108,22 @@ def render_3d_viewer_tab(results: Dict[str, Any]) -> None:
                             "`", "\\`"
                         )
 
-                        html_content = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8">
-<title>Structural Superposition — Spin View</title>
-<script src="https://3Dmol.org/build/3Dmol-min.js"></script>
-<style>body{{margin:0;background:#111;display:flex;justify-content:center;align-items:center;height:100vh}}
-#viewer{{width:800px;height:600px;border:2px solid #333;border-radius:8px}}</style>
-</head><body>
-<div id="viewer"></div>
-<script>
-let viewer = $3Dmol.createViewer('viewer', {{backgroundColor:'#111'}});
-let pdbData = `{pdb_escaped}`;
-viewer.addModel(pdbData, 'pdb');
-viewer.setStyle({{}}, {{cartoon:{{color:'spectrum'}}}});
-viewer.zoomTo();
-viewer.spin(true);
-viewer.render();
-</script></body></html>"""
+                        html_parts = [
+                            '<!DOCTYPE html><html><head><meta charset="utf-8">',
+                            '<title>Structural Superposition - Spin View</title>',
+                            '<script src="https://3Dmol.org/build/3Dmol-min.js"></script>',
+                            '<style>body{margin:0;background:#111;overflow:hidden}',
+                            '#viewer{width:100vw;height:100vh}</style>',
+                            '</head><body><div id="viewer"></div><script>',
+                            'let viewer = window["$3Dmol"].createViewer("viewer", {backgroundColor:"#111"});',
+                            'let pdbData = `' + pdb_escaped + '`;',
+                            'viewer.addModel(pdbData, "pdb");',
+                            'viewer.setStyle({}, {cartoon:{color:"spectrum"}});',
+                            'viewer.zoomTo(); viewer.spin(true); viewer.render();',
+                            'window.addEventListener("resize", () => viewer.resize());',
+                            '</script></body></html>'
+                        ]
+                        html_content = "\n".join(html_parts)
 
                         st.download_button(
                             "⬇️ Download HTML",
@@ -209,3 +159,106 @@ viewer.render();
                 st.error(f"Failed to load 3D viewer: {str(e)}")
     else:
         st.warning("3D visualization not available")
+
+
+def _get_visible_chains_from_cluster(results: Dict[str, Any]):
+    """Helper to determine which chains should be visible based on cluster selection."""
+    visible_chains = None
+    members = st.session_state.get("selected_cluster_members")
+    if members:
+        # Map protein names/IDs to chain IDs (A, B, C...)
+        all_members = list(results["rmsd_df"].index)
+        visible_chains = [
+            chr(ord("A") + all_members.index(m))
+            for m in members
+            if m in all_members
+        ]
+    return visible_chains, members
+
+
+def _render_superimposed_view(pdb_path, hl_chains, visible_chains, style_mode):
+    """Render the standard superimposed view with 4 representations."""
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**Cartoon (Secondary Structure)**")
+        show_structure_in_streamlit(
+            pdb_path,
+            width=400,
+            height=300,
+            style="cartoon",
+            key="view_cartoon",
+            highlight_residues=hl_chains,
+            visible_chains=visible_chains,
+            style_mode=style_mode,
+        )
+    with col2:
+        st.markdown("**Sphere (Spacefill)**")
+        show_structure_in_streamlit(
+            pdb_path,
+            width=400,
+            height=300,
+            style="sphere",
+            key="view_sphere",
+            highlight_residues=hl_chains,
+            visible_chains=visible_chains,
+            style_mode=style_mode,
+        )
+
+    col3, col4 = st.columns(2)
+    with col3:
+        st.markdown("**Stick (Bonds & Atoms)**")
+        show_structure_in_streamlit(
+            pdb_path,
+            width=400,
+            height=300,
+            style="stick",
+            key="view_stick",
+            highlight_residues=hl_chains,
+            visible_chains=visible_chains,
+            style_mode=style_mode,
+        )
+    with col4:
+        st.markdown("**Line/Trace (Backbone)**")
+        show_structure_in_streamlit(
+            pdb_path,
+            width=400,
+            height=300,
+            style="line",
+            key="view_line",
+            highlight_residues=hl_chains,
+            visible_chains=visible_chains,
+            style_mode=style_mode,
+        )
+
+
+def _render_side_by_side_grid(pdb_path, hl_chains, style_mode, all_members):
+    """Render each model in its own viewport in a grid layout."""
+    st.markdown("#### 🔬 Structural Comparison Grid")
+    st.caption("Each model from the alignment is displayed in its own viewport below.")
+
+    # Define grid dimensions (e.g. 3 per row)
+    n_cols = 3
+    rows = [all_members[i:i + n_cols] for i in range(0, len(all_members), n_cols)]
+
+    for row_members in rows:
+        cols = st.columns(n_cols)
+        for col_idx, member in enumerate(row_members):
+            with cols[col_idx]:
+                chain_id = chr(ord("A") + all_members.index(member))
+                st.markdown(f"**{member}** (Chain {chain_id})")
+
+                # Highlight for this specific chain
+                this_hl = (
+                    {chain_id: hl_chains.get(chain_id, [])} if hl_chains else {}
+                )
+
+                show_structure_in_streamlit(
+                    pdb_path,
+                    width="100%",
+                    height=250,
+                    style="cartoon",  # Default to cartoon for grid
+                    key=f"grid_{member}",
+                    highlight_residues=this_hl,
+                    visible_chains=[chain_id],  # ISOLATE THIS CHAIN
+                    style_mode=style_mode,
+                )
