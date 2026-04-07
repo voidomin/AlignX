@@ -1,5 +1,8 @@
 import streamlit as st
-import psutil
+try:
+    import psutil
+except ImportError:
+    psutil = None
 import platform
 from pathlib import Path
 from typing import Optional
@@ -11,9 +14,15 @@ def render_console(log_file_path: Optional[Path] = None) -> None:
     Render an immersive, scifi-styled command console with live system metrics.
     """
     # 1. Gather System Metrics (Mission Control Style)
-    cpu_usage = psutil.cpu_percent()
-    memory = psutil.virtual_memory()
-    mem_usage = memory.percent
+    if psutil:
+        try:
+            cpu_usage = psutil.cpu_percent()
+            memory = psutil.virtual_memory()
+            mem_usage = memory.percent
+        except Exception:
+            cpu_usage, mem_usage = "N/A", "N/A"
+    else:
+        cpu_usage, mem_usage = "N/A", "N/A"
     
     # 2. Determine Pipeline Status
     status = "IDLE"
