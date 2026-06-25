@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 import streamlit as st
 from pathlib import Path
@@ -15,6 +16,121 @@ from src.frontend.components.metadata_viewer import render_metadata_viewer
 from src.frontend.components.chain_selector import render_chain_selector
 
 logger = get_logger()
+
+
+# -----------------------------------------------------------------------------
+# User-Friendly Error Translation  (#3)
+# -----------------------------------------------------------------------------
+
+def _friendly_error(msg: str) -> str:
+    """Convert technical pipeline errors into user-friendly messages."""
+    m = msg.lower()
+    if "mustang" in m and ("command" in m or "not found" in m or "wsl" in m):
+        return (
+            "⚠️ **Mustang could not start.** Try clicking **New Analysis** to reset, "
+            "then run again. If the issue persists, check the System Health panel in the sidebar."
+        )
+    if "download" in m or "rcsb" in m or "http" in m or "connection" in m:
+        return (
+            "🌐 **Download failed.** One or more PDB IDs could not be fetched from RCSB. "
+            "Check that each ID is a valid 4-letter PDB code and you have internet access."
+        )
+    if "timeout" in m:
+        return (
+            "⏱️ **Alignment timed out.** Try using fewer structures (≤8) or pick a simpler "
+            "example dataset. Large or highly diverse structures can take much longer."
+        )
+    if "chain" in m:
+        return (
+            "🔗 **Chain error.** One structure may have no usable chain. "
+            "Try ‘Analyze Chains’ before running to inspect the structure manually."
+        )
+    if "alignment.pdb" in m or "did not produce" in m:
+        return (
+            "❌ **Mustang returned no output.** The structures may be too dissimilar to align, "
+            "or a file was corrupted. Try with different PDB IDs."
+        )
+    return f"❌ **Pipeline error:** {msg}\n\n💡 Try resetting the session and running again."
+
+
+# -----------------------------------------------------------------------------
+# Get Started Card  (#1)
+# -----------------------------------------------------------------------------
+
+def _render_get_started_card() -> None:
+    """Show a welcoming empty state with a clear 3-step CTA."""
+    st.markdown(
+        """
+        <div style="
+            margin: 2rem auto;
+            max-width: 680px;
+            background: linear-gradient(135deg, rgba(255,126,66,0.06) 0%, rgba(66,234,255,0.06) 100%);
+            border: 1px solid rgba(255,126,66,0.25);
+            border-radius: 16px;
+            padding: 2.5rem 2rem;
+            text-align: center;
+        ">
+            <div style="font-size:3rem; margin-bottom:0.5rem;">🧬</div>
+            <h2 style="
+                margin: 0 0 0.5rem;
+                font-size: 1.6rem;
+                background: linear-gradient(135deg, #fff 0%, #ff7e42 100%);
+                -webkit-background-clip: text;
+                background-clip: text;
+                -webkit-text-fill-color: transparent;
+            ">Protein Structural Alignment</h2>
+            <p style="color:#c0c0c0; margin: 0 0 2rem; font-size:0.95rem;">
+                Compare protein 3D structures, compute RMSD matrices,<br>
+                and explore evolutionary relationships — in one click.
+            </p>
+            <div style="display:flex; gap:1rem; justify-content:center; flex-wrap:wrap; margin-bottom:1.5rem;">
+                <div style="
+                    background:rgba(255,126,66,0.1); border:1px solid rgba(255,126,66,0.3);
+                    border-radius:10px; padding:0.8rem 1.2rem; min-width:140px;
+                ">
+                    <div style="font-size:1.5rem">ㆱ️</div>
+                    <div style="color:#fff; font-weight:600; font-size:0.85rem; margin-top:4px">Search</div>
+                    <div style="color:#888; font-size:0.75rem">Enter PDB IDs or load an example</div>
+                </div>
+                <div style="
+                    background:rgba(66,234,255,0.07); border:1px solid rgba(66,234,255,0.2);
+                    border-radius:10px; padding:0.8rem 1.2rem; min-width:140px;
+                ">
+                    <div style="font-size:1.5rem">ㆲ️</div>
+                    <div style="color:#fff; font-weight:600; font-size:0.85rem; margin-top:4px">Review</div>
+                    <div style="color:#888; font-size:0.75rem">Check protein metadata &amp; chains</div>
+                </div>
+                <div style="
+                    background:rgba(66,114,255,0.07); border:1px solid rgba(66,114,255,0.2);
+                    border-radius:10px; padding:0.8rem 1.2rem; min-width:140px;
+                ">
+                    <div style="font-size:1.5rem">ㆳ️</div>
+                    <div style="color:#fff; font-weight:600; font-size:0.85rem; margin-top:4px">Align</div>
+                    <div style="color:#888; font-size:0.75rem">Run Mustang &amp; explore results</div>
+                </div>
+            </div>
+            <p style="color:#666; font-size:0.78rem; margin:0;">
+                💡 Try the <strong style="color:#ff7e42">Load Example</strong> tab above for an instant demo
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_protein_pill_bar(pdb_ids: List[str]) -> None:
+    """Render a slim horizontal bar of protein ID pills (#7)."""
+    pill_html = '<div style="display:flex; flex-wrap:wrap; gap:6px; margin:0.5rem 0 1rem;">'
+    for pid in pdb_ids:
+        pill_html += (
+            f'<span style="'
+            f'background:rgba(66,234,255,0.1); border:1px solid rgba(66,234,255,0.3);'
+            f'border-radius:20px; padding:3px 12px; font-size:0.82rem;'
+            f'font-family:monospace; color:#42eaff;">'
+            f'{pid}</span>'
+        )
+    pill_html += "</div>"
+    st.markdown(pill_html, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
 # Cached Wrappers
@@ -142,35 +258,48 @@ def load_run_from_history(run_id: str, is_auto: bool = False) -> None:
 def run_analysis() -> None:
     """
     Run the complete analysis pipeline using the AnalysisCoordinator.
+    Includes live elapsed-time counter and stage banners (#2).
     """
+    n = len(st.session_state.pdb_ids)
+
+    # Stage banner (#2)
+    stage_banner = st.empty()
+    stage_banner.info(f"⚙️ Starting alignment of **{n} structure{'s' if n != 1 else ''}**…")
+
     progress_bar = st.progress(0)
     status_text = st.empty()
+    timer_display = st.empty()
+    start_time = time.time()
 
-    # Progress callback for the coordinator
     def on_progress(fraction: float, message: str, step: int):
         render_progress_stepper(step)
-        status_text.text(message)
+        elapsed = int(time.time() - start_time)
+        mins, secs = divmod(elapsed, 60)
+        timer_str = f"{mins}m {secs:02d}s" if mins else f"{secs}s"
+
+        stage_labels = {
+            1: f"📥 Downloading {n} structure files…",
+            2: "🧹 Cleaning &amp; filtering PDB files…",
+            3: f"⚙️ Running Mustang alignment on {n} structures… (this is the slow step)",
+            4: "📊 Computing RMSD matrix &amp; generating charts…",
+        }
+        stage_banner.info(stage_labels.get(step, message))
+        status_text.caption(message)
         progress_bar.progress(fraction)
+        timer_display.caption(f"⏱ Elapsed: **{timer_str}**")
 
     try:
         # Prepare chain selection mapping
         chain_selection = {}
-
-        # 1. Check for manual individual selections first
         manual_selections = st.session_state.get("manual_chain_selections", {})
-
-        # 2. Apply logic based on mode
         mode = st.session_state.get("chain_selection_mode", "Auto (use first chain)")
 
         for pid in st.session_state.pdb_ids:
-            # Individual selection takes precedence
             if pid in manual_selections:
                 chain_selection[pid] = manual_selections[pid]
             elif mode == "Specify chain ID":
                 chain_selection[pid] = st.session_state.get("selected_chain", "A")
-            # Else: Coordinator will default to first chain (Auto)
 
-        # Execute via coordinator
         success, msg, results = st.session_state.coordinator.run_full_pipeline(
             pdb_ids=st.session_state.pdb_ids,
             progress_callback=on_progress,
@@ -180,33 +309,68 @@ def run_analysis() -> None:
         )
 
         if not success:
-            st.error(f"Analysis Failed: {msg}")
+            stage_banner.empty()
+            timer_display.empty()
+            st.error(_friendly_error(msg))
             return
 
-        # Update session state with results
         st.session_state.results = results
-
-        # UI Polish
+        elapsed = int(time.time() - start_time)
+        mins, secs = divmod(elapsed, 60)
+        timer_str = f"{mins}m {secs:02d}s" if mins else f"{secs}s"
         progress_bar.progress(1.0)
-        status_text.text("✅ Analysis complete!")
-        st.success("Analysis completed successfully!")
+        stage_banner.success(f"✅ Alignment complete in **{timer_str}**!")
+        status_text.empty()
+        timer_display.empty()
         st.balloons()
         st.rerun()
 
     except Exception as e:
-        st.error(f"Execution Error: {str(e)}")
+        stage_banner.empty()
+        timer_display.empty()
+        st.error(_friendly_error(str(e)))
         logger.error(f"Execution Error: {str(e)}", exc_info=True)
 
 
 def render_dashboard() -> None:
     """
-    Render the main Analysis Dashboard (Mission Control).
-
-    Handles both the pre-analysis configuration (ID entry, upload)
-    and the post-analysis result display.
+    Render the main Analysis Dashboard.
+    Handles both pre-analysis configuration and post-analysis result display.
     """
 
-    # 1. Dashboard Header
+    # First-run Guided Mode prompt (#10) — show once, dismissable
+    if st.session_state.get("first_visit", True) and not st.session_state.get("guided_mode"):
+        with st.container():
+            st.markdown(
+                """
+                <div style="
+                    background: rgba(255,126,66,0.08);
+                    border: 1px solid rgba(255,126,66,0.3);
+                    border-radius: 10px;
+                    padding: 0.8rem 1.2rem;
+                    margin-bottom: 0.8rem;
+                    display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+                ">
+                    <span style="font-size:1.4rem;">🎓</span>
+                    <span style="flex:1; color:#e0c8b0; font-size:0.88rem;">
+                        <strong>First time here?</strong> Enable <strong>Guided Mode</strong>
+                        for explanations on every tab.
+                    </span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            gc1, gc2 = st.columns([2, 1])
+            with gc1:
+                if st.button("🎓 Enable Guided Mode", use_container_width=True):
+                    st.session_state.guided_mode = True
+                    st.session_state.first_visit = False
+                    st.rerun()
+            with gc2:
+                if st.button("Dismiss", use_container_width=True):
+                    st.session_state.first_visit = False
+                    st.rerun()
+
     st.caption(
         "Perform rigorous structural alignment, RMSD calculations, and phylogenetic analysis."
     )
@@ -214,36 +378,26 @@ def render_dashboard() -> None:
     results = st.session_state.get("results")
     pdb_ids = st.session_state.get("pdb_ids", [])
 
-    # Top Inputs FIRST — always visible before analysis
+    # Always-visible input section when no results yet
     if not results:
         render_input_section(st.session_state.pdb_manager)
         st.divider()
 
-    # Show Hero Dashboard toggle if nothing is selected yet
-    if not results and not pdb_ids:
-        from src.frontend import home
-
-        if st.toggle("📊 Show Mission Control Dashboard", value=False):
-            home.render_hero_section()
-
-    # 2. Status & Metrics Bar
-    st.divider()
-    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+    # Slim metrics row — 3 columns, no destructive buttons here (#4)
+    col_m1, col_m2, col_m3 = st.columns(3)
     with col_m1:
-        st.metric("Proteins Loaded", len(st.session_state.pdb_ids))
+        st.metric("Proteins Loaded", len(pdb_ids))
     with col_m2:
-        status = "Analysis Complete" if st.session_state.results else "Ready to Run"
-        if not st.session_state.results and not st.session_state.pdb_ids:
+        status = "Analysis Complete" if results else "Ready to Run"
+        if not results and not pdb_ids:
             status = "Waiting for Input"
         st.metric("System Status", status)
     with col_m3:
-        if st.session_state.results:
+        if results:
             try:
-                df = st.session_state.results.get("rmsd_df")
+                import numpy as np
+                df = results.get("rmsd_df")
                 if df is not None:
-                    # Calculate avg RMSD from upper triangle
-                    import numpy as np
-
                     vals = df.values
                     upper_tri = vals[np.triu_indices_from(vals, k=1)]
                     avg_rmsd = np.mean(upper_tri) if len(upper_tri) > 0 else 0
@@ -254,115 +408,44 @@ def render_dashboard() -> None:
                 st.metric("Alignment", "Done")
         else:
             st.metric("Mode", "Analysis")
-    with col_m4:
-        if st.button("⏪ RESET MISSION", type="secondary", use_container_width=True):
-            st.session_state.pdb_ids = []
-            st.session_state.results = None
-            st.session_state.metadata = {}
-            st.session_state.metadata_fetched = False
-            st.session_state.highlighted_residues = []
-            st.session_state.highlight_protein = "All Proteins"
-            st.session_state.residue_selections = {}
-            st.session_state.highlight_chains = {}
-            st.session_state.insights = None
-            st.session_state.insights_run_id = None
-            if "chain_info" in st.session_state:
-                del st.session_state.chain_info
 
-            # Explicit Deep Cache Bust
-            st.cache_data.clear()
-            st.rerun()
-
-        if st.button(
-            "🧹 DEEP CLEAN CACHE",
-            type="secondary",
-            use_container_width=True,
-            help="Wipe your session's downloaded/cleaned PDB files and reset everything.",
-        ):
-            with st.spinner("Wiping session data..."):
-                # 1. Delete THIS SESSION's structural files from disk
-                session_id = st.session_state.get("session_id")
-            if session_id:
-                session_dirs = [
-                    Path("data/raw") / session_id,
-                    Path("data/cleaned") / session_id,
-                ]
-            else:
-                # Fallback: legacy mode (no session isolation)
-                session_dirs = [Path("data/raw"), Path("data/cleaned")]
-
-            for data_dir in session_dirs:
-                if data_dir.exists():
-                    import shutil
-                    shutil.rmtree(data_dir, ignore_errors=True)
-                    logger.info(f"Deep clean: wiped {data_dir}")
-
-            # 2. Clear ALL caches
-            st.cache_data.clear()
-            try:
-                st.cache_resource.clear()
-            except Exception as exc:
-                logger.debug(f"Failed to clear resource cache: {exc}")
-
-            # 3. Full session state reset
-            st.session_state.pdb_ids = []
-            st.session_state.results = None
-            st.session_state.metadata = {}
-            st.session_state.metadata_fetched = False
-            st.session_state.highlighted_residues = []
-            st.session_state.highlight_protein = "All Proteins"
-            st.session_state.residue_selections = {}
-            st.session_state.highlight_chains = {}
-            st.session_state.insights = None
-            st.session_state.insights_run_id = None
-            if "chain_info" in st.session_state:
-                del st.session_state.chain_info
-
-            st.toast("🧹 Deep clean complete! All caches and files wiped.", icon="✅")
-            st.rerun()
-
-    # 3. Main Content Area
     # CASE A: Results Exist -> Show Results
     if results:
         display_results()
 
-    # CASE B: No Results -> Show Pre-Analysis Tools
-    elif st.session_state.pdb_ids:
-        st.subheader(f"Selected: {len(st.session_state.pdb_ids)} Proteins")
+    # CASE B: IDs loaded, no results -> Show pre-analysis tools (#6, #7)
+    elif pdb_ids:
+        st.subheader(f"Selected: {len(pdb_ids)} Proteins")
+        _render_protein_pill_bar(pdb_ids)
 
-        # Metadata Expander
-        with st.expander("📋 Protein Metadata", expanded=True):
-            if not st.session_state.metadata_fetched:
-                with st.spinner("Fetching protein metadata..."):
-                    try:
-                        metadata = cached_fetch_metadata(
-                            st.session_state.pdb_manager, st.session_state.pdb_ids
-                        )
-                        st.session_state.metadata = metadata
-                        st.session_state.metadata_fetched = True
-                    except Exception as e:
-                        st.error(f"Metadata fetch failed: {str(e)}")
-                        st.info(
-                            "💡 Try clicking **🧹 DEEP CLEAN CACHE** in the top-right metrics bar to resolve this."
-                        )
-
-            render_metadata_viewer(st.session_state.pdb_ids, st.session_state.metadata)
-
-        # Action Buttons
-        col1, col2 = st.columns([1, 1])
-        with col1:
+        # Lazy metadata (#7) — only show on demand
+        col_a, col_b, col_c = st.columns([2, 1, 1])
+        with col_a:
+            if st.button(
+                "▶️ Run Analysis",
+                type="primary",
+                use_container_width=True,
+                help=f"Align {len(pdb_ids)} structures using Mustang",
+            ):
+                run_analysis()
+        with col_b:
+            label = "Hide Info" if st.session_state.get("show_metadata") else "📋 Show Protein Info"
+            if st.button(label, use_container_width=True):
+                st.session_state.show_metadata = not st.session_state.get("show_metadata", False)
+                st.rerun()
+        with col_c:
             if st.button(
                 "🔍 Analyze Chains",
                 help="Check chain information before running alignment",
                 use_container_width=True,
             ):
-                with st.spinner("Analyzing structures..."):
+                with st.spinner("Analyzing structures…"):
                     download_results = cached_batch_download(
-                        st.session_state.pdb_manager, st.session_state.pdb_ids
+                        st.session_state.pdb_manager, pdb_ids
                     )
                     chain_info = {}
-                    for pdb_id, (success, msg, path) in download_results.items():
-                        if success and path:
+                    for pdb_id, (ok, msg, path) in download_results.items():
+                        if ok and path:
                             try:
                                 info = cached_analyze_structure(
                                     st.session_state.pdb_manager, path
@@ -372,14 +455,29 @@ def render_dashboard() -> None:
                                 st.error(f"Error analyzing {pdb_id}: {str(e)}")
                     st.session_state.chain_info = chain_info
 
-        with col2:
-            if st.button("▶️ Run Analysis", type="primary", use_container_width=True):
-                run_analysis()
+        # Lazy metadata expander (#7)
+        if st.session_state.get("show_metadata", False):
+            with st.expander("📋 Protein Metadata", expanded=True):
+                if not st.session_state.metadata_fetched:
+                    with st.spinner("Fetching protein metadata…"):
+                        try:
+                            metadata = cached_fetch_metadata(
+                                st.session_state.pdb_manager, pdb_ids
+                            )
+                            st.session_state.metadata = metadata
+                            st.session_state.metadata_fetched = True
+                        except Exception as e:
+                            st.error(f"Metadata fetch failed: {str(e)}")
+                render_metadata_viewer(pdb_ids, st.session_state.metadata)
 
-        # Chain Info Display
         if "chain_info" in st.session_state:
             render_chain_selector(st.session_state.chain_info)
 
-    # 4. Console
+    # CASE C: Nothing entered -> welcoming empty state (#1)
+    else:
+        _render_get_started_card()
+
+    # Console
     log_file = st.session_state.get("log_file")
     render_console(Path(log_file) if log_file else None)
+

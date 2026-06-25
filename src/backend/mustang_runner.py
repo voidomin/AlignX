@@ -196,6 +196,11 @@ class MustangRunner:
             if res.returncode != 127:
                 self.use_wsl = True
                 self.mustang_path = bin_path
+                # Immediately set the WSL-format executable path so the runner
+                # always uses the full path, even if called before
+                # _update_executable_from_check().
+                self.executable = wsl_str
+                logger.info(f"Compiled Mustang verified at WSL path: {wsl_str}")
                 return True, "Compiled Mustang found (WSL)"
         except Exception as e:
             logger.debug(f"WSL compiled binary check failed: {e}")
@@ -243,7 +248,9 @@ class MustangRunner:
 
         # 3. Local/Compiled check
         found, msg = self._check_mustang()
-        if found: return True, msg
+        if found:
+            self._update_executable_from_check()
+            return True, msg
 
         # 4. Compilation fallback
         if self._compile_from_source():

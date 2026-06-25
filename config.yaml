@@ -17,8 +17,8 @@ filtering:
   remove_water: true
   remove_ligands: false
 mustang:
-  backend: auto
-  executable_path: mustang
+  backend: wsl
+  executable_path: null
   timeout: 600
 phylip:
   executable: neighbor
@@ -35,7 +35,7 @@ output:
   base_dir: results
   keep_intermediates: true
   formats:
-    - html
+  - html
 visualization:
   heatmap_colormap: viridis
   tree_format: rectangular

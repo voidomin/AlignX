@@ -5,6 +5,41 @@ from src.frontend.tabs.common import render_learning_card, render_help_expander
 from typing import Dict, Any
 
 
+def get_conservation_color(val: float) -> str:
+    # 0.0 (variable) -> Cool Blue/Gray: #4a607a
+    # 0.5 (partially conserved) -> Light Yellow/Green: #e0d870
+    # 1.0 (fully conserved) -> Sunset Orange/Red: #ff7e42
+    if val < 0.5:
+        t = val / 0.5
+        r = int(74 + t * (224 - 74))
+        g = int(96 + t * (216 - 96))
+        b = int(122 + t * (112 - 122))
+    else:
+        t = (val - 0.5) / 0.5
+        r = int(224 + t * (255 - 224))
+        g = int(216 + t * (126 - 216))
+        b = int(112 + t * (66 - 112))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def get_rmsf_color(val: float, max_val: float = 5.0) -> str:
+    norm = min(1.0, max(0.0, val / max_val))
+    # 0.0 (low RMSF/rigid) -> Cool Cyan/Blue: #42eaff
+    # 0.5 (medium RMSF) -> Yellow: #e0d870
+    # 1.0 (high RMSF/flexible) -> Hot Pink/Red: #ff0055
+    if norm < 0.5:
+        t = norm / 0.5
+        r = int(66 + t * (224 - 66))
+        g = int(234 + t * (216 - 234))
+        b = int(255 + t * (112 - 255))
+    else:
+        t = (norm - 0.5) / 0.5
+        r = int(224 + t * (255 - 224))
+        g = int(216 + t * (0 - 216))
+        b = int(112 + t * (85 - 112))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
 def render_3d_viewer_tab(results: Dict[str, Any]) -> None:
     """
     Render the 3D Visualization tab.
@@ -42,8 +77,6 @@ def render_3d_viewer_tab(results: Dict[str, Any]) -> None:
                 with st.spinner("Rendering 3D structures..."):
                     pdb_path = results["alignment_pdb"]
 
-                    pdb_path = results["alignment_pdb"]
-
                 # Handle Cluster Filtering (Isolation of structural families)
                 visible_chains, members = _get_visible_chains_from_cluster(results)
                 if members:
@@ -62,6 +95,8 @@ def render_3d_viewer_tab(results: Dict[str, Any]) -> None:
                             "Neon Pro",
                             "Scientific Spectral",
                             "AlphaFold Confidence",
+                            "Conservation Density",
+                            "RMSF Flexibility",
                         ],
                         index=0,
                         help="Choose the color scheme for the 3D viewer. 'Neon Pro' is our vibrant signature style.",
@@ -79,11 +114,47 @@ def render_3d_viewer_tab(results: Dict[str, Any]) -> None:
                     if st.button("🔄 Refresh View"):
                         st.rerun()
 
+                # Generate custom residue colors if theme selected
+                residue_colors = None
+                if style_mode == "Conservation Density":
+                    sequences = results.get("sequences", {})
+                    conservation = results.get("conservation", [])
+                    if sequences and conservation:
+                        residue_colors = {}
+                        for p_idx, (name, seq) in enumerate(sequences.items()):
+                            chain_id = chr(ord("A") + p_idx)
+                            residue_colors[chain_id] = {}
+                            current_res = 1
+                            for i, char in enumerate(seq):
+                                if char != "-":
+                                    score = conservation[i] if i < len(conservation) else 0.0
+                                    color = get_conservation_color(score)
+                                    residue_colors[chain_id][current_res] = color
+                                    current_res += 1
+                elif style_mode == "RMSF Flexibility":
+                    sequences = results.get("sequences", {})
+                    rmsf_values = results.get("rmsf_values", [])
+                    if sequences and rmsf_values:
+                        residue_colors = {}
+                        max_rmsf = max(rmsf_values) if rmsf_values else 5.0
+                        if max_rmsf == 0:
+                            max_rmsf = 1.0
+                        for p_idx, (name, seq) in enumerate(sequences.items()):
+                            chain_id = chr(ord("A") + p_idx)
+                            residue_colors[chain_id] = {}
+                            current_res = 1
+                            for i, char in enumerate(seq):
+                                if char != "-":
+                                    score = rmsf_values[i] if i < len(rmsf_values) else 0.0
+                                    color = get_rmsf_color(score, max_rmsf)
+                                    residue_colors[chain_id][current_res] = color
+                                    current_res += 1
+
                 if view_mode == "Superimposed (All models)":
-                    _render_superimposed_view(pdb_path, hl_chains, visible_chains, style_mode)
+                    _render_superimposed_view(pdb_path, hl_chains, visible_chains, style_mode, residue_colors)
                 else:
                     all_members = list(results["rmsd_df"].index)
-                    _render_side_by_side_grid(pdb_path, hl_chains, style_mode, all_members)
+                    _render_side_by_side_grid(pdb_path, hl_chains, style_mode, all_members, residue_colors)
 
                 st.caption("""
                 **Controls:**
@@ -176,7 +247,7 @@ def _get_visible_chains_from_cluster(results: Dict[str, Any]):
     return visible_chains, members
 
 
-def _render_superimposed_view(pdb_path, hl_chains, visible_chains, style_mode):
+def _render_superimposed_view(pdb_path, hl_chains, visible_chains, style_mode, residue_colors=None):
     """Render the standard superimposed view with 4 representations."""
     col1, col2 = st.columns(2)
     with col1:
@@ -190,6 +261,7 @@ def _render_superimposed_view(pdb_path, hl_chains, visible_chains, style_mode):
             highlight_residues=hl_chains,
             visible_chains=visible_chains,
             style_mode=style_mode,
+            residue_colors=residue_colors,
         )
     with col2:
         st.markdown("**Sphere (Spacefill)**")
@@ -202,6 +274,7 @@ def _render_superimposed_view(pdb_path, hl_chains, visible_chains, style_mode):
             highlight_residues=hl_chains,
             visible_chains=visible_chains,
             style_mode=style_mode,
+            residue_colors=residue_colors,
         )
 
     col3, col4 = st.columns(2)
@@ -216,6 +289,7 @@ def _render_superimposed_view(pdb_path, hl_chains, visible_chains, style_mode):
             highlight_residues=hl_chains,
             visible_chains=visible_chains,
             style_mode=style_mode,
+            residue_colors=residue_colors,
         )
     with col4:
         st.markdown("**Line/Trace (Backbone)**")
@@ -228,10 +302,11 @@ def _render_superimposed_view(pdb_path, hl_chains, visible_chains, style_mode):
             highlight_residues=hl_chains,
             visible_chains=visible_chains,
             style_mode=style_mode,
+            residue_colors=residue_colors,
         )
 
 
-def _render_side_by_side_grid(pdb_path, hl_chains, style_mode, all_members):
+def _render_side_by_side_grid(pdb_path, hl_chains, style_mode, all_members, residue_colors=None):
     """Render each model in its own viewport in a grid layout."""
     st.markdown("#### 🔬 Structural Comparison Grid")
     st.caption("Each model from the alignment is displayed in its own viewport below.")
@@ -252,6 +327,11 @@ def _render_side_by_side_grid(pdb_path, hl_chains, style_mode, all_members):
                     {chain_id: hl_chains.get(chain_id, [])} if hl_chains else {}
                 )
 
+                # Isolate this specific chain's residue colors if available
+                this_res_colors = None
+                if residue_colors and chain_id in residue_colors:
+                    this_res_colors = {chain_id: residue_colors[chain_id]}
+
                 show_structure_in_streamlit(
                     pdb_path,
                     width="100%",
@@ -261,4 +341,5 @@ def _render_side_by_side_grid(pdb_path, hl_chains, style_mode, all_members):
                     highlight_residues=this_hl,
                     visible_chains=[chain_id],  # ISOLATE THIS CHAIN
                     style_mode=style_mode,
+                    residue_colors=this_res_colors,
                 )

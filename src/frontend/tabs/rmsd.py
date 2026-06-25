@@ -18,17 +18,17 @@ def render_rmsd_tab(results: Dict[str, Any]) -> None:
 
     col1, col2 = st.columns([2, 1])
 
-    with col1:
-        st.subheader("RMSD Heatmap")
-        render_help_expander("rmsd")
-
-        if results.get("heatmap_fig"):
-            st.plotly_chart(results["heatmap_fig"], use_container_width=True)
-        elif results["heatmap_path"].exists():
-            st.image(str(results["heatmap_path"]), use_container_width=True)
-
     with col2:
         st.subheader("Statistics")
+        
+        # Dynamic Colormap Picker
+        selected_colormap = st.selectbox(
+            "🎨 Heatmap Color Scale",
+            options=["RdYlBu_r", "Viridis", "Plasma", "Sunset_r", "Blues_r", "Hot_r", "Greens_r"],
+            index=0,
+            help="Select the color gradient scheme for the RMSD Heatmap."
+        )
+
         stats = results["stats"]
         st.metric("Mean RMSD", f"{stats['mean_rmsd']:.2f} Å")
 
@@ -53,6 +53,17 @@ def render_rmsd_tab(results: Dict[str, Any]) -> None:
         st.metric("Max RMSD", f"{stats['max_rmsd']:.2f} Å")
         st.metric("Std Dev", f"{stats['std_rmsd']:.2f} Å")
 
+    with col1:
+        st.subheader("RMSD Heatmap")
+        render_help_expander("rmsd")
+
+        if results.get("heatmap_fig"):
+            fig = results["heatmap_fig"]
+            fig.update_traces(colorscale=selected_colormap)
+            st.plotly_chart(fig, use_container_width=True)
+        elif results["heatmap_path"].exists():
+            st.image(str(results["heatmap_path"]), use_container_width=True)
+
     # Per-Protein Quality Table
     if results.get("quality_metrics"):
         st.subheader("🧬 Per-Protein Structural Quality")
@@ -73,10 +84,18 @@ def render_rmsd_tab(results: Dict[str, Any]) -> None:
         st.table(q_df.style.format("{:.3f}").applymap(color_quality))
 
     st.subheader("RMSD Matrix")
-    colormap = st.session_state.config.get("visualization", {}).get(
-        "heatmap_colormap", "RdYlBu_r"
-    )
-    st.dataframe(results["rmsd_df"].style.background_gradient(cmap=colormap))
+    # Map Plotly colorscales to Matplotlib/Pandas-compatible names
+    cmap_mapping = {
+        "RdYlBu_r": "RdYlBu_r",
+        "Viridis": "viridis",
+        "Plasma": "plasma",
+        "Sunset_r": "Sunset_r",
+        "Blues_r": "Blues",
+        "Hot_r": "hot",
+        "Greens_r": "Greens"
+    }
+    pandas_cmap = cmap_mapping.get(selected_colormap, "RdYlBu_r")
+    st.dataframe(results["rmsd_df"].style.background_gradient(cmap=pandas_cmap))
 
     st.divider()
     st.subheader("Residue-Level Flexibility (RMSF)")

@@ -64,18 +64,20 @@ class InsightsGenerator:
                     f"ℹ️ **Moderate Diversity**: Structures show expected variation (Avg: {avg_rmsd:.2f} Å)."
                 )
 
-            # Best Match
-            min_mask_df = rmsd_df.copy()
-            np.fill_diagonal(min_mask_df.values, np.inf)
+            # Best Match — mask diagonal with inf using a writable copy
+            min_arr = rmsd_df.to_numpy(dtype=float, copy=True)
+            np.fill_diagonal(min_arr, np.inf)
+            min_mask_df = rmsd_df.__class__(min_arr, index=rmsd_df.index, columns=rmsd_df.columns)
             min_val = min_mask_df.min().min()
             min_pair = min_mask_df.stack().idxmin()
             insights.append(
                 f"🏆 **Best Match**: `{min_pair[0]}` and `{min_pair[1]}` are nearly identical ({min_val:.2f} Å)."
             )
 
-            # Worst Match
-            max_mask_df = rmsd_df.copy()
-            np.fill_diagonal(max_mask_df.values, -1.0)
+            # Worst Match — mask diagonal with -1 using a writable copy
+            max_arr = rmsd_df.to_numpy(dtype=float, copy=True)
+            np.fill_diagonal(max_arr, -1.0)
+            max_mask_df = rmsd_df.__class__(max_arr, index=rmsd_df.index, columns=rmsd_df.columns)
             max_val = max_mask_df.max().max()
             max_pair = max_mask_df.stack().idxmax()
             if max_val > 5.0:

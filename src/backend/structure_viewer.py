@@ -19,6 +19,7 @@ def render_3d_structure(
     visible_chains=None,
     color_by_plddt: bool = False,
     style_mode: str = "Neon Pro",
+    residue_colors=None,
 ) -> Optional[str]:
     """
     Render 3D structure using py3Dmol in Streamlit.
@@ -33,6 +34,9 @@ def render_3d_structure(
                            or list of residue nums for global highlights (backward compat),
                            or None/empty for no highlights
         visible_chains: List of chain IDs to show. If None, show all.
+        color_by_plddt: Whether to color by pLDDT (AlphaFold confidence)
+        style_mode: 'Neon Pro', 'Spectral', or 'AlphaFold'
+        residue_colors: Dict of {chain: {resi: hex_color}} for custom colors
 
     Returns:
         HTML string for embedding or None if failed
@@ -56,6 +60,7 @@ def render_3d_structure(
 
         highlights_json = json.dumps(highlight_residues)
         has_highlights = len(highlight_residues) > 0
+        residue_colors_json = json.dumps(residue_colors if residue_colors else {})
 
         # Create py3Dmol HTML viewer
         html = f"""
@@ -132,6 +137,30 @@ def render_3d_structure(
                         viewer.setStyle(sel, {{stick: {{radius: 0.2, colorscheme: 'Jmol', opacity: opacity}}}});
                     }} else if ("{style}" === "line") {{
                         viewer.setStyle(sel, {{line: {{linewidth: 2, color: color, opacity: opacity}}}});
+                    }}
+                }}
+                
+                // Apply custom residue-level colors if provided
+                let resColors = {residue_colors_json};
+                let hasResColors = Object.keys(resColors).length > 0;
+                
+                if (hasResColors) {{
+                    let opacity = hasHighlights ? 0.6 : 1.0;
+                    for (let chain in resColors) {{
+                        for (let resi in resColors[chain]) {{
+                            let rColor = resColors[chain][resi];
+                            let sel = {{chain: chain, resi: parseInt(resi)}};
+                            
+                            if ("{style}" === "cartoon") {{
+                                viewer.setStyle(sel, {{cartoon: {{color: rColor, opacity: opacity}}}});
+                            }} else if ("{style}" === "sphere") {{
+                                viewer.setStyle(sel, {{sphere: {{scale: 0.3, color: rColor, opacity: opacity}}}});
+                            }} else if ("{style}" === "stick") {{
+                                viewer.setStyle(sel, {{stick: {{radius: 0.2, color: rColor, opacity: opacity}}}});
+                            }} else if ("{style}" === "line") {{
+                                viewer.setStyle(sel, {{line: {{linewidth: 2, color: rColor, opacity: opacity}}}});
+                            }}
+                        }}
                     }}
                 }}
                 
@@ -302,6 +331,7 @@ def show_structure_in_streamlit(
     visible_chains=None,
     color_by_plddt: bool = False,
     style_mode: str = "Neon Pro",
+    residue_colors=None,
 ):
     """
     Display 3D structure in Streamlit app.
@@ -316,6 +346,7 @@ def show_structure_in_streamlit(
         visible_chains: List of chain IDs to show or None
         color_by_plddt: Whether to color by pLDDT (AlphaFold confidence)
         style_mode: 'Neon Pro', 'Spectral', or 'AlphaFold'
+        residue_colors: Dict of {chain: {resi: hex_color}} for custom coloring
     """
     html = render_3d_structure(
         pdb_file,
@@ -327,6 +358,7 @@ def show_structure_in_streamlit(
         visible_chains,
         color_by_plddt,
         style_mode,
+        residue_colors,
     )
     if html:
         components.html(html, height=height, scrolling=False)

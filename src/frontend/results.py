@@ -1,4 +1,4 @@
-import streamlit as st
+﻿import streamlit as st
 from typing import Optional, Dict, Any, List
 from src.frontend.tabs import (
     rmsd,
@@ -26,14 +26,12 @@ def display_results(results: Optional[Dict[str, Any]] = None) -> None:
         st.warning("No analysis results found. Please run the analysis first.")
         return
 
-    st.success(f"### Analysis Results: {results.get('name', 'Latest Run')}")
-    run_id = results.get("id", "N/A")
-
     # Ensure id is present in the dictionary for downstream tabs
     if "id" not in results:
         results["id"] = results.get("run_id", "latest")
-    timestamp = results.get("timestamp", "N/A")
-    st.caption(f"Run ID: `{run_id}` | Timestamp: {timestamp}")
+
+    # --- Results Summary Banner (#8) ---
+    _render_results_banner(results)
 
     _render_structural_insights(results.get("insights", []))
 
@@ -176,10 +174,82 @@ def render_compact_summary(results: Optional[Dict[str, Any]] = None) -> None:
         st.metric("Seq Length", results.get("sequence_length", "N/A"))
 
     if st.button(
-        "👁️ View Full Detailed Analysis", type="primary", use_container_width=True
+        "👁️ View Full Detailed Analysis", type="primary", 
     ):
         st.session_state.active_tab = "Results"
         st.rerun()
+
+
+def _render_results_banner(results: Dict[str, Any]) -> None:
+    """Render a rich summary banner at the top of the results view (#8)."""
+    import numpy as np
+
+    n_proteins = len(results.get("pdb_ids", []))
+    run_name = results.get("name", "Latest Run")
+    timestamp = results.get("timestamp", "")[:10]
+
+    # Compute avg RMSD + homogeneity label
+    avg_rmsd = None
+    homogeneity = ""
+    homogeneity_color = "#888"
+    try:
+        df = results.get("rmsd_df")
+        if df is not None:
+            vals = df.values
+            upper = vals[np.triu_indices_from(vals, k=1)]
+            if len(upper) > 0:
+                avg_rmsd = float(np.mean(upper))
+                if avg_rmsd < 1.0:
+                    homogeneity, homogeneity_color = "Very High Homogeneity", "#00c864"
+                elif avg_rmsd < 2.0:
+                    homogeneity, homogeneity_color = "High Homogeneity", "#42eaff"
+                elif avg_rmsd < 5.0:
+                    homogeneity, homogeneity_color = "Moderate Diversity", "#ffb343"
+                else:
+                    homogeneity, homogeneity_color = "High Diversity", "#ff6060"
+    except Exception:
+        pass
+
+    rmsd_str = f"{avg_rmsd:.2f} Å" if avg_rmsd is not None else "—"
+
+    st.markdown(
+        f"""
+        <div style="
+            background: linear-gradient(135deg, rgba(0,200,100,0.06) 0%, rgba(66,234,255,0.06) 100%);
+            border: 1px solid rgba(0,200,100,0.25);
+            border-radius: 14px;
+            padding: 1.2rem 1.5rem;
+            margin-bottom: 1.2rem;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 1.5rem;
+        ">
+            <div style="flex:1; min-width:180px;">
+                <div style="font-size:0.72rem; color:#888; text-transform:uppercase; letter-spacing:1px;">Run</div>
+                <div style="font-weight:700; font-size:1rem; color:#fff;">{run_name}</div>
+                <div style="font-size:0.75rem; color:#555;">{timestamp}</div>
+            </div>
+            <div style="text-align:center; min-width:100px;">
+                <div style="font-size:0.72rem; color:#888; text-transform:uppercase; letter-spacing:1px;">Proteins</div>
+                <div style="font-weight:800; font-size:1.8rem; color:#ff7e42;">{n_proteins}</div>
+            </div>
+            <div style="text-align:center; min-width:100px;">
+                <div style="font-size:0.72rem; color:#888; text-transform:uppercase; letter-spacing:1px;">Avg RMSD</div>
+                <div style="font-weight:800; font-size:1.8rem; color:#42eaff;">{rmsd_str}</div>
+            </div>
+            <div style="text-align:center; min-width:140px;">
+                <div style="font-size:0.72rem; color:#888; text-transform:uppercase; letter-spacing:1px;">Structural Similarity</div>
+                <div style="font-weight:700; font-size:0.95rem; color:{homogeneity_color};">{"● " + homogeneity if homogeneity else "—"}</div>
+            </div>
+        </div>
+        <p style="color:#666; font-size:0.78rem; margin:-0.5rem 0 1rem;">
+            💡 <strong style="color:#aaa;">Suggested order:</strong>
+            📊 Summary → 🧬 Sequences → 🌳 Tree → 🔍 Clusters → 🔮 3D Viewer
+        </p>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _render_structural_insights(insights: List[str]) -> None:
@@ -209,3 +279,4 @@ def _render_structural_insights(insights: List[str]) -> None:
                     st.markdown(insight)
 
         st.markdown("</div>", unsafe_allow_html=True)
+

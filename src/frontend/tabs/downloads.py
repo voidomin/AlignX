@@ -132,51 +132,56 @@ def render_downloads_tab(results: Dict[str, Any]) -> None:
         "Download all results, alignments, and the lab notebook in a single compressed ZIP file."
     )
 
-    if st.button("🎁 Prepare All-in-One ZIP", type="primary", use_container_width=True):
-        with st.spinner("Bundling files..."):
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(
-                zip_buffer, "a", zipfile.ZIP_DEFLATED, False
-            ) as zip_file:
-                # Add PDB alignment
-                if results.get("alignment_pdb") and results["alignment_pdb"].exists():
-                    zip_file.write(
-                        results["alignment_pdb"], arcname=f"alignment_{run_id}.pdb"
-                    )
+    zip_key = f"zip_buffer_{run_id}"
+    if zip_key not in st.session_state:
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(
+            zip_buffer, "a", zipfile.ZIP_DEFLATED, False
+        ) as zip_file:
+            # Add PDB alignment
+            if results.get("alignment_pdb") and results["alignment_pdb"].exists():
+                zip_file.write(
+                    results["alignment_pdb"], arcname=f"alignment_{run_id}.pdb"
+                )
 
-                # Add AFasta
-                if (
-                    results.get("alignment_afasta")
-                    and results["alignment_afasta"].exists()
-                ):
-                    zip_file.write(
-                        results["alignment_afasta"],
-                        arcname=f"alignment_{run_id}.afasta",
-                    )
+            # Add AFasta
+            if (
+                results.get("alignment_afasta")
+                and results["alignment_afasta"].exists()
+            ):
+                zip_file.write(
+                    results["alignment_afasta"],
+                    arcname=f"alignment_{run_id}.afasta",
+                )
 
-                # Add RMSD CSV
-                if results.get("rmsd_df") is not None:
-                    csv_data = results["rmsd_df"].to_csv()
-                    zip_file.writestr(f"rmsd_matrix_{run_id}.csv", csv_data)
+            # Add RMSD CSV
+            if results.get("rmsd_df") is not None:
+                csv_data = results["rmsd_df"].to_csv()
+                zip_file.writestr(f"rmsd_matrix_{run_id}.csv", csv_data)
 
-                # Add Heatmap
-                if results.get("heatmap_path") and results["heatmap_path"].exists():
-                    zip_file.write(
-                        results["heatmap_path"], arcname=f"rmsd_heatmap_{run_id}.png"
-                    )
+            # Add Heatmap
+            if results.get("heatmap_path") and results["heatmap_path"].exists():
+                zip_file.write(
+                    results["heatmap_path"], arcname=f"rmsd_heatmap_{run_id}.png"
+                )
 
-                # Add Lab Notebook (if it exists or try to export)
+            # Add Lab Notebook (if it exists or try to export)
+            try:
                 from src.backend.notebook_exporter import NotebookExporter
 
                 exporter = NotebookExporter()
                 nb_path = exporter.export(results)  # Generates if needed
                 if nb_path and nb_path.exists():
                     zip_file.write(nb_path, arcname=f"lab_notebook_{run_id}.html")
+            except Exception:
+                pass
+        st.session_state[zip_key] = zip_buffer.getvalue()
 
-            st.download_button(
-                label="📥 Download Everything (.zip)",
-                data=zip_buffer.getvalue(),
-                file_name=f"Mustang_Full_Results_{run_id}.zip",
-                mime="application/zip",
-                use_container_width=True,
-            )
+    st.download_button(
+        label="📥 Download Everything (.zip)",
+        data=st.session_state[zip_key],
+        file_name=f"Mustang_Full_Results_{run_id}.zip",
+        mime="application/zip",
+        use_container_width=True,
+        type="primary"
+    )

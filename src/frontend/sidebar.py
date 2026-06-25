@@ -1,7 +1,56 @@
+import shutil
 import streamlit as st
-
+from pathlib import Path
 from typing import Callable
 
+
+# ---------------------------------------------------------------------------
+# Helper: reset session (#4)
+# ---------------------------------------------------------------------------
+
+def _do_soft_reset():
+    """Clear results and IDs but keep downloaded files."""
+    for key in [
+        "pdb_ids", "results", "metadata", "highlighted_residues",
+        "residue_selections", "highlight_chains", "insights", "insights_run_id",
+    ]:
+        if key in ["pdb_ids"]:
+            st.session_state[key] = []
+        elif key in ["metadata", "residue_selections", "highlight_chains"]:
+            st.session_state[key] = {}
+        else:
+            st.session_state[key] = None
+    st.session_state.metadata_fetched = False
+    st.session_state.highlight_protein = "All Proteins"
+    st.session_state.show_metadata = False
+    for k in ["chain_info"]:
+        if k in st.session_state:
+            del st.session_state[k]
+    st.cache_data.clear()
+
+
+def _do_deep_clean():
+    """Delete session files from disk and fully reset state."""
+    session_id = st.session_state.get("session_id")
+    session_dirs = (
+        [Path("data/raw") / session_id, Path("data/cleaned") / session_id]
+        if session_id
+        else [Path("data/raw"), Path("data/cleaned")]
+    )
+    for d in session_dirs:
+        if d.exists():
+            shutil.rmtree(d, ignore_errors=True)
+    st.cache_data.clear()
+    try:
+        st.cache_resource.clear()
+    except Exception:
+        pass
+    _do_soft_reset()
+
+
+# ---------------------------------------------------------------------------
+# Sidebar
+# ---------------------------------------------------------------------------
 
 def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
     """
@@ -21,9 +70,9 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
             st.error(f"✗ {mustang_msg}")
             st.info("See WINDOWS_SETUP.md for installation instructions")
 
-        # System Diagnostics
+        # --- System Diagnostics ---
         with st.expander("🛠️ System Health", expanded=False):
-            if st.button("🔍 Run Diagnostics", use_container_width=True):
+            if st.button("🔍 Run Diagnostics", ):
                 with st.spinner("Checking dependencies..."):
                     executable = getattr(st.session_state.get("mustang_runner"), "executable", "mustang")
                     results = st.session_state.system_manager.run_diagnostics(
@@ -46,23 +95,62 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
                         st.success("OK")
                     else:
                         st.warning("MISSING")
-
                 st.caption(f"OS: {res['Platform']}")
                 st.caption(f"Py: {res['Python Version']}")
-
-                if st.button(
-                    "🧹 Clear Logs", use_container_width=True, type="secondary"
-                ):
-                    st.session_state.system_manager.cleanup_old_runs(
-                        days=0
-                    )  # Clear all temp/old
+                if st.button("🧹 Clear Logs", type="secondary"):
+                    st.session_state.system_manager.cleanup_old_runs(days=0)
                     st.success("Temporary files cleared.")
 
         st.divider()
 
-        # History Section
+        # --- Session Controls (#4) ---
+        with st.expander("🗑️ Session", expanded=False):
+            st.caption("Use these to start over or free up disk space.")
+
+            # Soft reset with confirmation
+            if st.session_state.get("_confirm_reset"):
+                st.warning("This will clear your current results. Are you sure?")
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.button("✅ Confirm", type="primary", ):
+                        _do_soft_reset()
+                        st.session_state._confirm_reset = False
+                        st.rerun()
+                with c2:
+                    if st.button("❌ Cancel", ):
+                        st.session_state._confirm_reset = False
+                        st.rerun()
+            else:
+                if st.button("🔄 New Analysis",
+                             help="Clear current results and start fresh (keeps downloaded files)"):
+                    st.session_state._confirm_reset = True
+                    st.rerun()
+
+            # Deep clean with confirmation
+            if st.session_state.get("_confirm_deep_clean"):
+                st.error("⚠️ This will delete all downloaded PDB files and reset everything.")
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.button("✅ Delete Files", type="primary", ):
+                        with st.spinner("Wiping session data..."):
+                            _do_deep_clean()
+                        st.session_state._confirm_deep_clean = False
+                        st.toast("🧹 All files wiped!", icon="✅")
+                        st.rerun()
+                with c2:
+                    if st.button("❌ Cancel", key="cancel_deep", ):
+                        st.session_state._confirm_deep_clean = False
+                        st.rerun()
+            else:
+                if st.button("🧹 Clear All Files", type="secondary",
+                             help="Delete all downloaded/cleaned PDB files and reset everything"):
+                    st.session_state._confirm_deep_clean = True
+                    st.rerun()
+
+        st.divider()
+
+        # --- History (#9) - Clickable cards ---
         with st.expander("📜 History", expanded=False):
-            # Limit to latest 6 runs
             try:
                 session_id = st.session_state.get("session_id")
                 runs = st.session_state.history_db.get_all_runs(limit=6, session_id=session_id)
@@ -70,54 +158,92 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
                 runs = st.session_state.history_db.get_all_runs()[:6]
 
             if not runs:
-                st.info("No saved runs found.")
+                st.info("No saved runs yet. Run an analysis to see it here.")
             else:
                 for run in runs:
-                    with st.container():
-                        col1, col2 = st.columns([4, 1])
-                        with col1:
-                            st.caption(f"**{run['name']}**")
-                            st.caption(f"🕒 {run['timestamp']}")
-                        with col2:
-                            if st.button(
-                                "📂", key=f"load_{run['id']}", help="Load this run"
-                            ):
-                                load_run_callback(run["id"])
+                    # Build protein preview string
+                    proteins = run.get("pdb_ids", [])
+                    n = len(proteins)
+                    preview = ", ".join(proteins[:3])
+                    if n > 3:
+                        preview += f" +{n - 3} more"
+                    ts = run.get("timestamp", "")[:10]  # date only
 
+                    st.markdown(
+                        f"""
+                        <div style="
+                            background:rgba(255,255,255,0.04);
+                            border:1px solid rgba(255,255,255,0.08);
+                            border-radius:8px;
+                            padding:0.6rem 0.8rem;
+                            margin-bottom:0.5rem;
+                        ">
+                            <div style="font-weight:600; font-size:0.82rem; color:#fff; margin-bottom:2px;">
+                                {run['name']}
+                            </div>
+                            <div style="font-family:monospace; font-size:0.75rem; color:#42eaff; margin-bottom:4px;">
+                                {preview}
+                            </div>
+                            <div style="font-size:0.72rem; color:#666;">
+                                {n} structure{'s' if n != 1 else ''} • {ts}
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
                         if st.button(
-                            "🗑️ Delete",
-                            key=f"del_{run['id']}",
-                            use_container_width=True,
+                            f"📂 Load",
+                            key=f"load_{run['id']}",
+                            help=f"Restore: {run['name']}",
                         ):
-                            if st.session_state.history_db.delete_run(run["id"]):
-                                st.rerun()
-                        st.divider()
+                            load_run_callback(run["id"])
+                    with col2:
+                        if st.button(
+                            "🗑️",
+                            key=f"del_{run['id']}",
+                            help="Delete this run",
+                        ):
+                            st.session_state.history_db.delete_run(run["id"])
+                            st.rerun()
 
-                if st.button(
-                    "🗑️ Clear All History", use_container_width=True, type="secondary"
-                ):
-                    for run in runs:
-                        st.session_state.history_db.delete_run(run["id"])
-                    st.rerun()
+                if len(runs) > 1:
+                    if st.button("🗑️ Clear All History", type="secondary"):
+                        for run in runs:
+                            st.session_state.history_db.delete_run(run["id"])
+                        st.rerun()
 
         st.divider()
-        st.info("👈 Use the main dashboard to enter PDB IDs or upload files.")
 
-        # Guided Mode Toggle
+        # --- Guided Mode Toggle (#10) ---
         st.session_state.guided_mode = st.toggle(
             "🎓 Guided Mode",
             value=st.session_state.guided_mode,
             help="Enable interactive explanations for each result tab.",
         )
 
-        # Advanced options
-        with st.expander("⚙️ Advanced Options"):
+        # --- Structure Options (renamed from 'Advanced Options') (#11) ---
+        # Auto-detect multi-chain hint
+        chain_info = st.session_state.get("chain_info", {})
+        multi_chain_detected = any(
+            len(info.get("chains", [])) > 1
+            for info in chain_info.values()
+            if isinstance(info, dict)
+        )
+        opts_label = "🔬 Structure Options"
+        if multi_chain_detected:
+            opts_label += " ⚠️"
+
+        with st.expander(opts_label, expanded=multi_chain_detected):
+            if multi_chain_detected:
+                st.caption("⚠️ Multi-chain structures detected — review chain selection below.")
+
             st.checkbox(
                 "Filter large files",
                 value=True,
                 help="Automatically suggest chain extraction for large PDB files",
             )
-
             st.session_state.remove_water = st.checkbox(
                 "Remove water molecules", value=st.session_state.remove_water
             )
@@ -136,7 +262,6 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
                     else 1
                 ),
             )
-
             selected_chain = st.session_state.selected_chain
             if chain_selection == "Specify chain ID":
                 selected_chain = (
@@ -149,10 +274,11 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
                     .strip()
                     .upper()
                 )
-
             st.session_state.chain_selection_mode = chain_selection
             st.session_state.selected_chain = selected_chain
 
-        # Version badge — read from config for single source of truth
+        # Version badge
         version = st.session_state.config.get("app", {}).get("version", "?.?.?")
-        st.caption(f"🧬 **Mustang Pipeline** `v{version}`")
+        st.caption(f"🧬 **AlignX** `v{version}`")
+
+

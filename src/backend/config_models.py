@@ -38,7 +38,7 @@ class FilteringConfig(BaseModel):
 
 class MustangConfig(BaseModel):
     backend: str = Field("auto")
-    executable_path: str = "mustang"
+    executable_path: Optional[str] = None  # None = auto-detect at runtime
     timeout: int = Field(600, ge=1)
 
     @field_validator("backend")

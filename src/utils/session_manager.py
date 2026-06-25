@@ -152,6 +152,17 @@ class SessionInitializer:
             if "input_method_radio" not in st.session_state:
                 st.session_state.input_method_radio = "Manual Entry"
 
+            if "show_metadata" not in st.session_state:
+                st.session_state.show_metadata = False
+
+            if "first_visit" not in st.session_state:
+                st.session_state.first_visit = True
+
+            if "_confirm_reset" not in st.session_state:
+                st.session_state._confirm_reset = False
+
+            if "_confirm_deep_clean" not in st.session_state:
+                st.session_state._confirm_deep_clean = False
 
 def get_session_id() -> str:
     """
