@@ -10,6 +10,12 @@ from typing import Callable
 
 def _do_soft_reset():
     """Clear results and IDs but keep downloaded files."""
+    import gc
+    # Clear ZIP buffers cached in session state to prevent memory leakage
+    for k in list(st.session_state.keys()):
+        if k.startswith("zip_buffer_"):
+            del st.session_state[k]
+
     for key in [
         "pdb_ids", "results", "metadata", "highlighted_residues",
         "residue_selections", "highlight_chains", "insights", "insights_run_id",
@@ -27,6 +33,7 @@ def _do_soft_reset():
         if k in st.session_state:
             del st.session_state[k]
     st.cache_data.clear()
+    gc.collect()
 
 
 def _do_deep_clean():
@@ -46,6 +53,8 @@ def _do_deep_clean():
     except Exception:
         pass
     _do_soft_reset()
+    import gc
+    gc.collect()
 
 
 # ---------------------------------------------------------------------------

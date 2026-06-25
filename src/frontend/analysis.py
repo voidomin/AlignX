@@ -137,7 +137,7 @@ def _render_protein_pill_bar(pdb_ids: List[str]) -> None:
 # -----------------------------------------------------------------------------
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=600, max_entries=50)
 def cached_batch_download(
     _pdb_manager: Any, pdb_ids: List[str]
 ) -> Dict[str, Tuple[bool, str, Optional[Path]]]:
@@ -154,7 +154,7 @@ def cached_batch_download(
     return asyncio.run(_pdb_manager.batch_download(pdb_ids))
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=600, max_entries=50)
 def cached_analyze_structure(_pdb_manager: Any, file_path: Path) -> Dict[str, Any]:
     """
     Cached wrapper for structure analysis.
@@ -169,7 +169,7 @@ def cached_analyze_structure(_pdb_manager: Any, file_path: Path) -> Dict[str, An
     return _pdb_manager.analyze_structure(file_path)
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=600, max_entries=50)
 def cached_fetch_metadata(
     _pdb_manager: Any, pdb_ids: List[str]
 ) -> Dict[str, Dict[str, str]]:
@@ -323,6 +323,8 @@ def run_analysis() -> None:
         status_text.empty()
         timer_display.empty()
         st.balloons()
+        import gc
+        gc.collect()
         st.rerun()
 
     except Exception as e:
