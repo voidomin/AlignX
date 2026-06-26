@@ -241,6 +241,7 @@ def render_ligand_view(
     width: int = 800,
     height: int = 600,
     unique_id: str = "ligand",
+    highlight_indices: Optional[list] = None,
 ) -> Optional[str]:
     """
     Render 3D view focused on ligand and interactions.
@@ -251,6 +252,7 @@ def render_ligand_view(
         width: Viewer width
         height: Viewer height
         unique_id: Unique ID for div
+        highlight_indices: List of row indices to highlight in yellow
     """
     try:
         with open(pdb_file, "r") as f:
@@ -264,10 +266,19 @@ def render_ligand_view(
         l_resi = parts[-1]
 
         # Build interaction selection JSON
-        active_site_residues = [
-            {"chain": i["chain"], "resi": i["resi"]}
-            for i in ligand_data["interactions"]
-        ]
+        active_site_residues = []
+        highlighted_residues = []
+        
+        for idx, i in enumerate(ligand_data["interactions"]):
+            item = {"chain": i["chain"], "resi": i["resi"]}
+            if highlight_indices is not None and idx in highlight_indices:
+                highlighted_residues.append(item)
+            else:
+                active_site_residues.append(item)
+
+        import json
+        active_site_residues_json = json.dumps(active_site_residues)
+        highlighted_residues_json = json.dumps(highlighted_residues)
 
         html = f"""
         <!DOCTYPE html>
@@ -295,22 +306,45 @@ def render_ligand_view(
                 viewer.addStyle(ligandSel, {{sphere: {{scale: 0.3, color: '#00FF00'}}}});
                 
                 // 3. Render Interacting Residues
-                let activeResidues = {active_site_residues};
+                let activeResidues = {active_site_residues_json};
                 for(let i=0; i<activeResidues.length; i++) {{
                     let sel = activeResidues[i];
                     // Show sidechains as sticks
                     viewer.addStyle(sel, {{stick: {{colorscheme: 'magentaCarbon', radius: 0.15}}}});
-                    // Label them
-                    // viewer.addLabel(sel.resi, {{fontSize: 10, position: sel, backgroundColor: 'black'}});
                 }}
                 
-                // 4. Zoom to Ligand
-                viewer.zoomTo(ligandSel, 1000);
+                // 3b. Render Highlighted Interacting Residues (Thicker yellow sticks & labels)
+                let highlightedResidues = {highlighted_residues_json};
+                for(let i=0; i<highlightedResidues.length; i++) {{
+                    let sel = highlightedResidues[i];
+                    viewer.addStyle(sel, {{stick: {{colorscheme: 'yellowCarbon', radius: 0.35}}}});
+                    viewer.addStyle(sel, {{sphere: {{scale: 0.5, color: '#FFFF00'}}}});
+                    viewer.addLabel(sel.chain + ":" + sel.resi, {{
+                        fontSize: 11,
+                        fontColor: 'white',
+                        backgroundColor: 'rgba(255, 126, 66, 0.88)',
+                        backgroundOpacity: 0.9,
+                        borderColor: 'white',
+                        borderWidth: 1,
+                        position: sel
+                    }});
+                }}
+                
+                // 4. Zoom to Ligand / Highlighted Residues
+                if (highlightedResidues.length > 0) {{
+                    let combinedSel = [ligandSel];
+                    highlightedResidues.forEach(r => combinedSel.push(r));
+                    viewer.zoomTo({{or: combinedSel}}, 1000);
+                }} else {{
+                    viewer.zoomTo(ligandSel, 1000);
+                }}
                 
                 viewer.render();
                 
-                // Enable gentle auto-rotation
-                viewer.spin("y", 0.5);
+                // Enable gentle auto-rotation (only when no highlights selected)
+                if (highlightedResidues.length === 0) {{
+                    viewer.spin("y", 0.5);
+                }}
             </script>
         </body>
         </html>
@@ -637,9 +671,12 @@ def show_ligand_view_in_streamlit(
     width: Any = "100%",
     height: int = 600,
     key: str = "ligand",
+    highlight_indices: Optional[list] = None,
 ):
     """Wrapper for displaying ligand view in Streamlit"""
-    html = render_ligand_view(pdb_file, ligand_data, width, height, key)
+    html = render_ligand_view(
+        pdb_file, ligand_data, width, height, key, highlight_indices
+    )
     if html:
         components.html(html, height=height, scrolling=False)
     else:

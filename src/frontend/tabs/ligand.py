@@ -115,15 +115,38 @@ def render_ligand_tab(results: Dict[str, Any]) -> None:
             else:
                 st.markdown(f"### Binding Site: **{interactions['ligand']}**")
 
+                # Retrieve highlight selection from session state to prevent one-frame latency
+                df_key = f"df_select_{selected_pdb_ligand}_{interactions['ligand']}"
+                highlight_indices = []
+                if df_key in st.session_state:
+                    selection = st.session_state[df_key]
+                    if selection:
+                        if hasattr(selection, "selection"):
+                            sel_state = selection.selection
+                            if hasattr(sel_state, "rows"):
+                                highlight_indices = list(sel_state.rows)
+                            elif isinstance(sel_state, dict) and "rows" in sel_state:
+                                highlight_indices = list(sel_state["rows"])
+                        elif isinstance(selection, dict) and "selection" in selection:
+                            sel_state = selection["selection"]
+                            if isinstance(sel_state, dict) and "rows" in sel_state:
+                                highlight_indices = list(sel_state["rows"])
+
                 res_col1, res_col2 = st.columns([1, 1])
 
                 with res_col1:
                     show_ligand_view_in_streamlit(
-                        pdb_path, interactions, width=500, height=450, key="ligand_3d"
+                        pdb_path,
+                        interactions,
+                        width=500,
+                        height=450,
+                        key="ligand_3d",
+                        highlight_indices=highlight_indices if highlight_indices else None,
                     )
 
                 with res_col2:
                     st.markdown("#### Interacting Residues (< 5Å)")
+                    st.caption("💡 Select one or more rows to highlight residues in 3D.")
                     if interactions["interactions"]:
                         df_int = pd.DataFrame(interactions["interactions"])
                         st.dataframe(
@@ -132,6 +155,9 @@ def render_ligand_tab(results: Dict[str, Any]) -> None:
                             ].style.format({"distance": "{:.2f}"}),
                             use_container_width=True,
                             height=400,
+                            on_select="rerun",
+                            selection_mode="multi-row",
+                            key=df_key
                         )
                     else:
                         st.info("No residues found within cutoff distance.")

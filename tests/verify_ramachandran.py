@@ -6,6 +6,10 @@ import json
 # Add project root to path
 sys.path.append(os.getcwd())
 
+# Ensure UTF-8 stdout encoding for Windows console environments
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 from src.backend.ramachandran_service import RamachandranService
 
 
