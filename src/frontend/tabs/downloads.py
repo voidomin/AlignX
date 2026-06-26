@@ -4,6 +4,55 @@ import zipfile
 import io
 
 
+@st.cache_data(max_entries=3, ttl=300, show_spinner=False)
+def generate_zip_package(results: Dict[str, Any], run_id: str) -> bytes:
+    """Generate and cache the complete package ZIP file bytes."""
+    import zipfile
+    import io
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(
+        zip_buffer, "a", zipfile.ZIP_DEFLATED, False
+    ) as zip_file:
+        # Add PDB alignment
+        if results.get("alignment_pdb") and results["alignment_pdb"].exists():
+            zip_file.write(
+                results["alignment_pdb"], arcname=f"alignment_{run_id}.pdb"
+            )
+
+        # Add AFasta
+        if (
+            results.get("alignment_afasta")
+            and results["alignment_afasta"].exists()
+        ):
+            zip_file.write(
+                results["alignment_afasta"],
+                arcname=f"alignment_{run_id}.afasta",
+            )
+
+        # Add RMSD CSV
+        if results.get("rmsd_df") is not None:
+            csv_data = results["rmsd_df"].to_csv()
+            zip_file.writestr(f"rmsd_matrix_{run_id}.csv", csv_data)
+
+        # Add Heatmap
+        if results.get("heatmap_path") and results["heatmap_path"].exists():
+            zip_file.write(
+                results["heatmap_path"], arcname=f"rmsd_heatmap_{run_id}.png"
+            )
+
+        # Add Lab Notebook (if it exists or try to export)
+        try:
+            from src.backend.notebook_exporter import NotebookExporter
+
+            exporter = NotebookExporter()
+            nb_path = exporter.export(results)  # Generates if needed
+            if nb_path and nb_path.exists():
+                zip_file.write(nb_path, arcname=f"lab_notebook_{run_id}.html")
+        except Exception:
+            pass
+    return zip_buffer.getvalue()
+
+
 def render_downloads_tab(results: Dict[str, Any]) -> None:
     """
     Render the Data Downloads tab.
@@ -132,54 +181,11 @@ def render_downloads_tab(results: Dict[str, Any]) -> None:
         "Download all results, alignments, and the lab notebook in a single compressed ZIP file."
     )
 
-    zip_key = f"zip_buffer_{run_id}"
-    if zip_key not in st.session_state:
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(
-            zip_buffer, "a", zipfile.ZIP_DEFLATED, False
-        ) as zip_file:
-            # Add PDB alignment
-            if results.get("alignment_pdb") and results["alignment_pdb"].exists():
-                zip_file.write(
-                    results["alignment_pdb"], arcname=f"alignment_{run_id}.pdb"
-                )
-
-            # Add AFasta
-            if (
-                results.get("alignment_afasta")
-                and results["alignment_afasta"].exists()
-            ):
-                zip_file.write(
-                    results["alignment_afasta"],
-                    arcname=f"alignment_{run_id}.afasta",
-                )
-
-            # Add RMSD CSV
-            if results.get("rmsd_df") is not None:
-                csv_data = results["rmsd_df"].to_csv()
-                zip_file.writestr(f"rmsd_matrix_{run_id}.csv", csv_data)
-
-            # Add Heatmap
-            if results.get("heatmap_path") and results["heatmap_path"].exists():
-                zip_file.write(
-                    results["heatmap_path"], arcname=f"rmsd_heatmap_{run_id}.png"
-                )
-
-            # Add Lab Notebook (if it exists or try to export)
-            try:
-                from src.backend.notebook_exporter import NotebookExporter
-
-                exporter = NotebookExporter()
-                nb_path = exporter.export(results)  # Generates if needed
-                if nb_path and nb_path.exists():
-                    zip_file.write(nb_path, arcname=f"lab_notebook_{run_id}.html")
-            except Exception:
-                pass
-        st.session_state[zip_key] = zip_buffer.getvalue()
+    zip_data = generate_zip_package(results, run_id)
 
     st.download_button(
         label="📥 Download Everything (.zip)",
-        data=st.session_state[zip_key],
+        data=zip_data,
         file_name=f"Mustang_Full_Results_{run_id}.zip",
         mime="application/zip",
         use_container_width=True,

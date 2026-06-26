@@ -5,8 +5,6 @@ from typing import Dict, List, Any
 
 import numpy as np
 import pandas as pd
-from Bio.PDB import PDBParser, NeighborSearch
-from Bio.PDB.PDBExceptions import PDBConstructionWarning
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +59,8 @@ class LigandAnalyzer:
             logger.error(f"PDB file not found: {pdb_file}")
             return []
 
+        from Bio.PDB import PDBParser
+        from Bio.PDB.PDBExceptions import PDBConstructionWarning
         parser = PDBParser(QUIET=True)
         try:
             with warnings.catch_warnings():
@@ -121,7 +121,8 @@ class LigandAnalyzer:
         Returns:
             Dictionary with interaction details
         """
-        pdb_file = Path(pdb_file)
+        from Bio.PDB import PDBParser, NeighborSearch
+        from Bio.PDB.PDBExceptions import PDBConstructionWarning
         parser = PDBParser(QUIET=True)
         try:
             with warnings.catch_warnings():

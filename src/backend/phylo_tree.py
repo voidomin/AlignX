@@ -2,9 +2,6 @@
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from scipy.cluster.hierarchy import dendrogram, linkage
-from scipy.spatial.distance import squareform
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -39,6 +36,10 @@ class PhyloTreeGenerator:
             Tuple of (success, message, image_path)
         """
         try:
+            import matplotlib.pyplot as plt
+            from scipy.cluster.hierarchy import dendrogram, linkage
+            from scipy.spatial.distance import squareform
+
             # Convert RMSD matrix to condensed distance matrix
             # scipy hierarchical clustering needs condensed form
             distance_matrix = squareform(rmsd_df.values)
@@ -90,6 +91,9 @@ class PhyloTreeGenerator:
             Tuple of (success, message, file_path)
         """
         try:
+            from scipy.cluster.hierarchy import linkage
+            from scipy.spatial.distance import squareform
+
             # Convert to condensed distance matrix
             distance_matrix = squareform(rmsd_df.values)
 

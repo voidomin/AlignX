@@ -2,8 +2,6 @@
 
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 from pathlib import Path
 from typing import Dict, List, Tuple, Any
 
@@ -33,6 +31,8 @@ class RMSDAnalyzer:
             True if successful
         """
         try:
+            import matplotlib.pyplot as plt
+            import seaborn as sns
             plt.figure(figsize=(10, 8))
 
             # Create heatmap

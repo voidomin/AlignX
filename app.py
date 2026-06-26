@@ -5,6 +5,9 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 if os.getcwd() not in sys.path:
     sys.path.insert(0, os.getcwd())
 
+import matplotlib
+matplotlib.use('Agg')
+
 import streamlit as st
 from pathlib import Path
 

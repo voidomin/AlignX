@@ -5,8 +5,6 @@ import asyncio
 import re
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict, Any
-from Bio import PDB
-from Bio.PDB import PDBIO, Select, MMCIFParser, PDBParser
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
@@ -250,6 +248,7 @@ class PDBManager:
 
     def _get_structure(self, file_path: Path) -> Any:
         """Hybrid parser for PDB and mmCIF formats."""
+        from Bio.PDB import MMCIFParser, PDBParser
         if file_path.suffix.lower() == ".cif":
             parser = MMCIFParser(QUIET=True)
         else:
@@ -292,6 +291,8 @@ class PDBManager:
         Clean structural file (PDB/CIF) and sanitize into standard PDB.
         """
         try:
+            from Bio import PDB
+            from Bio.PDB import PDBIO, Select
             structure = self._get_structure(pdb_file)
 
             is_af_model = pdb_file.name.lower().startswith("af-")

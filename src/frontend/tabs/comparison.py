@@ -4,7 +4,6 @@ Batch comparison tab for comparing multiple Mustang runs.
 
 import streamlit as st
 from pathlib import Path
-import plotly.express as px
 from src.backend.result_manager import ResultManager
 
 
@@ -12,6 +11,7 @@ def render_comparison_tab(current_results: dict):
     """
     Render comparative analysis between runs.
     """
+    import plotly.express as px
     st.header("🔄 Batch Comparison Mode")
 
     with st.expander("ℹ️ About Batch Comparison", expanded=True):

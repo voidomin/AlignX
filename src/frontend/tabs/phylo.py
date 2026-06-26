@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
 from src.frontend.tabs.common import render_learning_card, render_help_expander
 
 from typing import Dict, Any
@@ -13,6 +12,7 @@ def render_phylo_tree_tab(results: Dict[str, Any]) -> None:
     Args:
         results: The results dictionary containing tree visualization data.
     """
+    import plotly.graph_objects as go
     st.subheader("🌳 Structural Tree & Quality Validation")
     render_learning_card("Tree")
     render_help_expander("tree")

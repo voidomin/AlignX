@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-from Bio.PDB import PDBParser
 from pathlib import Path
 from typing import List, Dict, Optional
 from src.utils.logger import get_logger
@@ -20,6 +19,7 @@ def calculate_rmsd_from_superposition(
         num_expected: Number of structures to expect
     """
     try:
+        from Bio.PDB import PDBParser
         parser = PDBParser(QUIET=True)
         structure = parser.get_structure("aln", str(pdb_file))
 
@@ -253,6 +253,7 @@ def calculate_structure_rmsd(
                     res_counter += 1
 
         # 2. Parse PDB
+        from Bio.PDB import PDBParser
         parser = PDBParser(QUIET=True)
         structure = parser.get_structure("aln", str(pdb_file))
 

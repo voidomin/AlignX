@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-from Bio.PDB import PDBParser, Polypeptide
 from pathlib import Path
 from typing import Dict, Any, Optional
 from src.utils.logger import get_logger
@@ -14,6 +13,7 @@ class RamachandranService:
     """
 
     def __init__(self):
+        from Bio.PDB import PDBParser
         self.parser = PDBParser(QUIET=True)
 
     def calculate_torsion_angles(self, pdb_file: Path) -> Dict[str, pd.DataFrame]:
@@ -25,6 +25,7 @@ class RamachandranService:
         """
         results = {}
         try:
+            from Bio.PDB import Polypeptide
             structure = self.parser.get_structure("protein", str(pdb_file))
 
             for model in structure:

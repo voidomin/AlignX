@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 from src.frontend.tabs.common import render_learning_card, render_help_expander
 
 from typing import Dict, Any
@@ -109,6 +108,7 @@ def render_rmsd_tab(results: Dict[str, Any]) -> None:
             }
         )
 
+        import plotly.express as px
         fig = px.line(
             rmsf_data,
             x="Residue Position",
