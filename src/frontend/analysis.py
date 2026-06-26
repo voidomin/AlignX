@@ -420,28 +420,13 @@ def render_dashboard() -> None:
         st.subheader(f"Selected: {len(pdb_ids)} Proteins")
         _render_protein_pill_bar(pdb_ids)
 
-        # Lazy metadata (#7) — only show on demand
-        col_a, col_b, col_c = st.columns([2, 1, 1])
-        with col_a:
-            if st.button(
-                "▶️ Run Analysis",
-                type="primary",
-                use_container_width=True,
-                help=f"Align {len(pdb_ids)} structures using Mustang",
-            ):
-                run_analysis()
-        with col_b:
-            label = "Hide Info" if st.session_state.get("show_metadata") else "📋 Show Protein Info"
-            if st.button(label, use_container_width=True):
-                st.session_state.show_metadata = not st.session_state.get("show_metadata", False)
-                st.rerun()
-        with col_c:
-            if st.button(
-                "🔍 Analyze Chains",
-                help="Check chain information before running alignment",
-                use_container_width=True,
-            ):
-                with st.spinner("Analyzing structures…"):
+        # Automatic Chain Analysis
+        current_chain_info = st.session_state.get("chain_info", {})
+        needs_chain_fetch = not current_chain_info or not all(pid in current_chain_info for pid in pdb_ids)
+        
+        if needs_chain_fetch:
+            with st.spinner("Analyzing structures and loading chains…"):
+                try:
                     download_results = cached_batch_download(
                         st.session_state.pdb_manager, pdb_ids
                     )
@@ -456,6 +441,27 @@ def render_dashboard() -> None:
                             except Exception as e:
                                 st.error(f"Error analyzing {pdb_id}: {str(e)}")
                     st.session_state.chain_info = chain_info
+                except Exception as e:
+                    st.error(f"Failed to analyze chains: {str(e)}")
+
+        if "chain_info" in st.session_state and st.session_state.chain_info:
+            render_chain_selector(st.session_state.chain_info)
+
+        # Lazy metadata (#7) — only show on demand
+        col_a, col_b = st.columns([3, 1])
+        with col_a:
+            if st.button(
+                "▶️ Run Alignment",
+                type="primary",
+                use_container_width=True,
+                help=f"Align {len(pdb_ids)} structures using Mustang",
+            ):
+                run_analysis()
+        with col_b:
+            label = "Hide Info" if st.session_state.get("show_metadata") else "📋 Show Protein Info"
+            if st.button(label, use_container_width=True):
+                st.session_state.show_metadata = not st.session_state.get("show_metadata", False)
+                st.rerun()
 
         # Lazy metadata expander (#7)
         if st.session_state.get("show_metadata", False):
@@ -471,9 +477,6 @@ def render_dashboard() -> None:
                         except Exception as e:
                             st.error(f"Metadata fetch failed: {str(e)}")
                 render_metadata_viewer(pdb_ids, st.session_state.metadata)
-
-        if "chain_info" in st.session_state:
-            render_chain_selector(st.session_state.chain_info)
 
     # CASE C: Nothing entered -> welcoming empty state (#1)
     else:

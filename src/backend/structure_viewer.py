@@ -368,6 +368,269 @@ def show_structure_in_streamlit(
         st.error(f"Failed to load {style} viewer")
 
 
+def render_synced_grid(
+    pdb_file: Path,
+    members: list,
+    highlight_residues=None,
+    style_mode: str = "Neon Pro",
+    residue_colors=None,
+    height: int = 250,
+) -> Optional[str]:
+    """
+    Render all aligned models in a single synchronized 3D grid.
+    """
+    if highlight_residues is None:
+        highlight_residues = {}
+    if residue_colors is None:
+        residue_colors = {}
+        
+    try:
+        with open(pdb_file, "r") as f:
+            pdb_content = f.read()
+
+        import json
+        
+        viewers_js = []
+        html_items = []
+        
+        neonColors = [
+            '#FF00FF', '#00FFFF', '#00FF00', '#FFFF00', '#FF7E42',
+            '#4272FF', '#FF0055', '#8A2BE2', '#00FA9A', '#FFD700',
+            '#FF1493', '#1E90FF'
+        ]
+        
+        spectralColors = [
+            '#e6194B', '#3cb44b', '#ffe119', '#4363d8', '#f58231', 
+            '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#fabed4', 
+            '#469990', '#dcbeff'
+        ]
+        
+        # Determine all chains in this PDB
+        all_chains = [chr(ord("A") + idx) for idx in range(len(members))]
+        
+        for idx, member in enumerate(members):
+            chain_id = chr(ord("A") + idx)
+            div_id = f"viewer_{idx}"
+            
+            # Highlight configuration
+            this_hl = {chain_id: highlight_residues.get(chain_id, [])} if highlight_residues else {}
+            has_hl = len(this_hl.get(chain_id, [])) > 0
+            
+            this_res_colors = residue_colors.get(chain_id, {}) if residue_colors else {}
+            
+            color = spectralColors[idx % len(spectralColors)] if style_mode == "Scientific Spectral" else neonColors[idx % len(neonColors)]
+            
+            viewer_init = f"""
+                (function() {{
+                    let viewer = $3Dmol.createViewer("container_{div_id}", {{
+                        backgroundColor: 'white'
+                    }});
+                    viewer.setBackgroundColor(0x000000, 0);
+                    viewer.addModel(pdbData, "pdb");
+                    
+                    let m = viewer.getModel(0);
+                    let opacity = { '0.6' if has_hl else '1.0' };
+                    let sel = {{chain: "{chain_id}"}};
+                    
+                    // Base style for selected chain
+                    if ("{style_mode}" === "AlphaFold Confidence") {{
+                        viewer.setStyle(sel, {{
+                            cartoon: {{
+                                colorscheme: {{
+                                    prop: 'b',
+                                    gradient: 'rwb',
+                                    min: 50,
+                                    max: 90
+                                }},
+                                opacity: opacity
+                            }}
+                        }});
+                    }} else {{
+                        viewer.setStyle(sel, {{cartoon: {{color: "{color}", opacity: opacity}}}});
+                    }}
+                    
+                    // Hide all other chains in this specific viewer viewport
+                    let otherChains = allChains.filter(c => c !== "{chain_id}");
+                    otherChains.forEach(oc => {{
+                        viewer.setStyle({{chain: oc}}, {{}});
+                    }});
+                    
+                    // Custom residue colors
+                    let resColors = {json.dumps(this_res_colors)};
+                    if (Object.keys(resColors).length > 0) {{
+                        for (let resi in resColors) {{
+                            viewer.setStyle({{chain: "{chain_id}", resi: parseInt(resi)}}, {{
+                                cartoon: {{color: resColors[resi], opacity: opacity}}
+                            }});
+                        }}
+                    }}
+                    
+                    // Highlights
+                    let hlResidues = {json.dumps(this_hl.get(chain_id, []))};
+                    if (hlResidues.length > 0) {{
+                        viewer.addStyle({{chain: "{chain_id}", resi: hlResidues}}, {{
+                            sphere: {{color: '#FFD700', scale: 1.0, opacity: 1.0}},
+                            stick: {{color: '#FFD700', radius: 0.5, opacity: 1.0}},
+                            cartoon: {{color: '#FFD700', opacity: 1.0}}
+                        }});
+                    }}
+                    
+                    viewer.zoomTo({{chain: "{chain_id}"}});
+                    viewer.render();
+                    viewer.zoom(0.8, 1000);
+                    
+                    viewers.push(viewer);
+                    
+                    // Hook interactions for syncing cameras
+                    let container = document.getElementById("container_{div_id}");
+                    
+                    container.addEventListener('mousedown', () => {{ activeViewer = viewer; isInteracting = true; }});
+                    container.addEventListener('touchstart', () => {{ activeViewer = viewer; isInteracting = true; }});
+                    
+                    container.addEventListener('mousemove', () => {{
+                        if (isInteracting && activeViewer === viewer) {{
+                            requestAnimationFrame(syncCameras);
+                        }}
+                    }});
+                    container.addEventListener('touchmove', () => {{
+                        if (isInteracting && activeViewer === viewer) {{
+                            requestAnimationFrame(syncCameras);
+                        }}
+                    }});
+                    container.addEventListener('wheel', () => {{
+                        activeViewer = viewer;
+                        requestAnimationFrame(syncCameras);
+                    }});
+                }})();
+            """
+            viewers_js.append(viewer_init)
+            
+            html_items.append(f"""
+            <div class="grid-item">
+                <div class="viewer-title">{member} (Chain {chain_id})</div>
+                <div id="container_{div_id}" class="viewer-container"></div>
+            </div>
+            """)
+            
+        viewers_js_str = "\n".join(viewers_js)
+        html_items_str = "\n".join(html_items)
+        
+        html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <script src="https://3Dmol.csb.pitt.edu/build/3Dmol-min.js"></script>
+            <style>
+                .grid-container {{
+                    display: grid;
+                    grid-template-columns: repeat(3, 1fr);
+                    gap: 12px;
+                    width: 100%;
+                    padding: 8px;
+                    box-sizing: border-box;
+                }}
+                @media (max-width: 900px) {{
+                    .grid-container {{
+                        grid-template-columns: repeat(2, 1fr);
+                    }}
+                }}
+                @media (max-width: 600px) {{
+                    .grid-container {{
+                        grid-template-columns: 1fr;
+                    }}
+                }}
+                .grid-item {{
+                    background: rgba(255,255,255,0.02);
+                    border: 1px solid rgba(255,255,255,0.08);
+                    border-radius: 12px;
+                    padding: 8px;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                }}
+                .viewer-container {{
+                    width: 100%;
+                    height: {height}px;
+                    position: relative;
+                }}
+                .viewer-title {{
+                    color: #e0c8b0;
+                    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                    font-size: 0.82rem;
+                    font-weight: 600;
+                    margin-bottom: 6px;
+                    text-align: center;
+                    letter-spacing: 0.5px;
+                }}
+            </style>
+        </head>
+        <body style="margin:0; padding:0; background-color: transparent; overflow-x:hidden;">
+            <div class="grid-container">
+                {html_items_str}
+            </div>
+            <script>
+                const pdbData = `{pdb_content}`;
+                const viewers = [];
+                let activeViewer = null;
+                let isInteracting = false;
+                
+                const allChains = {json.dumps(all_chains)};
+                
+                window.addEventListener('mouseup', () => {{ isInteracting = false; }});
+                window.addEventListener('touchend', () => {{ isInteracting = false; }});
+                
+                function syncCameras() {{
+                    if (!activeViewer) return;
+                    const view = activeViewer.getView();
+                    viewers.forEach(v => {{
+                        if (v !== activeViewer) {{
+                            v.setView(view);
+                            v.render();
+                        }}
+                    }});
+                }}
+                
+                // Initialize viewers
+                {viewers_js_str}
+            </script>
+        </body>
+        </html>
+        """
+        return html
+    except Exception as e:
+        logger.error(f"Failed to generate synced grid 3D viewer: {str(e)}")
+        return None
+
+
+def show_synced_grid_in_streamlit(
+    pdb_file: Path,
+    members: list,
+    highlight_residues=None,
+    style_mode: str = "Neon Pro",
+    residue_colors=None,
+    height: int = 250,
+):
+    """Display synchronized 3D grid of structures in Streamlit"""
+    html = render_synced_grid(
+        pdb_file=pdb_file,
+        members=members,
+        highlight_residues=highlight_residues,
+        style_mode=style_mode,
+        residue_colors=residue_colors,
+        height=height,
+    )
+    if html:
+        import math
+        n_cols = 3
+        rows = math.ceil(len(members) / n_cols)
+        iframe_height = rows * (height + 40) + 30
+        components.html(html, height=iframe_height, scrolling=False)
+    else:
+        import streamlit as st
+        st.error("Failed to render synchronized 3D structure grid")
+
+
 def show_ligand_view_in_streamlit(
     pdb_file: Path,
     ligand_data: dict,

@@ -307,39 +307,18 @@ def _render_superimposed_view(pdb_path, hl_chains, visible_chains, style_mode, r
 
 
 def _render_side_by_side_grid(pdb_path, hl_chains, style_mode, all_members, residue_colors=None):
-    """Render each model in its own viewport in a grid layout."""
+    """Render each model in its own viewport in a grid layout with synchronized cameras."""
     st.markdown("#### 🔬 Structural Comparison Grid")
-    st.caption("Each model from the alignment is displayed in its own viewport below.")
+    st.caption("Each model from the alignment is displayed in its own viewport below. (Interactions and cameras are synchronized!)")
 
-    # Define grid dimensions (e.g. 3 per row)
-    n_cols = 3
-    rows = [all_members[i:i + n_cols] for i in range(0, len(all_members), n_cols)]
+    from src.backend.structure_viewer import show_synced_grid_in_streamlit
+    from pathlib import Path
 
-    for row_members in rows:
-        cols = st.columns(n_cols)
-        for col_idx, member in enumerate(row_members):
-            with cols[col_idx]:
-                chain_id = chr(ord("A") + all_members.index(member))
-                st.markdown(f"**{member}** (Chain {chain_id})")
-
-                # Highlight for this specific chain
-                this_hl = (
-                    {chain_id: hl_chains.get(chain_id, [])} if hl_chains else {}
-                )
-
-                # Isolate this specific chain's residue colors if available
-                this_res_colors = None
-                if residue_colors and chain_id in residue_colors:
-                    this_res_colors = {chain_id: residue_colors[chain_id]}
-
-                show_structure_in_streamlit(
-                    pdb_path,
-                    width="100%",
-                    height=250,
-                    style="cartoon",  # Default to cartoon for grid
-                    key=f"grid_{member}",
-                    highlight_residues=this_hl,
-                    visible_chains=[chain_id],  # ISOLATE THIS CHAIN
-                    style_mode=style_mode,
-                    residue_colors=this_res_colors,
-                )
+    show_synced_grid_in_streamlit(
+        pdb_file=Path(pdb_path),
+        members=all_members,
+        highlight_residues=hl_chains,
+        style_mode=style_mode,
+        residue_colors=residue_colors,
+        height=250,
+    )

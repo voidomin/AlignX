@@ -1,6 +1,42 @@
 import streamlit as st
-from typing import Any
+from typing import Any, List
 from examples.protein_sets import EXAMPLES
+import urllib.request
+import urllib.parse
+import json
+import re
+
+
+@st.cache_data(ttl=600, show_spinner=False, max_entries=50)
+def cached_rcsb_suggestions(query_text: str) -> List[str]:
+    """Fetch matching PDB IDs from RCSB Suggest API."""
+    if not query_text or len(query_text) < 1:
+        return []
+    
+    q = {
+        "type": "basic",
+        "suggest": {
+            "text": query_text,
+            "size": 6
+        }
+    }
+    try:
+        url = f"https://search.rcsb.org/rcsbsearch/v2/suggest?json={urllib.parse.quote(json.dumps(q))}"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=3) as res:
+            data = json.loads(res.read().decode())
+            suggestions = data.get("suggestions", {})
+            pdb_entries = suggestions.get("rcsb_entry_container_identifiers.entry_id", [])
+            
+            results = []
+            for entry in pdb_entries:
+                raw_text = entry.get("text", "")
+                clean_text = re.sub(r'<[^>]+>', '', raw_text).upper()
+                if clean_text and len(clean_text) == 4 and clean_text not in results:
+                    results.append(clean_text)
+            return results
+    except Exception:
+        return []
 
 
 def render_input_section(pdb_manager: Any):
@@ -30,6 +66,8 @@ def render_input_section(pdb_manager: Any):
                         st.session_state.pdb_ids = clean_ids
                         st.session_state.metadata_fetched = False
                         st.session_state.metadata = {}
+                        st.session_state.chain_info = {}
+                        st.session_state.manual_chain_selections = {}
 
             pdb_input = st.text_input(
                 "Enter IDs (PDB or AlphaFold)",
@@ -38,6 +76,55 @@ def render_input_section(pdb_manager: Any):
                 key="input_pdb_text_dashboard",
                 on_change=on_pdb_input_change,
             )
+
+            # Suggestions autocomplete pills
+            last_item = ""
+            current_input = st.session_state.get("input_pdb_text_dashboard", "")
+            if current_input:
+                parts = [p.strip() for p in current_input.split(",")]
+                if parts:
+                    last_item = parts[-1]
+            
+            if last_item and 1 <= len(last_item) < 4 and not last_item.upper().startswith("AF-"):
+                sugs = cached_rcsb_suggestions(last_item)
+                existing_parts = [p.upper() for p in parts[:-1]]
+                sugs = [s for s in sugs if s not in existing_parts]
+                
+                if sugs:
+                    st.markdown(
+                        "<div style='font-size:0.82rem; color:#ff7e42; font-weight:600; margin:0.3rem 0 0.1rem;'>💡 Suggested PDB IDs:</div>",
+                        unsafe_allow_html=True
+                    )
+                    cols = st.columns(len(sugs) if len(sugs) <= 6 else 6)
+                    for idx, sug in enumerate(sugs[:6]):
+                        with cols[idx]:
+                            def make_select_callback(s=sug, p_list=list(parts)):
+                                def select_suggestion():
+                                    p_list[-1] = s
+                                    new_val = ", ".join(p_list) + ", "
+                                    st.session_state.input_pdb_text_dashboard = new_val
+                                    
+                                    raw_ids = [pid.strip() for pid in new_val.split(",") if pid.strip()]
+                                    clean_ids = []
+                                    for pid in raw_ids:
+                                        if pid.upper().startswith("AF-"):
+                                            clean_ids.append(pid)
+                                        else:
+                                            clean_ids.append(pid.upper())
+                                    
+                                    st.session_state.pdb_ids = clean_ids
+                                    st.session_state.metadata_fetched = False
+                                    st.session_state.metadata = {}
+                                    st.session_state.chain_info = {}
+                                    st.session_state.manual_chain_selections = {}
+                                return select_suggestion
+                                
+                            st.button(
+                                sug,
+                                key=f"sug_{sug}_{idx}",
+                                on_click=make_select_callback(sug, parts),
+                                use_container_width=True,
+                            )
 
             # Inline validation badges (#5)
             if pdb_input:
@@ -102,6 +189,8 @@ def render_input_section(pdb_manager: Any):
                     st.session_state.pdb_ids = list(current_ids)
                     st.session_state.metadata_fetched = False
                     st.session_state.metadata = {}
+                    st.session_state.chain_info = {}
+                    st.session_state.manual_chain_selections = {}
 
         # --- Tab 3: Examples ---
         with tab_example:
@@ -115,6 +204,8 @@ def render_input_section(pdb_manager: Any):
                     st.session_state.pdb_ids = EXAMPLES[ex_name]
                     st.session_state.metadata_fetched = False
                     st.session_state.metadata = {}
+                    st.session_state.chain_info = {}
+                    st.session_state.manual_chain_selections = {}
                     
                 st.button(
                     f"Load {selected_example}", 
