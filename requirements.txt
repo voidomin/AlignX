@@ -38,3 +38,7 @@ pytest>=7.4.0
 pytest-asyncio>=0.21.0
 black>=23.9.0
 ruff>=0.1.0
+
+# API Web Server
+fastapi>=0.110.0
+uvicorn>=0.28.0
