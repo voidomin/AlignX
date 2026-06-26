@@ -79,8 +79,72 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
             st.error(f"✗ {mustang_msg}")
             st.info("See WINDOWS_SETUP.md for installation instructions")
 
-        # --- System Diagnostics ---
+        # --- System Health & Diagnostics ---
         with st.expander("🛠️ System Health", expanded=False):
+            import os
+            import sys
+            import gc
+            import psutil
+
+            # Live RAM Usage
+            try:
+                process = psutil.Process(os.getpid())
+                current_mem = process.memory_info().rss / (1024 * 1024)
+            except Exception:
+                current_mem = 0.0
+
+            if current_mem > 0.0:
+                st.metric(
+                    label="Live Server RAM Usage",
+                    value=f"{current_mem:.1f} MB",
+                    help="Current RAM (RSS) consumed by the Streamlit application process."
+                )
+
+            col_g1, col_g2 = st.columns(2)
+            with col_g1:
+                if st.button("🧹 Free RAM", help="Force garbage collection and clear caching layers to free memory"):
+                    initial_mem = current_mem
+                    st.cache_data.clear()
+                    try:
+                        st.cache_resource.clear()
+                    except Exception:
+                        pass
+                    gc.collect()
+                    try:
+                        new_mem = process.memory_info().rss / (1024 * 1024)
+                        freed = initial_mem - new_mem
+                        if freed > 0.1:
+                            st.toast(f"Freed {freed:.1f} MB of RAM!", icon="🧹")
+                        else:
+                            st.toast("RAM is already fully optimized!", icon="✅")
+                    except Exception:
+                        st.toast("Memory cleanup complete!", icon="✅")
+                    st.rerun()
+
+            with col_g2:
+                if st.button("🧹 Clear Logs", type="secondary", help="Delete temporary run directories"):
+                    st.session_state.system_manager.cleanup_old_runs(days=0)
+                    st.success("Temp files cleared.")
+
+            st.write("**Loaded Heavy Packages**")
+            packages = {
+                "Bio": "Bio",
+                "Matplotlib": "matplotlib",
+                "Seaborn": "seaborn",
+                "Plotly": "plotly",
+                "SciPy": "scipy"
+            }
+            cols_pkg = st.columns(len(packages))
+            for idx, (name, module_name) in enumerate(packages.items()):
+                loaded = module_name in sys.modules
+                with cols_pkg[idx]:
+                    if loaded:
+                        st.markdown(f"<span style='color:#FF4B4B; font-weight:bold; font-size:0.75rem;' title='Loaded (consuming RAM)'>● {name}</span>", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"<span style='color:#666666; font-size:0.75rem;' title='Not loaded (optimized)'>○ {name}</span>", unsafe_allow_html=True)
+
+            st.divider()
+
             if st.button("🔍 Run Diagnostics", ):
                 with st.spinner("Checking dependencies..."):
                     executable = getattr(st.session_state.get("mustang_runner"), "executable", "mustang")
@@ -106,9 +170,6 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
                         st.warning("MISSING")
                 st.caption(f"OS: {res['Platform']}")
                 st.caption(f"Py: {res['Python Version']}")
-                if st.button("🧹 Clear Logs", type="secondary"):
-                    st.session_state.system_manager.cleanup_old_runs(days=0)
-                    st.success("Temporary files cleared.")
 
         st.divider()
 
