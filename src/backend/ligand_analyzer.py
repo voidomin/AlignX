@@ -197,6 +197,7 @@ class LigandAnalyzer:
             results["interactions"].append(
                 {
                     "residue": res.get_resname(),
+                    "resn": res.get_resname(),
                     "chain": res.get_parent().get_id(),
                     "resi": res.get_id()[1],
                     "distance": round(min_dist, 2),

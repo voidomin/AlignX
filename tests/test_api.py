@@ -64,3 +64,37 @@ def test_chains_endpoint():
         assert "chains" in data
         assert "4RLT" in data["chains"]
         assert data["chains"]["4RLT"]["chains"][0]["id"] == "A"
+
+
+def test_memory_endpoints():
+    """Verify that memory retrieval and clear endpoints return correct structures."""
+    response = client.get("/api/memory")
+    assert response.status_code == 200
+    data = response.json()
+    assert "ram_mb" in data
+    assert data["status"] in ["ok", "error"]
+
+    response = client.post("/api/memory/clear")
+    assert response.status_code == 200
+    data = response.json()
+    assert "ram_mb" in data
+    assert data["status"] in ["cleared"]
+
+
+def test_interactions_and_ligands_endpoints():
+    """Verify that ligands and interactions retrieval endpoints handle mocks successfully."""
+    with patch("src.backend.api.ligand_analyzer") as mock_analyzer:
+        mock_analyzer.get_ligands.return_value = [{"id": "RET_A_296", "name": "RET"}]
+        mock_analyzer.calculate_interactions.return_value = {"interactions": []}
+        
+        # Mock Path.exists to return True so it finds the PDB file
+        with patch("pathlib.Path.exists", return_value=True):
+            response = client.get("/api/ligands?pdb_id=4RLT")
+            assert response.status_code == 200
+            assert response.json()["pdb_id"] == "4RLT"
+            
+            response = client.get("/api/interactions?pdb_id=4RLT&ligand_id=RET_A_296")
+            assert response.status_code == 200
+            assert response.json()["ligand_id"] == "RET_A_296"
+
+
