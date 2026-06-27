@@ -98,3 +98,24 @@ def test_interactions_and_ligands_endpoints():
             assert response.json()["ligand_id"] == "RET_A_296"
 
 
+def test_sequence_endpoint():
+    """Verify that the sequence alignment endpoint returns correct structure and calculations."""
+    with patch("src.backend.sequence_viewer.SequenceViewer.parse_afasta") as mock_parse, \
+         patch("src.backend.sequence_viewer.SequenceViewer.calculate_conservation") as mock_cons, \
+         patch("src.backend.sequence_viewer.SequenceViewer.calculate_identity") as mock_ident, \
+         patch("pathlib.Path.exists", return_value=True):
+        
+        mock_parse.return_value = {"4RLT_A": "MVLSPA", "3UG9_A": "MVHLTA"}
+        mock_cons.return_value = [1.0, 1.0, 1.0, 0.5, 0.5, 1.0]
+        mock_ident.return_value = 66.666
+        
+        response = client.get("/api/sequence?run_id=run_123")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["run_id"] == "run_123"
+        assert "4RLT_A" in data["sequences"]
+        assert data["identity"] == 66.67
+        assert len(data["conservation"]) == 6
+
+
+
