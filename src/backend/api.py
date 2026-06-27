@@ -369,5 +369,53 @@ def get_history(session_id: Optional[str] = Query(None)):
     except Exception:
         runs = history_db.get_all_runs()
         
-    return {"runs": runs}
+    return {"runs": sanitize_for_json(runs)}
+
+
+@app.get("/api/sequence")
+def get_sequence(
+    run_id: str = Query(...),
+    session_id: Optional[str] = Query(None)
+):
+    """
+    Parse the alignment FASTA for a run and return sequences,
+    conservation scores, and identity percentage.
+    """
+    from src.backend.sequence_viewer import SequenceViewer
+
+    res_dir = project_root / "results"
+    if session_id:
+        res_dir = res_dir / session_id
+    res_dir = res_dir / run_id
+
+    fasta_path = res_dir / "alignment.fasta"
+    if not fasta_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Alignment FASTA not found for run {run_id}"
+        )
+
+    viewer = SequenceViewer()
+    sequences = viewer.parse_afasta(fasta_path)
+    if not sequences:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to parse alignment FASTA file"
+        )
+
+    conservation = viewer.calculate_conservation(sequences)
+    identity = viewer.calculate_identity(sequences)
+
+    return sanitize_for_json({
+        "run_id": run_id,
+        "sequences": sequences,
+        "conservation": conservation,
+        "identity": round(identity, 2)
+    })
+
+
+# Mount static site for frontend SPA
+static_frontend_dir = project_root / "static"
+static_frontend_dir.mkdir(exist_ok=True)
+app.mount("/", StaticFiles(directory=str(static_frontend_dir), html=True), name="frontend")
 

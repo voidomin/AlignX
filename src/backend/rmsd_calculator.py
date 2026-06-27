@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing import List, Dict, Optional
+from Bio.PDB import PDBParser
 from src.utils.logger import get_logger
 
 logger = get_logger()
