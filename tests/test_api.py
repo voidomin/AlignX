@@ -118,4 +118,30 @@ def test_sequence_endpoint():
         assert len(data["conservation"]) == 6
 
 
+def test_report_endpoint(tmp_path):
+    """Verify that the PDF report endpoint generates and returns a PDF file response."""
+    dummy_pdf = tmp_path / "mustang_report_test.pdf"
+    dummy_pdf.write_bytes(b"%PDF-1.4 dummy content")
+    
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, \
+         patch("src.backend.report_generator.ReportGenerator.generate_full_report", return_value=dummy_pdf):
+        
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT", "3UG9"],
+            "metadata": {
+                "results": {
+                    "stats": {"mean_rmsd": 1.25},
+                    "id": "run_123"
+                }
+            }
+        }
+        
+        response = client.get("/api/report?run_id=run_123")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/pdf"
+        assert b"%PDF-1.4" in response.content
+
+
+
 

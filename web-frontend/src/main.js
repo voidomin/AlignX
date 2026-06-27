@@ -8,7 +8,7 @@ import { LigandTab } from './components/LigandTab';
 import { SequenceTab } from './components/SequenceTab';
 import { AnalyticsTab } from './components/AnalyticsTab';
 import { HistoryPanel } from './components/HistoryPanel';
-import { fetchChains, runAlignment, fetchLigands } from './api';
+import { fetchChains, runAlignment, fetchLigands, getAlignmentReportUrl } from './api';
 
 class App {
     constructor() {
@@ -269,7 +269,7 @@ class App {
             // Update tabs
             this.ligandTab.updateLigands(this.currentLigands, results.id);
             this.sequenceTab.updateResults(results.id, results.stats);
-            this.analyticsTab.updateResults(results.id, this.heatmapFig, this.treeFig, this.ramachandranStats);
+            this.analyticsTab.updateResults(results.id, this.heatmapFig, this.treeFig, this.ramachandranStats, results.rmsf_values);
 
             // Switch to Sequence tab
             this.switchTab('sequence');
@@ -358,7 +358,13 @@ class App {
         // Update tabs
         this.ligandTab.updateLigands(this.currentLigands, run.id);
         this.sequenceTab.updateResults(run.id, stats);
-        this.analyticsTab.updateResults(run.id, this.heatmapFig, this.treeFig, this.ramachandranStats);
+        this.analyticsTab.updateResults(
+            run.id,
+            this.heatmapFig,
+            this.treeFig,
+            this.ramachandranStats,
+            metadata.results ? metadata.results.rmsf_values : null
+        );
 
         // Switch to Sequence tab
         this.switchTab('sequence');
@@ -396,7 +402,7 @@ class App {
             alert("No active alignment result to export.");
             return;
         }
-        window.open(getAlignmentPdbUrl(this.currentRunId), '_blank');
+        window.open(getAlignmentReportUrl(this.currentRunId), '_blank');
     }
 }
 

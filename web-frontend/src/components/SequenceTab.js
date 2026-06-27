@@ -1,4 +1,4 @@
-import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl } from '../api';
+import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl, getAlignmentReportUrl } from '../api';
 
 export class SequenceTab {
     constructor() {
@@ -71,6 +71,12 @@ export class SequenceTab {
                             <span class="material-symbols-outlined text-[16px]">open_in_new</span> View FASTA
                         </a>
                     </div>
+                    <div class="flex items-center justify-between p-2.5 rounded bg-white/5 hover:bg-white/10 transition-colors">
+                        <span class="font-body-sm text-body-sm text-text-primary font-mono">mustang_report.pdf</span>
+                        <a id="download-report-link" href="#" target="_blank" class="text-secondary text-body-sm hover:underline flex items-center gap-1 opacity-55 pointer-events-none">
+                            <span class="material-symbols-outlined text-[16px]">open_in_new</span> Download PDF
+                        </a>
+                    </div>
                 </div>
             </div>
         `;
@@ -101,6 +107,7 @@ export class SequenceTab {
 
         const pdbLink = this.element.querySelector('#download-pdb-link');
         const fastaLink = this.element.querySelector('#download-fasta-link');
+        const reportLink = this.element.querySelector('#download-report-link');
         
         if (this.currentRunId) {
             pdbLink.href = getAlignmentPdbUrl(this.currentRunId);
@@ -108,12 +115,18 @@ export class SequenceTab {
             
             fastaLink.href = getAlignmentFastaUrl(this.currentRunId);
             fastaLink.classList.remove('opacity-55', 'pointer-events-none');
+
+            reportLink.href = getAlignmentReportUrl(this.currentRunId);
+            reportLink.classList.remove('opacity-55', 'pointer-events-none');
         } else {
             pdbLink.href = "#";
             pdbLink.classList.add('opacity-55', 'pointer-events-none');
             
             fastaLink.href = "#";
             fastaLink.classList.add('opacity-55', 'pointer-events-none');
+
+            reportLink.href = "#";
+            reportLink.classList.add('opacity-55', 'pointer-events-none');
         }
     }
 

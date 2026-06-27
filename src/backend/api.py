@@ -414,6 +414,75 @@ def get_sequence(
     })
 
 
+@app.get("/api/report")
+def get_pdf_report(
+    run_id: str = Query(...),
+    session_id: Optional[str] = Query(None)
+):
+    """
+    Generate and retrieve the PDF analysis report for a run.
+    """
+    from src.backend.report_generator import ReportGenerator
+    from fastapi.responses import FileResponse
+
+    # 1. Fetch run details
+    run = history_db.get_run(run_id)
+    if not run:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Run {run_id} not found in history database."
+        )
+
+    res_dir = project_root / "results"
+    if session_id:
+        res_dir = res_dir / session_id
+    res_dir = res_dir / run_id
+
+    # 2. Extract or reconstruct results dict
+    metadata = run.get("metadata", {})
+    results = metadata.get("results")
+    
+    if not results:
+        # Reconstruct minimal results dict from stats if present in metadata
+        stats = metadata.get("stats", {})
+        results = {
+            "stats": stats,
+            "id": run_id,
+            "pdb_ids": run.get("pdb_ids", [])
+        }
+
+    # 3. Generate report
+    try:
+        generator = ReportGenerator(res_dir)
+        # Use existing generated report if it exists to avoid redundant calculations
+        existing_pdfs = list(res_dir.glob("mustang_report_*.pdf"))
+        if existing_pdfs:
+            report_path = existing_pdfs[0]
+        else:
+            report_path = generator.generate_full_report(results, pdb_ids=run.get("pdb_ids", []))
+        
+        if not report_path.exists():
+            raise HTTPException(
+                status_code=500,
+                detail="Report file was not created successfully."
+            )
+            
+        return FileResponse(
+            path=str(report_path),
+            media_type="application/pdf",
+            filename=f"mustang_report_{run_id}.pdf"
+        )
+    except Exception as e:
+        import logging
+        logger = logging.getLogger("uvicorn")
+        logger.error(f"Failed to generate report PDF: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate report PDF: {str(e)}"
+        )
+
+
+
 # Mount static site for frontend SPA
 static_frontend_dir = project_root / "static"
 static_frontend_dir.mkdir(exist_ok=True)

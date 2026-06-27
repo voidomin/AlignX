@@ -176,7 +176,17 @@ class AnalysisCoordinator:
                 results["insights"] = []
 
             # 5. SAVE TO HISTORY & WRITE METADATA
-            self.history_db.save_run(run_id, run_name, pdb_ids, result_dir, session_id=self.session_id)
+            self.history_db.save_run(
+                run_id,
+                run_name,
+                pdb_ids,
+                result_dir,
+                metadata={
+                    "chain_selection": chain_selection,
+                    "results": results
+                },
+                session_id=self.session_id
+            )
 
             # Write metadata.json for portability and indexing stability
             import json

@@ -86,3 +86,7 @@ export function getAlignmentPdbUrl(runId) {
 export function getAlignmentFastaUrl(runId) {
     return `${API_BASE}/results/${runId}/alignment.fasta`;
 }
+
+export function getAlignmentReportUrl(runId) {
+    return `${API_BASE}/api/report?run_id=${runId}`;
+}

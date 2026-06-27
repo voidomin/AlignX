@@ -5,6 +5,7 @@ export class AnalyticsTab {
         this.heatmapFig = null;
         this.treeFig = null;
         this.ramachandranStats = null;
+        this.rmsfValues = [];
     }
 
     render() {
@@ -33,6 +34,19 @@ export class AnalyticsTab {
                     <span class="font-label-sm text-label-sm text-text-secondary uppercase">Top Outliers</span>
                     <div id="ramachandran-outliers-list" class="flex flex-wrap gap-1.5 mt-1">
                         <!-- Outlier badges -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Residue Fluctuation (Plotly Line Chart) -->
+            <div class="glass-panel rounded-xl p-5 flex flex-col gap-4 bg-[#11141c]/50 shrink-0 min-h-[350px]">
+                <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[20px] text-primary">show_chart</span>
+                    <h4 class="font-body-md text-body-md font-semibold text-text-primary">Residue Fluctuation (RMSF)</h4>
+                </div>
+                <div id="rmsf-plotly-chart" class="w-full h-[280px]">
+                    <div class="flex items-center justify-center h-full text-text-secondary font-body-sm">
+                        Run alignment to display interactive RMSF chart.
                     </div>
                 </div>
             </div>
@@ -69,11 +83,12 @@ export class AnalyticsTab {
         return div;
     }
 
-    updateResults(runId, heatmapFig, treeFig, ramachandranStats) {
+    updateResults(runId, heatmapFig, treeFig, ramachandranStats, rmsfValues) {
         this.currentRunId = runId;
         this.heatmapFig = heatmapFig;
         this.treeFig = treeFig;
         this.ramachandranStats = ramachandranStats;
+        this.rmsfValues = rmsfValues || [];
         this.renderVisuals();
     }
 
@@ -108,12 +123,62 @@ export class AnalyticsTab {
             listCard.classList.add('hidden');
         }
 
-        // 2. Render Plotly Heatmap
+        // 2. Render Plotly RMSF Line Chart
+        const rmsfDiv = this.element.querySelector('#rmsf-plotly-chart');
+        if (this.rmsfValues && this.rmsfValues.length > 0) {
+            rmsfDiv.innerHTML = "";
+            
+            // X-axis: 1-indexed positions
+            const xData = Array.from({ length: this.rmsfValues.length }, (_, i) => i + 1);
+            
+            const trace = {
+                x: xData,
+                y: this.rmsfValues,
+                type: 'scatter',
+                mode: 'lines',
+                line: {
+                    color: '#8B5CF6',
+                    width: 2.5,
+                    shape: 'spline'
+                },
+                fill: 'tozeroy',
+                fillcolor: 'rgba(139, 92, 246, 0.1)',
+                hoverinfo: 'x+y',
+                name: 'RMSF'
+            };
+
+            const layout = {
+                xaxis: {
+                    title: 'Alignment Position',
+                    gridcolor: 'rgba(255,255,255,0.05)',
+                    zeroline: false
+                },
+                yaxis: {
+                    title: 'RMSF (Å)',
+                    gridcolor: 'rgba(255,255,255,0.05)',
+                    zeroline: false
+                },
+                margin: { l: 50, r: 20, t: 20, b: 40 },
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                height: 280,
+                font: { family: "Inter, sans-serif", size: 10, color: "#8F9CAE" }
+            };
+
+            Plotly.newPlot(rmsfDiv, [trace], layout, { responsive: true, displayModeBar: false });
+        } else if (this.currentRunId) {
+            rmsfDiv.innerHTML = `
+                <div class="flex items-center justify-center h-full text-text-secondary font-body-sm">
+                    No residue fluctuation data available.
+                </div>
+            `;
+        }
+
+        // 3. Render Plotly Heatmap
         const heatmapDiv = this.element.querySelector('#rmsd-plotly-heatmap');
         if (this.heatmapFig && this.heatmapFig.data) {
             heatmapDiv.innerHTML = "";
             
-            // Adjust layout for compact display in the sidebar panel
             const layout = {
                 ...this.heatmapFig.layout,
                 width: undefined, // Responsive
@@ -133,7 +198,7 @@ export class AnalyticsTab {
             `;
         }
 
-        // 3. Render Plotly Dendrogram
+        // 4. Render Plotly Dendrogram
         const treeDiv = this.element.querySelector('#phylo-plotly-tree');
         if (this.treeFig && this.treeFig.data) {
             treeDiv.innerHTML = "";
