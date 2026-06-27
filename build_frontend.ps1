@@ -1,6 +1,6 @@
-# Build the Vite frontend from the voidomin repo and copy it to AlignX/static
+# Build the Vite frontend from the local AlignX/web-frontend repo and copy it to AlignX/static
 
-$portfolioDir = "C:\Users\ASUS\Documents\personal\voidomin\portfolio"
+$portfolioDir = "C:\Users\ASUS\Documents\personal\AlignX\web-frontend"
 $staticDir = "C:\Users\ASUS\Documents\personal\AlignX\static"
 
 Write-Host "Building Vite frontend in $portfolioDir..." -ForegroundColor Cyan
