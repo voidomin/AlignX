@@ -4,6 +4,9 @@ import asyncio
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
+import matplotlib
+matplotlib.use('Agg')
+
 import json
 from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware

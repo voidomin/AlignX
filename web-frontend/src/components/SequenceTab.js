@@ -97,8 +97,8 @@ export class SequenceTab {
         
         const rmsdText = this.stats.rmsd != null ? `${parseFloat(this.stats.rmsd).toFixed(2)} Å` : '--';
         const lengthText = this.stats.aligned_length != null ? this.stats.aligned_length : '--';
-        const identityText = this.stats.seq_identity != null ? `${(this.stats.seq_identity * 100).toFixed(1)}%` : '--';
-        const similarityText = this.stats.seq_similarity != null ? `${(this.stats.seq_similarity * 100).toFixed(1)}%` : '--';
+        const identityText = this.stats.seq_identity != null ? `${parseFloat(this.stats.seq_identity).toFixed(1)}%` : '--';
+        const similarityText = this.stats.seq_similarity != null ? `${parseFloat(this.stats.seq_similarity).toFixed(1)}%` : '--';
 
         this.element.querySelector('#stat-rmsd').innerText = rmsdText;
         this.element.querySelector('#stat-length').innerText = lengthText;

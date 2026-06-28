@@ -38,7 +38,7 @@ export class Viewer3D {
             <!-- 3D Canvas Area -->
             <div id="3d-canvas-container" class="flex-grow relative bg-[#050608] overflow-hidden min-h-[300px]">
                 <!-- 3Dmol viewer div (positioned absolutely to fill the container) -->
-                <div id="3dmol-viewer-canvas" class="w-full h-full absolute inset-0 z-0"></div>
+                <div id="viewer-canvas-3dmol" class="w-full h-full absolute inset-0 z-0"></div>
                 
                 <!-- Overlay HUD Elements (z-10 to stay on top of the 3D canvas) -->
                 <div class="absolute inset-0 z-10 pointer-events-none">
@@ -88,7 +88,7 @@ export class Viewer3D {
     }
 
     init3Dmol() {
-        const container = this.element.querySelector('#3dmol-viewer-canvas');
+        const container = this.element.querySelector('#viewer-canvas-3dmol');
         if (!container) return;
         
         container.innerHTML = "";
@@ -156,13 +156,11 @@ export class Viewer3D {
             this.viewer.clear();
             this.viewer.addModel(pdbData, "pdb");
             
-            // Reference (Chain A / MODEL 1) -> Violet
+            // Reference (Chain A) -> Violet
             this.viewer.setStyle({chain: 'A'}, {cartoon: {color: '#8B5CF6', opacity: 0.85}});
-            this.viewer.setStyle({model: 0}, {cartoon: {color: '#8B5CF6', opacity: 0.85}});
             
-            // Target (Chain B / MODEL 2) -> Cyan
+            // Target (Chain B) -> Cyan
             this.viewer.setStyle({chain: 'B'}, {cartoon: {color: '#06B6D4', opacity: 0.85}});
-            this.viewer.setStyle({model: 1}, {cartoon: {color: '#06B6D4', opacity: 0.85}});
             
             this.viewer.zoomTo();
             this.viewer.render();

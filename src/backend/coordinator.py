@@ -26,6 +26,33 @@ from src.utils.cache_manager import CacheManager
 logger = get_logger()
 
 
+def sanitize_for_json(val: Any) -> Any:
+    """Recursively convert custom objects (Path, np.ndarray, DataFrame, etc) to JSON-serializable types."""
+    import numpy as np
+    import pandas as pd
+    from pathlib import Path
+    
+    if isinstance(val, dict):
+        return {k: sanitize_for_json(v) for k, v in val.items()}
+    elif isinstance(val, list):
+        return [sanitize_for_json(item) for item in val]
+    elif isinstance(val, tuple):
+        return tuple(sanitize_for_json(item) for item in val)
+    elif isinstance(val, np.integer):
+        return int(val)
+    elif isinstance(val, np.floating):
+        return float(val)
+    elif isinstance(val, np.ndarray):
+        return sanitize_for_json(val.tolist())
+    elif hasattr(val, "to_plotly_json"):
+        return sanitize_for_json(val.to_plotly_json())
+    elif isinstance(val, pd.DataFrame):
+        return sanitize_for_json(val.to_dict(orient="split"))
+    elif isinstance(val, Path):
+        return str(val)
+    return val
+
+
 class AnalysisCoordinator:
     """
     Orchestrates the entire structural analysis pipeline.
@@ -176,6 +203,7 @@ class AnalysisCoordinator:
                 results["insights"] = []
 
             # 5. SAVE TO HISTORY & WRITE METADATA
+            sanitized_results = sanitize_for_json(results)
             self.history_db.save_run(
                 run_id,
                 run_name,
@@ -183,7 +211,7 @@ class AnalysisCoordinator:
                 result_dir,
                 metadata={
                     "chain_selection": chain_selection,
-                    "results": results
+                    "results": sanitized_results
                 },
                 session_id=self.session_id
             )
