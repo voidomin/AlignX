@@ -33,17 +33,29 @@ def sanitize_for_json(val: Any) -> Any:
     from pathlib import Path
     
     if isinstance(val, dict):
-        return {k: sanitize_for_json(v) for k, v in val.items()}
+        sanitized_dict = {}
+        for k, v in val.items():
+            # Sanitize the key to ensure it is JSON-serializable
+            sanitized_key = k
+            if isinstance(k, (np.integer, np.floating)):
+                sanitized_key = k.item()
+            elif isinstance(k, Path):
+                sanitized_key = str(k)
+            elif not isinstance(k, (str, int, float, bool, type(None))):
+                sanitized_key = str(k)
+            sanitized_dict[sanitized_key] = sanitize_for_json(v)
+        return sanitized_dict
     elif isinstance(val, list):
         return [sanitize_for_json(item) for item in val]
     elif isinstance(val, tuple):
-        return tuple(sanitize_for_json(item) for item in val)
+        # Convert tuple to list for proper JSON serialization
+        return [sanitize_for_json(item) for item in val]
     elif isinstance(val, np.integer):
         return int(val)
     elif isinstance(val, np.floating):
         return float(val)
     elif isinstance(val, np.ndarray):
-        return sanitize_for_json(val.tolist())
+        return [sanitize_for_json(item) for item in val.tolist()]
     elif hasattr(val, "to_plotly_json"):
         return sanitize_for_json(val.to_plotly_json())
     elif isinstance(val, pd.DataFrame):
@@ -265,6 +277,7 @@ class AnalysisCoordinator:
             # Calculations
             self.rmsd_analyzer.generate_heatmap(rmsd_df, heatmap_path)
             stats = self.rmsd_analyzer.calculate_statistics(rmsd_df)
+            stats["rmsd"] = stats["mean_rmsd"]
 
             # Quality Metrics (TM-score / GDT-TS)
             quality_metrics = None
@@ -295,6 +308,10 @@ class AnalysisCoordinator:
                         sequences
                     )
                     conservation = self.sequence_viewer.calculate_conservation(sequences)
+                    # Add aligned_length and seq_similarity
+                    stats["aligned_length"] = len(list(sequences.values())[0])
+                    similar_cols = sum(1 for c in conservation if c > 0.5)
+                    stats["seq_similarity"] = (similar_cols / len(conservation)) * 100
 
             clusters = self.rmsd_analyzer.identify_clusters(rmsd_df)
 

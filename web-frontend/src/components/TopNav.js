@@ -102,6 +102,17 @@ export class TopNav {
             }, 300);
         });
 
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const q = searchInput.value.trim().toUpperCase();
+                if (q.length === 4) {
+                    this.onAddPDB(q);
+                    searchInput.value = "";
+                    renderSuggestions([]);
+                }
+            }
+        });
+
         // Initialize defaults
         renderSuggestions([]);
 

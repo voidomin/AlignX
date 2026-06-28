@@ -16,7 +16,7 @@ class App {
         this.chainSelections = { "4RLT": "A", "3UG9": "A" };
         this.pdbMetadata = {};
         this.currentRunId = null;
-        this.activeView = 'dashboard'; // 'dashboard' | 'history' | 'library' | 'parameters' | 'metrics' | 'analytics'
+        this.activeView = 'dashboard'; // 'dashboard' | 'history'
         this.activeTab = 'overview'; // 'overview' | 'ligands' | 'sequence' | 'analytics'
         this.currentLigands = [];
         this.isAligning = false;
@@ -131,7 +131,8 @@ class App {
 
         if (this.activeView === 'history') {
             pane.appendChild(this.historyPanel.render());
-        } else if (this.activeView === 'dashboard' || this.activeView === 'alignment' || this.activeView === 'parameters') {
+        } else {
+            // Default to active dashboard workspace
             pane.appendChild(this.tabPanel.render());
             
             const tabContentContainer = document.createElement('div');
@@ -144,35 +145,20 @@ class App {
                 tabContentContainer.appendChild(this.overviewTab.render());
             } else if (this.activeTab === 'ligands') {
                 tabContentContainer.appendChild(this.ligandTab.render());
+                this.ligandTab.updateLigands(this.currentLigands, this.currentRunId, this.selectedPDBs);
             } else if (this.activeTab === 'sequence') {
                 tabContentContainer.appendChild(this.sequenceTab.render());
+                this.sequenceTab.updateResults(this.currentRunId, this.sequenceTab.stats);
             } else if (this.activeTab === 'analytics') {
                 tabContentContainer.appendChild(this.analyticsTab.render());
+                this.analyticsTab.updateResults(
+                    this.currentRunId,
+                    this.heatmapFig,
+                    this.treeFig,
+                    this.ramachandranStats,
+                    this.analyticsTab.rmsfValues
+                );
             }
-        } else {
-            const div = document.createElement('div');
-            div.className = "glass-panel rounded-xl p-6 flex flex-col items-center justify-center h-full text-center bg-[#11141c]/50";
-            
-            let icon = "folder_open";
-            let title = "Protein Library";
-            let desc = "Browse, organize, and inspect all downloaded structure coordinates.";
-            
-            if (this.activeView === 'metrics') {
-                icon = "monitoring";
-                title = "System Metrics";
-                desc = "Monitor pipeline engine CPU workloads and disk storage quotas.";
-            } else if (this.activeView === 'analytics') {
-                icon = "query_stats";
-                title = "Analytics Report";
-                desc = "Detailed statistical distribution of structural residues and alignments.";
-            }
-
-            div.innerHTML = `
-                <span class="material-symbols-outlined text-[48px] text-gradient-start mb-3">${icon}</span>
-                <h3 class="font-headline-sm text-headline-sm font-semibold text-text-primary mb-2">${title}</h3>
-                <p class="font-body-sm text-body-sm text-text-secondary max-w-xs leading-relaxed">${desc}</p>
-            `;
-            pane.appendChild(div);
         }
     }
 
@@ -267,7 +253,7 @@ class App {
             this.currentLigands = ligData.ligands || [];
 
             // Update tabs
-            this.ligandTab.updateLigands(this.currentLigands, results.id);
+            this.ligandTab.updateLigands(this.currentLigands, results.id, this.selectedPDBs);
             this.sequenceTab.updateResults(results.id, results.stats);
             this.analyticsTab.updateResults(results.id, this.heatmapFig, this.treeFig, this.ramachandranStats, results.rmsf_values);
 
@@ -356,7 +342,7 @@ class App {
         }
 
         // Update tabs
-        this.ligandTab.updateLigands(this.currentLigands, run.id);
+        this.ligandTab.updateLigands(this.currentLigands, run.id, this.selectedPDBs);
         this.sequenceTab.updateResults(run.id, stats);
         this.analyticsTab.updateResults(
             run.id,
@@ -383,7 +369,7 @@ class App {
             
             // Reload defaults
             this.overviewTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
-            this.ligandTab.updateLigands([], null);
+            this.ligandTab.updateLigands([], null, this.selectedPDBs);
             this.sequenceTab.updateResults(null, null);
             this.analyticsTab.updateResults(null, null, null, null);
             this.viewer3D.resetCartoonStyles();

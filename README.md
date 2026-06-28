@@ -55,11 +55,29 @@ The pipeline requires the **Mustang** binary (v3.2.3).
 
 ### 3. Run the App
 
-```bash
-streamlit run app.py
-```
+You can run either the Python (Streamlit) version or the Full-Stack (Vite + FastAPI) version:
 
-_Access at: `http://localhost:8501`_
+#### Option A: Streamlit (Python only)
+```powershell
+.venv\Scripts\streamlit run app.py
+```
+_Access at:_ `http://localhost:8501`
+
+#### Option B: Vite + FastAPI (Full-Stack)
+1. Build the Vite frontend:
+   ```powershell
+   powershell -File build_frontend.ps1
+   ```
+2. Start the FastAPI backend:
+   ```powershell
+   .venv\Scripts\uvicorn src.backend.api:app --host 127.0.0.1 --port 8000
+   ```
+3. Open `http://127.0.0.1:8000` in your browser (the backend automatically serves the built static frontend).
+
+---
+
+## 🧪 Verification Protocol
+To verify the application code, quality metrics, and UI flow, follow the step-by-step pipeline detailed in [VERIFICATION.md](VERIFICATION.md).
 
 ---
 

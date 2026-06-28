@@ -69,45 +69,19 @@ export class Sidebar {
     renderLinks() {
         const container = this.element.querySelector('#sidebar-links-container');
         container.innerHTML = `
-            <!-- Dashboard (Active) -->
+            <!-- Active Alignment Workspace -->
             <button data-view="dashboard" class="nav-btn w-full text-left font-label-md text-label-md flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 active:translate-x-1 border-r-2 ${this.activeView === 'dashboard' ? 'bg-secondary/10 text-secondary border-secondary' : 'text-on-surface-variant hover:bg-white/5 hover:text-text-primary border-transparent'}">
                 <span class="material-symbols-outlined text-[20px]">dashboard</span>
-                Dashboard
+                Active Workspace
             </button>
-            <!-- Protein Library -->
-            <button data-view="library" class="nav-btn w-full text-left font-label-md text-label-md flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 active:translate-x-1 border-r-2 ${this.activeView === 'library' ? 'bg-secondary/10 text-secondary border-secondary' : 'text-on-surface-variant hover:bg-white/5 hover:text-text-primary border-transparent'}">
-                <span class="material-symbols-outlined text-[20px]">folder_open</span>
-                Protein Library
-            </button>
-            <!-- Session Controls -->
-            <div class="mt-4 mb-1 px-3">
-                <span class="font-label-sm text-label-sm text-text-secondary uppercase tracking-wider">Session</span>
-            </div>
-            <button data-view="alignment" class="nav-btn w-full text-left font-label-md text-label-md flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 active:translate-x-1 border-r-2 ${this.activeView === 'alignment' ? 'bg-secondary/10 text-secondary border-secondary' : 'text-on-surface-variant hover:bg-white/5 hover:text-text-primary border-transparent'}">
-                <span class="material-symbols-outlined text-[18px]">play_circle</span>
-                Active Alignment
-            </button>
-            <button data-view="parameters" class="nav-btn w-full text-left font-label-md text-label-md flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 active:translate-x-1 border-r-2 ${this.activeView === 'parameters' ? 'bg-secondary/10 text-secondary border-secondary' : 'text-on-surface-variant hover:bg-white/5 hover:text-text-primary border-transparent'}">
-                <span class="material-symbols-outlined text-[18px]">tune</span>
-                Parameters
-            </button>
-            <!-- History Section -->
+            
             <div class="mt-4 mb-1 px-3">
                 <span class="font-label-sm text-label-sm text-text-secondary uppercase tracking-wider">History</span>
             </div>
+            <!-- Session History -->
             <button data-view="history" class="nav-btn w-full text-left font-label-md text-label-md flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 active:translate-x-1 border-r-2 ${this.activeView === 'history' ? 'bg-secondary/10 text-secondary border-secondary' : 'text-on-surface-variant hover:bg-white/5 hover:text-text-primary border-transparent'}">
                 <span class="material-symbols-outlined text-[20px]">history</span>
                 Session History
-            </button>
-            <!-- System Metrics -->
-            <button data-view="metrics" class="nav-btn w-full text-left font-label-md text-label-md flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 active:translate-x-1 border-r-2 ${this.activeView === 'metrics' ? 'bg-secondary/10 text-secondary border-secondary' : 'text-on-surface-variant hover:bg-white/5 hover:text-text-primary border-transparent'}">
-                <span class="material-symbols-outlined text-[20px]">monitoring</span>
-                System Metrics
-            </button>
-            <!-- Analytics -->
-            <button data-view="analytics" class="nav-btn w-full text-left font-label-md text-label-md flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 active:translate-x-1 border-r-2 ${this.activeView === 'analytics' ? 'bg-secondary/10 text-secondary border-secondary' : 'text-on-surface-variant hover:bg-white/5 hover:text-text-primary border-transparent'}">
-                <span class="material-symbols-outlined text-[20px]">query_stats</span>
-                Analytics
             </button>
         `;
 
