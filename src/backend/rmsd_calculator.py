@@ -21,6 +21,7 @@ def calculate_rmsd_from_superposition(
     """
     try:
         from Bio.PDB import PDBParser
+
         parser = PDBParser(QUIET=True)
         structure = parser.get_structure("aln", str(pdb_file))
 
@@ -255,6 +256,7 @@ def calculate_structure_rmsd(
 
         # 2. Parse PDB
         from Bio.PDB import PDBParser
+
         parser = PDBParser(QUIET=True)
         structure = parser.get_structure("aln", str(pdb_file))
 

@@ -13,8 +13,6 @@ from pathlib import Path
 from typing import Dict, List
 
 import streamlit as st
-from pathlib import Path
-from typing import Dict, List, Any, Optional
 import sqlite3
 
 # Backend Imports (needed for initialization)
@@ -62,13 +60,15 @@ class SessionInitializer:
 
         if "cache_manager" not in st.session_state:
             from src.utils.cache_manager import CacheManager
+
             st.session_state.cache_manager = CacheManager(
                 st.session_state.config, st.session_state.history_db
             )
 
         if "pdb_manager" not in st.session_state:
             st.session_state.pdb_manager = PDBManager(
-                st.session_state.config, st.session_state.cache_manager,
+                st.session_state.config,
+                st.session_state.cache_manager,
                 session_id=session_id,
             )
 
@@ -107,14 +107,16 @@ class SessionInitializer:
                 st.session_state.system_manager = SystemManager(st.session_state.config)
                 # Perform automated startup cleanup (runs older than 7 days)
                 st.session_state.system_manager.cleanup_old_runs(days=7)
-                
+
                 # TTL cleanup: purge stale session directories (>24h) and their DB records
                 try:
                     # Open a temporary connection specifically for cleanup
                     with sqlite3.connect(st.session_state.history_db.db_path) as conn:
                         cleanup_stale_sessions(max_age_hours=24, db_conn=conn)
                 except Exception as e:
-                    st.session_state.logger.warning(f"Failed to run TTL cleanup with DB connection: {e}")
+                    st.session_state.logger.warning(
+                        f"Failed to run TTL cleanup with DB connection: {e}"
+                    )
                     # Fallback to file-only cleanup if DB is locked
                     cleanup_stale_sessions(max_age_hours=24)
 
@@ -163,6 +165,7 @@ class SessionInitializer:
 
             if "_confirm_deep_clean" not in st.session_state:
                 st.session_state._confirm_deep_clean = False
+
 
 def get_session_id() -> str:
     """
@@ -254,7 +257,9 @@ def cleanup_stale_sessions(max_age_hours: int = 24, db_conn=None) -> List[str]:
             for d in session_dirs:
                 try:
                     shutil.rmtree(d)
-                    logger.info(f"TTL cleanup: removed {d} (age: {age_seconds/3600:.1f}h)")
+                    logger.info(
+                        f"TTL cleanup: removed {d} (age: {age_seconds/3600:.1f}h)"
+                    )
                 except Exception as e:
                     logger.warning(f"TTL cleanup failed for {d}: {e}")
             purged.append(session_id)
@@ -263,11 +268,17 @@ def cleanup_stale_sessions(max_age_hours: int = 24, db_conn=None) -> List[str]:
             if db_conn is not None:
                 try:
                     cursor = db_conn.cursor()
-                    cursor.execute("DELETE FROM runs WHERE session_id = ?", (session_id,))
+                    cursor.execute(
+                        "DELETE FROM runs WHERE session_id = ?", (session_id,)
+                    )
                     db_conn.commit()
-                    logger.info(f"TTL cleanup: removed DB records for session {session_id}")
+                    logger.info(
+                        f"TTL cleanup: removed DB records for session {session_id}"
+                    )
                 except Exception as e:
-                    logger.warning(f"TTL DB cleanup failed for session {session_id}: {e}")
+                    logger.warning(
+                        f"TTL DB cleanup failed for session {session_id}: {e}"
+                    )
 
     if purged:
         logger.info(f"TTL cleanup: purged {len(purged)} stale sessions")

@@ -3,22 +3,29 @@ import streamlit as st
 from pathlib import Path
 from typing import Callable
 
-
 # ---------------------------------------------------------------------------
 # Helper: reset session (#4)
 # ---------------------------------------------------------------------------
 
+
 def _do_soft_reset():
     """Clear results and IDs but keep downloaded files."""
     import gc
+
     # Clear ZIP buffers cached in session state to prevent memory leakage
     for k in list(st.session_state.keys()):
         if k.startswith("zip_buffer_"):
             del st.session_state[k]
 
     for key in [
-        "pdb_ids", "results", "metadata", "highlighted_residues",
-        "residue_selections", "highlight_chains", "insights", "insights_run_id",
+        "pdb_ids",
+        "results",
+        "metadata",
+        "highlighted_residues",
+        "residue_selections",
+        "highlight_chains",
+        "insights",
+        "insights_run_id",
     ]:
         if key in ["pdb_ids"]:
             st.session_state[key] = []
@@ -54,12 +61,14 @@ def _do_deep_clean():
         pass
     _do_soft_reset()
     import gc
+
     gc.collect()
 
 
 # ---------------------------------------------------------------------------
 # Sidebar
 # ---------------------------------------------------------------------------
+
 
 def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
     """
@@ -97,12 +106,15 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
                 st.metric(
                     label="Live Server RAM Usage",
                     value=f"{current_mem:.1f} MB",
-                    help="Current RAM (RSS) consumed by the Streamlit application process."
+                    help="Current RAM (RSS) consumed by the Streamlit application process.",
                 )
 
             col_g1, col_g2 = st.columns(2)
             with col_g1:
-                if st.button("🧹 Free RAM", help="Force garbage collection and clear caching layers to free memory"):
+                if st.button(
+                    "🧹 Free RAM",
+                    help="Force garbage collection and clear caching layers to free memory",
+                ):
                     initial_mem = current_mem
                     st.cache_data.clear()
                     try:
@@ -122,7 +134,11 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
                     st.rerun()
 
             with col_g2:
-                if st.button("🧹 Clear Logs", type="secondary", help="Delete temporary run directories"):
+                if st.button(
+                    "🧹 Clear Logs",
+                    type="secondary",
+                    help="Delete temporary run directories",
+                ):
                     st.session_state.system_manager.cleanup_old_runs(days=0)
                     st.success("Temp files cleared.")
 
@@ -132,22 +148,32 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
                 "Matplotlib": "matplotlib",
                 "Seaborn": "seaborn",
                 "Plotly": "plotly",
-                "SciPy": "scipy"
+                "SciPy": "scipy",
             }
             cols_pkg = st.columns(len(packages))
             for idx, (name, module_name) in enumerate(packages.items()):
                 loaded = module_name in sys.modules
                 with cols_pkg[idx]:
                     if loaded:
-                        st.markdown(f"<span style='color:#FF4B4B; font-weight:bold; font-size:0.75rem;' title='Loaded (consuming RAM)'>● {name}</span>", unsafe_allow_html=True)
+                        st.markdown(
+                            f"<span style='color:#FF4B4B; font-weight:bold; font-size:0.75rem;' title='Loaded (consuming RAM)'>● {name}</span>",
+                            unsafe_allow_html=True,
+                        )
                     else:
-                        st.markdown(f"<span style='color:#666666; font-size:0.75rem;' title='Not loaded (optimized)'>○ {name}</span>", unsafe_allow_html=True)
+                        st.markdown(
+                            f"<span style='color:#666666; font-size:0.75rem;' title='Not loaded (optimized)'>○ {name}</span>",
+                            unsafe_allow_html=True,
+                        )
 
             st.divider()
 
-            if st.button("🔍 Run Diagnostics", ):
+            if st.button(
+                "🔍 Run Diagnostics",
+            ):
                 with st.spinner("Checking dependencies..."):
-                    executable = getattr(st.session_state.get("mustang_runner"), "executable", "mustang")
+                    executable = getattr(
+                        st.session_state.get("mustang_runner"), "executable", "mustang"
+                    )
                     results = st.session_state.system_manager.run_diagnostics(
                         mustang_executable=executable
                     )
@@ -182,38 +208,56 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
                 st.warning("This will clear your current results. Are you sure?")
                 c1, c2 = st.columns(2)
                 with c1:
-                    if st.button("✅ Confirm", type="primary", ):
+                    if st.button(
+                        "✅ Confirm",
+                        type="primary",
+                    ):
                         _do_soft_reset()
                         st.session_state._confirm_reset = False
                         st.rerun()
                 with c2:
-                    if st.button("❌ Cancel", ):
+                    if st.button(
+                        "❌ Cancel",
+                    ):
                         st.session_state._confirm_reset = False
                         st.rerun()
             else:
-                if st.button("🔄 New Analysis",
-                             help="Clear current results and start fresh (keeps downloaded files)"):
+                if st.button(
+                    "🔄 New Analysis",
+                    help="Clear current results and start fresh (keeps downloaded files)",
+                ):
                     st.session_state._confirm_reset = True
                     st.rerun()
 
             # Deep clean with confirmation
             if st.session_state.get("_confirm_deep_clean"):
-                st.error("⚠️ This will delete all downloaded PDB files and reset everything.")
+                st.error(
+                    "⚠️ This will delete all downloaded PDB files and reset everything."
+                )
                 c1, c2 = st.columns(2)
                 with c1:
-                    if st.button("✅ Delete Files", type="primary", ):
+                    if st.button(
+                        "✅ Delete Files",
+                        type="primary",
+                    ):
                         with st.spinner("Wiping session data..."):
                             _do_deep_clean()
                         st.session_state._confirm_deep_clean = False
                         st.toast("🧹 All files wiped!", icon="✅")
                         st.rerun()
                 with c2:
-                    if st.button("❌ Cancel", key="cancel_deep", ):
+                    if st.button(
+                        "❌ Cancel",
+                        key="cancel_deep",
+                    ):
                         st.session_state._confirm_deep_clean = False
                         st.rerun()
             else:
-                if st.button("🧹 Clear All Files", type="secondary",
-                             help="Delete all downloaded/cleaned PDB files and reset everything"):
+                if st.button(
+                    "🧹 Clear All Files",
+                    type="secondary",
+                    help="Delete all downloaded/cleaned PDB files and reset everything",
+                ):
                     st.session_state._confirm_deep_clean = True
                     st.rerun()
 
@@ -223,7 +267,9 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
         with st.expander("📜 History", expanded=False):
             try:
                 session_id = st.session_state.get("session_id")
-                runs = st.session_state.history_db.get_all_runs(limit=6, session_id=session_id)
+                runs = st.session_state.history_db.get_all_runs(
+                    limit=6, session_id=session_id
+                )
             except TypeError:
                 runs = st.session_state.history_db.get_all_runs()[:6]
 
@@ -264,7 +310,7 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
                     col1, col2 = st.columns([3, 1])
                     with col1:
                         if st.button(
-                            f"📂 Load",
+                            "📂 Load",
                             key=f"load_{run['id']}",
                             help=f"Restore: {run['name']}",
                         ):
@@ -307,7 +353,9 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
 
         with st.expander(opts_label, expanded=multi_chain_detected):
             if multi_chain_detected:
-                st.caption("⚠️ Multi-chain structures detected — review chain selection below.")
+                st.caption(
+                    "⚠️ Multi-chain structures detected — review chain selection below."
+                )
 
             st.checkbox(
                 "Filter large files",
@@ -350,5 +398,3 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
         # Version badge
         version = st.session_state.config.get("app", {}).get("version", "?.?.?")
         st.caption(f"🧬 **AlignX** `v{version}`")
-
-

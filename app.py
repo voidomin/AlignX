@@ -1,32 +1,21 @@
 import os
 import sys
+
 # Set working directory to the app directory
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 if os.getcwd() not in sys.path:
     sys.path.insert(0, os.getcwd())
 
 import matplotlib
-matplotlib.use('Agg')
+
+matplotlib.use("Agg")
 
 import streamlit as st
-from pathlib import Path
 
 # Backend Imports (for initialization)
-from src.backend.pdb_manager import PDBManager
-from src.backend.mustang_runner import MustangRunner
-from src.backend.rmsd_analyzer import RMSDAnalyzer
-from src.backend.sequence_viewer import SequenceViewer
-from src.backend.report_generator import ReportGenerator
-from src.backend.ligand_analyzer import LigandAnalyzer
-from src.backend.database import HistoryDatabase
-from src.backend.utilities import SystemManager
-from src.backend.coordinator import AnalysisCoordinator
 
 # Utility Imports
-from src.utils.logger import setup_logger
-from src.utils.config_loader import load_config
-from src.utils.cache_manager import CacheManager
-from src.utils.session_manager import SessionInitializer, cleanup_stale_sessions
+from src.utils.session_manager import SessionInitializer
 
 # Frontend Modules
 from src.frontend import utils, sidebar, analysis
@@ -47,13 +36,15 @@ def init_session_state():
 
     # 2. Auto-recovery: If results is None, try to load the latest successful run
     # ONLY if we haven't already attempted recovery in this session
-    if st.session_state.get("results") is None and not st.session_state.get("auto_recovered", False):
+    if st.session_state.get("results") is None and not st.session_state.get(
+        "auto_recovered", False
+    ):
         st.session_state.auto_recovered = True  # Mark as attempted (session-persistent)
         st.session_state.loading_latest = True
-        
+
         session_id = st.session_state.get("session_id")
         latest_run = st.session_state.history_db.get_latest_run(session_id=session_id)
-        
+
         if latest_run:
             analysis.load_run_from_history(latest_run["id"], is_auto=True)
         st.session_state.loading_latest = False

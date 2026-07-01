@@ -4,8 +4,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing import Optional, Tuple
-from scipy.cluster.hierarchy import linkage, dendrogram
-from scipy.spatial.distance import squareform
+from scipy.cluster.hierarchy import linkage
 
 from src.utils.logger import get_logger
 

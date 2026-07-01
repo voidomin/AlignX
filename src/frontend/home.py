@@ -46,7 +46,9 @@ def render_hero_section():
 
     # Session isolation info
     session_id = st.session_state.get("session_id", "N/A")
-    st.caption(f"🔑 Session: `{session_id}` — refreshing the browser starts a new session. Your files auto-clean after 24h.")
+    st.caption(
+        f"🔑 Session: `{session_id}` — refreshing the browser starts a new session. Your files auto-clean after 24h."
+    )
 
     st.divider()
 
@@ -109,5 +111,3 @@ def render_hero_section():
         """,
             language="markdown",
         )
-
-

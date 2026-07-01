@@ -7,23 +7,14 @@ import io
 @st.cache_data(max_entries=3, ttl=300, show_spinner=False)
 def generate_zip_package(results: Dict[str, Any], run_id: str) -> bytes:
     """Generate and cache the complete package ZIP file bytes."""
-    import zipfile
-    import io
     zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(
-        zip_buffer, "a", zipfile.ZIP_DEFLATED, False
-    ) as zip_file:
+    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
         # Add PDB alignment
         if results.get("alignment_pdb") and results["alignment_pdb"].exists():
-            zip_file.write(
-                results["alignment_pdb"], arcname=f"alignment_{run_id}.pdb"
-            )
+            zip_file.write(results["alignment_pdb"], arcname=f"alignment_{run_id}.pdb")
 
         # Add AFasta
-        if (
-            results.get("alignment_afasta")
-            and results["alignment_afasta"].exists()
-        ):
+        if results.get("alignment_afasta") and results["alignment_afasta"].exists():
             zip_file.write(
                 results["alignment_afasta"],
                 arcname=f"alignment_{run_id}.afasta",
@@ -189,5 +180,5 @@ def render_downloads_tab(results: Dict[str, Any]) -> None:
         file_name=f"Mustang_Full_Results_{run_id}.zip",
         mime="application/zip",
         use_container_width=True,
-        type="primary"
+        type="primary",
     )

@@ -13,6 +13,7 @@ def render_phylo_tree_tab(results: Dict[str, Any]) -> None:
         results: The results dictionary containing tree visualization data.
     """
     import plotly.graph_objects as go
+
     st.subheader("🌳 Structural Tree & Quality Validation")
     render_learning_card("Tree")
     render_help_expander("tree")

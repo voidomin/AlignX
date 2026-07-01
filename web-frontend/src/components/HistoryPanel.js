@@ -1,11 +1,14 @@
 import { fetchHistory } from '../api';
 
+const PAGE_SIZE = 20;
+
 export class HistoryPanel {
     constructor(props) {
         this.onReloadRun = props.onReloadRun;
         this.onClose = props.onClose;
         this.element = null;
         this.runsList = [];
+        this.total = 0;
     }
 
     render() {
@@ -47,9 +50,10 @@ export class HistoryPanel {
     async loadHistoryData() {
         const container = this.element.querySelector('#history-runs-list');
         try {
-            const data = await fetchHistory();
+            const data = await fetchHistory(PAGE_SIZE, 0);
             this.runsList = data.runs || [];
-            
+            this.total = data.total || this.runsList.length;
+
             container.innerHTML = "";
             if (this.runsList.length === 0) {
                 container.innerHTML = `
@@ -60,45 +64,8 @@ export class HistoryPanel {
                 return;
             }
 
-            this.runsList.forEach(run => {
-                const div = document.createElement('div');
-                div.className = "glass-panel p-4 rounded-lg bg-[#11141c]/50 hover:bg-[#11141c]/80 border border-white/5 hover:border-secondary/40 transition-all cursor-pointer flex flex-col gap-2 group";
-                
-                let pids = [];
-                try {
-                    pids = typeof run.pdb_ids === 'string' ? JSON.parse(run.pdb_ids) : run.pdb_ids;
-                } catch(e) {
-                    pids = [run.pdb_ids];
-                }
-
-                // Format timestamp
-                let displayTime = run.timestamp;
-                try {
-                    const dt = new Date(run.timestamp);
-                    if (!isNaN(dt.getTime())) {
-                        displayTime = dt.toLocaleString();
-                    }
-                } catch(e){}
-
-                div.innerHTML = `
-                    <div class="flex justify-between items-center">
-                        <span class="font-body-sm font-bold text-text-primary group-hover:text-secondary font-mono">${run.id}</span>
-                        <span class="font-label-sm text-[10px] text-text-secondary">${displayTime}</span>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <div class="flex gap-1">
-                            ${pids.map(pid => `<span class="px-1.5 py-0.5 rounded bg-black/40 text-[#fff] border border-white/10 font-mono text-[10px]">${pid}</span>`).join("")}
-                        </div>
-                        <span class="px-2 py-0.5 rounded text-[10px] bg-success/20 text-success border border-success/30 font-medium capitalize">${run.status || "success"}</span>
-                    </div>
-                `;
-
-                div.addEventListener('click', () => {
-                    this.onReloadRun(run);
-                });
-
-                container.appendChild(div);
-            });
+            this.renderRuns(this.runsList);
+            this.renderLoadMoreControl();
         } catch (err) {
             console.error("Failed to load history data:", err);
             container.innerHTML = `
@@ -106,6 +73,77 @@ export class HistoryPanel {
                     Failed to retrieve session history log.
                 </div>
             `;
+        }
+    }
+
+    renderRuns(runs) {
+        const container = this.element.querySelector('#history-runs-list');
+        runs.forEach(run => {
+            const div = document.createElement('div');
+            div.className = "glass-panel p-4 rounded-lg bg-[#11141c]/50 hover:bg-[#11141c]/80 border border-white/5 hover:border-secondary/40 transition-all cursor-pointer flex flex-col gap-2 group";
+
+            let pids = [];
+            try {
+                pids = typeof run.pdb_ids === 'string' ? JSON.parse(run.pdb_ids) : run.pdb_ids;
+            } catch(e) {
+                pids = [run.pdb_ids];
+            }
+
+            // Format timestamp
+            let displayTime = run.timestamp;
+            try {
+                const dt = new Date(run.timestamp);
+                if (!isNaN(dt.getTime())) {
+                    displayTime = dt.toLocaleString();
+                }
+            } catch(e){}
+
+            div.innerHTML = `
+                <div class="flex justify-between items-center">
+                    <span class="font-body-sm font-bold text-text-primary group-hover:text-secondary font-mono">${run.id}</span>
+                    <span class="font-label-sm text-[10px] text-text-secondary">${displayTime}</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <div class="flex gap-1">
+                        ${pids.map(pid => `<span class="px-1.5 py-0.5 rounded bg-black/40 text-[#fff] border border-white/10 font-mono text-[10px]">${pid}</span>`).join("")}
+                    </div>
+                    <span class="px-2 py-0.5 rounded text-[10px] bg-success/20 text-success border border-success/30 font-medium capitalize">${run.status || "success"}</span>
+                </div>
+            `;
+
+            div.addEventListener('click', () => {
+                this.onReloadRun(run);
+            });
+
+            container.appendChild(div);
+        });
+    }
+
+    renderLoadMoreControl() {
+        const container = this.element.querySelector('#history-runs-list');
+        const existing = this.element.querySelector('#history-load-more-btn');
+        if (existing) existing.remove();
+
+        if (this.runsList.length >= this.total) return;
+
+        const btn = document.createElement('button');
+        btn.id = 'history-load-more-btn';
+        btn.className = "w-full py-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-white/5 font-label-md text-label-md transition-colors shrink-0";
+        btn.innerText = `Load More (${this.runsList.length}/${this.total})`;
+        btn.addEventListener('click', () => this.loadMore());
+        container.appendChild(btn);
+    }
+
+    async loadMore() {
+        try {
+            const data = await fetchHistory(PAGE_SIZE, this.runsList.length);
+            const newRuns = data.runs || [];
+            this.total = data.total || this.total;
+            this.runsList = this.runsList.concat(newRuns);
+            this.renderRuns(newRuns);
+            this.renderLoadMoreControl();
+        } catch (err) {
+            console.error("Failed to load more history:", err);
         }
     }
 }

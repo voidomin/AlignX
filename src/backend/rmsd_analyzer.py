@@ -33,6 +33,7 @@ class RMSDAnalyzer:
         try:
             import matplotlib.pyplot as plt
             import seaborn as sns
+
             plt.figure(figsize=(10, 8))
 
             # Create heatmap

@@ -70,7 +70,9 @@ def render_ligand_tab(results: Dict[str, Any]) -> None:
             else:
                 with sel_col2:
                     st.success(f"Found {len(ligands)} ligands")
-                    ligand_options = {f"{lig['name']} ({lig['id']})": lig for lig in ligands}
+                    ligand_options = {
+                        f"{lig['name']} ({lig['id']})": lig for lig in ligands
+                    }
                     selected_ligand_name = st.selectbox(
                         "Select Ligand", list(ligand_options.keys())
                     )
@@ -141,12 +143,16 @@ def render_ligand_tab(results: Dict[str, Any]) -> None:
                         width=500,
                         height=450,
                         key="ligand_3d",
-                        highlight_indices=highlight_indices if highlight_indices else None,
+                        highlight_indices=(
+                            highlight_indices if highlight_indices else None
+                        ),
                     )
 
                 with res_col2:
                     st.markdown("#### Interacting Residues (< 5Å)")
-                    st.caption("💡 Select one or more rows to highlight residues in 3D.")
+                    st.caption(
+                        "💡 Select one or more rows to highlight residues in 3D."
+                    )
                     if interactions["interactions"]:
                         df_int = pd.DataFrame(interactions["interactions"])
                         st.dataframe(
@@ -157,7 +163,7 @@ def render_ligand_tab(results: Dict[str, Any]) -> None:
                             height=400,
                             on_select="rerun",
                             selection_mode="multi-row",
-                            key=df_key
+                            key=df_key,
                         )
                     else:
                         st.info("No residues found within cutoff distance.")

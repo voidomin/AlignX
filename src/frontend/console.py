@@ -1,4 +1,5 @@
 import streamlit as st
+
 try:
     import psutil
 except ImportError:
@@ -23,7 +24,7 @@ def render_console(log_file_path: Optional[Path] = None) -> None:
             cpu_usage, mem_usage = "N/A", "N/A"
     else:
         cpu_usage, mem_usage = "N/A", "N/A"
-    
+
     # 2. Determine Pipeline Status
     status = "IDLE"
     status_class = "status-idle"
@@ -55,24 +56,31 @@ def render_console(log_file_path: Optional[Path] = None) -> None:
         with c3:
             st.markdown(f"**🧠 RAM:** `{mem_usage}%`")
         with c4:
-            st.markdown(f"**🛰️ LOG:** <span class='{status_class}'>{status}</span>", unsafe_allow_html=True)
+            st.markdown(
+                f"**🛰️ LOG:** <span class='{status_class}'>{status}</span>",
+                unsafe_allow_html=True,
+            )
 
         # Action Row
         col_info, col_clear = st.columns([4, 1])
         with col_info:
-            st.caption(f"Session ID: `{st.session_state.get('session_id', 'GLOBAL')[:8]}` | {datetime.now().strftime('%H:%M:%S')}")
+            st.caption(
+                f"Session ID: `{st.session_state.get('session_id', 'GLOBAL')[:8]}` | {datetime.now().strftime('%H:%M:%S')}"
+            )
         with col_clear:
             if st.button("🗑️ CLEAR", key="clear_terminal", use_container_width=True):
                 if log_file_path and log_file_path.exists():
                     with open(log_file_path, "w") as f:
-                        f.write(f"[{datetime.now().strftime('%H:%M:%S')}] Terminal cleared\n")
+                        f.write(
+                            f"[{datetime.now().strftime('%H:%M:%S')}] Terminal cleared\n"
+                        )
                 st.rerun()
 
         # 5. Render Main Terminal Box
         escaped = (
             log_content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         )
-        
+
         # Inject custom scanline-enabled container
         st.markdown(
             f"""

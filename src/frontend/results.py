@@ -174,7 +174,8 @@ def render_compact_summary(results: Optional[Dict[str, Any]] = None) -> None:
         st.metric("Seq Length", results.get("sequence_length", "N/A"))
 
     if st.button(
-        "👁️ View Full Detailed Analysis", type="primary", 
+        "👁️ View Full Detailed Analysis",
+        type="primary",
     ):
         st.session_state.active_tab = "Results"
         st.rerun()
@@ -279,4 +280,3 @@ def _render_structural_insights(insights: List[str]) -> None:
                     st.markdown(insight)
 
         st.markdown("</div>", unsafe_allow_html=True)
-

@@ -19,13 +19,21 @@ def render_rmsd_tab(results: Dict[str, Any]) -> None:
 
     with col2:
         st.subheader("Statistics")
-        
+
         # Dynamic Colormap Picker
         selected_colormap = st.selectbox(
             "🎨 Heatmap Color Scale",
-            options=["RdYlBu_r", "Viridis", "Plasma", "Sunset_r", "Blues_r", "Hot_r", "Greens_r"],
+            options=[
+                "RdYlBu_r",
+                "Viridis",
+                "Plasma",
+                "Sunset_r",
+                "Blues_r",
+                "Hot_r",
+                "Greens_r",
+            ],
             index=0,
-            help="Select the color gradient scheme for the RMSD Heatmap."
+            help="Select the color gradient scheme for the RMSD Heatmap.",
         )
 
         stats = results["stats"]
@@ -91,7 +99,7 @@ def render_rmsd_tab(results: Dict[str, Any]) -> None:
         "Sunset_r": "Sunset_r",
         "Blues_r": "Blues",
         "Hot_r": "hot",
-        "Greens_r": "Greens"
+        "Greens_r": "Greens",
     }
     pandas_cmap = cmap_mapping.get(selected_colormap, "RdYlBu_r")
     st.dataframe(results["rmsd_df"].style.background_gradient(cmap=pandas_cmap))
@@ -109,6 +117,7 @@ def render_rmsd_tab(results: Dict[str, Any]) -> None:
         )
 
         import plotly.express as px
+
         fig = px.line(
             rmsf_data,
             x="Residue Position",

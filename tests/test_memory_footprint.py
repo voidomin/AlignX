@@ -1,6 +1,7 @@
 import subprocess
 import sys
 
+
 def test_lazy_loading_in_clean_process():
     """
     Spawns a clean Python process, imports core backend modules,
@@ -25,18 +26,19 @@ sys.exit(0)
 """
     import os
     from pathlib import Path
+
     project_root = str(Path(__file__).parent.parent.resolve())
-    
+
     # Inherit existing environment variables to ensure WinSock/asyncio can load on Windows
     env = os.environ.copy()
     env["PYTHONPATH"] = project_root
-    
+
     result = subprocess.run(
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
         cwd=project_root,
-        env=env
+        env=env,
     )
     assert result.returncode == 0, (
         f"Lazy loading check failed: {result.stdout.strip()} | "

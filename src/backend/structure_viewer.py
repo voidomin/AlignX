@@ -268,7 +268,7 @@ def render_ligand_view(
         # Build interaction selection JSON
         active_site_residues = []
         highlighted_residues = []
-        
+
         for idx, i in enumerate(ligand_data["interactions"]):
             item = {"chain": i["chain"], "resi": i["resi"]}
             if highlight_indices is not None and idx in highlight_indices:
@@ -277,6 +277,7 @@ def render_ligand_view(
                 active_site_residues.append(item)
 
         import json
+
         active_site_residues_json = json.dumps(active_site_residues)
         highlighted_residues_json = json.dumps(highlighted_residues)
 
@@ -417,43 +418,69 @@ def render_synced_grid(
         highlight_residues = {}
     if residue_colors is None:
         residue_colors = {}
-        
+
     try:
         with open(pdb_file, "r") as f:
             pdb_content = f.read()
 
         import json
-        
+
         viewers_js = []
         html_items = []
-        
+
         neonColors = [
-            '#FF00FF', '#00FFFF', '#00FF00', '#FFFF00', '#FF7E42',
-            '#4272FF', '#FF0055', '#8A2BE2', '#00FA9A', '#FFD700',
-            '#FF1493', '#1E90FF'
+            "#FF00FF",
+            "#00FFFF",
+            "#00FF00",
+            "#FFFF00",
+            "#FF7E42",
+            "#4272FF",
+            "#FF0055",
+            "#8A2BE2",
+            "#00FA9A",
+            "#FFD700",
+            "#FF1493",
+            "#1E90FF",
         ]
-        
+
         spectralColors = [
-            '#e6194B', '#3cb44b', '#ffe119', '#4363d8', '#f58231', 
-            '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#fabed4', 
-            '#469990', '#dcbeff'
+            "#e6194B",
+            "#3cb44b",
+            "#ffe119",
+            "#4363d8",
+            "#f58231",
+            "#911eb4",
+            "#42d4f4",
+            "#f032e6",
+            "#bfef45",
+            "#fabed4",
+            "#469990",
+            "#dcbeff",
         ]
-        
+
         # Determine all chains in this PDB
         all_chains = [chr(ord("A") + idx) for idx in range(len(members))]
-        
+
         for idx, member in enumerate(members):
             chain_id = chr(ord("A") + idx)
             div_id = f"viewer_{idx}"
-            
+
             # Highlight configuration
-            this_hl = {chain_id: highlight_residues.get(chain_id, [])} if highlight_residues else {}
+            this_hl = (
+                {chain_id: highlight_residues.get(chain_id, [])}
+                if highlight_residues
+                else {}
+            )
             has_hl = len(this_hl.get(chain_id, [])) > 0
-            
+
             this_res_colors = residue_colors.get(chain_id, {}) if residue_colors else {}
-            
-            color = spectralColors[idx % len(spectralColors)] if style_mode == "Scientific Spectral" else neonColors[idx % len(neonColors)]
-            
+
+            color = (
+                spectralColors[idx % len(spectralColors)]
+                if style_mode == "Scientific Spectral"
+                else neonColors[idx % len(neonColors)]
+            )
+
             viewer_init = f"""
                 (function() {{
                     let viewer = $3Dmol.createViewer("container_{div_id}", {{
@@ -538,17 +565,17 @@ def render_synced_grid(
                 }})();
             """
             viewers_js.append(viewer_init)
-            
+
             html_items.append(f"""
             <div class="grid-item">
                 <div class="viewer-title">{member} (Chain {chain_id})</div>
                 <div id="container_{div_id}" class="viewer-container"></div>
             </div>
             """)
-            
+
         viewers_js_str = "\n".join(viewers_js)
         html_items_str = "\n".join(html_items)
-        
+
         html = f"""
         <!DOCTYPE html>
         <html>
@@ -656,12 +683,14 @@ def show_synced_grid_in_streamlit(
     )
     if html:
         import math
+
         n_cols = 3
         rows = math.ceil(len(members) / n_cols)
         iframe_height = rows * (height + 40) + 30
         components.html(html, height=iframe_height, scrolling=False)
     else:
         import streamlit as st
+
         st.error("Failed to render synchronized 3D structure grid")
 
 

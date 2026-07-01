@@ -80,7 +80,9 @@ def render_3d_viewer_tab(results: Dict[str, Any]) -> None:
                 # Handle Cluster Filtering (Isolation of structural families)
                 visible_chains, members = _get_visible_chains_from_cluster(results)
                 if members:
-                    st.warning(f"🎯 Currently viewing Cluster Family ({len(members)} proteins)")
+                    st.warning(
+                        f"🎯 Currently viewing Cluster Family ({len(members)} proteins)"
+                    )
                     if st.button("🔓 Clear Cluster Filter", use_container_width=True):
                         del st.session_state.selected_cluster_members
                         st.rerun()
@@ -104,7 +106,10 @@ def render_3d_viewer_tab(results: Dict[str, Any]) -> None:
                 with col_styl2:
                     view_mode = st.radio(
                         "🔭 View Mode",
-                        options=["Superimposed (All models)", "Side-by-Side (Comparison Grid)"],
+                        options=[
+                            "Superimposed (All models)",
+                            "Side-by-Side (Comparison Grid)",
+                        ],
                         horizontal=True,
                         help="Choose how to see the protein structures. Superimposed shows alignment quality, Grid shows individual shapes.",
                     )
@@ -127,7 +132,11 @@ def render_3d_viewer_tab(results: Dict[str, Any]) -> None:
                             current_res = 1
                             for i, char in enumerate(seq):
                                 if char != "-":
-                                    score = conservation[i] if i < len(conservation) else 0.0
+                                    score = (
+                                        conservation[i]
+                                        if i < len(conservation)
+                                        else 0.0
+                                    )
                                     color = get_conservation_color(score)
                                     residue_colors[chain_id][current_res] = color
                                     current_res += 1
@@ -145,16 +154,22 @@ def render_3d_viewer_tab(results: Dict[str, Any]) -> None:
                             current_res = 1
                             for i, char in enumerate(seq):
                                 if char != "-":
-                                    score = rmsf_values[i] if i < len(rmsf_values) else 0.0
+                                    score = (
+                                        rmsf_values[i] if i < len(rmsf_values) else 0.0
+                                    )
                                     color = get_rmsf_color(score, max_rmsf)
                                     residue_colors[chain_id][current_res] = color
                                     current_res += 1
 
                 if view_mode == "Superimposed (All models)":
-                    _render_superimposed_view(pdb_path, hl_chains, visible_chains, style_mode, residue_colors)
+                    _render_superimposed_view(
+                        pdb_path, hl_chains, visible_chains, style_mode, residue_colors
+                    )
                 else:
                     all_members = list(results["rmsd_df"].index)
-                    _render_side_by_side_grid(pdb_path, hl_chains, style_mode, all_members, residue_colors)
+                    _render_side_by_side_grid(
+                        pdb_path, hl_chains, style_mode, all_members, residue_colors
+                    )
 
                 st.caption("""
                 **Controls:**
@@ -181,18 +196,18 @@ def render_3d_viewer_tab(results: Dict[str, Any]) -> None:
 
                         html_parts = [
                             '<!DOCTYPE html><html><head><meta charset="utf-8">',
-                            '<title>Structural Superposition - Spin View</title>',
+                            "<title>Structural Superposition - Spin View</title>",
                             '<script src="https://3Dmol.org/build/3Dmol-min.js"></script>',
-                            '<style>body{margin:0;background:#111;overflow:hidden}',
-                            '#viewer{width:100vw;height:100vh}</style>',
+                            "<style>body{margin:0;background:#111;overflow:hidden}",
+                            "#viewer{width:100vw;height:100vh}</style>",
                             '</head><body><div id="viewer"></div><script>',
                             'let viewer = window["$3Dmol"].createViewer("viewer", {backgroundColor:"#111"});',
-                            'let pdbData = `' + pdb_escaped + '`;',
+                            "let pdbData = `" + pdb_escaped + "`;",
                             'viewer.addModel(pdbData, "pdb");',
                             'viewer.setStyle({}, {cartoon:{color:"spectrum"}});',
-                            'viewer.zoomTo(); viewer.spin(true); viewer.render();',
+                            "viewer.zoomTo(); viewer.spin(true); viewer.render();",
                             'window.addEventListener("resize", () => viewer.resize());',
-                            '</script></body></html>'
+                            "</script></body></html>",
                         ]
                         html_content = "\n".join(html_parts)
 
@@ -240,14 +255,14 @@ def _get_visible_chains_from_cluster(results: Dict[str, Any]):
         # Map protein names/IDs to chain IDs (A, B, C...)
         all_members = list(results["rmsd_df"].index)
         visible_chains = [
-            chr(ord("A") + all_members.index(m))
-            for m in members
-            if m in all_members
+            chr(ord("A") + all_members.index(m)) for m in members if m in all_members
         ]
     return visible_chains, members
 
 
-def _render_superimposed_view(pdb_path, hl_chains, visible_chains, style_mode, residue_colors=None):
+def _render_superimposed_view(
+    pdb_path, hl_chains, visible_chains, style_mode, residue_colors=None
+):
     """Render the standard superimposed view with 4 representations."""
     col1, col2 = st.columns(2)
     with col1:
@@ -306,10 +321,14 @@ def _render_superimposed_view(pdb_path, hl_chains, visible_chains, style_mode, r
         )
 
 
-def _render_side_by_side_grid(pdb_path, hl_chains, style_mode, all_members, residue_colors=None):
+def _render_side_by_side_grid(
+    pdb_path, hl_chains, style_mode, all_members, residue_colors=None
+):
     """Render each model in its own viewport in a grid layout with synchronized cameras."""
     st.markdown("#### 🔬 Structural Comparison Grid")
-    st.caption("Each model from the alignment is displayed in its own viewport below. (Interactions and cameras are synchronized!)")
+    st.caption(
+        "Each model from the alignment is displayed in its own viewport below. (Interactions and cameras are synchronized!)"
+    )
 
     from src.backend.structure_viewer import show_synced_grid_in_streamlit
     from pathlib import Path

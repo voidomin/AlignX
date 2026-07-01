@@ -31,7 +31,7 @@ def sanitize_for_json(val: Any) -> Any:
     import numpy as np
     import pandas as pd
     from pathlib import Path
-    
+
     if isinstance(val, dict):
         sanitized_dict = {}
         for k, v in val.items():
@@ -207,6 +207,7 @@ class AnalysisCoordinator:
             # 4.5 GENERATE LLM INSIGHTS (v2.4.1 Optimization)
             try:
                 from src.backend.insights import InsightsGenerator
+
                 gen = InsightsGenerator(self.config)
                 results["insights"] = gen.generate_insights(results)
                 logger.info("Pre-generated structural insights.")
@@ -223,9 +224,9 @@ class AnalysisCoordinator:
                 result_dir,
                 metadata={
                     "chain_selection": chain_selection,
-                    "results": sanitized_results
+                    "results": sanitized_results,
                 },
-                session_id=self.session_id
+                session_id=self.session_id,
             )
 
             # Write metadata.json for portability and indexing stability
@@ -307,7 +308,9 @@ class AnalysisCoordinator:
                     stats["seq_identity"] = self.sequence_viewer.calculate_identity(
                         sequences
                     )
-                    conservation = self.sequence_viewer.calculate_conservation(sequences)
+                    conservation = self.sequence_viewer.calculate_conservation(
+                        sequences
+                    )
                     # Add aligned_length and seq_similarity
                     stats["aligned_length"] = len(list(sequences.values())[0])
                     similar_cols = sum(1 for c in conservation if c > 0.5)
@@ -344,7 +347,7 @@ class AnalysisCoordinator:
                 "heatmap_fig": heatmap_fig,
                 "tree_fig": tree_fig,
                 "alignment_pdb": alignment_pdb,
-                "alignment_afasta": alignment_fasta, # Pass down the real fasta path
+                "alignment_afasta": alignment_fasta,  # Pass down the real fasta path
                 "sequences": sequences,
                 "conservation": conservation,
                 "rmsf_values": rmsf_values,

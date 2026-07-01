@@ -18,7 +18,9 @@ class PDBManager:
     """Manages PDB file downloads, validation, and preprocessing."""
 
     def __init__(
-        self, config: Dict[str, Any], cache_manager: Optional[CacheManager] = None,
+        self,
+        config: Dict[str, Any],
+        cache_manager: Optional[CacheManager] = None,
         session_id: Optional[str] = None,
     ):
         """
@@ -249,6 +251,7 @@ class PDBManager:
     def _get_structure(self, file_path: Path) -> Any:
         """Hybrid parser for PDB and mmCIF formats."""
         from Bio.PDB import MMCIFParser, PDBParser
+
         if file_path.suffix.lower() == ".cif":
             parser = MMCIFParser(QUIET=True)
         else:
@@ -293,6 +296,7 @@ class PDBManager:
         try:
             from Bio import PDB
             from Bio.PDB import PDBIO, Select
+
             structure = self._get_structure(pdb_file)
 
             is_af_model = pdb_file.name.lower().startswith("af-")
@@ -404,8 +408,14 @@ class PDBManager:
             # Check if there are any Alpha Carbons (required by Mustang)
             ca_atoms = sum(1 for atom in new_chain.get_atoms() if atom.name == "CA")
             if ca_atoms == 0:
-                chain_desc = f"Chain {target_chain_obj.id}" if chain else "The selected chain"
-                return False, f"{chain_desc} contains 0 Alpha Carbon (CA) atoms. Mustang only aligns protein structures (DNA, RNA, and small molecules are unsupported).", None
+                chain_desc = (
+                    f"Chain {target_chain_obj.id}" if chain else "The selected chain"
+                )
+                return (
+                    False,
+                    f"{chain_desc} contains 0 Alpha Carbon (CA) atoms. Mustang only aligns protein structures (DNA, RNA, and small molecules are unsupported).",
+                    None,
+                )
 
             # Save cleaned structure with LF line endings
             # Force .pdb extension for Mustang compatibility and normalize to lowercase

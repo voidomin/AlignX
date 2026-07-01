@@ -1,5 +1,3 @@
-import pytest
-from pathlib import Path
 from src.backend.structure_viewer import (
     render_3d_structure,
     render_synced_grid,
@@ -53,9 +51,21 @@ def test_render_ligand_view(tmp_path, dummy_pdb_content):
     ligand_data = {
         "ligand": "RET_A_296",
         "interactions": [
-            {"residue": "ALA", "chain": "A", "resi": 12, "distance": 3.4, "type": "Hydrophobic"},
-            {"residue": "TYR", "chain": "A", "resi": 43, "distance": 2.8, "type": "H-Bond"},
-        ]
+            {
+                "residue": "ALA",
+                "chain": "A",
+                "resi": 12,
+                "distance": 3.4,
+                "type": "Hydrophobic",
+            },
+            {
+                "residue": "TYR",
+                "chain": "A",
+                "resi": 43,
+                "distance": 2.8,
+                "type": "H-Bond",
+            },
+        ],
     }
 
     # Test standard render

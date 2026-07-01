@@ -55,10 +55,13 @@ class MustangRunner:
             # Create unverified context to bypass SSL issues on Streamlit Cloud
             # Note: This is a known workaround for specific server certificate issues.
             context = ssl._create_unverified_context()
-            logger.info(f"Downloading from {MUSTANG_URL} (SSL verification disabled)...")
+            logger.info(
+                f"Downloading from {MUSTANG_URL} (SSL verification disabled)..."
+            )
 
-            with urllib.request.urlopen(MUSTANG_URL, context=context, timeout=60) as response, \
-                 open(dest_path, 'wb') as out_file:
+            with urllib.request.urlopen(
+                MUSTANG_URL, context=context, timeout=60
+            ) as response, open(dest_path, "wb") as out_file:
                 shutil.copyfileobj(response, out_file)
 
             logger.info(f"Successfully downloaded {MUSTANG_TARBALL}")
@@ -67,13 +70,17 @@ class MustangRunner:
             logger.error(f"Failed to download {MUSTANG_TARBALL}: {e}")
             return False
 
-    def _prepare_compilation_dir(self, build_dir: Path, bundled_tarball: Path) -> Optional[Path]:
+    def _prepare_compilation_dir(
+        self, build_dir: Path, bundled_tarball: Path
+    ) -> Optional[Path]:
         """Clear and prepare the build directory for compilation."""
         if build_dir.exists():
             try:
                 shutil.rmtree(build_dir)
             except Exception as e:
-                logger.warning(f"Could not clear build directory: {e}. Attempting to proceed...")
+                logger.warning(
+                    f"Could not clear build directory: {e}. Attempting to proceed..."
+                )
 
         build_dir.mkdir(exist_ok=True)
         shutil.copy(bundled_tarball, build_dir / MUSTANG_TARBALL)
@@ -121,7 +128,9 @@ class MustangRunner:
             logger.info("Attempting to compile Mustang from bundled source...")
             bundled_tarball = self.base_dir / MUSTANG_TARBALL
 
-            if not bundled_tarball.exists() and not self._download_mustang_source(bundled_tarball):
+            if not bundled_tarball.exists() and not self._download_mustang_source(
+                bundled_tarball
+            ):
                 return False
 
             build_dir = self.base_dir / MUSTANG_BUILD_DIR
@@ -144,10 +153,16 @@ class MustangRunner:
 
     def _check_native_installation(self) -> Tuple[bool, str]:
         """Check if Mustang is available as a native binary."""
-        path_check = self.mustang_path if hasattr(self, "mustang_path") and self.mustang_path else None
+        path_check = (
+            self.mustang_path
+            if hasattr(self, "mustang_path") and self.mustang_path
+            else None
+        )
         if path_check and path_check.exists():
             try:
-                subprocess.run([str(path_check), "--help"], capture_output=True, timeout=2)
+                subprocess.run(
+                    [str(path_check), "--help"], capture_output=True, timeout=2
+                )
                 self.use_wsl = False
                 return True, f"Mustang binary found (Native {sys.platform})"
             except Exception as e:
@@ -161,7 +176,12 @@ class MustangRunner:
 
         wsl_path = shutil.which("wsl") or WSL_EXE
         try:
-            res = subprocess.run([wsl_path, "which", "mustang"], capture_output=True, text=True, timeout=5)
+            res = subprocess.run(
+                [wsl_path, "which", "mustang"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
             if res.returncode == 0:
                 self.use_wsl = True
                 self.mustang_path = Path("mustang")
@@ -192,7 +212,9 @@ class MustangRunner:
         """Verify if a Linux binary can be run via WSL."""
         try:
             wsl_str = self._convert_to_wsl_path(bin_path)
-            res = subprocess.run(["wsl", wsl_str, "--help"], capture_output=True, timeout=5)
+            res = subprocess.run(
+                ["wsl", wsl_str, "--help"], capture_output=True, timeout=5
+            )
             if res.returncode != 127:
                 self.use_wsl = True
                 self.mustang_path = bin_path
@@ -223,13 +245,16 @@ class MustangRunner:
     def _check_mustang(self) -> Tuple[bool, str]:
         """Aggregated check for Mustang availability."""
         success, msg = self._check_native_installation()
-        if success: return success, msg
+        if success:
+            return success, msg
 
         success, msg = self._check_wsl_system_installation()
-        if success: return success, msg
+        if success:
+            return success, msg
 
         success, msg = self._check_compiled_binary()
-        if success: return success, msg
+        if success:
+            return success, msg
 
         return False, "Mustang binary not found"
 
@@ -244,7 +269,8 @@ class MustangRunner:
         # 2. Windows WSL specific deep check
         if self.is_windows:
             success, msg = self._deep_wsl_check()
-            if success: return True, msg
+            if success:
+                return True, msg
 
         # 3. Local/Compiled check
         found, msg = self._check_mustang()
@@ -257,7 +283,10 @@ class MustangRunner:
             found, msg = self._check_mustang()
             if found:
                 self._update_executable_from_check()
-                return True, f"Compiled Mustang binary ({'WSL' if self.use_wsl else 'Native'})"
+                return (
+                    True,
+                    f"Compiled Mustang binary ({'WSL' if self.use_wsl else 'Native'})",
+                )
 
         logger.error("Mustang binary found neither in PATH nor in WSL")
         return False, "Mustang binary found neither in PATH nor in WSL"
@@ -266,12 +295,21 @@ class MustangRunner:
         """Perform a robust check for Mustang in WSL on Windows."""
         wsl_path = shutil.which("wsl") or WSL_EXE
         try:
-            res = subprocess.run([wsl_path, "which", "mustang"], capture_output=True, timeout=30)
-            stdout_str = res.stdout.decode("utf-8", errors="ignore").replace("\x00", "").strip()
+            res = subprocess.run(
+                [wsl_path, "which", "mustang"], capture_output=True, timeout=30
+            )
+            stdout_str = (
+                res.stdout.decode("utf-8", errors="ignore").replace("\x00", "").strip()
+            )
 
             if res.returncode == 0 and "mustang" in stdout_str:
-                self.use_wsl, self.mustang_path, self.executable = True, Path("mustang"), "mustang"
-                if self.backend in ["auto", "bio3d"]: self.backend = "wsl"
+                self.use_wsl, self.mustang_path, self.executable = (
+                    True,
+                    Path("mustang"),
+                    "mustang",
+                )
+                if self.backend in ["auto", "bio3d"]:
+                    self.backend = "wsl"
                 return True, f"System Mustang found in WSL: {stdout_str}"
         except Exception as e:
             logger.warning(f"WSL check exception: {e}")
@@ -281,12 +319,20 @@ class MustangRunner:
         """Update executable path after successful compilation/check."""
         if self.use_wsl:
             self.backend = "wsl"
-            self.executable = "mustang" if str(self.mustang_path) == "mustang" else self._convert_to_wsl_path(self.mustang_path)
+            self.executable = (
+                "mustang"
+                if str(self.mustang_path) == "mustang"
+                else self._convert_to_wsl_path(self.mustang_path)
+            )
         else:
             self.backend, self.executable = "native", str(self.mustang_path)
-        logger.info(f"Mustang installation verified: {self.executable} ({self.backend})")
+        logger.info(
+            f"Mustang installation verified: {self.executable} ({self.backend})"
+        )
 
-    def run_alignment(self, pdb_files: List[Path], output_dir: Path) -> Tuple[bool, str, Optional[Path]]:
+    def run_alignment(
+        self, pdb_files: List[Path], output_dir: Path
+    ) -> Tuple[bool, str, Optional[Path]]:
         """Run Mustang alignment on multiple PDB files."""
         if len(pdb_files) < 2:
             return False, "Need at least 2 structures for alignment", None
@@ -301,7 +347,9 @@ class MustangRunner:
 
         return self._run_native_mustang(local_pdb_files, output_dir)
 
-    def _construct_command(self, pdb_files: List[Path], output_dir: Path) -> Tuple[List[str], Path]:
+    def _construct_command(
+        self, pdb_files: List[Path], output_dir: Path
+    ) -> Tuple[List[str], Path]:
         """Construct the command line arguments for Mustang."""
         run_cwd = output_dir.absolute()
         input_filenames = [p.name for p in pdb_files]
@@ -309,7 +357,9 @@ class MustangRunner:
         if not self.executable:
             self._fallback_executable()
 
-        logger.info(f"Constructing command. Executable: {self.executable}, WSL: {self.use_wsl}")
+        logger.info(
+            f"Constructing command. Executable: {self.executable}, WSL: {self.use_wsl}"
+        )
 
         if self.use_wsl:
             wsl_exe = shutil.which("wsl") or WSL_EXE
@@ -317,7 +367,9 @@ class MustangRunner:
         else:
             cmd = [shutil.which(str(self.executable)) or str(self.executable)]
 
-        cmd.extend(["-i"] + input_filenames + ["-o", "alignment", "-F", "fasta", "-r", "ON"])
+        cmd.extend(
+            ["-i"] + input_filenames + ["-o", "alignment", "-F", "fasta", "-r", "ON"]
+        )
         return cmd, run_cwd
 
     def _fallback_executable(self):
@@ -328,21 +380,34 @@ class MustangRunner:
         else:
             self.executable = "mustang"
 
-    def _run_native_mustang(self, pdb_files: List[Path], output_dir: Path) -> Tuple[bool, str, Optional[Path]]:
+    def _run_native_mustang(
+        self, pdb_files: List[Path], output_dir: Path
+    ) -> Tuple[bool, str, Optional[Path]]:
         """Run native Mustang binary with live telemetry."""
         try:
             cmd, run_cwd = self._construct_command(pdb_files, output_dir)
-            timeout = 1800 if any("af-" in p.name.lower() for p in pdb_files) else self.timeout
+            timeout = (
+                1800
+                if any("af-" in p.name.lower() for p in pdb_files)
+                else self.timeout
+            )
 
             process = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=True, cwd=str(run_cwd), bufsize=1, universal_newlines=True
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=str(run_cwd),
+                bufsize=1,
+                universal_newlines=True,
             )
 
             stdout, stderr = self._stream_process_output(process, timeout)
-            
+
             # Save logs
-            (output_dir / "mustang.log").write_text(f"{stdout}\n=== STDERR ===\n{stderr}")
+            (output_dir / "mustang.log").write_text(
+                f"{stdout}\n=== STDERR ===\n{stderr}"
+            )
 
             return self._finalize_alignment_output(output_dir, process.returncode)
 
@@ -353,28 +418,32 @@ class MustangRunner:
     def _stream_process_output(self, process, timeout) -> Tuple[str, str]:
         """Stream output from the process and handle timeout."""
         stdout_lines, start_time = [], time.time()
-        
+
         while True:
             if time.time() - start_time > timeout:
                 process.kill()
                 raise TimeoutError(f"Mustang timed out after {timeout}s")
 
             line = process.stdout.readline()
-            if not line and process.poll() is not None: break
+            if not line and process.poll() is not None:
+                break
             if line:
                 logger.info(f"[Mustang] {line.strip()}")
                 stdout_lines.append(line)
 
         return "".join(stdout_lines), process.stderr.read()
 
-    def _finalize_alignment_output(self, output_dir: Path, return_code: int) -> Tuple[bool, str, Optional[Path]]:
+    def _finalize_alignment_output(
+        self, output_dir: Path, return_code: int
+    ) -> Tuple[bool, str, Optional[Path]]:
         """Verify results and calculate RMSD matrix."""
         pdb_file = output_dir / ALIGN_PDB
         fasta_file = output_dir / ALIGN_FASTA
 
         if return_code != 0 and not pdb_file.exists():
             msg = f"Mustang failed (Exit {return_code})"
-            if return_code == 139: msg += ". Possible structural divergence issue."
+            if return_code == 139:
+                msg += ". Possible structural divergence issue."
             return False, msg, None
 
         if not pdb_file.exists():
@@ -388,19 +457,24 @@ class MustangRunner:
 
     def _ensure_fasta_exists(self, output_dir: Path, fasta_file: Path):
         """Standardize the FASTA output file location."""
-        if fasta_file.exists(): return
+        if fasta_file.exists():
+            return
 
         afasta = output_dir / ALIGN_AFASTA
         if afasta.exists():
             shutil.copy(afasta, fasta_file)
         else:
             possible = list(output_dir.glob("*.fasta"))
-            if possible: shutil.copy(possible[0], fasta_file)
+            if possible:
+                shutil.copy(possible[0], fasta_file)
 
-    def _calculate_rmsd_post_alignment(self, pdb_file: Path, fasta_file: Path, output_dir: Path):
+    def _calculate_rmsd_post_alignment(
+        self, pdb_file: Path, fasta_file: Path, output_dir: Path
+    ):
         """Run the RMSD calculator on the alignment results."""
         try:
             from src.backend.rmsd_calculator import calculate_structure_rmsd
+
             logger.info("Computing RMSD matrix...")
             rmsd_df = calculate_structure_rmsd(pdb_file, fasta_file)
             if rmsd_df is not None:

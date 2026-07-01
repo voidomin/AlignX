@@ -114,13 +114,19 @@ class HistoryDatabase:
             logger.error(f"Failed to save run {run_id}: {e}")
             return False
 
-    def get_all_runs(self, limit: int = None, session_id: str = None) -> List[Dict[str, Any]]:
+    def get_all_runs(
+        self,
+        limit: int = None,
+        session_id: str = None,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
         """
         Retrieve saved runs, sorted by timestamp (newest first).
 
         Args:
             limit: Maximum number of runs to return (None for all)
             session_id: If provided, only return runs for this session
+            offset: Number of runs to skip (for pagination), ignored if limit is None
 
         Returns:
             List of run dictionaries
@@ -138,8 +144,8 @@ class HistoryDatabase:
                     params = ()
 
                 if limit:
-                    query += " LIMIT ?"
-                    params = params + (limit,)
+                    query += " LIMIT ? OFFSET ?"
+                    params = params + (limit, offset)
 
                 cursor.execute(query, params)
                 rows = cursor.fetchall()
@@ -156,6 +162,26 @@ class HistoryDatabase:
         except Exception as e:
             logger.error(f"Failed to retrieve runs: {e}")
             return []
+
+    def count_runs(self, session_id: str = None) -> int:
+        """
+        Count total saved runs, optionally scoped to a session. Used for
+        pagination metadata alongside get_all_runs.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                if session_id:
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM runs WHERE session_id = ?",
+                        (session_id,),
+                    )
+                else:
+                    cursor.execute("SELECT COUNT(*) FROM runs")
+                return cursor.fetchone()[0]
+        except Exception as e:
+            logger.error(f"Failed to count runs: {e}")
+            return 0
 
     def get_run(self, run_id: str) -> Optional[Dict[str, Any]]:
         """

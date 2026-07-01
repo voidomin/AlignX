@@ -1,14 +1,18 @@
 import os
 import sys
+import time
 import uuid
 import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 import matplotlib
-matplotlib.use('Agg')
+
+matplotlib.use("Agg")
 
 import json
+import re
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query, Body, Request
@@ -22,7 +26,6 @@ sys.path.insert(0, str(project_root))
 
 from src.utils.config_loader import load_config
 from src.backend.coordinator import AnalysisCoordinator
-from src.backend.pdb_manager import PDBManager
 from src.backend.database import HistoryDatabase
 from src.backend.ligand_analyzer import LigandAnalyzer
 from src.backend.rmsd_analyzer import RMSDAnalyzer
@@ -31,7 +34,7 @@ from src.backend.result_manager import ResultManager
 # Load application configuration
 try:
     config = load_config(str(project_root / "config.yaml"))
-except Exception as e:
+except Exception:
     # Fallback default configuration
     config = {
         "app": {"name": "AlignX API", "max_proteins": 10},
@@ -44,11 +47,20 @@ except Exception as e:
         "filtering": {"remove_water": True, "remove_heteroatoms": True},
     }
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    sweep_task = asyncio.create_task(_sweep_alignment_jobs())
+    yield
+    sweep_task.cancel()
+
+
 # Initialize FastAPI App
 app = FastAPI(
     title="AlignX Web API",
     description="REST API Backend for AlignX Protein Multiple Structural Alignment",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # Enable CORS for frontend integration. Defaults to "*" for local development;
@@ -74,13 +86,56 @@ async def require_api_key(request: Request, call_next):
     if _ALIGNX_API_KEY and request.url.path.startswith("/api/"):
         # Header is preferred; query param fallback exists so plain <a>/window.open
         # links (e.g. the PDF report download) can still authenticate.
-        provided = request.headers.get("X-API-Key") or request.query_params.get("api_key")
+        provided = request.headers.get("X-API-Key") or request.query_params.get(
+            "api_key"
+        )
         if provided != _ALIGNX_API_KEY:
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Missing or invalid API key."},
             )
     return await call_next(request)
+
+
+# Rate limit alignment-job submissions specifically — that's the endpoint that
+# triggers real compute (Mustang + phylogenetics), so it's the actual abuse
+# vector, unlike cheap reads such as /api/history or /api/jobs/{id} polling.
+# Applies even when ALIGNX_API_KEY is unset, since that's the default/open state.
+_JOB_RATE_LIMIT_MAX = int(os.environ.get("ALIGNX_JOB_RATE_LIMIT_MAX", 5))
+_JOB_RATE_LIMIT_WINDOW_SECONDS = int(
+    os.environ.get("ALIGNX_JOB_RATE_LIMIT_WINDOW_SECONDS", 60)
+)
+_job_submission_timestamps: Dict[str, List[float]] = {}
+
+
+def _rate_limit_client_key(request: Request) -> str:
+    provided = request.headers.get("X-API-Key") or request.query_params.get("api_key")
+    if provided:
+        return f"key:{provided}"
+    return f"ip:{request.client.host if request.client else 'unknown'}"
+
+
+@app.middleware("http")
+async def rate_limit_job_submissions(request: Request, call_next):
+    if request.method == "POST" and request.url.path == "/api/jobs/align":
+        key = _rate_limit_client_key(request)
+        now = time.time()
+        cutoff = now - _JOB_RATE_LIMIT_WINDOW_SECONDS
+        timestamps = [t for t in _job_submission_timestamps.get(key, []) if t > cutoff]
+        if len(timestamps) >= _JOB_RATE_LIMIT_MAX:
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "detail": (
+                        f"Rate limit exceeded: max {_JOB_RATE_LIMIT_MAX} alignment "
+                        f"submissions per {_JOB_RATE_LIMIT_WINDOW_SECONDS}s."
+                    )
+                },
+            )
+        timestamps.append(now)
+        _job_submission_timestamps[key] = timestamps
+    return await call_next(request)
+
 
 # Mount static directories for results and raw PDBs
 results_dir = project_root / "results"
@@ -90,6 +145,23 @@ raw_dir.mkdir(parents=True, exist_ok=True)
 
 app.mount("/results", StaticFiles(directory=str(results_dir)), name="results")
 app.mount("/raw", StaticFiles(directory=str(raw_dir)), name="raw")
+
+_SAFE_PATH_SEGMENT = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _safe_segment(value: Optional[str], field_name: str) -> Optional[str]:
+    """
+    Validate a value that will be concatenated into a filesystem path
+    (session_id, run_id, pdb_id, etc). Only alnum/underscore/hyphen are
+    allowed, which blocks path traversal ("..", "/", "\\") while still
+    accepting every legitimate id format used in this app.
+    """
+    if value is None:
+        return None
+    if not _SAFE_PATH_SEGMENT.match(value):
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name}: {value!r}")
+    return value
+
 
 # Initialize Backend Managers
 history_db = HistoryDatabase()
@@ -118,26 +190,22 @@ def get_rcsb_suggestions(q: str = Query(..., min_length=1)):
     import urllib.parse
     import re
 
-    query_struct = {
-        "type": "basic",
-        "suggest": {
-            "text": q,
-            "size": 6
-        }
-    }
+    query_struct = {"type": "basic", "suggest": {"text": q, "size": 6}}
     try:
         quoted_query = urllib.parse.quote(json.dumps(query_struct))
         url = f"https://search.rcsb.org/rcsbsearch/v2/suggest?json={quoted_query}"
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=4) as res:
             data = json.loads(res.read().decode())
             suggestions = data.get("suggestions", {})
-            pdb_entries = suggestions.get("rcsb_entry_container_identifiers.entry_id", [])
-            
+            pdb_entries = suggestions.get(
+                "rcsb_entry_container_identifiers.entry_id", []
+            )
+
             results = []
             for entry in pdb_entries:
                 raw_text = entry.get("text", "")
-                clean_text = re.sub(r'<[^>]+>', '', raw_text).upper()
+                clean_text = re.sub(r"<[^>]+>", "", raw_text).upper()
                 if clean_text and len(clean_text) == 4 and clean_text not in results:
                     results.append(clean_text)
             return {"query": q, "suggestions": results}
@@ -147,33 +215,34 @@ def get_rcsb_suggestions(q: str = Query(..., min_length=1)):
 
 @app.post("/api/chains")
 async def analyze_chains(
-    pdb_ids: List[str] = Body(..., embed=True),
-    session_id: Optional[str] = Query(None)
+    pdb_ids: List[str] = Body(..., embed=True), session_id: Optional[str] = Query(None)
 ):
     """
     Download PDB files and analyze their structural chains.
     """
     if not pdb_ids:
         raise HTTPException(status_code=400, detail="pdb_ids list cannot be empty")
-        
+    for pid in pdb_ids:
+        _safe_segment(pid, "pdb_id")
+    _safe_segment(session_id, "session_id")
+
     coordinator = AnalysisCoordinator(config, session_id=session_id)
     download_results = await coordinator.pdb_manager.batch_download(pdb_ids)
-    
+
     failed = [
         pid for pid, (success, msg, path) in download_results.items() if not success
     ]
     if failed:
         raise HTTPException(
-            status_code=400,
-            detail=f"Failed to fetch PDBs: {', '.join(failed)}"
+            status_code=400, detail=f"Failed to fetch PDBs: {', '.join(failed)}"
         )
-        
+
     chain_info = {}
     for pid, (success, msg, path) in download_results.items():
         if path:
             info = coordinator.pdb_manager.analyze_structure(path)
             chain_info[pid] = info
-            
+
     return {"chains": sanitize_for_json(chain_info)}
 
 
@@ -186,7 +255,11 @@ def sanitize_for_json(val: Any) -> Any:
     import math
 
     # Convert numpy scalars to Python scalars
-    if hasattr(val, "dtype") and hasattr(val, "item") and (not hasattr(val, "ndim") or val.ndim == 0):
+    if (
+        hasattr(val, "dtype")
+        and hasattr(val, "item")
+        and (not hasattr(val, "ndim") or val.ndim == 0)
+    ):
         try:
             val = val.item()
         except Exception:
@@ -225,7 +298,27 @@ def sanitize_for_json(val: Any) -> Any:
 # In-memory job registry for the async alignment pipeline. Alignment runs can take
 # minutes (Mustang + phylogenetics + rendering), so they're executed on a background
 # thread and polled via job_id rather than blocking the HTTP request.
+#
+# Jobs are swept periodically (see _sweep_alignment_jobs) so a long-lived server
+# doesn't accumulate unbounded memory from old job records.
 alignment_jobs: Dict[str, Dict[str, Any]] = {}
+_JOB_TTL_SECONDS = int(os.environ.get("ALIGNX_JOB_TTL_SECONDS", 3600))
+_JOB_SWEEP_INTERVAL_SECONDS = 300
+
+
+async def _sweep_alignment_jobs():
+    """Periodically drop finished jobs older than _JOB_TTL_SECONDS."""
+    while True:
+        await asyncio.sleep(_JOB_SWEEP_INTERVAL_SECONDS)
+        now = time.time()
+        stale_ids = [
+            jid
+            for jid, job in alignment_jobs.items()
+            if job.get("status") in ("completed", "failed")
+            and now - job.get("finished_at", now) > _JOB_TTL_SECONDS
+        ]
+        for jid in stale_ids:
+            alignment_jobs.pop(jid, None)
 
 
 def _run_alignment_pipeline(
@@ -250,11 +343,22 @@ def _run_alignment_pipeline(
 
 async def _execute_alignment_job(job_id: str, **pipeline_kwargs):
     alignment_jobs[job_id]["status"] = "running"
+    created_at = alignment_jobs[job_id].get("created_at", time.time())
     try:
         outcome = await asyncio.to_thread(_run_alignment_pipeline, **pipeline_kwargs)
-        alignment_jobs[job_id] = {"status": "completed", **outcome}
+        alignment_jobs[job_id] = {
+            "status": "completed",
+            "created_at": created_at,
+            "finished_at": time.time(),
+            **outcome,
+        }
     except Exception as e:
-        alignment_jobs[job_id] = {"status": "failed", "error": str(e)}
+        alignment_jobs[job_id] = {
+            "status": "failed",
+            "created_at": created_at,
+            "finished_at": time.time(),
+            "error": str(e),
+        }
 
 
 @app.post("/api/jobs/align", status_code=202)
@@ -263,7 +367,7 @@ async def submit_alignment_job(
     chain_selection: Dict[str, str] = Body(default={}, embed=True),
     remove_water: bool = Body(default=True, embed=True),
     remove_heteroatoms: bool = Body(default=True, embed=True),
-    session_id: Optional[str] = Query(None)
+    session_id: Optional[str] = Query(None),
 ):
     """
     Submit a Mustang multiple structural alignment run as a background job.
@@ -271,21 +375,25 @@ async def submit_alignment_job(
     """
     if not pdb_ids or len(pdb_ids) < 2:
         raise HTTPException(
-            status_code=400,
-            detail="At least 2 PDB IDs are required for alignment."
+            status_code=400, detail="At least 2 PDB IDs are required for alignment."
         )
+    for pid in pdb_ids:
+        _safe_segment(pid, "pdb_id")
+    _safe_segment(session_id, "session_id")
 
     job_id = uuid.uuid4().hex
-    alignment_jobs[job_id] = {"status": "queued"}
+    alignment_jobs[job_id] = {"status": "queued", "created_at": time.time()}
 
-    asyncio.create_task(_execute_alignment_job(
-        job_id,
-        pdb_ids=pdb_ids,
-        chain_selection=chain_selection,
-        remove_water=remove_water,
-        remove_heteroatoms=remove_heteroatoms,
-        session_id=session_id,
-    ))
+    asyncio.create_task(
+        _execute_alignment_job(
+            job_id,
+            pdb_ids=pdb_ids,
+            chain_selection=chain_selection,
+            remove_water=remove_water,
+            remove_heteroatoms=remove_heteroatoms,
+            session_id=session_id,
+        )
+    )
 
     return {"job_id": job_id, "status": "queued"}
 
@@ -304,7 +412,7 @@ def get_alignment_job(job_id: str):
 @app.post("/api/clusters")
 def get_clusters(
     rmsd_df: Dict[str, Any] = Body(..., embed=True),
-    threshold: float = Body(default=3.0, embed=True)
+    threshold: float = Body(default=3.0, embed=True),
 ):
     """
     Identify structural clusters from an RMSD matrix at a given threshold.
@@ -324,7 +432,9 @@ def get_clusters(
         raise HTTPException(status_code=400, detail=f"Invalid rmsd_df payload: {e}")
 
     if len(df) < 2:
-        raise HTTPException(status_code=400, detail="At least 2 structures are required for clustering.")
+        raise HTTPException(
+            status_code=400, detail="At least 2 structures are required for clustering."
+        )
 
     clusters = rmsd_analyzer.identify_clusters(df, threshold=threshold)
 
@@ -334,59 +444,67 @@ def get_clusters(
         if len(members) > 1:
             subset = df.loc[members, members]
             avg_rmsd = float(subset.values[np.triu_indices(len(members), k=1)].mean())
-        families.append({
-            "cluster_id": int(cid),
-            "members": members,
-            "avg_rmsd": round(avg_rmsd, 2),
-        })
+        families.append(
+            {
+                "cluster_id": int(cid),
+                "members": members,
+                "avg_rmsd": round(avg_rmsd, 2),
+            }
+        )
 
     return {"threshold": threshold, "clusters": sanitize_for_json(families)}
 
 
 @app.get("/api/comparison/runs")
 def list_comparison_runs(
-    exclude_run_id: Optional[str] = Query(None),
-    session_id: Optional[str] = Query(None)
+    exclude_run_id: Optional[str] = Query(None), session_id: Optional[str] = Query(None)
 ):
     """
     List past runs available as batch-comparison targets.
     """
+    _safe_segment(exclude_run_id, "exclude_run_id")
+    _safe_segment(session_id, "session_id")
     res_dir = results_dir / session_id if session_id else results_dir
     manager = ResultManager(res_dir)
     runs = manager.list_runs(session_id=session_id)
 
     runs = [r for r in runs if r["id"] != exclude_run_id]
-    return {"runs": sanitize_for_json([
-        {"id": r["id"], "timestamp": r["timestamp"], "proteins": r["proteins"]}
-        for r in runs
-    ])}
+    return {
+        "runs": sanitize_for_json(
+            [
+                {"id": r["id"], "timestamp": r["timestamp"], "proteins": r["proteins"]}
+                for r in runs
+            ]
+        )
+    }
 
 
 @app.get("/api/comparison")
 def compare_runs(
     current_run_id: str = Query(...),
     target_run_id: str = Query(...),
-    session_id: Optional[str] = Query(None)
+    session_id: Optional[str] = Query(None),
 ):
     """
     Compute the RMSD difference matrix between two past runs.
     """
+    _safe_segment(current_run_id, "current_run_id")
+    _safe_segment(target_run_id, "target_run_id")
+    _safe_segment(session_id, "session_id")
     res_dir = results_dir / session_id if session_id else results_dir
     manager = ResultManager(res_dir)
 
     diff_df = manager.calculate_difference(current_run_id, target_run_id)
     if diff_df is None:
         raise HTTPException(
-            status_code=400,
-            detail="No overlapping proteins found between these runs."
+            status_code=400, detail="No overlapping proteins found between these runs."
         )
 
     current_rmsd = manager.get_run_rmsd(current_run_id)
     target_rmsd = manager.get_run_rmsd(target_run_id)
     if current_rmsd is None or target_rmsd is None:
         raise HTTPException(
-            status_code=404,
-            detail="RMSD matrix not found for one or both runs."
+            status_code=404, detail="RMSD matrix not found for one or both runs."
         )
 
     current_mean = float(current_rmsd.values.mean())
@@ -406,24 +524,27 @@ def compare_runs(
 def get_ligands(
     pdb_id: str = Query(...),
     run_id: Optional[str] = Query(None),
-    session_id: Optional[str] = Query(None)
+    session_id: Optional[str] = Query(None),
 ):
     """
     Retrieve ligands present in the specified structure.
     """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
     raw_dir = project_root / "data" / "raw"
     if session_id:
         raw_dir = raw_dir / session_id
-        
+
     pdb_path = None
     possible_names = [f"{pdb_id}.pdb", f"{pdb_id.lower()}.pdb", f"{pdb_id.upper()}.pdb"]
-    
+
     for name in possible_names:
         p = raw_dir / name
         if p.exists():
             pdb_path = p
             break
-            
+
     # Fallback to run results folder
     if not pdb_path and run_id:
         res_dir = project_root / "results"
@@ -435,13 +556,13 @@ def get_ligands(
             if p.exists():
                 pdb_path = p
                 break
-                
+
     if not pdb_path:
         raise HTTPException(
             status_code=404,
-            detail=f"Structure PDB for {pdb_id} not found in active workspace."
+            detail=f"Structure PDB for {pdb_id} not found in active workspace.",
         )
-        
+
     ligands = ligand_analyzer.get_ligands(pdb_path)
     return {"pdb_id": pdb_id, "ligands": sanitize_for_json(ligands)}
 
@@ -451,24 +572,27 @@ def get_interactions(
     pdb_id: str = Query(...),
     ligand_id: str = Query(...),
     run_id: Optional[str] = Query(None),
-    session_id: Optional[str] = Query(None)
+    session_id: Optional[str] = Query(None),
 ):
     """
     Perform binding site analysis and return interaction details.
     """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
     raw_dir = project_root / "data" / "raw"
     if session_id:
         raw_dir = raw_dir / session_id
-        
+
     pdb_path = None
     possible_names = [f"{pdb_id}.pdb", f"{pdb_id.lower()}.pdb", f"{pdb_id.upper()}.pdb"]
-    
+
     for name in possible_names:
         p = raw_dir / name
         if p.exists():
             pdb_path = p
             break
-            
+
     # Fallback to run results folder
     if not pdb_path and run_id:
         res_dir = project_root / "results"
@@ -480,15 +604,19 @@ def get_interactions(
             if p.exists():
                 pdb_path = p
                 break
-                
+
     if not pdb_path:
         raise HTTPException(
             status_code=404,
-            detail=f"Structure PDB for {pdb_id} not found in active workspace."
+            detail=f"Structure PDB for {pdb_id} not found in active workspace.",
         )
-        
+
     interactions = ligand_analyzer.calculate_interactions(pdb_path, ligand_id)
-    return {"pdb_id": pdb_id, "ligand_id": ligand_id, "interactions": sanitize_for_json(interactions)}
+    return {
+        "pdb_id": pdb_id,
+        "ligand_id": ligand_id,
+        "interactions": sanitize_for_json(interactions),
+    }
 
 
 @app.get("/api/memory")
@@ -499,18 +627,12 @@ def get_memory_stats():
     try:
         import psutil
         import os
+
         process = psutil.Process(os.getpid())
         mem_rss_mb = process.memory_info().rss / (1024 * 1024)
-        return {
-            "ram_mb": round(mem_rss_mb, 2),
-            "status": "ok"
-        }
+        return {"ram_mb": round(mem_rss_mb, 2), "status": "ok"}
     except Exception as e:
-        return {
-            "ram_mb": 150.0,
-            "status": "error",
-            "message": str(e)
-        }
+        return {"ram_mb": 150.0, "status": "error", "message": str(e)}
 
 
 @app.post("/api/memory/clear")
@@ -519,48 +641,55 @@ def clear_memory():
     Trigger garbage collection to release unused memory.
     """
     import gc
+
     gc.collect()
     try:
         import psutil
         import os
+
         process = psutil.Process(os.getpid())
         mem_rss_mb = process.memory_info().rss / (1024 * 1024)
-        return {
-            "ram_mb": round(mem_rss_mb, 2),
-            "status": "cleared"
-        }
+        return {"ram_mb": round(mem_rss_mb, 2), "status": "cleared"}
     except Exception as e:
-        return {
-            "ram_mb": 120.0,
-            "status": "cleared",
-            "message": str(e)
-        }
+        return {"ram_mb": 120.0, "status": "cleared", "message": str(e)}
 
 
 @app.get("/api/history")
-def get_history(session_id: Optional[str] = Query(None)):
+def get_history(
+    session_id: Optional[str] = Query(None),
+    limit: int = Query(20, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
     """
-    Fetch all runs recorded in the history SQLite database.
+    Fetch a page of runs recorded in the history SQLite database, newest first.
     """
     try:
-        runs = history_db.get_all_runs(session_id=session_id)
+        runs = history_db.get_all_runs(
+            limit=limit, offset=offset, session_id=session_id
+        )
+        total = history_db.count_runs(session_id=session_id)
     except Exception:
-        runs = history_db.get_all_runs()
-        
-    return {"runs": sanitize_for_json(runs)}
+        runs = history_db.get_all_runs(limit=limit, offset=offset)
+        total = history_db.count_runs()
+
+    return {
+        "runs": sanitize_for_json(runs),
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @app.get("/api/sequence")
-def get_sequence(
-    run_id: str = Query(...),
-    session_id: Optional[str] = Query(None)
-):
+def get_sequence(run_id: str = Query(...), session_id: Optional[str] = Query(None)):
     """
     Parse the alignment FASTA for a run and return sequences,
     conservation scores, and identity percentage.
     """
     from src.backend.sequence_viewer import SequenceViewer
 
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
     res_dir = project_root / "results"
     if session_id:
         res_dir = res_dir / session_id
@@ -569,46 +698,45 @@ def get_sequence(
     fasta_path = res_dir / "alignment.fasta"
     if not fasta_path.exists():
         raise HTTPException(
-            status_code=404,
-            detail=f"Alignment FASTA not found for run {run_id}"
+            status_code=404, detail=f"Alignment FASTA not found for run {run_id}"
         )
 
     viewer = SequenceViewer()
     sequences = viewer.parse_afasta(fasta_path)
     if not sequences:
         raise HTTPException(
-            status_code=500,
-            detail="Failed to parse alignment FASTA file"
+            status_code=500, detail="Failed to parse alignment FASTA file"
         )
 
     conservation = viewer.calculate_conservation(sequences)
     identity = viewer.calculate_identity(sequences)
 
-    return sanitize_for_json({
-        "run_id": run_id,
-        "sequences": sequences,
-        "conservation": conservation,
-        "identity": round(identity, 2)
-    })
+    return sanitize_for_json(
+        {
+            "run_id": run_id,
+            "sequences": sequences,
+            "conservation": conservation,
+            "identity": round(identity, 2),
+        }
+    )
 
 
 @app.get("/api/report")
-def get_pdf_report(
-    run_id: str = Query(...),
-    session_id: Optional[str] = Query(None)
-):
+def get_pdf_report(run_id: str = Query(...), session_id: Optional[str] = Query(None)):
     """
     Generate and retrieve the PDF analysis report for a run.
     """
     from src.backend.report_generator import ReportGenerator
     from fastapi.responses import FileResponse
 
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
     # 1. Fetch run details
     run = history_db.get_run(run_id)
     if not run:
         raise HTTPException(
-            status_code=404,
-            detail=f"Run {run_id} not found in history database."
+            status_code=404, detail=f"Run {run_id} not found in history database."
         )
 
     res_dir = project_root / "results"
@@ -619,15 +747,11 @@ def get_pdf_report(
     # 2. Extract or reconstruct results dict
     metadata = run.get("metadata", {})
     results = metadata.get("results")
-    
+
     if not results:
         # Reconstruct minimal results dict from stats if present in metadata
         stats = metadata.get("stats", {})
-        results = {
-            "stats": stats,
-            "id": run_id,
-            "pdb_ids": run.get("pdb_ids", [])
-        }
+        results = {"stats": stats, "id": run_id, "pdb_ids": run.get("pdb_ids", [])}
 
     # 3. Generate report
     try:
@@ -637,32 +761,33 @@ def get_pdf_report(
         if existing_pdfs:
             report_path = existing_pdfs[0]
         else:
-            report_path = generator.generate_full_report(results, pdb_ids=run.get("pdb_ids", []))
-        
+            report_path = generator.generate_full_report(
+                results, pdb_ids=run.get("pdb_ids", [])
+            )
+
         if not report_path.exists():
             raise HTTPException(
-                status_code=500,
-                detail="Report file was not created successfully."
+                status_code=500, detail="Report file was not created successfully."
             )
-            
+
         return FileResponse(
             path=str(report_path),
             media_type="application/pdf",
-            filename=f"mustang_report_{run_id}.pdf"
+            filename=f"mustang_report_{run_id}.pdf",
         )
     except Exception as e:
         import logging
+
         logger = logging.getLogger("uvicorn")
         logger.error(f"Failed to generate report PDF: {e}")
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate report PDF: {str(e)}"
+            status_code=500, detail=f"Failed to generate report PDF: {str(e)}"
         )
-
 
 
 # Mount static site for frontend SPA
 static_frontend_dir = project_root / "static"
 static_frontend_dir.mkdir(exist_ok=True)
-app.mount("/", StaticFiles(directory=str(static_frontend_dir), html=True), name="frontend")
-
+app.mount(
+    "/", StaticFiles(directory=str(static_frontend_dir), html=True), name="frontend"
+)

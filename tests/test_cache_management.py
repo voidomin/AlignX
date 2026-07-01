@@ -109,11 +109,12 @@ def test_lru_logic():
         print("\n✨ LRU Cache Tests Passed!")
     finally:
         # Force delete references and run garbage collection to close all SQLite file locks
-        if 'db' in locals():
+        if "db" in locals():
             del db
-        if 'cache_mgr' in locals():
+        if "cache_mgr" in locals():
             del cache_mgr
         import gc
+
         gc.collect()
 
         print("Cleaning up test cache files...")

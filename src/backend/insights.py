@@ -1,6 +1,6 @@
 import numpy as np
 from collections import Counter
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 
 class InsightsGenerator:
@@ -16,6 +16,7 @@ class InsightsGenerator:
     def analyzer(self):
         if self._analyzer is None:
             from src.backend.rmsd_analyzer import RMSDAnalyzer
+
             self._analyzer = RMSDAnalyzer(self.config)
         return self._analyzer
 
@@ -67,7 +68,9 @@ class InsightsGenerator:
             # Best Match — mask diagonal with inf using a writable copy
             min_arr = rmsd_df.to_numpy(dtype=float, copy=True)
             np.fill_diagonal(min_arr, np.inf)
-            min_mask_df = rmsd_df.__class__(min_arr, index=rmsd_df.index, columns=rmsd_df.columns)
+            min_mask_df = rmsd_df.__class__(
+                min_arr, index=rmsd_df.index, columns=rmsd_df.columns
+            )
             min_val = min_mask_df.min().min()
             min_pair = min_mask_df.stack().idxmin()
             insights.append(
@@ -77,7 +80,9 @@ class InsightsGenerator:
             # Worst Match — mask diagonal with -1 using a writable copy
             max_arr = rmsd_df.to_numpy(dtype=float, copy=True)
             np.fill_diagonal(max_arr, -1.0)
-            max_mask_df = rmsd_df.__class__(max_arr, index=rmsd_df.index, columns=rmsd_df.columns)
+            max_mask_df = rmsd_df.__class__(
+                max_arr, index=rmsd_df.index, columns=rmsd_df.columns
+            )
             max_val = max_mask_df.max().max()
             max_pair = max_mask_df.stack().idxmax()
             if max_val > 5.0:
@@ -110,7 +115,9 @@ class InsightsGenerator:
             ligand_data = results["ligand_analysis"]
             total_ligands = sum(len(lig_list) for lig_list in ligand_data.values())
             if total_ligands > 0:
-                all_names = [lig["name"] for lig_list in ligand_data.values() for lig in lig_list]
+                all_names = [
+                    lig["name"] for lig_list in ligand_data.values() for lig in lig_list
+                ]
                 common = Counter(all_names).most_common(1)
                 insights.append(
                     f"💊 **Ligand Analysis**: Found {total_ligands} total ligands. Most common: **{common[0][0]}** ({common[0][1]} occurrences)."
@@ -134,21 +141,31 @@ class InsightsGenerator:
         if q_metrics:
             scores = [m["tm_score"] for m in q_metrics.values()]
             avg_tm = np.mean(scores)
-            
+
             if avg_tm > 0.7:
-                insights.append(f"🛡️ **High Confidence**: Average TM-score of {avg_tm:.3f} indicates a reliable structural consensus.")
+                insights.append(
+                    f"🛡️ **High Confidence**: Average TM-score of {avg_tm:.3f} indicates a reliable structural consensus."
+                )
             elif avg_tm < 0.5:
-                insights.append(f"⚠️ **Low Confidence**: Average TM-score of {avg_tm:.3f} suggests possible structural divergence.")
+                insights.append(
+                    f"⚠️ **Low Confidence**: Average TM-score of {avg_tm:.3f} suggests possible structural divergence."
+                )
 
             # Best/Worst models
-            sorted_q = sorted(q_metrics.items(), key=lambda x: x[1]["tm_score"], reverse=True)
+            sorted_q = sorted(
+                q_metrics.items(), key=lambda x: x[1]["tm_score"], reverse=True
+            )
             _, best_m = sorted_q[0]
             worst_id, worst_m = sorted_q[-1]
 
             if best_m["tm_score"] > 0.9:
-                insights.append(f"🌟 **Top Fit**: A highly representative model was identified (TM-score: {best_m['tm_score']:.3f}).")
+                insights.append(
+                    f"🌟 **Top Fit**: A highly representative model was identified (TM-score: {best_m['tm_score']:.3f})."
+                )
             if worst_m["tm_score"] < 0.4:
-                insights.append(f"📉 **Weak Fit**: `{worst_id}` shows significant divergence (TM-score: {worst_m['tm_score']:.3f}).")
+                insights.append(
+                    f"📉 **Weak Fit**: `{worst_id}` shows significant divergence (TM-score: {worst_m['tm_score']:.3f})."
+                )
         return insights
 
     def _get_ramachandran_insights(self, results: Dict[str, Any]) -> List[str]:
@@ -160,10 +177,16 @@ class InsightsGenerator:
             outliers = r_stats.get("outlier_count", 0)
 
             if favored > 95:
-                insights.append(f"💎 **Exceptional Quality**: {favored:.1f}% of residues are in favored regions.")
+                insights.append(
+                    f"💎 **Exceptional Quality**: {favored:.1f}% of residues are in favored regions."
+                )
             elif favored < 80:
-                insights.append(f"⚠️ **Geometry Alert**: Low favored region percentage ({favored:.1f}%).")
+                insights.append(
+                    f"⚠️ **Geometry Alert**: Low favored region percentage ({favored:.1f}%)."
+                )
 
             if outliers > 10:
-                insights.append(f"🚩 **Local Geometry**: Found {outliers} Ramachandran outliers across structures.")
+                insights.append(
+                    f"🚩 **Local Geometry**: Found {outliers} Ramachandran outliers across structures."
+                )
         return insights

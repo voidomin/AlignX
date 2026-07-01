@@ -12,6 +12,7 @@ def render_comparison_tab(current_results: dict):
     Render comparative analysis between runs.
     """
     import plotly.express as px
+
     st.header("🔄 Batch Comparison Mode")
 
     with st.expander("ℹ️ About Batch Comparison", expanded=True):

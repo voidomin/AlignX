@@ -61,6 +61,7 @@ class LigandAnalyzer:
 
         from Bio.PDB import PDBParser
         from Bio.PDB.PDBExceptions import PDBConstructionWarning
+
         parser = PDBParser(QUIET=True)
         try:
             with warnings.catch_warnings():
@@ -123,6 +124,7 @@ class LigandAnalyzer:
         """
         from Bio.PDB import PDBParser, NeighborSearch
         from Bio.PDB.PDBExceptions import PDBConstructionWarning
+
         parser = PDBParser(QUIET=True)
         try:
             with warnings.catch_warnings():
@@ -228,6 +230,8 @@ class LigandAnalyzer:
         Returns:
             Dictionary with total SASA, per-chain SASA, and per-residue breakdown.
         """
+        from Bio.PDB import PDBParser
+        from Bio.PDB.PDBExceptions import PDBConstructionWarning
         from Bio.PDB.SASA import ShrakeRupley
 
         pdb_file = Path(pdb_file)

@@ -4,6 +4,7 @@ An automated, full-stack bioinformatics pipeline for multiple structural alignme
 
 [![Version](https://img.shields.io/badge/version-2.4.1-orange.svg)](#)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ---
 
@@ -169,6 +170,12 @@ If you use this pipeline in your research, please cite:
 - **BioPython**: Cock PJ, et al. _Bioinformatics_. 2009.
 
 **Issues?** Open a GitHub issue or contact at `akashkbhat4414@gmail.com`.
+
+---
+
+## 📄 License
+
+MIT — see [LICENSE](LICENSE).
 
 ---
 

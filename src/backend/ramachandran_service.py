@@ -14,6 +14,7 @@ class RamachandranService:
 
     def __init__(self):
         from Bio.PDB import PDBParser
+
         self.parser = PDBParser(QUIET=True)
 
     def calculate_torsion_angles(self, pdb_file: Path) -> Dict[str, pd.DataFrame]:
@@ -26,6 +27,7 @@ class RamachandranService:
         results = {}
         try:
             from Bio.PDB import Polypeptide
+
             structure = self.parser.get_structure("protein", str(pdb_file))
 
             for model in structure:

@@ -1,0 +1,8 @@
+exclude = [".venv", "web-frontend", "static", "data", "results"]
+
+[lint]
+# E402: several modules intentionally set sys.path / matplotlib backend before
+# importing project code — that ordering is required, not a mistake.
+# E701: single-line if/colon statements throughout mustang_runner.py are a
+# pre-existing style choice, not a correctness issue.
+ignore = ["E402", "E701"]

@@ -126,8 +126,8 @@ export async function triggerClearMemory() {
     return res.json();
 }
 
-export async function fetchHistory() {
-    const res = await fetch(`${API_BASE}/api/history`, { headers: authHeaders() });
+export async function fetchHistory(limit = 20, offset = 0) {
+    const res = await fetch(`${API_BASE}/api/history?limit=${limit}&offset=${offset}`, { headers: authHeaders() });
     if (!res.ok) throw new Error("History fetch failed");
     return res.json();
 }

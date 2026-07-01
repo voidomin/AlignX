@@ -22,6 +22,7 @@ logger = get_logger()
 # User-Friendly Error Translation  (#3)
 # -----------------------------------------------------------------------------
 
+
 def _friendly_error(msg: str) -> str:
     """Convert technical pipeline errors into user-friendly messages."""
     m = msg.lower()
@@ -56,6 +57,7 @@ def _friendly_error(msg: str) -> str:
 # -----------------------------------------------------------------------------
 # Get Started Card  (#1)
 # -----------------------------------------------------------------------------
+
 
 def _render_get_started_card() -> None:
     """Show a welcoming empty state with a clear 3-step CTA."""
@@ -120,17 +122,20 @@ def _render_get_started_card() -> None:
 
 def _render_protein_pill_bar(pdb_ids: List[str]) -> None:
     """Render a slim horizontal bar of protein ID pills (#7)."""
-    pill_html = '<div style="display:flex; flex-wrap:wrap; gap:6px; margin:0.5rem 0 1rem;">'
+    pill_html = (
+        '<div style="display:flex; flex-wrap:wrap; gap:6px; margin:0.5rem 0 1rem;">'
+    )
     for pid in pdb_ids:
         pill_html += (
             f'<span style="'
-            f'background:rgba(66,234,255,0.1); border:1px solid rgba(66,234,255,0.3);'
-            f'border-radius:20px; padding:3px 12px; font-size:0.82rem;'
+            f"background:rgba(66,234,255,0.1); border:1px solid rgba(66,234,255,0.3);"
+            f"border-radius:20px; padding:3px 12px; font-size:0.82rem;"
             f'font-family:monospace; color:#42eaff;">'
-            f'{pid}</span>'
+            f"{pid}</span>"
         )
     pill_html += "</div>"
     st.markdown(pill_html, unsafe_allow_html=True)
+
 
 # -----------------------------------------------------------------------------
 # Cached Wrappers
@@ -264,7 +269,9 @@ def run_analysis() -> None:
 
     # Stage banner (#2)
     stage_banner = st.empty()
-    stage_banner.info(f"⚙️ Starting alignment of **{n} structure{'s' if n != 1 else ''}**…")
+    stage_banner.info(
+        f"⚙️ Starting alignment of **{n} structure{'s' if n != 1 else ''}**…"
+    )
 
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -324,6 +331,7 @@ def run_analysis() -> None:
         timer_display.empty()
         st.balloons()
         import gc
+
         gc.collect()
         st.rerun()
 
@@ -341,7 +349,9 @@ def render_dashboard() -> None:
     """
 
     # First-run Guided Mode prompt (#10) — show once, dismissable
-    if st.session_state.get("first_visit", True) and not st.session_state.get("guided_mode"):
+    if st.session_state.get("first_visit", True) and not st.session_state.get(
+        "guided_mode"
+    ):
         with st.container():
             st.markdown(
                 """
@@ -398,6 +408,7 @@ def render_dashboard() -> None:
         if results:
             try:
                 import numpy as np
+
                 df = results.get("rmsd_df")
                 if df is not None:
                     vals = df.values
@@ -422,8 +433,10 @@ def render_dashboard() -> None:
 
         # Automatic Chain Analysis
         current_chain_info = st.session_state.get("chain_info", {})
-        needs_chain_fetch = not current_chain_info or not all(pid in current_chain_info for pid in pdb_ids)
-        
+        needs_chain_fetch = not current_chain_info or not all(
+            pid in current_chain_info for pid in pdb_ids
+        )
+
         if needs_chain_fetch:
             with st.spinner("Analyzing structures and loading chains…"):
                 try:
@@ -458,9 +471,15 @@ def render_dashboard() -> None:
             ):
                 run_analysis()
         with col_b:
-            label = "Hide Info" if st.session_state.get("show_metadata") else "📋 Show Protein Info"
+            label = (
+                "Hide Info"
+                if st.session_state.get("show_metadata")
+                else "📋 Show Protein Info"
+            )
             if st.button(label, use_container_width=True):
-                st.session_state.show_metadata = not st.session_state.get("show_metadata", False)
+                st.session_state.show_metadata = not st.session_state.get(
+                    "show_metadata", False
+                )
                 st.rerun()
 
         # Lazy metadata expander (#7)
@@ -485,4 +504,3 @@ def render_dashboard() -> None:
     # Console
     log_file = st.session_state.get("log_file")
     render_console(Path(log_file) if log_file else None)
-

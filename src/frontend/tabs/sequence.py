@@ -109,42 +109,43 @@ def find_motif_matches(sequences: Dict[str, str], query: str) -> Dict[str, List[
     Example: 'RYY' or 'G.G' or 'G-P'
     """
     import re
+
     matches_map = {}
     if not query.strip():
         return matches_map
-        
+
     # Clean query: convert 'X' or 'x' or '-' to regex wildcard '.'
-    clean_query = query.upper().replace('X', '.').replace('-', '.').replace(' ', '')
+    clean_query = query.upper().replace("X", ".").replace("-", ".").replace(" ", "")
     try:
         pattern = re.compile(clean_query)
     except re.error:
-        return {} # Invalid regex
-        
+        return {}  # Invalid regex
+
     for name, aligned_seq in sequences.items():
         # Get raw sequence and its alignment index map
         raw_chars = []
-        raw_to_aligned = {} # raw index (0-indexed) -> aligned index (1-indexed)
-        
+        raw_to_aligned = {}  # raw index (0-indexed) -> aligned index (1-indexed)
+
         current_raw_idx = 0
         for aligned_idx, char in enumerate(aligned_seq):
             if char != "-":
                 raw_chars.append(char)
                 raw_to_aligned[current_raw_idx] = aligned_idx + 1
                 current_raw_idx += 1
-                
+
         raw_seq = "".join(raw_chars).upper()
-        
+
         # Find all matches of pattern in raw_seq
         aligned_positions = []
         for match in pattern.finditer(raw_seq):
-            start, end = match.span() # [start, end)
+            start, end = match.span()  # [start, end)
             for raw_pos in range(start, end):
                 if raw_pos in raw_to_aligned:
                     aligned_positions.append(raw_to_aligned[raw_pos])
-                    
+
         if aligned_positions:
             matches_map[name] = aligned_positions
-            
+
     return matches_map
 
 
@@ -185,13 +186,13 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
             <span style="background-color: rgba(255,255,255,0.08); color: #888; padding: 2px 8px; border-radius: 4px; font-weight: 500; font-size: 0.8rem; border: 1px solid rgba(255,255,255,0.05);">Variable (Grey)</span>
         </div>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
     if results.get("sequences") and results.get("conservation"):
         sequences = results["sequences"]
         conservation = results["conservation"]
-        
+
         # 1. Visualization
         html_view = st.session_state.sequence_viewer.generate_html(
             sequences, conservation
@@ -224,22 +225,24 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
         st.caption(
             "Search for specific amino acid sequences or motifs (e.g. `RYY`, `G.G` or `G-P` where '.' or '-' is a wildcard) and highlight them in the 3D superposition."
         )
-        
+
         motif_query = st.text_input(
             "Enter sequence motif:",
             value=st.session_state.get("motif_query", ""),
             placeholder="e.g. RYY or NP.Y or G-P-X",
-            key="motif_search_input"
+            key="motif_search_input",
         )
-        
+
         if motif_query:
             st.session_state.motif_query = motif_query
             matches = find_motif_matches(sequences, motif_query)
             if matches:
                 # Count total matches
                 total_hits = sum(len(cols) for cols in matches.values())
-                st.success(f"✨ Found {total_hits} matching residue positions across {len(matches)} proteins!")
-                
+                st.success(
+                    f"✨ Found {total_hits} matching residue positions across {len(matches)} proteins!"
+                )
+
                 # Show matches details
                 match_summary = []
                 for name, cols in matches.items():
@@ -253,21 +256,27 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
                                 raw_res_nums.append(current_res)
                             current_res += 1
                     ranges_str = _selection_to_range_str(raw_res_nums)
-                    match_summary.append({"PDB ID": name, "Residues Matching Motif": ranges_str})
+                    match_summary.append(
+                        {"PDB ID": name, "Residues Matching Motif": ranges_str}
+                    )
                 st.table(pd.DataFrame(match_summary))
-                
-                if st.button("⭐ Highlight Motif in 3D Viewer", use_container_width=True, type="primary"):
+
+                if st.button(
+                    "⭐ Highlight Motif in 3D Viewer",
+                    use_container_width=True,
+                    type="primary",
+                ):
                     # Map match columns to chain-level residue highlights
                     all_headers = list(sequences.keys())
                     final_mapping = {}
                     for i in range(len(all_headers)):
                         c_id = chr(ord("A") + i)
                         final_mapping[c_id] = []
-                        
+
                     for name, cols in matches.items():
                         p_idx = all_headers.index(name)
                         chain_id = chr(ord("A") + p_idx)
-                        
+
                         raw_res_nums = []
                         current_res = 1
                         seq = sequences[name]
@@ -277,10 +286,13 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
                                     raw_res_nums.append(current_res)
                                 current_res += 1
                         final_mapping[chain_id].extend(raw_res_nums)
-                        
+
                     st.session_state.highlight_chains = final_mapping
                     st.session_state.show_3d_viewer = True
-                    st.toast("Motif highlighted! Go to the '3D Visualization' tab to view.", icon="✨")
+                    st.toast(
+                        "Motif highlighted! Go to the '3D Visualization' tab to view.",
+                        icon="✨",
+                    )
                     st.rerun()
             else:
                 st.warning("No matches found for this motif pattern.")
@@ -329,9 +341,7 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
                         st.session_state[f"text_input_{target_k}"] = cons_str
                         st.rerun()
                 with col2_btn:
-                    if st.button(
-                        "🗑️ Clear All Selections", use_container_width=True
-                    ):
+                    if st.button("🗑️ Clear All Selections", use_container_width=True):
                         st.session_state.residue_selections.clear()
                         # Clear text input widget states
                         for k in list(st.session_state.keys()):
@@ -344,15 +354,13 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
 
             with sel_col2:
                 st.write("**Manual Selection Input**")
-                def_val = st.session_state.residue_selections.get(
-                    target_protein, ""
-                )
+                def_val = st.session_state.residue_selections.get(target_protein, "")
                 user_input = st.text_input(
                     "Enter residue ranges (e.g. 1-10, 15, 20-25):",
                     value=def_val,
                     key=f"text_input_{target_protein}",
                 )
-                
+
                 if user_input != def_val:
                     st.session_state.residue_selections[target_protein] = user_input
 
@@ -374,9 +382,7 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
                 # Build summary table
                 summary_data = []
                 for target, ranges in active_entries.items():
-                    summary_data.append(
-                        {"Target": target, "Residue Ranges": ranges}
-                    )
+                    summary_data.append({"Target": target, "Residue Ranges": ranges})
                 st.table(pd.DataFrame(summary_data))
 
                 st.info(
@@ -438,6 +444,6 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
                         "Selection transferred. Switch to '3D Visualization' tab to view results."
                     )
         else:
-                st.warning("No strictly conserved residues found in this alignment.")
+            st.warning("No strictly conserved residues found in this alignment.")
     else:
         st.warning("Alignment file (AFASTA) not found. Sequence tab unavailable.")

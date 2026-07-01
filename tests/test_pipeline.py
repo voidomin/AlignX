@@ -23,9 +23,7 @@ class TestPipelineIntegration:
         dummy_file = temp_workspace["raw"] / "1dum.pdb"
         dummy_file.write_text(dummy_pdb_content)
 
-        with patch.object(
-            manager, "download_pdb", new_callable=AsyncMock
-        ) as mock_dl:
+        with patch.object(manager, "download_pdb", new_callable=AsyncMock) as mock_dl:
             mock_dl.return_value = (True, "Downloaded", dummy_file)
 
             # 1. Download (Mocked)
