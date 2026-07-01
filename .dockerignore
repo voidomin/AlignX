@@ -1,0 +1,40 @@
+# Version control
+.git
+.gitignore
+
+# Python
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+.coverage
+htmlcov
+
+# Node / frontend build tooling (static/ already holds the built output)
+web-frontend/node_modules
+web-frontend/dist
+
+# Local data & run artifacts (recreated at runtime)
+data/raw
+data/cleaned
+results
+logs
+temp
+crashes
+run_history.db
+*.log
+
+# Secrets & local env
+.env
+.env.local
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Docs & misc not needed at runtime
+docs/archive
+tests

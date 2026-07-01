@@ -1,7 +1,7 @@
 # Build the Vite frontend from the local AlignX/web-frontend repo and copy it to AlignX/static
 
-$portfolioDir = "C:\Users\ASUS\Documents\personal\AlignX\web-frontend"
-$staticDir = "C:\Users\ASUS\Documents\personal\AlignX\static"
+$portfolioDir = Join-Path $PSScriptRoot "web-frontend"
+$staticDir = Join-Path $PSScriptRoot "static"
 
 Write-Host "Building Vite frontend in $portfolioDir..." -ForegroundColor Cyan
 Push-Location $portfolioDir

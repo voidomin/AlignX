@@ -24,7 +24,7 @@ try:
         print(f"✓ Mustang available: {mustang_msg}")
     else:
         print(f"❌ Mustang NOT found: {mustang_msg}")
-        print("   Please check WINDOWS_SETUP.md for installation details.")
+        print("   Please check docs/setup/WINDOWS_SETUP.md for installation details.")
         
     print("\n🎉 Setup check complete!")
     

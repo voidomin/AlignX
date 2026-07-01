@@ -13,7 +13,8 @@ graph TD
     A[1. Setup & Environment Checker] --> B[2. Automated Pytest Unit Tests]
     B --> C[3. Scientific Metrics Verification]
     C --> D[4. FastAPI Web Server Check]
-    D --> E[5. Frontend Compilation & UI Flow]
+    D --> E[5. Frontend Unit Tests]
+    E --> F[6. Frontend Compilation & UI Flow]
 ```
 
 ---
@@ -81,10 +82,28 @@ Run the FastAPI web server locally and verify that the backend endpoints are onl
      "mustang_message": "..."
    }
    ```
+3. **Test the async alignment job queue:**
+   ```bash
+   curl -X POST http://127.0.0.1:8000/api/jobs/align -H "Content-Type: application/json" -d "{\"pdb_ids\": [\"4RLT\", \"3UG9\"]}"
+   ```
+   Expect an immediate `202` with a `job_id`. Poll `GET /api/jobs/{job_id}` until `status` is `completed` (or `failed`).
+4. **Test API auth (only if `ALIGNX_API_KEY` is set in your `.env`):**
+   A request to any `/api/*` route without `X-API-Key` (or `?api_key=`) should return `401`; with the correct key, `200`.
 
 ---
 
-### Step 5: Frontend Build & UI Flow Verification
+### Step 5: Frontend Unit Tests
+Run the Vitest suite covering `api.js` and the JS components (auth headers, job polling, cluster/comparison rendering).
+
+```powershell
+cd web-frontend
+npm test
+```
+*Expected Output:* all test files pass (currently 13 tests across `api.test.js` and `ClustersTab.test.js`).
+
+---
+
+### Step 6: Frontend Build & UI Flow Verification
 Verify the Vite single page application (SPA).
 
 1. **Rebuild the Frontend:**
@@ -102,5 +121,6 @@ Verify the Vite single page application (SPA).
 3. **Verify Full-Stack Single Port Execution (Recommended):**
    Once built using `build_frontend.ps1`, open `http://127.0.0.1:8000/` in your browser.
    - Verify the sidebar only shows **Active Workspace** and **Session History**.
-   - Check the **Active Workspace** tabs (Overview, Ligands, Sequence, Analytics).
-   - Enter a PDB ID, add it, choose a chain, and click **Run Structural Alignment** to verify end-to-end calculations.
+   - Check the **Active Workspace** tabs (Overview, Ligands, Sequence, Analytics, Clusters, Compare).
+   - Enter a PDB ID, add it, choose a chain, and click **Run Structural Alignment** — it should show an "Aligning..." state while the background job runs, then populate all tabs once complete.
+   - Run a second alignment with different PDB IDs, then check the **Compare** tab to diff it against the first run.

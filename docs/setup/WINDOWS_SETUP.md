@@ -12,7 +12,7 @@ This guide provides step-by-step instructions for setting up all required tools 
 
 Run Mustang in a Linux environment within Windows. Best compatibility.
 
-###Option B: Bio3D R Package
+### Option B: Bio3D R Package
 Use Python to call R's Bio3D package, which wraps Mustang. Simpler but requires R installation.
 
 **Our pipeline will support BOTH options** - you choose during setup.
@@ -198,8 +198,12 @@ _Note: Our pipeline can generate tree images without FigTree, so this is optiona
 ### 6. Install Pipeline Dependencies
 
 ```powershell
-# Navigate to pipeline directory
-cd "c:\Users\akash\Documents\project\projects bio\mustang_pipeline"
+# Navigate to the cloned AlignX directory
+cd path\to\AlignX
+
+# Create and activate a virtual environment (recommended)
+python -m venv .venv
+.venv\Scripts\Activate.ps1
 
 # Install Python packages
 pip install -r requirements.txt
@@ -212,7 +216,7 @@ pip install -r requirements.txt
 Run our setup checker:
 
 ```powershell
-python main.py --check-setup
+.venv\Scripts\python check_setup.py
 ```
 
 Expected output:
@@ -220,15 +224,13 @@ Expected output:
 ```
 🔍 Checking Pipeline Setup...
 
-✓ Python 3.11.5 detected
-✓ Mustang available (via WSL/Bio3D)
-✓ Phylip neighbor found
-✓ PyMOL installed
-⚠ FigTree not found (optional)
-✓ All Python packages installed
+✓ Python 3.12.10 detected
+✓ Mustang available: <detected backend and path>
 
-🎉 Setup complete! Ready to run pipeline.
+🎉 Setup check complete!
 ```
+
+If Mustang isn't found, the script prints a pointer back to this guide.
 
 ---
 
@@ -268,20 +270,14 @@ Expected output:
 
 ## Next Steps
 
-After installation complete:
+After installation is complete:
 
-1. Test with example dataset: `python main.py --example gpcr`
-2. Run interactive setup: `python main.py --interactive`
-3. Read full documentation: `README.md`
+1. Run the setup checker above to confirm Mustang is detected.
+2. Run the automated test suite: `powershell -File run_tests.ps1` (see [../testing/VERIFICATION.md](../testing/VERIFICATION.md)).
+3. Start the app: `.venv\Scripts\streamlit run app.py` (Streamlit) or build + run the FastAPI/Vite stack — see [../../README.md](../../README.md) for both options.
 
 ---
 
 ## Need Help?
 
-Installation checker output guides you to specific fixes. Run:
-
-```powershell
-python main.py --check-setup --verbose
-```
-
-This will provide detailed diagnostic information and suggest solutions.
+If `check_setup.py` reports Mustang as not found, double check the `mustang.backend` and `mustang.executable_path` settings in `config.yaml`, and re-verify the WSL/Bio3D steps above.

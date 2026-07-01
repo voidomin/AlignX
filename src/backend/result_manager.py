@@ -18,12 +18,12 @@ class ResultManager:
 
         self.db = HistoryDatabase()
 
-    def list_runs(self) -> List[Dict[str, Any]]:
+    def list_runs(self, session_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Retrieve valid past runs from the database.
         """
         runs = []
-        db_runs = self.db.get_all_runs()
+        db_runs = self.db.get_all_runs(session_id=session_id)
 
         for run in db_runs:
             run_path = Path(run["result_path"])

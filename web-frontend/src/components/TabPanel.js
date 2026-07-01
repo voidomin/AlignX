@@ -13,6 +13,8 @@ export class TabPanel {
             <button id="btn-tab-ligands" class="tab-trigger flex-grow py-2 px-3 rounded-lg font-label-md text-label-md transition-colors">Ligands</button>
             <button id="btn-tab-sequence" class="tab-trigger flex-grow py-2 px-3 rounded-lg font-label-md text-label-md transition-colors">Sequence</button>
             <button id="btn-tab-analytics" class="tab-trigger flex-grow py-2 px-3 rounded-lg font-label-md text-label-md transition-colors">Analytics</button>
+            <button id="btn-tab-clusters" class="tab-trigger flex-grow py-2 px-3 rounded-lg font-label-md text-label-md transition-colors">Clusters</button>
+            <button id="btn-tab-comparison" class="tab-trigger flex-grow py-2 px-3 rounded-lg font-label-md text-label-md transition-colors">Compare</button>
         `;
         this.element = div;
         this.updateTabStyles();
@@ -25,7 +27,9 @@ export class TabPanel {
             'overview': this.element.querySelector('#btn-tab-overview'),
             'ligands': this.element.querySelector('#btn-tab-ligands'),
             'sequence': this.element.querySelector('#btn-tab-sequence'),
-            'analytics': this.element.querySelector('#btn-tab-analytics')
+            'analytics': this.element.querySelector('#btn-tab-analytics'),
+            'clusters': this.element.querySelector('#btn-tab-clusters'),
+            'comparison': this.element.querySelector('#btn-tab-comparison')
         };
 
         Object.keys(triggers).forEach(tab => {
@@ -42,7 +46,9 @@ export class TabPanel {
             'overview': this.element.querySelector('#btn-tab-overview'),
             'ligands': this.element.querySelector('#btn-tab-ligands'),
             'sequence': this.element.querySelector('#btn-tab-sequence'),
-            'analytics': this.element.querySelector('#btn-tab-analytics')
+            'analytics': this.element.querySelector('#btn-tab-analytics'),
+            'clusters': this.element.querySelector('#btn-tab-clusters'),
+            'comparison': this.element.querySelector('#btn-tab-comparison')
         };
 
         Object.keys(triggers).forEach(tab => {

@@ -77,7 +77,7 @@ def render_sidebar(load_run_callback: Callable[[str], None]) -> None:
             st.success(f"✓ {mustang_msg}")
         else:
             st.error(f"✗ {mustang_msg}")
-            st.info("See WINDOWS_SETUP.md for installation instructions")
+            st.info("See docs/setup/WINDOWS_SETUP.md for installation instructions")
 
         # --- System Health & Diagnostics ---
         with st.expander("🛠️ System Health", expanded=False):

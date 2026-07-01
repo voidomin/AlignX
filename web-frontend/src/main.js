@@ -7,8 +7,10 @@ import { OverviewTab } from './components/OverviewTab';
 import { LigandTab } from './components/LigandTab';
 import { SequenceTab } from './components/SequenceTab';
 import { AnalyticsTab } from './components/AnalyticsTab';
+import { ClustersTab } from './components/ClustersTab';
+import { ComparisonTab } from './components/ComparisonTab';
 import { HistoryPanel } from './components/HistoryPanel';
-import { fetchChains, runAlignment, fetchLigands, getAlignmentReportUrl } from './api';
+import { fetchChains, runAlignment, pollJobUntilDone, fetchLigands, getAlignmentReportUrl } from './api';
 
 class App {
     constructor() {
@@ -17,7 +19,7 @@ class App {
         this.pdbMetadata = {};
         this.currentRunId = null;
         this.activeView = 'dashboard'; // 'dashboard' | 'history'
-        this.activeTab = 'overview'; // 'overview' | 'ligands' | 'sequence' | 'analytics'
+        this.activeTab = 'overview'; // 'overview' | 'ligands' | 'sequence' | 'analytics' | 'clusters' | 'comparison'
         this.currentLigands = [];
         this.isAligning = false;
 
@@ -25,6 +27,7 @@ class App {
         this.heatmapFig = null;
         this.treeFig = null;
         this.ramachandranStats = null;
+        this.rmsdDf = null;
 
         // Instantiate components
         this.topNav = new TopNav({
@@ -73,6 +76,8 @@ class App {
 
         this.sequenceTab = new SequenceTab();
         this.analyticsTab = new AnalyticsTab();
+        this.clustersTab = new ClustersTab();
+        this.comparisonTab = new ComparisonTab();
 
         this.historyPanel = new HistoryPanel({
             onReloadRun: (run) => this.reloadPastRun(run),
@@ -158,6 +163,12 @@ class App {
                     this.ramachandranStats,
                     this.analyticsTab.rmsfValues
                 );
+            } else if (this.activeTab === 'clusters') {
+                tabContentContainer.appendChild(this.clustersTab.render());
+                this.clustersTab.updateResults(this.rmsdDf, this.pdbMetadata);
+            } else if (this.activeTab === 'comparison') {
+                tabContentContainer.appendChild(this.comparisonTab.render());
+                this.comparisonTab.updateResults(this.currentRunId);
             }
         }
     }
@@ -220,20 +231,26 @@ class App {
         const params = this.overviewTab.getParameters();
 
         try {
-            const data = await runAlignment(
+            const submission = await runAlignment(
                 this.selectedPDBs,
                 this.chainSelections,
                 params.removeWater,
                 params.removeHeteroatoms
             );
 
-            const results = data.results;
+            const job = await pollJobUntilDone(submission.job_id);
+            if (job.status === 'failed') {
+                throw new Error(job.error || "Alignment pipeline failed.");
+            }
+
+            const results = job.results;
             this.currentRunId = results.id;
 
             // Cache figures
             this.heatmapFig = results.heatmap_fig;
             this.treeFig = results.tree_fig;
             this.ramachandranStats = results.ramachandran_stats;
+            this.rmsdDf = results.rmsd_df;
 
             // Load 3D Superposition
             const refId = this.selectedPDBs[0];
@@ -256,6 +273,7 @@ class App {
             this.ligandTab.updateLigands(this.currentLigands, results.id, this.selectedPDBs);
             this.sequenceTab.updateResults(results.id, results.stats);
             this.analyticsTab.updateResults(results.id, this.heatmapFig, this.treeFig, this.ramachandranStats, results.rmsf_values);
+            this.clustersTab.updateResults(this.rmsdDf, this.pdbMetadata);
 
             // Switch to Sequence tab
             this.switchTab('sequence');
@@ -303,11 +321,13 @@ class App {
             this.heatmapFig = metadata.results.heatmap_fig || null;
             this.treeFig = metadata.results.tree_fig || null;
             this.ramachandranStats = metadata.results.ramachandran_stats || null;
+            this.rmsdDf = metadata.results.rmsd_df || null;
         } else {
             stats = metadata.stats || {};
             this.heatmapFig = null;
             this.treeFig = null;
             this.ramachandranStats = null;
+            this.rmsdDf = null;
         }
 
         const rmsdValue = stats.rmsd || 0.0;
@@ -351,6 +371,7 @@ class App {
             this.ramachandranStats,
             metadata.results ? metadata.results.rmsf_values : null
         );
+        this.clustersTab.updateResults(this.rmsdDf, this.pdbMetadata);
 
         // Switch to Sequence tab
         this.switchTab('sequence');
@@ -366,12 +387,15 @@ class App {
             this.heatmapFig = null;
             this.treeFig = null;
             this.ramachandranStats = null;
-            
+            this.rmsdDf = null;
+
             // Reload defaults
             this.overviewTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
             this.ligandTab.updateLigands([], null, this.selectedPDBs);
             this.sequenceTab.updateResults(null, null);
             this.analyticsTab.updateResults(null, null, null, null);
+            this.clustersTab.updateResults(null, null);
+            this.comparisonTab.updateResults(null);
             this.viewer3D.resetCartoonStyles();
             
             document.getElementById("ambient-placeholder").style.display = "flex";

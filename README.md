@@ -1,34 +1,32 @@
-# 🧬 Mustang Structural Alignment Pipeline (v2.4.1)
+# 🧬 AlignX — Protein Structural Alignment Pipeline (v2.4.1)
 
-An automated, full-stack bioinformatics pipeline for multiple structural alignment of **any protein family** using Mustang, featuring interactive 3D visualizations, phylogenetic analysis, and advanced ligand hunter capabilities.
+An automated, full-stack bioinformatics pipeline for multiple structural alignment of **any protein family** using Mustang, featuring interactive 3D visualizations, phylogenetic analysis, structural clustering, batch comparison, and advanced ligand hunter capabilities.
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://mustang-pipeline.streamlit.app)
-[![Version](https://img.shields.io/badge/version-2.4.1-orange.svg)](https://github.com/your-repo/mustang-pipeline/releases/tag/v2.4.1)
+[![Version](https://img.shields.io/badge/version-2.4.1-orange.svg)](#)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
 ---
 
 ## 🎯 Key Features
 
-### 🎨 High-Impact "Cyber-Bio" UI
+### 🎨 Two Interfaces, One Backend
 
-- **Mission Control Dashboard**: Glassmorphic interface for orchestrating complex runs.
-- **Guided Mode**: Interactive learning cards that explain analysis steps for beginners.
-- **System Diagnostics**: Real-time health checks for local and cloud environments.
+- **Vite + FastAPI SPA** (primary): glassmorphic single-page app with a live 3Dmol.js viewer, driven entirely by the REST API.
+- **Streamlit App** (legacy/companion): Mission Control dashboard with Guided Mode learning cards, kept in parallel for quick local exploration.
 
 ### 🧠 Advanced Analysis
 
-- **Automated Alignment**: Multi-protein superposition powered by Mustang core.
-- **Multi-User Session Isolation (v2.4)**: Full compatibility with stateless deployments like Streamlit Cloud, featuring auto-refreshing sessions and TTL memory management to prevent data overlap.
+- **Automated Alignment**: Multi-protein superposition powered by the Mustang core, run as an async background job so the UI never blocks.
+- **Structural Clusters**: Interactive RMSD-threshold clustering (hierarchical/average-linkage) to group structurally similar proteins into families.
+- **Batch Comparison**: Diff the RMSD matrix of the current run against any past run to see how structural relationships shifted.
 - **Ligand Hunter**: Auto-detect binding pockets, calculate interaction similarities, and visualize SASA (Solvent Accessible Surface Area).
-- **Smart Insights**: Automated captions describing RMSD outliers, structural families, and ligand distributions.
 - **Interactive Phylogeny**: Structural phylogenetic trees generated via average linkage (UPGMA).
+- **Multi-User Session Isolation**: Session-scoped results and history, safe for stateless/shared deployments.
 
 ### 🚀 Visualization & Export
 
 - **Dynamic 3D Viewer**: Embedded 3Dmol.js viewer with highlighting and spinning controls.
 - **Interactive Heatmaps**: Plotly-powered RMSD matrices with custom colormaps.
-- **Standalone Lab Notebook**: Generate a self-contained HTML notebook with embedded 3D structures.
 - **PDF Reports**: Professional analysis summaries ready for citation.
 
 ---
@@ -38,11 +36,11 @@ An automated, full-stack bioinformatics pipeline for multiple structural alignme
 ### 1. Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/mustang-pipeline.git
-cd mustang_pipeline
+git clone https://github.com/<your-org>/AlignX.git
+cd AlignX
 
-# Install dependencies
+python -m venv .venv
+.venv\Scripts\Activate.ps1        # Windows PowerShell
 pip install -r requirements.txt
 ```
 
@@ -50,12 +48,13 @@ pip install -r requirements.txt
 
 The pipeline requires the **Mustang** binary (v3.2.3).
 
-- **Cloud**: Pre-configured on Streamlit Cloud.
-- **Windows**: See [WINDOWS_SETUP.md](WINDOWS_SETUP.md) for WSL or native setup instructions.
+- **Docker**: handled automatically (see below) — the image compiles Mustang from the bundled `mustang.tgz`.
+- **Windows (local)**: see [docs/setup/WINDOWS_SETUP.md](docs/setup/WINDOWS_SETUP.md) for WSL or Bio3D setup instructions.
+- Run `.venv\Scripts\python check_setup.py` at any point to verify Mustang is detected.
 
 ### 3. Run the App
 
-You can run either the Python (Streamlit) version or the Full-Stack (Vite + FastAPI) version:
+You can run either the Python (Streamlit) version or the Full-Stack (Vite + FastAPI) version, or containerize it.
 
 #### Option A: Streamlit (Python only)
 ```powershell
@@ -74,26 +73,80 @@ _Access at:_ `http://localhost:8501`
    ```
 3. Open `http://127.0.0.1:8000` in your browser (the backend automatically serves the built static frontend).
 
+#### Option C: Docker
+```bash
+docker build -t alignx .
+docker run -p 8000:8000 --env-file .env alignx
+```
+The image compiles Mustang from the bundled source and serves the FastAPI backend (with the **already-built** `static/` frontend committed in the repo). If you've changed the frontend, run `build_frontend.ps1` and commit the updated `static/` before building the image.
+
 ---
 
-## 🧪 Verification Protocol
-To verify the application code, quality metrics, and UI flow, follow the step-by-step pipeline detailed in [VERIFICATION.md](VERIFICATION.md).
+## 🔐 Environment Variables
+
+Copy `.env.example` to `.env` and customize. Notable production-relevant ones:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ALIGNX_API_KEY` | unset (open) | Requires this value in the `X-API-Key` header (or `?api_key=` query param) on all `/api/*` routes. Leave unset for local dev. |
+| `ALIGNX_CORS_ORIGINS` | `*` | Comma-separated list of allowed CORS origins. Restrict to your real frontend origin(s) in production. |
+| `MUSTANG_BACKEND` | `auto` | `native`, `bio3d`, or `wsl`. |
+
+---
+
+## 🧪 Testing
+
+Backend (pytest, 43 tests):
+```powershell
+powershell -File run_tests.ps1
+```
+
+Frontend (Vitest):
+```powershell
+cd web-frontend
+npm test
+```
+
+Full step-by-step verification protocol (setup checks, scientific metrics, API smoke tests, UI flow): see [docs/testing/VERIFICATION.md](docs/testing/VERIFICATION.md).
+
+---
+
+## 📚 Documentation
+
+| Doc | Covers |
+|---|---|
+| [docs/setup/WINDOWS_SETUP.md](docs/setup/WINDOWS_SETUP.md) | Installing Mustang, Phylip, PyMOL on Windows (WSL or Bio3D) |
+| [docs/deployment/DEPLOYMENT.md](docs/deployment/DEPLOYMENT.md) | Docker deployment (primary) + Streamlit Cloud/Hugging Face (legacy UI) |
+| [docs/testing/VERIFICATION.md](docs/testing/VERIFICATION.md) | Full verification protocol: setup checks, pytest, Vitest, API smoke tests, UI flow |
+| [docs/design/DESIGN.md](docs/design/DESIGN.md) | Visual design system (colors, typography, component styling) |
+| [docs/design/UI_UX_DESIGN.md](docs/design/UI_UX_DESIGN.md) | UI/UX layout spec and interaction flows |
+| [docs/archive/](docs/archive/) | Superseded planning docs, kept for history |
 
 ---
 
 ## 📂 Project Architecture
 
 ```
-mustang_pipeline/
-├── app.py                # Main Entry Point
-├── config.yaml           # Global Configuration
+AlignX/
+├── app.py                  # Streamlit entry point
+├── config.yaml             # Global configuration
+├── Dockerfile              # FastAPI + Mustang container build
+├── docs/
+│   ├── setup/               # Platform setup guides
+│   ├── deployment/          # Deployment guides
+│   ├── design/              # Visual/UX design specs
+│   ├── testing/             # Verification protocol
+│   └── archive/             # Superseded planning docs
 ├── src/
-│   ├── backend/          # Core Logistics (Coordinator, Runner, Analyzers)
-│   ├── frontend/         # UI Components (Mission Control, Results, Tabs)
-│   └── utils/            # Utilities (Caching, Logging, Config)
-├── data/                 # Raw & Cleaned PDB Storage
-├── results/              # Run History & Artifact Exports
-└── tests/                # Automated Verification Suite
+│   ├── backend/            # Coordinator, Mustang runner, analyzers, FastAPI app (api.py)
+│   ├── frontend/            # Streamlit UI (Mission Control, tabs)
+│   └── utils/               # Config loading, caching, logging
+├── web-frontend/            # Vite SPA source (builds into static/)
+├── static/                  # Built SPA served by FastAPI (git-tracked build output)
+├── pages/                   # Streamlit multipage routes (History, Settings)
+├── data/                    # Raw & cleaned PDB storage
+├── results/                 # Run history & artifact exports
+└── tests/                   # Pytest suite (backend) — web-frontend/src/**/*.test.js (frontend)
 ```
 
 ---
@@ -119,5 +172,5 @@ If you use this pipeline in your research, please cite:
 
 ---
 
-Developed with ❤️ by **Akash**  
+Developed with ❤️ by **Akash**
 _Optimized for Structural Biology & Computational Drug Discovery_

@@ -1,0 +1,111 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+function mockFetchOnce(body, ok = true, status = ok ? 200 : 400) {
+    global.fetch = vi.fn().mockResolvedValue({
+        ok,
+        status,
+        json: async () => body,
+    });
+}
+
+describe('api.js (no API key configured)', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('fetchClusters posts the rmsd matrix and threshold, no auth header', async () => {
+        mockFetchOnce({ threshold: 3.0, clusters: [] });
+        const { fetchClusters } = await import('./api.js');
+
+        const rmsdDf = { index: ['A', 'B'], columns: ['A', 'B'], data: [[0, 1], [1, 0]] };
+        const result = await fetchClusters(rmsdDf, 3.0);
+
+        expect(result.clusters).toEqual([]);
+        const [url, options] = global.fetch.mock.calls[0];
+        expect(url).toContain('/api/clusters');
+        expect(options.method).toBe('POST');
+        expect(JSON.parse(options.body)).toEqual({ rmsd_df: rmsdDf, threshold: 3.0 });
+        expect(options.headers['X-API-Key']).toBeUndefined();
+    });
+
+    it('runAlignment submits to the job queue endpoint, not the old synchronous one', async () => {
+        mockFetchOnce({ job_id: 'abc123', status: 'queued' });
+        const { runAlignment } = await import('./api.js');
+
+        const result = await runAlignment(['4RLT', '3UG9'], { '4RLT': 'A' }, true, true);
+
+        expect(result.job_id).toBe('abc123');
+        const [url] = global.fetch.mock.calls[0];
+        expect(url).toContain('/api/jobs/align');
+    });
+
+    it('pollJobUntilDone polls until status is completed', async () => {
+        const responses = [
+            { status: 'queued' },
+            { status: 'running' },
+            { status: 'completed', results: { id: 'run_1' } },
+        ];
+        global.fetch = vi.fn().mockImplementation(() => Promise.resolve({
+            ok: true,
+            json: async () => responses.shift(),
+        }));
+        const { pollJobUntilDone } = await import('./api.js');
+
+        const ticks = [];
+        const final = await pollJobUntilDone('job_1', { intervalMs: 0, onTick: (j) => ticks.push(j.status) });
+
+        expect(final.status).toBe('completed');
+        expect(final.results.id).toBe('run_1');
+        expect(ticks).toEqual(['queued', 'running', 'completed']);
+        expect(global.fetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('pollJobUntilDone stops on failed status without throwing', async () => {
+        mockFetchOnce({ status: 'failed', error: 'boom' });
+        const { pollJobUntilDone } = await import('./api.js');
+
+        const final = await pollJobUntilDone('job_2', { intervalMs: 0 });
+        expect(final.status).toBe('failed');
+        expect(final.error).toBe('boom');
+    });
+
+    it('fetchComparison surfaces the backend error detail on failure', async () => {
+        mockFetchOnce({ detail: 'No overlapping proteins found between these runs.' }, false, 400);
+        const { fetchComparison } = await import('./api.js');
+
+        await expect(fetchComparison('run_a', 'run_b')).rejects.toThrow(
+            'No overlapping proteins found between these runs.'
+        );
+    });
+
+    it('getAlignmentReportUrl does not append an api_key param when no key is configured', async () => {
+        const { getAlignmentReportUrl } = await import('./api.js');
+        expect(getAlignmentReportUrl('run_1')).not.toContain('api_key');
+    });
+});
+
+describe('api.js (API key configured)', () => {
+    beforeEach(() => {
+        vi.stubEnv('VITE_ALIGNX_API_KEY', 'secret-key');
+        vi.resetModules();
+    });
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
+        vi.restoreAllMocks();
+    });
+
+    it('attaches the X-API-Key header on fetch-based calls', async () => {
+        mockFetchOnce({ runs: [] });
+        const { fetchHistory } = await import('./api.js');
+
+        await fetchHistory();
+        const [, options] = global.fetch.mock.calls[0];
+        expect(options.headers['X-API-Key']).toBe('secret-key');
+    });
+
+    it('appends api_key as a query param on the report URL', async () => {
+        const { getAlignmentReportUrl } = await import('./api.js');
+        expect(getAlignmentReportUrl('run_1')).toContain('api_key=secret-key');
+    });
+});
