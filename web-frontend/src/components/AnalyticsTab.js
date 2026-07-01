@@ -1,3 +1,10 @@
+const SUB_TABS = [
+    { key: 'quality', label: 'Quality' },
+    { key: 'rmsf', label: 'RMSF' },
+    { key: 'rmsd', label: 'RMSD Matrix' },
+    { key: 'phylo', label: 'Phylogeny' },
+];
+
 export class AnalyticsTab {
     constructor() {
         this.element = null;
@@ -6,81 +13,116 @@ export class AnalyticsTab {
         this.treeFig = null;
         this.ramachandranStats = null;
         this.rmsfValues = [];
+        this.activeSubTab = 'quality';
     }
 
     render() {
         const div = document.createElement('div');
-        div.className = "flex-grow flex flex-col gap-4 overflow-y-auto pr-1";
+        div.className = "editorial-section";
         div.id = "tab-analytics-container";
 
         div.innerHTML = `
-            <!-- Ramachandran / Quality Report -->
-            <div class="glass-panel rounded-xl p-5 flex flex-col gap-4 bg-[#11141c]/50 shrink-0">
-                <div class="flex items-center gap-2">
-                    <span class="material-symbols-outlined text-[20px] text-primary">verified</span>
-                    <h4 class="font-body-md text-body-md font-semibold text-text-primary">Structure Quality Report</h4>
+            <header class="section-head">
+                <div>
+                    <span class="eyebrow">Fig. — Structural Analytics</span>
+                    <h2 class="section-title">Quality, fluctuation &amp; phylogeny</h2>
                 </div>
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="bg-black/30 p-3 rounded-lg border border-white/5 flex flex-col">
-                        <span class="font-label-sm text-label-sm text-text-secondary">Ramachandran Score</span>
-                        <span id="ramachandran-score" class="font-headline-sm text-headline-sm font-semibold text-success font-mono">--</span>
-                    </div>
-                    <div class="bg-black/30 p-3 rounded-lg border border-white/5 flex flex-col">
-                        <span class="font-label-sm text-label-sm text-text-secondary">Outlier Residues</span>
-                        <span id="ramachandran-outliers" class="font-headline-sm text-headline-sm font-semibold text-error font-mono">--</span>
-                    </div>
-                </div>
-                <div id="ramachandran-outliers-list-card" class="bg-black/20 border border-white/5 p-3 rounded-lg flex flex-col gap-1 hidden">
-                    <span class="font-label-sm text-label-sm text-text-secondary uppercase">Top Outliers</span>
-                    <div id="ramachandran-outliers-list" class="flex flex-wrap gap-1.5 mt-1">
-                        <!-- Outlier badges -->
-                    </div>
-                </div>
-            </div>
+            </header>
 
-            <!-- Residue Fluctuation (Plotly Line Chart) -->
-            <div class="glass-panel rounded-xl p-5 flex flex-col gap-4 bg-[#11141c]/50 shrink-0 min-h-[350px]">
-                <div class="flex items-center gap-2">
-                    <span class="material-symbols-outlined text-[20px] text-primary">show_chart</span>
-                    <h4 class="font-body-md text-body-md font-semibold text-text-primary">Residue Fluctuation (RMSF)</h4>
+            <div class="section-body flex flex-col gap-6">
+                <!-- Sub-tab strip -->
+                <div id="analytics-subtab-strip" class="flex gap-1 border border-border rounded-md p-1 shrink-0">
+                    ${SUB_TABS.map(t => `
+                        <button data-subtab="${t.key}" class="analytics-subtab-btn flex-1 py-1.5 rounded-md font-label-md text-label-md transition-colors">${t.label}</button>
+                    `).join('')}
                 </div>
-                <div id="rmsf-plotly-chart" class="w-full h-[280px]">
-                    <div class="flex items-center justify-center h-full text-text-secondary font-body-sm">
-                        Run alignment to display interactive RMSF chart.
+
+                <!-- Ramachandran / Quality Report -->
+                <div data-panel="quality" class="flex flex-col gap-4 shrink-0">
+                    <div class="grid grid-cols-2 gap-6">
+                        <div class="stat-row stat-primary">
+                            <span class="stat-key">Ramachandran score</span>
+                            <span id="ramachandran-score" class="stat-value">--</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-key">Outlier residues</span>
+                            <span id="ramachandran-outliers" class="stat-value">--</span>
+                        </div>
+                    </div>
+                    <div id="ramachandran-outliers-list-card" class="flex flex-col gap-2 hidden">
+                        <span class="font-label-sm text-label-sm text-secondary uppercase">Top outliers</span>
+                        <div id="ramachandran-outliers-list" class="flex flex-wrap gap-1.5">
+                            <!-- Outlier chips -->
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- Pairwise RMSD Matrix (Plotly Heatmap) -->
-            <div class="glass-panel rounded-xl p-5 flex flex-col gap-4 bg-[#11141c]/50 shrink-0 min-h-[350px]">
-                <div class="flex items-center gap-2">
-                    <span class="material-symbols-outlined text-[20px] text-gradient-end">grid_on</span>
-                    <h4 class="font-body-md text-body-md font-semibold text-text-primary">Pairwise RMSD Matrix</h4>
-                </div>
-                <div id="rmsd-plotly-heatmap" class="w-full h-[280px]">
-                    <div class="flex items-center justify-center h-full text-text-secondary font-body-sm">
-                        Run alignment to display interactive heatmap.
+                <!-- Residue Fluctuation (Plotly Line Chart) -->
+                <div data-panel="rmsf" class="border border-border rounded-lg p-4 shrink-0 min-h-[320px]">
+                    <div id="rmsf-plotly-chart" class="w-full h-[280px]">
+                        <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                            Run alignment to display interactive RMSF chart.
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- Phylogenetic Tree (Plotly Dendrogram) -->
-            <div class="glass-panel rounded-xl p-5 flex flex-col gap-4 bg-[#11141c]/50 shrink-0 min-h-[350px]">
-                <div class="flex items-center gap-2">
-                    <span class="material-symbols-outlined text-[20px] text-tertiary">account_tree</span>
-                    <h4 class="font-body-md text-body-md font-semibold text-text-primary">Phylogenetic Tree (UPGMA)</h4>
+                <!-- Pairwise RMSD Matrix (Plotly Heatmap) -->
+                <div data-panel="rmsd" class="border border-border rounded-lg p-4 shrink-0 min-h-[320px]">
+                    <div id="rmsd-plotly-heatmap" class="w-full h-[280px]">
+                        <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                            Run alignment to display interactive heatmap.
+                        </div>
+                    </div>
                 </div>
-                <div id="phylo-plotly-tree" class="w-full h-[280px]">
-                    <div class="flex items-center justify-center h-full text-text-secondary font-body-sm">
-                        Run alignment to display interactive dendrogram.
+
+                <!-- Phylogenetic Tree (Plotly Dendrogram) -->
+                <div data-panel="phylo" class="border border-border rounded-lg p-4 shrink-0 min-h-[320px]">
+                    <div id="phylo-plotly-tree" class="w-full h-[280px]">
+                        <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                            Run alignment to display interactive dendrogram.
+                        </div>
                     </div>
                 </div>
             </div>
         `;
 
         this.element = div;
+        this.setupSubTabs();
         this.renderVisuals();
         return div;
+    }
+
+    setupSubTabs() {
+        this.element.querySelectorAll('.analytics-subtab-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.switchSubTab(btn.getAttribute('data-subtab')));
+        });
+        this.updateSubTabView();
+    }
+
+    switchSubTab(key) {
+        this.activeSubTab = key;
+        this.updateSubTabView();
+
+        // Plotly may not auto-detect a container going from hidden -> visible;
+        // resize defensively so the chart in the panel just shown renders correctly.
+        const chartIdByPanel = { rmsf: 'rmsf-plotly-chart', rmsd: 'rmsd-plotly-heatmap', phylo: 'phylo-plotly-tree' };
+        const chartId = chartIdByPanel[key];
+        if (chartId && typeof Plotly !== 'undefined') {
+            const chartDiv = this.element.querySelector(`#${chartId}`);
+            if (chartDiv && chartDiv.data) {
+                Plotly.Plots.resize(chartDiv);
+            }
+        }
+    }
+
+    updateSubTabView() {
+        this.element.querySelectorAll('.analytics-subtab-btn').forEach(btn => {
+            const isActive = btn.getAttribute('data-subtab') === this.activeSubTab;
+            btn.className = `analytics-subtab-btn flex-1 py-1.5 rounded-md font-label-md text-label-md transition-colors ${isActive ? 'bg-accent-muted text-accent' : 'text-secondary hover:text-primary'}`;
+        });
+        this.element.querySelectorAll('[data-panel]').forEach(panel => {
+            panel.classList.toggle('hidden', panel.getAttribute('data-panel') !== this.activeSubTab);
+        });
     }
 
     updateResults(runId, heatmapFig, treeFig, ramachandranStats, rmsfValues) {
@@ -109,10 +151,10 @@ export class AnalyticsTab {
                 listCard.classList.remove('hidden');
                 listContainer.innerHTML = "";
                 this.ramachandranStats.outliers_list.forEach(item => {
-                    const badge = document.createElement('span');
-                    badge.className = "px-2 py-0.5 rounded bg-error/10 border border-error/20 text-error font-mono text-[10px]";
-                    badge.innerText = item;
-                    listContainer.appendChild(badge);
+                    const chip = document.createElement('span');
+                    chip.className = "px-1.5 py-0.5 rounded-md bg-surface-raised border border-border-subtle text-error font-mono text-[10px]";
+                    chip.innerText = item;
+                    listContainer.appendChild(chip);
                 });
             } else {
                 listCard.classList.add('hidden');
@@ -127,22 +169,22 @@ export class AnalyticsTab {
         const rmsfDiv = this.element.querySelector('#rmsf-plotly-chart');
         if (this.rmsfValues && this.rmsfValues.length > 0) {
             rmsfDiv.innerHTML = "";
-            
+
             // X-axis: 1-indexed positions
             const xData = Array.from({ length: this.rmsfValues.length }, (_, i) => i + 1);
-            
+
             const trace = {
                 x: xData,
                 y: this.rmsfValues,
                 type: 'scatter',
                 mode: 'lines',
                 line: {
-                    color: '#8B5CF6',
+                    color: '#E2846A',
                     width: 2.5,
                     shape: 'spline'
                 },
                 fill: 'tozeroy',
-                fillcolor: 'rgba(139, 92, 246, 0.1)',
+                fillcolor: 'rgba(226, 132, 106, 0.1)',
                 hoverinfo: 'x+y',
                 name: 'RMSF'
             };
@@ -150,25 +192,25 @@ export class AnalyticsTab {
             const layout = {
                 xaxis: {
                     title: 'Alignment Position',
-                    gridcolor: 'rgba(255,255,255,0.05)',
+                    gridcolor: '#2C2620',
                     zeroline: false
                 },
                 yaxis: {
                     title: 'RMSF (Å)',
-                    gridcolor: 'rgba(255,255,255,0.05)',
+                    gridcolor: '#2C2620',
                     zeroline: false
                 },
                 margin: { l: 50, r: 20, t: 20, b: 40 },
                 paper_bgcolor: 'rgba(0,0,0,0)',
                 plot_bgcolor: 'rgba(0,0,0,0)',
                 height: 280,
-                font: { family: "Inter, sans-serif", size: 10, color: "#8F9CAE" }
+                font: { family: "Segoe UI, sans-serif", size: 10, color: "#A79E8E" }
             };
 
             Plotly.newPlot(rmsfDiv, [trace], layout, { responsive: true, displayModeBar: false });
         } else if (this.currentRunId) {
             rmsfDiv.innerHTML = `
-                <div class="flex items-center justify-center h-full text-text-secondary font-body-sm">
+                <div class="flex items-center justify-center h-full text-secondary font-body-sm">
                     No residue fluctuation data available.
                 </div>
             `;
@@ -178,7 +220,7 @@ export class AnalyticsTab {
         const heatmapDiv = this.element.querySelector('#rmsd-plotly-heatmap');
         if (this.heatmapFig && this.heatmapFig.data) {
             heatmapDiv.innerHTML = "";
-            
+
             const layout = {
                 ...this.heatmapFig.layout,
                 width: undefined, // Responsive
@@ -186,13 +228,13 @@ export class AnalyticsTab {
                 margin: { l: 50, r: 20, t: 30, b: 50 },
                 paper_bgcolor: 'rgba(0,0,0,0)',
                 plot_bgcolor: 'rgba(0,0,0,0)',
-                font: { family: "Inter, sans-serif", size: 10, color: "#8F9CAE" }
+                font: { family: "Segoe UI, sans-serif", size: 10, color: "#A79E8E" }
             };
 
             Plotly.newPlot(heatmapDiv, this.heatmapFig.data, layout, { responsive: true, displayModeBar: false });
         } else if (this.currentRunId) {
             heatmapDiv.innerHTML = `
-                <div class="flex items-center justify-center h-full text-text-secondary font-body-sm">
+                <div class="flex items-center justify-center h-full text-secondary font-body-sm">
                     No pairwise heatmap figure available.
                 </div>
             `;
@@ -210,13 +252,13 @@ export class AnalyticsTab {
                 margin: { l: 60, r: 20, t: 30, b: 40 },
                 paper_bgcolor: 'rgba(0,0,0,0)',
                 plot_bgcolor: 'rgba(0,0,0,0)',
-                font: { family: "Inter, sans-serif", size: 10, color: "#8F9CAE" }
+                font: { family: "Segoe UI, sans-serif", size: 10, color: "#A79E8E" }
             };
 
             Plotly.newPlot(treeDiv, this.treeFig.data, layout, { responsive: true, displayModeBar: false });
         } else if (this.currentRunId) {
             treeDiv.innerHTML = `
-                <div class="flex items-center justify-center h-full text-text-secondary font-body-sm">
+                <div class="flex items-center justify-center h-full text-secondary font-body-sm">
                     No phylogenetic tree figure available.
                 </div>
             `;

@@ -11,31 +11,32 @@ export class ClustersTab {
 
     render() {
         const div = document.createElement('div');
-        div.className = "flex-grow flex flex-col gap-4 overflow-y-auto pr-1";
+        div.className = "editorial-section";
         div.id = "tab-clusters-container";
 
         div.innerHTML = `
-            <div class="glass-panel rounded-xl p-5 flex flex-col gap-4 bg-[#11141c]/50 shrink-0">
-                <div class="flex items-center gap-2">
-                    <span class="material-symbols-outlined text-[20px] text-primary">workspaces</span>
-                    <h4 class="font-body-md text-body-md font-semibold text-text-primary">Structural Clusters</h4>
+            <header class="section-head">
+                <div>
+                    <span class="eyebrow">Fig. — Structural Families</span>
+                    <h2 class="section-title">Structural clusters</h2>
                 </div>
+                <div class="section-caption">Structures with RMSD lower than this cutoff are grouped into the same family.</div>
+            </header>
+
+            <div class="section-body flex flex-col gap-6">
                 <div class="flex flex-col gap-2">
                     <div class="flex items-center justify-between">
-                        <span class="font-label-sm text-label-sm text-text-secondary">RMSD Threshold</span>
-                        <span id="cluster-threshold-value" class="font-label-sm text-label-sm text-text-primary font-mono">3.00 Å</span>
+                        <span class="font-label-sm text-label-sm text-secondary">RMSD threshold</span>
+                        <span id="cluster-threshold-value" class="font-mono text-body-sm text-primary">3.00 Å</span>
                     </div>
                     <input id="cluster-threshold-slider" type="range" min="0.1" max="10.0" step="0.1" value="3.0"
-                        class="w-full h-1.5 rounded-lg appearance-none bg-white/10 accent-primary cursor-pointer" />
-                    <span class="font-body-sm text-body-sm text-text-secondary">
-                        Structures with RMSD lower than this cutoff are grouped into the same family.
-                    </span>
+                        class="w-full h-1.5 rounded-md appearance-none bg-surface-raised accent-accent cursor-pointer" />
                 </div>
-            </div>
 
-            <div id="clusters-list-container" class="flex flex-col gap-3">
-                <div class="text-center py-8 text-text-secondary font-body-sm">
-                    Run alignment to identify structural clusters.
+                <div id="clusters-list-container" class="flex flex-col">
+                    <div class="text-center py-8 text-secondary font-body-sm">
+                        Run alignment to identify structural clusters.
+                    </div>
                 </div>
             </div>
         `;
@@ -67,7 +68,7 @@ export class ClustersTab {
 
         if (!this.rmsdDf) {
             container.innerHTML = `
-                <div class="text-center py-8 text-text-secondary font-body-sm">
+                <div class="text-center py-8 text-secondary font-body-sm">
                     Run alignment to identify structural clusters.
                 </div>
             `;
@@ -92,7 +93,7 @@ export class ClustersTab {
 
         if (!clusters || clusters.length === 0) {
             container.innerHTML = `
-                <div class="text-center py-8 text-text-secondary font-body-sm">
+                <div class="text-center py-8 text-secondary font-body-sm">
                     No clusters identified with current settings.
                 </div>
             `;
@@ -103,24 +104,24 @@ export class ClustersTab {
             const memberRows = cluster.members.map(pid => {
                 const title = (this.pdbMetadata[pid] && this.pdbMetadata[pid].title) || "Unknown Title";
                 return `
-                    <div class="flex items-center justify-between px-3 py-1.5 rounded bg-black/20 border border-white/5">
-                        <span class="font-mono text-body-sm text-text-primary">${pid}</span>
-                        <span class="text-body-sm text-text-secondary truncate ml-2">${title}</span>
+                    <div class="flex items-center justify-between py-2 border-b border-border-subtle last:border-b-0">
+                        <span class="font-mono text-body-sm text-primary">${pid}</span>
+                        <span class="text-body-sm text-secondary truncate ml-2">${title}</span>
                     </div>
                 `;
             }).join("");
 
             return `
-                <div class="glass-panel rounded-xl p-4 flex flex-col gap-2 bg-[#11141c]/50">
-                    <div class="flex items-center justify-between">
-                        <span class="font-body-md text-body-md font-semibold text-text-primary">
-                            📁 Cluster ${cluster.cluster_id} (${cluster.members.length} members)
+                <div class="border-t border-border pt-4 pb-2">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="font-body-md text-body-md font-semibold text-primary">
+                            Cluster ${cluster.cluster_id} <span class="text-secondary font-normal">(${cluster.members.length} members)</span>
                         </span>
-                        <span class="font-label-sm text-label-sm text-text-secondary font-mono">
+                        <span class="font-label-sm text-label-sm text-secondary font-mono">
                             Avg RMSD: ${cluster.avg_rmsd.toFixed(2)} Å
                         </span>
                     </div>
-                    <div class="flex flex-col gap-1">
+                    <div class="flex flex-col">
                         ${memberRows}
                     </div>
                 </div>

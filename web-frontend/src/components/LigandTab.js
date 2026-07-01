@@ -13,55 +13,51 @@ export class LigandTab {
 
     render() {
         const div = document.createElement('div');
-        div.className = "flex-grow flex flex-col gap-4 overflow-hidden";
+        div.className = "editorial-section";
         div.id = "tab-ligands-container";
-        
+
         div.innerHTML = `
-            <!-- Binding Site Description Card -->
-            <div class="glass-panel rounded-xl p-5 flex flex-col gap-3 shrink-0 bg-[#11141c]/50">
-                <div class="flex justify-between items-center">
-                    <div class="flex items-center gap-2">
-                        <span class="material-symbols-outlined text-[20px] text-gradient-end">science</span>
-                        <h4 class="font-body-md text-body-md font-semibold text-text-primary">Ligand Inspector</h4>
-                    </div>
-                    <select id="ligand-select" class="bg-black/60 border border-white/10 rounded-lg text-body-sm text-text-primary py-1 px-2 focus:outline-none focus:border-gradient-end font-mono max-w-[200px]">
-                        <option value="">No Ligands Loaded</option>
-                    </select>
+            <header class="section-head">
+                <div>
+                    <span class="eyebrow">Fig. — Binding Pocket</span>
+                    <h2 class="section-title">Ligand inspector</h2>
                 </div>
-                <div id="ligand-pocket-desc" class="font-body-sm text-body-sm text-text-secondary leading-relaxed mt-1">
+                <select id="ligand-select" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[220px]">
+                    <option value="">No Ligands Loaded</option>
+                </select>
+            </header>
+
+            <div class="section-body flex flex-col gap-4">
+                <div id="ligand-pocket-desc" class="font-body-sm text-body-sm text-secondary leading-relaxed">
                     Perform an alignment and select a ligand from the list to analyze atomic interactions in the binding pocket.
                 </div>
-                <div class="flex gap-3 mt-2">
-                    <span id="ligand-volume-badge" class="px-2.5 py-1 rounded-md bg-secondary/10 text-secondary font-label-sm text-label-sm border border-secondary/20 hidden">Volume: -- Å³</span>
-                    <span id="ligand-sasa-badge" class="px-2.5 py-1 rounded-md bg-gradient-start/10 text-primary-fixed-dim font-label-sm text-label-sm border border-gradient-start/20 hidden">SASA: -- Å²</span>
+                <div class="flex gap-4">
+                    <span id="ligand-volume-badge" class="font-label-sm text-label-sm text-secondary hidden">Volume: -- Å³</span>
+                    <span id="ligand-sasa-badge" class="font-label-sm text-label-sm text-secondary hidden">SASA: -- Å²</span>
                 </div>
-            </div>
-            <!-- Data Table -->
-            <div class="glass-panel rounded-xl flex-grow flex flex-col overflow-hidden min-h-[200px] bg-[#11141c]/50">
-                <div class="px-4 py-3 border-b border-white/10 table-header flex justify-between items-center bg-black/20">
-                    <h4 class="font-label-md text-label-md text-text-secondary uppercase tracking-wider">Molecular Interactions</h4>
-                    <span id="interaction-count" class="font-label-sm text-label-sm text-text-secondary">0 Found</span>
+
+                <div class="flex items-baseline justify-between mt-2 pt-4 border-t border-border">
+                    <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Molecular interactions</span>
+                    <span id="interaction-count" class="font-label-sm text-label-sm text-secondary">0 Found</span>
                 </div>
-                <div class="flex-grow overflow-auto">
-                    <table class="w-full text-left border-collapse">
-                        <thead class="sticky top-0 bg-[#12141a] border-b border-white/5 font-label-sm text-label-sm text-text-secondary z-10">
+                <table class="w-full text-left border-collapse">
+                    <thead class="font-label-sm text-label-sm text-secondary">
+                    <tr>
+                        <th class="px-0 py-2 border-b border-border font-medium">Residue</th>
+                        <th class="px-3 py-2 border-b border-border font-medium">Chain</th>
+                        <th class="px-3 py-2 border-b border-border font-medium text-right">Resi</th>
+                        <th class="px-3 py-2 border-b border-border font-medium text-right">Dist (Å)</th>
+                        <th class="px-3 py-2 border-b border-border font-medium">Type</th>
+                    </tr>
+                    </thead>
+                    <tbody id="interactions-table-body" class="font-body-sm text-body-sm text-primary font-mono divide-y divide-border-subtle">
                         <tr>
-                            <th class="px-4 py-3 font-medium">Residue</th>
-                            <th class="px-3 py-3 font-medium">Chain</th>
-                            <th class="px-3 py-3 font-medium text-right">Resi</th>
-                            <th class="px-3 py-3 font-medium text-right">Dist (Å)</th>
-                            <th class="px-4 py-3 font-medium">Type</th>
+                            <td colspan="5" class="text-center py-8 text-secondary font-body-sm">
+                                Select a ligand to populate interactions.
+                            </td>
                         </tr>
-                        </thead>
-                        <tbody id="interactions-table-body" class="font-body-sm text-body-sm text-text-primary font-mono divide-y divide-white/5">
-                            <tr>
-                                <td colspan="5" class="text-center py-8 text-text-secondary font-body-sm">
-                                    Select a ligand to populate interactions.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
+                    </tbody>
+                </table>
             </div>
         `;
         this.element = div;
@@ -124,7 +120,7 @@ export class LigandTab {
         
         this.element.querySelector('#interactions-table-body').innerHTML = `
             <tr>
-                <td colspan="5" class="text-center py-8 text-text-secondary font-body-sm">
+                <td colspan="5" class="text-center py-8 text-secondary font-body-sm">
                     Select a ligand to populate interactions.
                 </td>
             </tr>
@@ -148,7 +144,7 @@ export class LigandTab {
 
         tableBody.innerHTML = `
             <tr>
-                <td colspan="5" class="text-center py-8 text-text-secondary font-body-sm">
+                <td colspan="5" class="text-center py-8 text-secondary font-body-sm">
                     <span class="animate-spin material-symbols-outlined text-[18px]">sync</span>
                     Analyzing interactions...
                 </td>
@@ -186,7 +182,7 @@ export class LigandTab {
             if (contacts.length === 0) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="5" class="text-center py-8 text-text-secondary font-body-sm">
+                        <td colspan="5" class="text-center py-8 text-secondary font-body-sm">
                             No specific interaction contacts found.
                         </td>
                     </tr>
@@ -194,32 +190,33 @@ export class LigandTab {
             } else {
                 contacts.forEach((item, index) => {
                     const tr = document.createElement('tr');
-                    tr.className = "hover:bg-white/5 transition-colors cursor-pointer group";
-                    
-                    let typeColor = "bg-gray-500/20 text-gray-300 border border-gray-500/30";
+                    tr.className = "hover:bg-surface-raised transition-colors cursor-pointer group";
+
+                    // Functional data-encoding: dot color signals interaction type
+                    let dotColor = "bg-muted";
                     if (item.type.toLowerCase().includes("h-bond")) {
-                        typeColor = "bg-blue-500/20 text-blue-300 border border-blue-500/30";
+                        dotColor = "bg-accent";
                     } else if (item.type.toLowerCase().includes("pi")) {
-                        typeColor = "bg-purple-500/20 text-purple-300 border border-purple-500/30";
+                        dotColor = "bg-[#8B5CF6]";
                     } else if (item.type.toLowerCase().includes("salt")) {
-                        typeColor = "bg-green-500/20 text-green-300 border border-green-500/30";
+                        dotColor = "bg-success";
                     } else if (item.type.toLowerCase().includes("metal")) {
-                        typeColor = "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30";
+                        dotColor = "bg-warning";
                     }
 
                     const resn = item.resn || item.residue || "UNK";
                     tr.innerHTML = `
-                        <td class="px-4 py-2.5">${resn}</td>
+                        <td class="px-0 py-2.5">${resn}</td>
                         <td class="px-3 py-2.5">${item.chain}</td>
-                        <td class="px-3 py-2.5 text-right text-text-secondary group-hover:text-text-primary">${item.resi}</td>
+                        <td class="px-3 py-2.5 text-right text-secondary group-hover:text-primary">${item.resi}</td>
                         <td class="px-3 py-2.5 text-right font-semibold">${item.distance.toFixed(1)}</td>
-                        <td class="px-4 py-2.5"><span class="px-2 py-0.5 rounded text-[10px] ${typeColor}">${item.type}</span></td>
+                        <td class="px-3 py-2.5"><span class="inline-flex items-center gap-1.5 text-secondary"><span class="w-1.5 h-1.5 rounded-full ${dotColor}"></span>${item.type}</span></td>
                     `;
 
                     tr.addEventListener('click', () => {
                         // Highlight table row
                         this.element.querySelectorAll('#interactions-table-body tr').forEach(row => {
-                            row.className = "hover:bg-white/5 transition-colors cursor-pointer group";
+                            row.className = "hover:bg-surface-raised transition-colors cursor-pointer group";
                             row.querySelectorAll('td').forEach(td => td.classList.remove('text-tertiary', 'font-bold'));
                         });
                         tr.className = "row-selected cursor-pointer group";
@@ -236,7 +233,7 @@ export class LigandTab {
             console.error("Failed to load interactions:", err);
             tableBody.innerHTML = `
                 <tr>
-                    <td colspan="5" class="text-center py-8 text-text-secondary font-body-sm">
+                    <td colspan="5" class="text-center py-8 text-secondary font-body-sm">
                         Failed to calculate pocket site contacts.
                     </td>
                 </tr>

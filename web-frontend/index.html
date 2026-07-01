@@ -12,70 +12,31 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Montserrat:wght@600;700&amp;display=swap" rel="stylesheet"/>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
     <script id="tailwind-config">
+        // "Editorial Instrument" design system: warm dark ground, serif
+        // headings + sans UI + monospace data, one coral accent, exactly one
+        // hard-shadow ("brutalist") primary button. See docs/design/DESIGN.md.
         tailwind.config = {
             darkMode: "class",
             theme: {
                 extend: {
                     "colors": {
-                        "secondary-fixed": "#acedff",
-                        "primary-fixed-dim": "#d0bcff",
-                        "error-container": "#93000a",
-                        "on-tertiary-fixed": "#261a00",
-                        "on-primary": "#3c0091",
-                        "inverse-primary": "#6d3bd7",
-                        "on-secondary-container": "#00424e",
-                        "on-primary-fixed": "#23005c",
-                        "surface-container-low": "#1b1b1f",
-                        "surface-bright": "#38393d",
-                        "success": "#10B981",
-                        "surface-container-highest": "#343538",
-                        "tertiary-container": "#b88900",
-                        "on-background": "#e3e2e6",
-                        "on-secondary-fixed-variant": "#004e5c",
-                        "surface-container": "#1f1f23",
-                        "gradient-start": "#8B5CF6",
-                        "on-surface": "#e3e2e6",
-                        "text-secondary": "#8F9CAE",
-                        "background": "#121316",
+                        "bg": "#100E0B",
+                        "surface": "#171310",
+                        "surface-raised": "#1E1813",
+                        "border": "#2C2620",
+                        "border-subtle": "#221D18",
+                        "primary": "#EDE7DC",
+                        "secondary": "#A79E8E",
+                        "muted": "#625B4E",
+                        "accent": "#E2846A",
+                        "accent-muted": "#35281F",
+                        "tertiary": "#F59E0B",
+                        "success": "#8FAE83",
                         "error": "#EF4444",
-                        "tertiary-fixed-dim": "#f9bd22",
-                        "on-primary-container": "#340080",
-                        "on-secondary": "#003640",
-                        "text-primary": "#FFFFFF",
-                        "on-tertiary-container": "#372700",
-                        "gradient-end": "#06B6D4",
-                        "secondary": "#4cd7f6",
-                        "surface-dim": "#121316",
-                        "secondary-container": "#03b5d3",
-                        "primary": "#d0bcff",
-                        "surface-tint": "#d0bcff",
-                        "secondary-fixed-dim": "#4cd7f6",
-                        "on-primary-fixed-variant": "#5516be",
-                        "inverse-surface": "#e3e2e6",
-                        "surface": "rgba(17, 20, 28, 0.7)",
-                        "surface-container-lowest": "#0d0e11",
-                        "on-surface-variant": "#cbc3d7",
-                        "outline": "#958ea0",
-                        "surface-variant": "#343538",
-                        "on-tertiary": "#402d00",
-                        "on-tertiary-fixed-variant": "#5c4300",
-                        "border": "rgba(255, 255, 255, 0.08)",
-                        "on-error-container": "#ffdad6",
-                        "tertiary": "#f9bd22",
-                        "outline-variant": "#494454",
-                        "tertiary-fixed": "#ffdf9f",
-                        "on-secondary-fixed": "#001f26",
-                        "inverse-on-surface": "#2f3034",
-                        "primary-fixed": "#e9ddff",
-                        "surface-container-high": "#292a2d",
-                        "primary-container": "#a078ff",
-                        "on-error": "#690005"
+                        "warning": "#F59E0B"
                     },
                     "borderRadius": {
-                        "DEFAULT": "0.25rem",
-                        "lg": "0.5rem",
-                        "xl": "0.75rem",
-                        "full": "9999px"
+                        "lg": "0.625rem"
                     },
                     "spacing": {
                         "gap": "24px",
@@ -88,11 +49,12 @@
                         "body-sm": ["Inter"],
                         "label-md": ["Inter"],
                         "body-lg": ["Inter"],
-                        "headline-md": ["Montserrat"],
+                        "headline-md": ["Georgia", "Iowan Old Style", "Times New Roman", "serif"],
                         "label-sm": ["Inter"],
-                        "headline-lg": ["Montserrat"],
+                        "headline-lg": ["Georgia", "Iowan Old Style", "Times New Roman", "serif"],
                         "body-md": ["Inter"],
-                        "headline-sm": ["Montserrat"]
+                        "headline-sm": ["Georgia", "Iowan Old Style", "Times New Roman", "serif"],
+                        "mono": ["ui-monospace", "SF Mono", "Consolas", "monospace"]
                     },
                     "fontSize": {
                         "body-sm": ["14px", { "lineHeight": "1.5", "fontWeight": "400" }],
@@ -109,7 +71,7 @@
         }
     </script>
 </head>
-<body class="font-body-md text-body-md h-screen overflow-hidden flex flex-col antialiased bg-[#08090C] text-[#e3e2e6]">
+<body class="font-body-md text-body-md h-screen overflow-hidden flex flex-col antialiased bg-bg text-primary">
     <div id="app" class="h-screen overflow-hidden flex flex-col"></div>
     <script type="module" src="/src/main.js"></script>
 </body>

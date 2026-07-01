@@ -13,69 +13,55 @@ export class SequenceTab {
         div.id = "tab-sequence-container";
         
         div.innerHTML = `
-            <!-- Alignment Statistics Card -->
-            <div class="glass-panel rounded-xl p-5 flex flex-col gap-4 bg-[#11141c]/50">
-                <div class="flex items-center gap-2">
-                    <span class="material-symbols-outlined text-[20px] text-tertiary">analytics</span>
-                    <h4 class="font-body-md text-body-md font-semibold text-text-primary">Alignment Report</h4>
+            <header class="section-head">
+                <div>
+                    <span class="eyebrow">Fig. — Alignment Report</span>
+                    <h2 class="section-title">Sequence &amp; identity</h2>
                 </div>
-                <div id="alignment-stats-container" class="grid grid-cols-2 gap-4">
-                    <div class="bg-black/30 p-3 rounded-lg border border-white/5 flex flex-col">
-                        <span class="font-label-sm text-label-sm text-text-secondary">RMSD</span>
-                        <span id="stat-rmsd" class="font-headline-sm text-headline-sm font-semibold text-success font-mono">--</span>
-                    </div>
-                    <div class="bg-black/30 p-3 rounded-lg border border-white/5 flex flex-col">
-                        <span class="font-label-sm text-label-sm text-text-secondary">Aligned Length</span>
-                        <span id="stat-length" class="font-headline-sm text-headline-sm font-semibold text-primary font-mono">--</span>
-                    </div>
-                    <div class="bg-black/30 p-3 rounded-lg border border-white/5 flex flex-col">
-                        <span class="font-label-sm text-label-sm text-text-secondary">Seq Identity</span>
-                        <span id="stat-identity" class="font-headline-sm text-headline-sm font-semibold text-secondary font-mono">--</span>
-                    </div>
-                    <div class="bg-black/30 p-3 rounded-lg border border-white/5 flex flex-col">
-                        <span class="font-label-sm text-label-sm text-text-secondary">Seq Similarity</span>
-                        <span id="stat-similarity" class="font-headline-sm text-headline-sm font-semibold text-tertiary font-mono">--</span>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Dynamic Sequence Alignment Table -->
-            <div class="glass-panel rounded-xl p-5 flex flex-col gap-4 bg-[#11141c]/50 overflow-hidden">
-                <div class="flex items-center gap-2 border-b border-white/10 pb-2">
-                    <span class="material-symbols-outlined text-[20px] text-primary">format_align_justify</span>
-                    <h4 class="font-body-md text-body-md font-semibold text-text-primary">Sequence Alignment View</h4>
-                </div>
-                <div id="sequence-alignment-grid-wrapper" class="overflow-x-auto rounded-lg max-h-[350px]">
-                    <div class="text-center py-8 text-text-secondary font-body-sm">
-                        Run alignment to generate sequence view.
-                    </div>
-                </div>
-            </div>
+            </header>
 
-            <!-- Output Files -->
-            <div class="glass-panel rounded-xl p-5 flex flex-col gap-3 bg-[#11141c]/50">
-                <div class="flex items-center gap-2">
-                    <span class="material-symbols-outlined text-[20px] text-text-secondary">folder_zip</span>
-                    <h4 class="font-body-md text-body-md font-semibold text-text-primary">Generated Outputs</h4>
+            <div class="section-body flex flex-col gap-10">
+                <div id="alignment-stats-container" class="grid grid-cols-4 gap-6">
+                    <div class="stat-row stat-primary">
+                        <span class="stat-key">RMSD</span>
+                        <span id="stat-rmsd" class="stat-value">--</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-key">Aligned length</span>
+                        <span id="stat-length" class="stat-value">--</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-key">Seq identity</span>
+                        <span id="stat-identity" class="stat-value">--</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-key">Seq similarity</span>
+                        <span id="stat-similarity" class="stat-value">--</span>
+                    </div>
                 </div>
-                <div class="flex flex-col gap-2">
-                    <div class="flex items-center justify-between p-2.5 rounded bg-white/5 hover:bg-white/10 transition-colors">
-                        <span class="font-body-sm text-body-sm text-text-primary font-mono">alignment.pdb</span>
-                        <a id="download-pdb-link" href="#" target="_blank" class="text-secondary text-body-sm hover:underline flex items-center gap-1 opacity-55 pointer-events-none">
-                            <span class="material-symbols-outlined text-[16px]">open_in_new</span> View PDB
-                        </a>
+
+                <div class="flex flex-col gap-3">
+                    <span class="eyebrow">Sequence alignment view</span>
+                    <div id="sequence-alignment-grid-wrapper" class="overflow-x-auto rounded-md max-h-[350px]">
+                        <div class="text-center py-8 text-secondary font-body-sm">
+                            Run alignment to generate sequence view.
+                        </div>
                     </div>
-                    <div class="flex items-center justify-between p-2.5 rounded bg-white/5 hover:bg-white/10 transition-colors">
-                        <span class="font-body-sm text-body-sm text-text-primary font-mono">alignment.fasta</span>
-                        <a id="download-fasta-link" href="#" target="_blank" class="text-secondary text-body-sm hover:underline flex items-center gap-1 opacity-55 pointer-events-none">
-                            <span class="material-symbols-outlined text-[16px]">open_in_new</span> View FASTA
-                        </a>
+                </div>
+
+                <div class="flex flex-col gap-2 border-t border-border pt-6">
+                    <span class="eyebrow mb-2">Generated outputs</span>
+                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
+                        <span class="font-body-sm text-body-sm text-primary font-mono">alignment.pdb</span>
+                        <a id="download-pdb-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">View PDB</a>
                     </div>
-                    <div class="flex items-center justify-between p-2.5 rounded bg-white/5 hover:bg-white/10 transition-colors">
-                        <span class="font-body-sm text-body-sm text-text-primary font-mono">mustang_report.pdf</span>
-                        <a id="download-report-link" href="#" target="_blank" class="text-secondary text-body-sm hover:underline flex items-center gap-1 opacity-55 pointer-events-none">
-                            <span class="material-symbols-outlined text-[16px]">open_in_new</span> Download PDF
-                        </a>
+                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
+                        <span class="font-body-sm text-body-sm text-primary font-mono">alignment.fasta</span>
+                        <a id="download-fasta-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">View FASTA</a>
+                    </div>
+                    <div class="flex items-center justify-between py-2">
+                        <span class="font-body-sm text-body-sm text-primary font-mono">mustang_report.pdf</span>
+                        <a id="download-report-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download PDF</a>
                     </div>
                 </div>
             </div>
@@ -135,7 +121,7 @@ export class SequenceTab {
 
         const wrapper = this.element.querySelector('#sequence-alignment-grid-wrapper');
         wrapper.innerHTML = `
-            <div class="text-center py-8 text-text-secondary font-body-sm">
+            <div class="text-center py-8 text-secondary font-body-sm">
                 <span class="animate-spin material-symbols-outlined text-[18px]">sync</span>
                 Parsing sequence alignment...
             </div>
@@ -174,12 +160,12 @@ export class SequenceTab {
                     }
 
                     const resClass = (score > 0.5 || char === '-') ? "res-val" : "";
-                    residuesHtml += `<td class="${resClass} text-center font-mono border border-white/5" style="background-color: ${bgColor}; min-width: 22px; height: 24px; font-size: 12px; color: #fff;">${char}</td>`;
+                    residuesHtml += `<td class="${resClass} text-center font-mono border border-border-subtle" style="background-color: ${bgColor}; min-width: 22px; height: 24px; font-size: 12px; color: #fff;">${char}</td>`;
                 }
 
                 rowsHtml += `
-                    <tr class="border-b border-white/5">
-                        <td class="sticky left-0 bg-[#161a24] text-text-primary pr-4 pl-2 font-bold font-mono border-r border-white/10 whitespace-nowrap min-w-[120px] text-body-sm">${header}</td>
+                    <tr class="border-b border-border-subtle">
+                        <td class="sticky left-0 bg-surface-raised text-primary pr-4 pl-2 font-bold font-mono border-r border-border whitespace-nowrap min-w-[120px] text-body-sm">${header}</td>
                         ${residuesHtml}
                     </tr>
                 `;
@@ -193,12 +179,12 @@ export class SequenceTab {
                 else if (score > 0.7) symbol = ":";
                 else if (score > 0.5) symbol = ".";
 
-                consensusHtml += `<td class="text-center font-mono font-bold text-text-secondary" style="min-width: 22px; height: 20px;">${symbol}</td>`;
+                consensusHtml += `<td class="text-center font-mono font-bold text-secondary" style="min-width: 22px; height: 20px;">${symbol}</td>`;
             });
 
             rowsHtml += `
-                <tr class="bg-[#121316]/50">
-                    <td class="sticky left-0 bg-[#121316] text-text-secondary pr-4 pl-2 font-bold font-mono border-r border-white/10 whitespace-nowrap min-w-[120px] text-body-sm">Consensus</td>
+                <tr class="bg-surface">
+                    <td class="sticky left-0 bg-surface text-secondary pr-4 pl-2 font-bold font-mono border-r border-border whitespace-nowrap min-w-[120px] text-body-sm">Consensus</td>
                     ${consensusHtml}
                 </tr>
             `;

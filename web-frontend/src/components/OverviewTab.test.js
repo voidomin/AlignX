@@ -65,7 +65,7 @@ describe('OverviewTab', () => {
             selectedPDBs: ['4RLT', '3UG9'],
             chainSelections: { '4RLT': 'B' },
             pdbMetadata: {
-                '4RLT': { chains: [{ id: 'A', residues_count: 100 }, { id: 'B', residues_count: 90 }] },
+                '4RLT': { chains: [{ id: 'A', residue_count: 100 }, { id: 'B', residue_count: 90 }] },
             },
         });
         tab.render();
@@ -77,6 +77,7 @@ describe('OverviewTab', () => {
         const select4RLT = rows[0].querySelector('select');
         expect(select4RLT.querySelectorAll('option').length).toBe(2);
         expect(select4RLT.querySelector('option[value="B"]').selected).toBe(true);
+        expect(select4RLT.querySelector('option[value="A"]').textContent).toBe('Chain A (100 residues)');
 
         // 3UG9 has no metadata -> falls back to a single Chain A option
         const select3UG9 = rows[1].querySelector('select');
@@ -88,7 +89,7 @@ describe('OverviewTab', () => {
         const onRemovePDB = vi.fn();
         const tab = makeTab({
             selectedPDBs: ['4RLT'],
-            pdbMetadata: { '4RLT': { chains: [{ id: 'A', residues_count: 100 }, { id: 'B', residues_count: 90 }] } },
+            pdbMetadata: { '4RLT': { chains: [{ id: 'A', residue_count: 100 }, { id: 'B', residue_count: 90 }] } },
             onChainSelection,
             onRemovePDB,
         });

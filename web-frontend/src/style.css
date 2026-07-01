@@ -1,45 +1,159 @@
 body {
-    background-color: #08090C;
-    color: #e3e2e6;
+    background-color: #100E0B;
+    color: #EDE7DC;
 }
 
-.glass-panel {
-    background-color: rgba(17, 20, 28, 0.7);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+/* Flat card surface. */
+.card {
+    background-color: #171310;
+    border: 1px solid #2C2620;
 }
 
 .btn-primary {
-    background: linear-gradient(to right, #8B5CF6, #06B6D4);
-    color: #FFFFFF;
-    transition: all 0.2s ease;
+    background: #E2846A;
+    color: #100E0B;
+    transition: background-color 0.15s ease;
 }
 
 .btn-primary:hover {
-    opacity: 0.9;
+    background: #EA9985;
+}
+
+.btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* The one deliberate "brutalist" device in the whole system: a hard, non-blurred
+   offset shadow instead of a soft box-shadow. Reserved for exactly one primary
+   action per screen (the Overview tab's Run Alignment button) — do not apply
+   this class anywhere else, or the "exactly one" rule stops meaning anything. */
+.btn-primary-hard {
+    background: #E2846A;
+    color: #100E0B;
+    border: 1.5px solid #100E0B;
+    box-shadow: 5px 5px 0 #35281F;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.btn-primary-hard:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 7px 7px 0 #35281F;
+}
+
+.btn-primary-hard:active {
+    transform: translate(0, 0);
+    box-shadow: 2px 2px 0 #35281F;
 }
 
 .btn-secondary {
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    color: #FFFFFF;
+    border: 1px solid #2C2620;
+    color: #EDE7DC;
     background: transparent;
-    transition: all 0.2s ease;
+    transition: background-color 0.15s ease;
 }
 
 .btn-secondary:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: #1E1813;
 }
 
 .table-header {
-    background-color: rgba(255, 255, 255, 0.03);
+    background-color: #1E1813;
 }
 
+/* Selection/highlight is a deliberate second semantic color (amber), distinct
+   from the brand accent (coral) — used here and for selected residues in the
+   3D viewer. Not a contradiction of the "one accent" rule. */
 .row-selected {
-    border: 1px solid #f9bd22;
-    background-color: rgba(249, 189, 34, 0.08);
+    border: 1px solid #F59E0B;
+    background-color: rgba(245, 158, 11, 0.08);
 }
 
-/* Custom scrollbar for deep space vibe */
+/* ---------------------------------------------------------------------
+   Editorial section pattern — the outer wrapper every tab body uses
+   instead of a boxed card: an eyebrow + serif title + right-aligned
+   caption, generous vertical rhythm, a hairline rule between sections.
+   --------------------------------------------------------------------- */
+.editorial-section {
+    padding: 56px 0;
+    border-bottom: 1px solid #221D18;
+}
+
+.editorial-section:first-child {
+    padding-top: 0;
+}
+
+.editorial-section:last-child {
+    border-bottom: none;
+}
+
+.section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 24px;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+}
+
+.eyebrow {
+    display: inline-block;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #E2846A;
+    font-weight: 600;
+}
+
+.section-title {
+    font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
+    font-weight: 400;
+    font-size: 19px;
+    letter-spacing: -0.01em;
+    color: #EDE7DC;
+    margin: 6px 0 0;
+}
+
+.section-caption {
+    font-size: 12.5px;
+    color: #857C6D;
+    line-height: 1.6;
+    max-width: 34ch;
+    text-align: right;
+}
+
+/* A metric row marked by a top hairline instead of a boxed card — used for
+   RMSD/identity/etc. stat readouts. First child gets the accent-colored rule
+   to mark the primary number without adding a second color. */
+.stat-row {
+    border-top: 1.5px solid #2C2620;
+    padding-top: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.stat-row.stat-primary {
+    border-top-color: #E2846A;
+}
+
+.stat-row .stat-key {
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #857C6D;
+}
+
+.stat-row .stat-value {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 24px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    color: #EDE7DC;
+}
+
+/* Custom scrollbar, warm-tinted to match the ground */
 ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -50,12 +164,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(237, 231, 220, 0.16);
     border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.4);
+    background: rgba(237, 231, 220, 0.3);
 }
 
 /* Alignment sequence viewer formatting */

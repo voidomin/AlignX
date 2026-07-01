@@ -1,8 +1,6 @@
 import './style.css';
-import { TopNav } from './components/TopNav';
-import { Sidebar } from './components/Sidebar';
+import { TopBar } from './components/TopBar';
 import { Viewer3D } from './components/Viewer3D';
-import { TabPanel } from './components/TabPanel';
 import { OverviewTab } from './components/OverviewTab';
 import { LigandTab } from './components/LigandTab';
 import { SequenceTab } from './components/SequenceTab';
@@ -18,8 +16,7 @@ class App {
         this.chainSelections = { "4RLT": "A", "3UG9": "A" };
         this.pdbMetadata = {};
         this.currentRunId = null;
-        this.activeView = 'dashboard'; // 'dashboard' | 'history'
-        this.activeTab = 'overview'; // 'overview' | 'ligands' | 'sequence' | 'analytics' | 'clusters' | 'comparison'
+        this.activeTab = 'overview'; // 'overview' | 'ligands' | 'sequence' | 'analytics' | 'clusters' | 'comparison' | 'history'
         this.currentLigands = [];
         this.isAligning = false;
 
@@ -30,22 +27,13 @@ class App {
         this.rmsdDf = null;
 
         // Instantiate components
-        this.topNav = new TopNav({
-            onAddPDB: (pdbId) => this.addPDB(pdbId),
-            onRunAlignment: () => this.executeAlignment(),
-            onExportData: () => this.exportData()
-        });
-
-        this.sidebar = new Sidebar({
-            onNavigate: (view) => this.navigateView(view),
+        this.topBar = new TopBar({
+            onTabChange: (tab) => this.switchTab(tab),
+            onExportData: () => this.exportData(),
             onNewWorkspace: () => this.resetWorkspace()
         });
 
         this.viewer3D = new Viewer3D();
-
-        this.tabPanel = new TabPanel({
-            onTabChange: (tab) => this.switchTab(tab)
-        });
 
         this.overviewTab = new OverviewTab({
             selectedPDBs: this.selectedPDBs,
@@ -80,8 +68,7 @@ class App {
         this.comparisonTab = new ComparisonTab();
 
         this.historyPanel = new HistoryPanel({
-            onReloadRun: (run) => this.reloadPastRun(run),
-            onClose: () => this.navigateView('dashboard')
+            onReloadRun: (run) => this.reloadPastRun(run)
         });
     }
 
@@ -90,98 +77,79 @@ class App {
 
         // Main Layout Structure
         const container = document.createElement('div');
-        container.className = "flex flex-col h-screen overflow-hidden bg-[#08090C] text-[#e3e2e6]";
-        
-        // 1. Render TopNav
-        container.appendChild(this.topNav.render());
+        container.className = "flex flex-col h-screen overflow-hidden bg-bg text-primary";
 
-        // 2. Render Body Workspace (Sidebar + Main Content Area Split)
-        const bodyWrapper = document.createElement('div');
-        bodyWrapper.className = "flex flex-1 overflow-hidden";
-        
-        bodyWrapper.appendChild(this.sidebar.render());
+        // 1. Sticky top bar (brand + tabs + workspace actions + system status)
+        container.appendChild(this.topBar.render());
 
-        // 3. Render Main Content (Viewer + Sidebar tab/history split)
-        const mainContent = document.createElement('main');
-        mainContent.className = "flex-grow flex flex-col md:flex-row h-full overflow-hidden p-6 gap-6 max-w-7xl mx-auto w-full";
-        
-        // Add 3D Viewer Panel
-        mainContent.appendChild(this.viewer3D.render());
+        // 2. Two-column shell: tab content (left) + persistent 3D viewer (right).
+        // Plain flexbox (not CSS grid) — this is the same box-model the app already
+        // used reliably for the 3Dmol canvas before this redesign, just mirrored.
+        const gridShell = document.createElement('div');
+        gridShell.className = "flex-1 flex flex-col md:flex-row overflow-hidden max-w-[1280px] mx-auto w-full";
 
-        // Add Right Control/Tab Panel wrapper
-        const rightPane = document.createElement('div');
-        rightPane.className = "w-full md:w-[400px] lg:w-[480px] flex flex-col gap-4 shrink-0 overflow-hidden";
-        rightPane.id = "dashboard-right-pane";
-        
-        mainContent.appendChild(rightPane);
-        bodyWrapper.appendChild(mainContent);
-        container.appendChild(bodyWrapper);
+        const tabContentPane = document.createElement('div');
+        tabContentPane.id = "tab-content-pane";
+        tabContentPane.className = "flex-1 overflow-y-auto px-8";
+
+        const viewerColumn = document.createElement('div');
+        viewerColumn.id = "viewer-column";
+        viewerColumn.className = "w-full md:w-[480px] shrink-0 flex flex-col h-full p-6 pl-0";
+        viewerColumn.appendChild(this.viewer3D.render());
+
+        gridShell.appendChild(tabContentPane);
+        gridShell.appendChild(viewerColumn);
+        container.appendChild(gridShell);
         rootElement.appendChild(container);
 
-        // Initialize 3Dmol viewer
+        // Initialize 3Dmol viewer — rendered once here, never re-rendered by tab switching
         this.viewer3D.init3Dmol();
 
-        // Render Right Pane contents based on current active view
-        this.updateRightPaneDisplay();
+        // Render initial tab content
+        this.updateTabContentPane();
 
         // Load initial chains metadata
         this.loadChainsMetadata();
     }
 
-    updateRightPaneDisplay() {
-        const pane = document.getElementById('dashboard-right-pane');
+    updateTabContentPane() {
+        const pane = document.getElementById('tab-content-pane');
         if (!pane) return;
-        
+
         pane.innerHTML = "";
 
-        if (this.activeView === 'history') {
+        if (this.activeTab === 'overview') {
+            pane.appendChild(this.overviewTab.render());
+        } else if (this.activeTab === 'ligands') {
+            pane.appendChild(this.ligandTab.render());
+            this.ligandTab.updateLigands(this.currentLigands, this.currentRunId, this.selectedPDBs);
+        } else if (this.activeTab === 'sequence') {
+            pane.appendChild(this.sequenceTab.render());
+            this.sequenceTab.updateResults(this.currentRunId, this.sequenceTab.stats);
+        } else if (this.activeTab === 'analytics') {
+            pane.appendChild(this.analyticsTab.render());
+            this.analyticsTab.updateResults(
+                this.currentRunId,
+                this.heatmapFig,
+                this.treeFig,
+                this.ramachandranStats,
+                this.analyticsTab.rmsfValues
+            );
+        } else if (this.activeTab === 'clusters') {
+            pane.appendChild(this.clustersTab.render());
+            this.clustersTab.updateResults(this.rmsdDf, this.pdbMetadata);
+        } else if (this.activeTab === 'comparison') {
+            pane.appendChild(this.comparisonTab.render());
+            this.comparisonTab.updateResults(this.currentRunId);
+        } else if (this.activeTab === 'history') {
             pane.appendChild(this.historyPanel.render());
-        } else {
-            // Default to active dashboard workspace
-            pane.appendChild(this.tabPanel.render());
-            
-            const tabContentContainer = document.createElement('div');
-            tabContentContainer.className = "flex-grow flex flex-col gap-4 overflow-hidden";
-            tabContentContainer.id = "tab-content-container";
-            
-            pane.appendChild(tabContentContainer);
-
-            if (this.activeTab === 'overview') {
-                tabContentContainer.appendChild(this.overviewTab.render());
-            } else if (this.activeTab === 'ligands') {
-                tabContentContainer.appendChild(this.ligandTab.render());
-                this.ligandTab.updateLigands(this.currentLigands, this.currentRunId, this.selectedPDBs);
-            } else if (this.activeTab === 'sequence') {
-                tabContentContainer.appendChild(this.sequenceTab.render());
-                this.sequenceTab.updateResults(this.currentRunId, this.sequenceTab.stats);
-            } else if (this.activeTab === 'analytics') {
-                tabContentContainer.appendChild(this.analyticsTab.render());
-                this.analyticsTab.updateResults(
-                    this.currentRunId,
-                    this.heatmapFig,
-                    this.treeFig,
-                    this.ramachandranStats,
-                    this.analyticsTab.rmsfValues
-                );
-            } else if (this.activeTab === 'clusters') {
-                tabContentContainer.appendChild(this.clustersTab.render());
-                this.clustersTab.updateResults(this.rmsdDf, this.pdbMetadata);
-            } else if (this.activeTab === 'comparison') {
-                tabContentContainer.appendChild(this.comparisonTab.render());
-                this.comparisonTab.updateResults(this.currentRunId);
-            }
         }
-    }
-
-    navigateView(viewName) {
-        this.activeView = viewName;
-        this.updateRightPaneDisplay();
     }
 
     switchTab(tabName) {
         this.activeTab = tabName;
-        this.tabPanel.switchTab(tabName);
-        this.updateRightPaneDisplay();
+        this.topBar.switchTab(tabName);
+        this.updateTabContentPane();
     }
 
     async loadChainsMetadata() {
@@ -288,12 +256,10 @@ class App {
 
     setAligningState(isAligning) {
         this.isAligning = isAligning;
-        this.topNav.setAligning(isAligning);
         this.overviewTab.setAligning(isAligning);
     }
 
     async reloadPastRun(run) {
-        this.activeView = 'dashboard';
         this.activeTab = 'sequence';
 
         this.currentRunId = run.id;
@@ -334,7 +300,7 @@ class App {
 
         // Update tabs state
         this.overviewTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
-        this.updateRightPaneDisplay();
+        this.updateTabContentPane();
         
         // Render 3D Superposition
         const refId = this.selectedPDBs[0];

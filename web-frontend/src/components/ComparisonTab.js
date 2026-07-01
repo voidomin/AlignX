@@ -14,22 +14,23 @@ export class ComparisonTab {
         div.id = "tab-comparison-container";
 
         div.innerHTML = `
-            <div class="glass-panel rounded-xl p-5 flex flex-col gap-4 bg-[#11141c]/50 shrink-0">
-                <div class="flex items-center gap-2">
-                    <span class="material-symbols-outlined text-[20px] text-primary">compare_arrows</span>
-                    <h4 class="font-body-md text-body-md font-semibold text-text-primary">Batch Comparison</h4>
+            <header class="section-head">
+                <div>
+                    <span class="eyebrow">Fig. — Batch Comparison</span>
+                    <h2 class="section-title">Compare against a past run</h2>
                 </div>
-                <span class="font-body-sm text-body-sm text-text-secondary">
-                    Compare this run's RMSD matrix against a past run to see how structural relationships shifted.
-                </span>
+                <div class="section-caption">See how structural relationships shifted between this run and a prior one.</div>
+            </header>
+
+            <div class="section-body flex flex-col gap-8">
                 <div id="comparison-controls" class="flex flex-col gap-2">
-                    <div class="text-center py-4 text-text-secondary font-body-sm">
+                    <div class="text-center py-4 text-secondary font-body-sm">
                         Run an alignment to enable comparison.
                     </div>
                 </div>
-            </div>
 
-            <div id="comparison-results-container" class="flex flex-col gap-4"></div>
+                <div id="comparison-results-container" class="flex flex-col gap-8"></div>
+            </div>
         `;
         this.element = div;
         return div;
@@ -63,7 +64,7 @@ export class ComparisonTab {
 
         if (!this.currentRunId) {
             controls.innerHTML = `
-                <div class="text-center py-4 text-text-secondary font-body-sm">
+                <div class="text-center py-4 text-secondary font-body-sm">
                     Run an alignment to enable comparison.
                 </div>
             `;
@@ -72,7 +73,7 @@ export class ComparisonTab {
 
         if (this.pastRuns.length === 0) {
             controls.innerHTML = `
-                <div class="text-center py-4 text-text-secondary font-body-sm">
+                <div class="text-center py-4 text-secondary font-body-sm">
                     No other past runs found for comparison.
                 </div>
             `;
@@ -80,13 +81,13 @@ export class ComparisonTab {
         }
 
         controls.innerHTML = `
-            <select id="comparison-target-select" class="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 font-body-sm text-text-primary">
+            <select id="comparison-target-select" class="w-full bg-surface-raised border border-border rounded-md px-3 py-2 font-body-sm text-primary">
                 ${this.pastRuns.map(r => `
                     <option value="${r.id}">${r.timestamp} - ${r.id.slice(0, 8)}... (${r.proteins.length} p)</option>
                 `).join("")}
             </select>
-            <button id="btn-run-comparison" class="w-full py-2 px-3 rounded-lg bg-primary/20 border border-primary/40 text-primary font-label-md text-label-md hover:bg-primary/30 transition-colors">
-                🚀 Run Comparative Analysis
+            <button id="btn-run-comparison" class="btn-primary w-full py-2 px-3 rounded-md font-label-md text-label-md">
+                Run Comparative Analysis
             </button>
         `;
 
@@ -101,7 +102,7 @@ export class ComparisonTab {
         if (!this.currentRunId || !this.targetRunId) return;
         const resultsContainer = this.element.querySelector('#comparison-results-container');
         resultsContainer.innerHTML = `
-            <div class="text-center py-8 text-text-secondary font-body-sm">
+            <div class="text-center py-8 text-secondary font-body-sm">
                 <span class="animate-spin material-symbols-outlined text-[18px]">sync</span>
                 Calculating differences...
             </div>
@@ -124,25 +125,25 @@ export class ComparisonTab {
         const resultsContainer = this.element.querySelector('#comparison-results-container');
 
         resultsContainer.innerHTML = `
-            <div class="glass-panel rounded-xl p-5 flex flex-col gap-3 bg-[#11141c]/50">
-                <h4 class="font-body-md text-body-md font-semibold text-text-primary">RMSD Difference Matrix (ΔRMSD)</h4>
-                <span class="font-body-sm text-body-sm text-text-secondary">
-                    Positive values indicate increased divergence in the current run compared to the target.
-                </span>
+            <div>
+                <div class="flex items-baseline justify-between mb-3">
+                    <span class="font-body-md text-body-md font-semibold text-primary">RMSD difference matrix (ΔRMSD)</span>
+                    <span class="font-body-sm text-body-sm text-secondary">Positive = current run diverges more than the target.</span>
+                </div>
                 <div id="comparison-diff-heatmap" class="w-full h-[280px]"></div>
             </div>
-            <div class="glass-panel rounded-xl p-5 grid grid-cols-3 gap-4 bg-[#11141c]/50">
-                <div class="bg-black/30 p-3 rounded-lg border border-white/5 flex flex-col">
-                    <span class="font-label-sm text-label-sm text-text-secondary">Mean RMSD Shift</span>
-                    <span class="font-headline-sm text-headline-sm font-semibold ${data.mean_rmsd_shift >= 0 ? 'text-error' : 'text-success'} font-mono">${data.mean_rmsd_shift.toFixed(3)} Å</span>
+            <div class="grid grid-cols-3 gap-6">
+                <div class="stat-row stat-primary">
+                    <span class="stat-key">Mean RMSD shift</span>
+                    <span class="stat-value ${data.mean_rmsd_shift >= 0 ? 'text-error' : 'text-success'}">${data.mean_rmsd_shift.toFixed(3)} Å</span>
                 </div>
-                <div class="bg-black/30 p-3 rounded-lg border border-white/5 flex flex-col">
-                    <span class="font-label-sm text-label-sm text-text-secondary">Current Mean</span>
-                    <span class="font-headline-sm text-headline-sm font-semibold text-text-primary font-mono">${data.current_mean_rmsd.toFixed(3)} Å</span>
+                <div class="stat-row">
+                    <span class="stat-key">Current mean</span>
+                    <span class="stat-value">${data.current_mean_rmsd.toFixed(3)} Å</span>
                 </div>
-                <div class="bg-black/30 p-3 rounded-lg border border-white/5 flex flex-col">
-                    <span class="font-label-sm text-label-sm text-text-secondary">Target Mean</span>
-                    <span class="font-headline-sm text-headline-sm font-semibold text-text-primary font-mono">${data.target_mean_rmsd.toFixed(3)} Å</span>
+                <div class="stat-row">
+                    <span class="stat-key">Target mean</span>
+                    <span class="stat-value">${data.target_mean_rmsd.toFixed(3)} Å</span>
                 </div>
             </div>
         `;
@@ -161,14 +162,14 @@ export class ComparisonTab {
             margin: { l: 60, r: 20, t: 10, b: 40 },
             paper_bgcolor: 'rgba(0,0,0,0)',
             plot_bgcolor: 'rgba(0,0,0,0)',
-            font: { family: "Inter, sans-serif", size: 10, color: "#8F9CAE" }
+            font: { family: "Segoe UI, sans-serif", size: 10, color: "#A79E8E" }
         };
         Plotly.newPlot(heatmapDiv, [trace], layout, { responsive: true, displayModeBar: false });
 
         if (diff.data.every(row => row.every(v => v === 0))) {
             const notice = document.createElement('div');
             notice.className = "text-center py-2 text-success font-body-sm";
-            notice.innerText = "✨ Perfect Consensus: overlapping proteins are structurally identical in both runs.";
+            notice.innerText = "Perfect Consensus: overlapping proteins are structurally identical in both runs.";
             resultsContainer.appendChild(notice);
         }
     }

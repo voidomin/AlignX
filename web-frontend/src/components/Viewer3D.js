@@ -17,67 +17,46 @@ export class Viewer3D {
 
     render() {
         const div = document.createElement('div');
-        div.className = "flex-1 glass-panel rounded-xl flex flex-col overflow-hidden relative shadow-2xl";
+        div.className = "flex-1 card rounded-lg flex flex-col overflow-hidden relative";
         div.innerHTML = `
             <!-- Viewport Header -->
-            <div class="px-4 py-3 border-b border-white/10 flex justify-between items-center bg-black/20 z-10">
-                <div class="flex items-center gap-2">
-                    <span class="material-symbols-outlined text-gradient-start text-[20px]">view_in_ar</span>
-                    <h3 class="font-body-md text-body-md font-semibold text-text-primary">Superposition Viewer</h3>
-                </div>
+            <div class="px-4 py-3 border-b border-border flex justify-between items-center">
+                <h3 class="font-body-md text-body-md font-semibold text-primary">Superposition Viewer</h3>
                 <div class="flex gap-2">
-                    <button id="btn-toggle-surface" class="p-1.5 rounded bg-white/5 hover:bg-white/10 text-text-secondary transition-colors" title="Toggle Surface">
+                    <button id="btn-toggle-surface" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Surface">
                         <span class="material-symbols-outlined text-[18px]">blur_on</span>
                     </button>
-                    <button id="btn-reset-view" class="p-1.5 rounded bg-white/5 hover:bg-white/10 text-text-secondary transition-colors" title="Reset View">
+                    <button id="btn-reset-view" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Reset View">
                         <span class="material-symbols-outlined text-[18px]">center_focus_strong</span>
                     </button>
                 </div>
             </div>
 
             <!-- 3D Canvas Area -->
-            <div id="3d-canvas-container" class="flex-grow relative bg-[#050608] overflow-hidden min-h-[300px]">
+            <div id="3d-canvas-container" class="flex-grow relative bg-bg overflow-hidden min-h-[300px]">
                 <!-- 3Dmol viewer div (positioned absolutely to fill the container) -->
                 <div id="viewer-canvas-3dmol" class="w-full h-full absolute inset-0 z-0"></div>
-                
-                <!-- Overlay HUD Elements (z-10 to stay on top of the 3D canvas) -->
-                <div class="absolute inset-0 z-10 pointer-events-none">
-                    <!-- Decorative scientific grid background -->
-                    <div class="absolute inset-0 opacity-20" style="background-image: radial-gradient(circle at center, rgba(255,255,255,0.1) 1px, transparent 1px); background-size: 24px 24px;"></div>
-                    <!-- Central Reticle -->
-                    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 border border-white/5 rounded-full flex items-center justify-center">
-                        <div class="w-1 h-1 bg-white/30 rounded-full"></div>
+
+                <!-- Placeholder shown only before an alignment has been run -->
+                <div id="ambient-placeholder" class="absolute inset-0 flex items-center justify-center pointer-events-none z-5 px-8 text-center">
+                    <span class="font-body-sm text-body-sm text-muted">Add 2+ structures and run alignment to view superposition</span>
+                </div>
+
+                <!-- HUD Labels -->
+                <div class="absolute top-4 left-4 bg-surface border border-border px-3 py-1.5 rounded-md flex flex-col gap-1.5 z-10">
+                    <div class="flex items-center gap-2">
+                        <div class="w-2 h-2 rounded-full bg-[#8B5CF6]"></div>
+                        <span id="hud-reference-label" class="font-label-sm text-label-sm text-primary font-mono">Reference: --</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="w-2 h-2 rounded-full bg-[#06B6D4]"></div>
+                        <span id="hud-target-label" class="font-label-sm text-label-sm text-primary font-mono">Target: --</span>
                     </div>
                 </div>
 
-                <!-- Abstract representation of superimposed proteins (shown only before PDB loading) -->
-                <div id="ambient-placeholder" class="absolute inset-0 flex items-center justify-center pointer-events-none z-5">
-                    <!-- Protein A (Deep Purple) -->
-                    <div class="w-64 h-64 border-4 border-[#8B5CF6]/40 rounded-[40%_60%_70%_30%] animate-[spin_20s_linear_infinite] filter blur-[2px] opacity-70"></div>
-                    <!-- Protein B (Neon Cyan) -->
-                    <div class="absolute w-56 h-56 border-4 border-[#06B6D4]/50 rounded-[30%_70%_40%_60%] animate-[spin_15s_linear_reverse_infinite] filter blur-[1px]"></div>
-                    <!-- Alignment visual connection lines -->
-                    <svg class="absolute inset-0 w-full h-full opacity-30" preserveaspectratio="none" viewbox="0 0 100 100">
-                        <line stroke="#f9bd22" stroke-dasharray="1 1" stroke-width="0.2" x1="30" x2="60" y1="40" y2="60"></line>
-                        <line stroke="#f9bd22" stroke-dasharray="1 1" stroke-width="0.2" x1="45" x2="55" y1="20" y2="70"></line>
-                    </svg>
-                </div>
-                
-                <!-- Glassmorphic HUD Labels -->
-                <div class="absolute top-4 left-4 bg-[#11141c]/80 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-lg shadow-lg flex flex-col gap-1.5 z-10">
-                    <div class="flex items-center gap-2">
-                        <div class="w-2 h-2 rounded-full bg-[#8B5CF6] shadow-[0_0_8px_#8B5CF6]"></div>
-                        <span id="hud-reference-label" class="font-label-sm text-label-sm text-text-primary font-mono">Reference: --</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <div class="w-2 h-2 rounded-full bg-[#06B6D4] shadow-[0_0_8px_#06B6D4]"></div>
-                        <span id="hud-target-label" class="font-label-sm text-label-sm text-text-primary font-mono">Target: --</span>
-                    </div>
-                </div>
-                
                 <!-- RMSD Overlay -->
-                <div class="absolute top-4 right-4 bg-black/60 backdrop-blur-md border border-white/10 p-3 rounded-lg flex flex-col items-end z-10 font-mono">
-                    <span class="font-label-sm text-label-sm text-text-secondary uppercase">Global RMSD</span>
+                <div class="absolute top-4 right-4 bg-surface border border-border p-3 rounded-md flex flex-col items-end z-10 font-mono">
+                    <span class="font-label-sm text-label-sm text-secondary uppercase">Global RMSD</span>
                     <span id="rmsd-value-hud" class="font-headline-md text-headline-md text-success font-semibold">-- Å</span>
                 </div>
             </div>
@@ -207,12 +186,12 @@ export class Viewer3D {
         this.viewer.setStyle({chain: 'A'}, {cartoon: {color: '#8B5CF6', opacity: 0.35}});
         this.viewer.setStyle({chain: 'B'}, {cartoon: {color: '#06B6D4', opacity: 0.35}});
 
-        // Add stick and sphere highlight in Neon Yellow/Gold '#f9bd22'
+        // Selection highlight uses the amber "tertiary" semantic (matches .row-selected)
         const selection = {chain: chain, resi: parseInt(resi)};
         this.viewer.addStyle(selection, {
-            stick: {color: '#f9bd22', radius: 0.45},
-            sphere: {color: '#f9bd22', scale: 1.3},
-            cartoon: {color: '#f9bd22', opacity: 1.0}
+            stick: {color: '#F59E0B', radius: 0.45},
+            sphere: {color: '#F59E0B', scale: 1.3},
+            cartoon: {color: '#F59E0B', opacity: 1.0}
         });
 
         this.viewer.zoomTo(selection);
