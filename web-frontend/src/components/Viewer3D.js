@@ -214,6 +214,15 @@ export class Viewer3D {
         }
     }
 
+    // Known limitation: ligandId/interactions residue numbers come from the
+    // raw source PDB, but this.viewer's model is Mustang's alignment.pdb,
+    // which is built from a cleaned copy with every chain renumbered from 1
+    // and all HETATM/ligand records stripped. Numbers rarely match (e.g. a
+    // chain starting at raw residue 49 vs. aligned residue 1), so the ligand
+    // stick and pocket-residue selections below can resolve to zero atoms,
+    // and zoomTo() on an empty selection can leave the viewport blank until
+    // resetCartoonStyles()/a new alignment is run. Needs a raw->aligned
+    // residue-number remap per structure to fix properly.
     showLigandBindingSite(structureIndex, ligandId, interactions) {
         if (!this.viewer) return;
 
