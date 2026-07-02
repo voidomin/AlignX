@@ -450,7 +450,10 @@ class MustangRunner:
             return False, "Mustang did not produce alignment.pdb", None
 
         self._ensure_fasta_exists(output_dir, fasta_file)
-        self._calculate_rmsd_post_alignment(pdb_file, fasta_file, output_dir)
+        # rmsd_matrix.csv is written by coordinator.py's process_result_directory,
+        # which prefers Mustang's own native .rms_rot output via parse_rmsd_matrix()
+        # — not computed here, to avoid a second, less accurate RMSD calculation
+        # silently disagreeing with the one shown everywhere else in the app.
 
         logger.info("Mustang alignment completed successfully")
         return True, "Alignment completed", output_dir
@@ -467,20 +470,6 @@ class MustangRunner:
             possible = list(output_dir.glob("*.fasta"))
             if possible:
                 shutil.copy(possible[0], fasta_file)
-
-    def _calculate_rmsd_post_alignment(
-        self, pdb_file: Path, fasta_file: Path, output_dir: Path
-    ):
-        """Run the RMSD calculator on the alignment results."""
-        try:
-            from src.backend.rmsd_calculator import calculate_structure_rmsd
-
-            logger.info("Computing RMSD matrix...")
-            rmsd_df = calculate_structure_rmsd(pdb_file, fasta_file)
-            if rmsd_df is not None:
-                rmsd_df.to_csv(output_dir / "rmsd_matrix.csv")
-        except Exception as e:
-            logger.error(f"Failed to compute RMSD: {e}")
 
     def _convert_to_wsl_path(self, windows_path: Path) -> str:
         """Convert Windows path to WSL path format."""

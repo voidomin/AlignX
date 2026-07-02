@@ -214,15 +214,13 @@ export class Viewer3D {
         }
     }
 
-    // Known limitation: ligandId/interactions residue numbers come from the
-    // raw source PDB, but this.viewer's model is Mustang's alignment.pdb,
-    // which is built from a cleaned copy with every chain renumbered from 1
-    // and all HETATM/ligand records stripped. Numbers rarely match (e.g. a
-    // chain starting at raw residue 49 vs. aligned residue 1), so the ligand
-    // stick and pocket-residue selections below can resolve to zero atoms,
-    // and zoomTo() on an empty selection can leave the viewport blank until
-    // resetCartoonStyles()/a new alignment is run. Needs a raw->aligned
-    // residue-number remap per structure to fix properly.
+    // Ligand atoms are never present in the aligned structure (Mustang only
+    // aligns protein backbones — HETATM/ligand records are stripped during
+    // cleaning), so there is nothing to select/style for the ligand itself.
+    // Each contact's `aligned_resi` (a raw->aligned residue-number remap
+    // computed server-side, since the aligned structure's chains are
+    // renumbered from 1) is used instead of its raw PDB `resi` so the
+    // highlighted atoms actually exist in the loaded model.
     showLigandBindingSite(structureIndex, ligandId, interactions) {
         if (!this.viewer) return;
 
@@ -234,32 +232,28 @@ export class Viewer3D {
         const target = this.structures[structureIndex];
         const mustangChain = target ? target.mustangChain : 'A';
 
-        // Highlight ligand as neon green sticks
-        const parts = ligandId.split("_");
-        const name = parts.slice(0, -2).join("_");
-        const resi = parseInt(parts[parts.length - 1]);
+        const alignedResidues = interactions
+            .map(i => i.aligned_resi)
+            .filter(r => r !== null && r !== undefined);
 
-        const ligandSelection = {chain: mustangChain, resi: resi, resn: name};
-        this.viewer.addStyle(ligandSelection, {
-            stick: {colorscheme: 'greenCarbon', radius: 0.35}
-        });
-
-        // Highlight pocket residues, restored to the target structure's own
-        // identity color at full opacity (contacts belong to this structure's
-        // own chain, not the original raw-PDB chain letter from the ligand
-        // analyzer response).
-        interactions.forEach(i => {
-            this.viewer.addStyle({chain: mustangChain, resi: parseInt(i.resi)}, {
+        alignedResidues.forEach(resi => {
+            this.viewer.addStyle({chain: mustangChain, resi: resi}, {
                 stick: {colorscheme: 'purpleCarbon', radius: 0.25},
                 cartoon: {color: target ? target.color : '#8B5CF6', opacity: 1.0}
             });
         });
 
-        this.viewer.zoomTo({chain: mustangChain, resi: resi});
+        if (alignedResidues.length > 0) {
+            this.viewer.zoomTo({chain: mustangChain, resi: alignedResidues});
+        } else {
+            // No contact could be mapped into the aligned structure - avoid
+            // zoomTo() on a bogus/empty selection blanking the viewport.
+            this.viewer.zoomTo();
+        }
         this.viewer.render();
     }
 
-    highlightResidue(structureIndex, chain, resi) {
+    highlightResidue(structureIndex, chain, resi, alignedResi) {
         if (!this.viewer) return;
 
         // Reset all cartoon styles to ghost
@@ -267,11 +261,20 @@ export class Viewer3D {
             this.viewer.setStyle({chain: s.mustangChain}, {cartoon: {color: s.color, opacity: 0.35}});
         });
 
+        if (alignedResi === null || alignedResi === undefined) {
+            // No known mapping into the aligned structure (e.g. this residue
+            // was filtered out during cleaning) - nothing to select; avoid
+            // zoomTo() on a bogus selection blanking the viewport.
+            this.viewer.zoomTo();
+            this.viewer.render();
+            return;
+        }
+
         const target = this.structures[structureIndex];
         const mustangChain = target ? target.mustangChain : chain;
 
         // Selection highlight uses the amber "tertiary" semantic (matches .row-selected)
-        const selection = {chain: mustangChain, resi: parseInt(resi)};
+        const selection = {chain: mustangChain, resi: alignedResi};
         this.viewer.addStyle(selection, {
             stick: {color: '#F59E0B', radius: 0.45},
             sphere: {color: '#F59E0B', scale: 1.3},

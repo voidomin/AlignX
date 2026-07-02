@@ -102,3 +102,30 @@ class TestPDBManager:
         content = cleaned_path.read_text()
         assert "ALA B" in content
         assert "ALA A" not in content
+
+    def test_build_residue_renumber_map(self, mock_config, temp_workspace):
+        """Raw residue numbers (which can start anywhere, e.g. 49) must map to
+        the 1-based sequential numbers clean_pdb() assigns, since ligand/
+        interaction analysis runs against the raw PDB while the 3D viewer
+        shows the cleaned, renumbered structure Mustang actually aligned."""
+        manager = PDBManager(mock_config)
+
+        content = (
+            "HETATM    1  O   HOH A  48      10.000  10.000  10.000  1.00 20.00           O\n"
+            "ATOM      2  N   ALA A  49      11.104  13.203   7.334  1.00 20.00           N\n"
+            "ATOM      3  CA  ALA A  49      12.104  14.203   8.334  1.00 20.00           C\n"
+            "ATOM      4  N   GLY A  50      13.104  15.203   9.334  1.00 20.00           N\n"
+            "ATOM      5  CA  GLY A  50      14.104  16.203  10.334  1.00 20.00           C\n"
+            "HETATM    6  C1  RET A 401      15.104  17.203  11.334  1.00 20.00           C\n"
+            "TER"
+        )
+        raw_file = temp_workspace["raw"] / "renumber_test.pdb"
+        raw_file.write_text(content)
+
+        mapping = manager.build_residue_renumber_map(
+            raw_file, chain="A", remove_heteroatoms=True, remove_water=True
+        )
+
+        # Water (48) and the ligand (401, no CA) are stripped; the two
+        # standard residues become sequential 1, 2.
+        assert mapping == {49: 1, 50: 2}

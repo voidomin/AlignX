@@ -224,6 +224,10 @@ class AnalysisCoordinator:
                 result_dir,
                 metadata={
                     "chain_selection": chain_selection,
+                    "clean_params": {
+                        "remove_water": remove_water,
+                        "remove_heteroatoms": remove_heteroatoms,
+                    },
                     "results": sanitized_results,
                 },
                 session_id=self.session_id,
@@ -266,6 +270,13 @@ class AnalysisCoordinator:
             rmsd_df = parse_rmsd_matrix(result_dir, pdb_ids)
             if rmsd_df is None:
                 return None
+
+            # Persist the authoritative matrix (preferring Mustang's own native
+            # .rms_rot output) so ResultManager.get_run_rmsd() — used only by
+            # the Comparison tab — reads the same values as everywhere else in
+            # the app, instead of mustang_runner's separate, less accurate
+            # calculate_structure_rmsd() fallback.
+            rmsd_df.to_csv(result_dir / "rmsd_matrix.csv")
 
             # Static Artifacts
             heatmap_path = result_dir / "rmsd_heatmap.png"

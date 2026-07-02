@@ -270,7 +270,7 @@ export class LigandTab {
                         tr.querySelectorAll('td').forEach(td => td.classList.add('text-tertiary', 'font-bold'));
 
                         // Callback to highlight in 3D
-                        this.onResidueSelected(this.currentStructureIndex, item.chain, item.resi);
+                        this.onResidueSelected(this.currentStructureIndex, item.chain, item.resi, item.aligned_resi);
                     });
 
                     tableBody.appendChild(tr);

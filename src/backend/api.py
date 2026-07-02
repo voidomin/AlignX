@@ -25,11 +25,15 @@ project_root = Path(__file__).parent.parent.parent.resolve()
 sys.path.insert(0, str(project_root))
 
 from src.utils.config_loader import load_config
+from src.utils.logger import get_logger
 from src.backend.coordinator import AnalysisCoordinator
 from src.backend.database import HistoryDatabase
 from src.backend.ligand_analyzer import LigandAnalyzer
+from src.backend.pdb_manager import PDBManager
 from src.backend.rmsd_analyzer import RMSDAnalyzer
 from src.backend.result_manager import ResultManager
+
+logger = get_logger()
 
 # Load application configuration
 try:
@@ -242,6 +246,16 @@ async def analyze_chains(
         if path:
             info = coordinator.pdb_manager.analyze_structure(path)
             chain_info[pid] = info
+
+    # Best-effort title enrichment (used by e.g. ClustersTab's structure
+    # labels) — a network failure here shouldn't break chain analysis.
+    try:
+        metadata = await coordinator.pdb_manager.fetch_metadata(list(chain_info.keys()))
+        for pid, meta in metadata.items():
+            if pid in chain_info:
+                chain_info[pid]["title"] = meta.get("title", "N/A")
+    except Exception as e:
+        logger.warning(f"Failed to fetch PDB title metadata: {e}")
 
     return {"chains": sanitize_for_json(chain_info)}
 
@@ -637,6 +651,32 @@ def get_interactions(
         )
 
     interactions = ligand_analyzer.calculate_interactions(pdb_path, ligand_id)
+
+    # Translate each contact's raw residue number into the number Mustang's
+    # aligned/cleaned structure uses, so the frontend 3D viewer (which only
+    # ever loads the aligned structure) can highlight the right residue
+    # instead of a nonexistent one. Only possible when we know which run
+    # (and therefore which chain + cleaning params) produced the alignment.
+    if run_id and isinstance(interactions, dict) and interactions.get("interactions"):
+        run = history_db.get_run(run_id)
+        if run:
+            metadata = run.get("metadata") or {}
+            chain_selection = metadata.get("chain_selection") or {}
+            clean_params = metadata.get("clean_params") or {}
+            selected_chain = chain_selection.get(pdb_id)
+            try:
+                pdb_manager = PDBManager(config)
+                renumber_map = pdb_manager.build_residue_renumber_map(
+                    pdb_path,
+                    chain=selected_chain,
+                    remove_heteroatoms=clean_params.get("remove_heteroatoms", True),
+                    remove_water=clean_params.get("remove_water", True),
+                )
+                for item in interactions["interactions"]:
+                    item["aligned_resi"] = renumber_map.get(item["resi"])
+            except Exception as e:
+                logger.warning(f"Failed to build residue renumber map: {e}")
+
     return {
         "pdb_id": pdb_id,
         "ligand_id": ligand_id,

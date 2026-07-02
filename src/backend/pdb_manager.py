@@ -440,6 +440,69 @@ class PDBManager:
             logger.error(f"Failed to clean {pdb_file.name}: {str(e)}")
             return False, f"Cleaning failed: {str(e)}", None
 
+    def build_residue_renumber_map(
+        self,
+        pdb_file: Path,
+        chain: Optional[str] = None,
+        remove_heteroatoms: bool = True,
+        remove_water: bool = True,
+    ) -> Dict[int, int]:
+        """
+        Map original residue numbers to the 1-based sequential numbers
+        clean_pdb() assigns, without writing a file.
+
+        Ligand/interaction analysis runs against the raw downloaded PDB
+        (original numbering), but the 3D viewer displays Mustang's aligned
+        output, which is built from a cleaned copy with every chain
+        renumbered from 1 (and ligands typically stripped). This lets
+        callers translate a raw residue number into the number the aligned
+        structure actually uses. Keep this predicate in sync with
+        CleanSelect.accept_residue in clean_pdb() above.
+        """
+        try:
+            structure = self._get_structure(pdb_file)
+        except Exception as e:
+            logger.error(f"Failed to parse {pdb_file.name} for renumbering: {e}")
+            return {}
+
+        is_af_model = pdb_file.name.lower().startswith("af-")
+        model = structure[0]
+
+        target_chain_obj = None
+        for ch in model:
+            if chain is None or ch.id == chain:
+                target_chain_obj = ch
+                break
+        if not target_chain_obj:
+            return {}
+
+        mapping: Dict[int, int] = {}
+        res_count = 1
+        for residue in target_chain_obj:
+            if remove_water and (residue.id[0] == "W" or residue.resname == "HOH"):
+                continue
+
+            if is_af_model:
+                try:
+                    atoms = list(residue.get_atoms())
+                    if atoms and atoms[0].bfactor < 50:
+                        continue
+                except (AttributeError, IndexError):
+                    pass
+
+            if residue.id[0] == " " or residue.has_id("CA"):
+                keep = True
+            else:
+                keep = not remove_heteroatoms
+
+            if not keep:
+                continue
+
+            mapping[residue.id[1]] = res_count
+            res_count += 1
+
+        return mapping
+
     def batch_clean(
         self, pdb_files: List[Path], max_workers: int = 4
     ) -> Dict[str, Tuple[bool, str, Optional[Path]]]:

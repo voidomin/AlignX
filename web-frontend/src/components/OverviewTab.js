@@ -139,6 +139,12 @@ export class OverviewTab {
     setLoadingChains(isLoading) {
         this.isLoadingChains = isLoading;
         this.refreshPDBList();
+
+        // Guard against submitting an alignment while a just-added structure's
+        // chain selection hasn't resolved yet, which would silently persist
+        // an incomplete chain_selection for that run.
+        const runBtn = this.element && this.element.querySelector('#overview-run-btn');
+        if (runBtn) runBtn.disabled = isLoading;
     }
 
     refreshPDBList() {

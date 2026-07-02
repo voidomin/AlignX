@@ -84,13 +84,16 @@ def test_chains_endpoint():
         "src.backend.coordinator.PDBManager.batch_download", new_callable=AsyncMock
     ) as mock_download, patch(
         "src.backend.coordinator.PDBManager.analyze_structure"
-    ) as mock_analyze:
+    ) as mock_analyze, patch(
+        "src.backend.coordinator.PDBManager.fetch_metadata", new_callable=AsyncMock
+    ) as mock_fetch_metadata:
 
         # mock asynchronous download return structure
         mock_download.return_value = {
             "4RLT": (True, "Downloaded successfully", Path("dummy_path"))
         }
         mock_analyze.return_value = {"chains": [{"id": "A", "residues_count": 120}]}
+        mock_fetch_metadata.return_value = {"4RLT": {"title": "Test Structure"}}
 
         response = client.post("/api/chains", json={"pdb_ids": ["4RLT"]})
         assert response.status_code == 200
@@ -98,6 +101,7 @@ def test_chains_endpoint():
         assert "chains" in data
         assert "4RLT" in data["chains"]
         assert data["chains"]["4RLT"]["chains"][0]["id"] == "A"
+        assert data["chains"]["4RLT"]["title"] == "Test Structure"
 
 
 def test_memory_endpoints():
@@ -130,6 +134,46 @@ def test_interactions_and_ligands_endpoints():
             response = client.get("/api/interactions?pdb_id=4RLT&ligand_id=RET_A_296")
             assert response.status_code == 200
             assert response.json()["ligand_id"] == "RET_A_296"
+
+
+def test_interactions_endpoint_adds_aligned_resi_when_run_id_given():
+    """Verify /api/interactions translates raw residue numbers into the
+    renumbered residue numbers Mustang's aligned structure uses, so the
+    frontend 3D viewer highlights the correct atom instead of a nonexistent
+    one (raw PDB numbering vs. the cleaned/renumbered aligned structure
+    frequently differ)."""
+    with patch("src.backend.api.ligand_analyzer") as mock_analyzer, patch(
+        "src.backend.api.history_db"
+    ) as mock_db, patch(
+        "src.backend.api.PDBManager.build_residue_renumber_map"
+    ) as mock_remap, patch(
+        "pathlib.Path.exists", return_value=True
+    ):
+        mock_analyzer.calculate_interactions.return_value = {
+            "ligand": "RET_A_296",
+            "interactions": [
+                {"resn": "TYR", "chain": "A", "resi": 191, "distance": 3.2, "type": "H-Bond"},
+                {"resn": "LYS", "chain": "A", "resi": 999, "distance": 4.1, "type": "Polar"},
+            ],
+        }
+        mock_db.get_run.return_value = {
+            "metadata": {
+                "chain_selection": {"4RLT": "A"},
+                "clean_params": {"remove_water": True, "remove_heteroatoms": True},
+            }
+        }
+        # resi 191 maps to aligned resi 42; resi 999 was filtered out during cleaning
+        mock_remap.return_value = {191: 42}
+
+        response = client.get(
+            "/api/interactions?pdb_id=4RLT&ligand_id=RET_A_296&run_id=run_123"
+        )
+        assert response.status_code == 200
+        contacts = response.json()["interactions"]["interactions"]
+        assert contacts[0]["resi"] == 191
+        assert contacts[0]["aligned_resi"] == 42
+        assert contacts[1]["resi"] == 999
+        assert contacts[1]["aligned_resi"] is None
 
 
 def test_sequence_endpoint():

@@ -57,8 +57,8 @@ class App {
                     this.viewer3D.resetCartoonStyles();
                 }
             },
-            onResidueSelected: (structureIndex, chain, resi) => {
-                this.viewer3D.highlightResidue(structureIndex, chain, resi);
+            onResidueSelected: (structureIndex, chain, resi, alignedResi) => {
+                this.viewer3D.highlightResidue(structureIndex, chain, resi, alignedResi);
             }
         });
 
@@ -192,6 +192,11 @@ class App {
     async executeAlignment() {
         if (this.selectedPDBs.length < 2) {
             alert("At least 2 PDB structures are required for structural alignment.");
+            return;
+        }
+        if (this.overviewTab.isLoadingChains) {
+            // A just-added structure's chain selection hasn't resolved yet;
+            // running now would persist an incomplete chain_selection.
             return;
         }
 

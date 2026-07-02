@@ -78,6 +78,27 @@ describe('LigandTab', () => {
         expect(rows[0].textContent).toContain('TYR');
     });
 
+    it('clicking a contact row passes aligned_resi (the raw->aligned residue remap) to onResidueSelected', async () => {
+        fetchInteractions.mockResolvedValue({
+            interactions: {
+                ligand: 'RET_A_296',
+                interactions: [
+                    { resn: 'TYR', chain: 'A', resi: 191, aligned_resi: 42, distance: 3.2, type: 'H-Bond' },
+                ],
+            },
+        });
+
+        const onResidueSelected = vi.fn();
+        const tab = makeTab({ onResidueSelected });
+        tab.render();
+        tab.updateLigands([{ id: 'RET_A_296', name: 'RET', chain: 'A', resi: 296 }], 'run_1');
+
+        await tab.loadInteractions('RET_A_296');
+        tab.element.querySelector('#interactions-table-body tr').click();
+
+        expect(onResidueSelected).toHaveBeenCalledWith(0, 'A', 191, 42);
+    });
+
     it('resets to the empty state and notifies the parent when ligand is deselected', async () => {
         const onLigandSelected = vi.fn();
         const tab = makeTab({ onLigandSelected });
