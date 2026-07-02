@@ -32,7 +32,7 @@ export class LigandTab {
                 </div>
             </header>
 
-            <div class="section-body flex flex-col gap-4">
+            <div class="section-body flex flex-col gap-6">
                 <div id="ligand-pocket-desc" class="font-body-sm text-body-sm text-secondary leading-relaxed">
                     Perform an alignment and select a ligand from the list to analyze atomic interactions in the binding pocket.
                 </div>

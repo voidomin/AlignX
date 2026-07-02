@@ -159,6 +159,7 @@ export class ComparisonTab {
             zmid: 0,
         };
         const layout = {
+            height: 280,
             margin: { l: 60, r: 20, t: 10, b: 40 },
             paper_bgcolor: 'rgba(0,0,0,0)',
             plot_bgcolor: 'rgba(0,0,0,0)',

@@ -42,6 +42,8 @@ Everything else stays quiet: flat surfaces, one accent color, no gradients, no b
 > **Historical note**: v2.0 ("Minimal Dark Mode") used cyan (`#4CD7F6`) as the single brand accent on a cool near-black ground with Montserrat headings. v3.0 replaces cyan with coral (`#E2846A`) as the accent, warms the entire ground, and switches headings to a serif face. Violet/cyan (`#8B5CF6`/`#06B6D4`) remain **only** as data-encoding colors inside the 3D viewer and one `LigandTab.js` interaction-type dot — this rule carries over unchanged from v2.0. Do not reintroduce cyan as UI chrome; if you see it outside the 3D viewer/legend dots, it's a regression.
 >
 > **N-structure chain palette** (`Viewer3D.js`): the viewer superimposes any number of input structures, not just two, so chain-identity color is a 6-color qualitative cycle — `#8B5CF6` (violet), `#06B6D4` (cyan), `#EC4899` (pink), `#A3E635` (lime), `#FB923C` (orange), `#2DD4BF` (teal) — assigned in input order and cycling by index modulo 6 beyond 6 structures. This palette deliberately avoids amber `#F59E0B` (reserved for the residue-selection highlight, `.row-selected`) and the coral brand accent (reserved for UI chrome), so the three semantic uses of color — chain identity, selection highlight, brand accent — never collide.
+>
+> **Conservation palette** (`SequenceTab.js`'s sequence alignment grid): per-residue background colors (`#ff4757` fully conserved, `#ffa502` high similarity, `#2f3542` gap, white glyph text) encode conservation degree, not brand or chain identity — a fourth intentional exception alongside the two above. Don't fold these into the semantic token set; the traffic-light meaning is the point.
 
 ---
 

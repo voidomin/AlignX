@@ -40,7 +40,7 @@ export class TopBar {
                     <button id="topbar-new-ws-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">New Workspace</button>
                     <button id="topbar-export-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Export</button>
                     <div class="h-5 w-px bg-border"></div>
-                    <span id="topbar-health-status" class="text-secondary truncate max-w-[160px]">Engine: checking...</span>
+                    <span id="topbar-health-status" class="text-secondary truncate max-w-[200px]">Engine: checking...</span>
                     <span id="topbar-ram-text" class="text-muted">--</span>
                     <button id="topbar-free-ram-btn" class="text-accent hover:text-primary transition-colors">Free RAM</button>
                 </div>
@@ -110,10 +110,10 @@ export class TopBar {
                     if (health.mustang_installed) {
                         const mode = health.mustang_message && health.mustang_message.toLowerCase().includes("wsl") ? "WSL" : "Native";
                         healthEl.innerText = `Mustang: Ready (${mode})`;
-                        healthEl.className = "text-success truncate max-w-[160px]";
+                        healthEl.className = "text-success truncate max-w-[200px]";
                     } else {
                         healthEl.innerText = "Mustang: Offline";
-                        healthEl.className = "text-error truncate max-w-[160px]";
+                        healthEl.className = "text-error truncate max-w-[200px]";
                     }
                 }
             } catch (err) {
@@ -121,7 +121,7 @@ export class TopBar {
                 const healthEl = this.element.querySelector('#topbar-health-status');
                 if (healthEl) {
                     healthEl.innerText = "Engine: Disconnected";
-                    healthEl.className = "text-error truncate max-w-[160px]";
+                    healthEl.className = "text-error truncate max-w-[200px]";
                 }
             }
         };
