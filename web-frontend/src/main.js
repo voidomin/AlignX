@@ -8,7 +8,7 @@ import { AnalyticsTab } from './components/AnalyticsTab';
 import { ClustersTab } from './components/ClustersTab';
 import { ComparisonTab } from './components/ComparisonTab';
 import { HistoryPanel } from './components/HistoryPanel';
-import { fetchChains, runAlignment, pollJobUntilDone, fetchLigands, getAlignmentReportUrl } from './api';
+import { fetchChains, runAlignment, pollJobUntilDone, fetchLigands, getAlignmentReportUrl, isValidPdbId } from './api';
 
 class App {
     constructor() {
@@ -175,7 +175,7 @@ class App {
 
     async addPDB(pdbId) {
         pdbId = pdbId.toUpperCase().trim();
-        if (pdbId.length !== 4) return;
+        if (!isValidPdbId(pdbId)) return;
         if (this.selectedPDBs.includes(pdbId)) return;
         
         this.selectedPDBs.push(pdbId);

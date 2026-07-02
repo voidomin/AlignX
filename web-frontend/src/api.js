@@ -11,6 +11,17 @@ function withApiKey(url) {
     return `${url}${sep}api_key=${encodeURIComponent(API_KEY)}`;
 }
 
+// Mirrors PDBManager.validate_pdb_id on the backend: standard 4-char PDB IDs
+// (e.g. "1L2Y") or AlphaFold model IDs (e.g. "AF-P12345-F1", optionally
+// versioned "-V2").
+const PDB_ID_PATTERN = /^[0-9][A-Z0-9]{3}$/;
+const ALPHAFOLD_ID_PATTERN = /^AF-[A-Z0-9]+-F[0-9]+(-V[0-9]+)?$/;
+
+export function isValidPdbId(id) {
+    const normalized = (id || "").trim().toUpperCase();
+    return PDB_ID_PATTERN.test(normalized) || ALPHAFOLD_ID_PATTERN.test(normalized);
+}
+
 export async function fetchHealth() {
     const res = await fetch(`${API_BASE}/health`);
     if (!res.ok) throw new Error("Health check failed");

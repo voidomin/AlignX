@@ -201,6 +201,38 @@ def test_sequence_endpoint():
         assert len(data["conservation"]) == 6
 
 
+def test_comparison_endpoint_uses_upper_triangle_mean():
+    """Verify /api/comparison's mean RMSD matches the same upper-triangle-only
+    convention used everywhere else in the app (3D viewer HUD, RMSD Matrix
+    chart), not a full-matrix mean (which double-counts pairs and is diluted
+    by the zero diagonal, systematically underestimating by (N-1)/N)."""
+    import pandas as pd
+
+    with patch(
+        "src.backend.api.ResultManager.calculate_difference"
+    ) as mock_diff, patch(
+        "src.backend.api.ResultManager.get_run_rmsd"
+    ) as mock_get_rmsd:
+        # A single off-diagonal pair of 10.0 -> full-matrix mean would be 5.0
+        # (double-counted 10.0 + 10.0 + two zeros, /4), but the correct
+        # upper-triangle-only mean is 10.0.
+        rmsd_df = pd.DataFrame(
+            [[0.0, 10.0], [10.0, 0.0]], index=["4RLT", "3UG9"], columns=["4RLT", "3UG9"]
+        )
+        mock_diff.return_value = pd.DataFrame(
+            [[0.0, 0.0], [0.0, 0.0]], index=["4RLT", "3UG9"], columns=["4RLT", "3UG9"]
+        )
+        mock_get_rmsd.return_value = rmsd_df
+
+        response = client.get(
+            "/api/comparison?current_run_id=run_a&target_run_id=run_b"
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["current_mean_rmsd"] == 10.0
+        assert data["target_mean_rmsd"] == 10.0
+
+
 def test_path_traversal_is_rejected():
     """Verify that run_id/session_id/pdb_id values with path-traversal characters are rejected (400), not resolved on disk."""
     traversal_cases = [

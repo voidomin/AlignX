@@ -546,8 +546,13 @@ def compare_runs(
             status_code=404, detail="RMSD matrix not found for one or both runs."
         )
 
-    current_mean = float(current_rmsd.values.mean())
-    target_mean = float(target_rmsd.values.mean())
+    # Use the same upper-triangle-only mean as everywhere else in the app
+    # (rmsd_analyzer.calculate_statistics powers the 3D viewer HUD, Sequence
+    # tab, and RMSD Matrix chart) rather than a full-matrix mean, which
+    # double-counts each pair and dilutes the average with the zero
+    # diagonal — systematically underestimating by a factor of (N-1)/N.
+    current_mean = rmsd_analyzer.calculate_statistics(current_rmsd)["mean_rmsd"]
+    target_mean = rmsd_analyzer.calculate_statistics(target_rmsd)["mean_rmsd"]
 
     return {
         "current_run_id": current_run_id,

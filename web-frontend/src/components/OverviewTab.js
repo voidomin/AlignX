@@ -1,4 +1,4 @@
-import { fetchSuggestions } from '../api';
+import { fetchSuggestions, isValidPdbId } from '../api';
 
 export class OverviewTab {
     constructor(props) {
@@ -31,7 +31,7 @@ export class OverviewTab {
             <div class="section-body flex flex-col gap-8">
                 <div class="flex flex-col gap-3">
                     <div class="flex gap-2 relative">
-                        <input id="add-pdb-input" type="text" placeholder="Enter PDB ID (e.g. 1L2Y)" class="flex-grow bg-surface-raised border border-border rounded-md px-3 py-1.5 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase" maxlength="4" autocomplete="off"/>
+                        <input id="add-pdb-input" type="text" placeholder="PDB ID (1L2Y) or AlphaFold ID (AF-P12345-F1)" class="flex-grow bg-surface-raised border border-border rounded-md px-3 py-1.5 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase" autocomplete="off"/>
                         <button id="add-pdb-btn" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Add</button>
                     </div>
                     <div id="add-pdb-suggestions" class="flex gap-2"></div>
@@ -106,7 +106,7 @@ export class OverviewTab {
 
         addBtn.addEventListener('click', () => {
             const val = addInput.value.trim().toUpperCase();
-            if (val.length === 4) {
+            if (isValidPdbId(val)) {
                 this.onAddPDB(val);
                 addInput.value = "";
                 renderSuggestions([]);
@@ -116,7 +116,7 @@ export class OverviewTab {
         addInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 const val = addInput.value.trim().toUpperCase();
-                if (val.length === 4) {
+                if (isValidPdbId(val)) {
                     this.onAddPDB(val);
                     addInput.value = "";
                     renderSuggestions([]);
