@@ -78,6 +78,25 @@ describe('api.js (no API key configured)', () => {
         );
     });
 
+    it('isValidPdbId accepts standard PDB, AlphaFold, SWISS-MODEL, and ESM Atlas IDs', async () => {
+        const { isValidPdbId } = await import('./api.js');
+        expect(isValidPdbId('1L2Y')).toBe(true);
+        expect(isValidPdbId('AF-P69905-F1')).toBe(true);
+        expect(isValidPdbId('af-p69905-f1-v2')).toBe(true);
+        expect(isValidPdbId('SM-P69905')).toBe(true);
+        expect(isValidPdbId('sm-p69905')).toBe(true);
+        expect(isValidPdbId('ESM-MGYP002537940442')).toBe(true);
+        expect(isValidPdbId('esm-mgyp002537940442')).toBe(true);
+    });
+
+    it('isValidPdbId rejects malformed or unrecognized IDs', async () => {
+        const { isValidPdbId } = await import('./api.js');
+        expect(isValidPdbId('SM-')).toBe(false);
+        expect(isValidPdbId('ESM-P69905')).toBe(false);
+        expect(isValidPdbId('not an id')).toBe(false);
+        expect(isValidPdbId('')).toBe(false);
+    });
+
     it('getAlignmentReportUrl does not append an api_key param when no key is configured', async () => {
         const { getAlignmentReportUrl } = await import('./api.js');
         expect(getAlignmentReportUrl('run_1')).not.toContain('api_key');

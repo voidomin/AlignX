@@ -245,15 +245,20 @@ async def analyze_chains(
     for pid, (success, msg, path) in download_results.items():
         if path:
             info = coordinator.pdb_manager.analyze_structure(path)
+            info["source"] = PDBManager.detect_source(pid)
             chain_info[pid] = info
 
-    # Best-effort title enrichment (used by e.g. ClustersTab's structure
-    # labels) — a network failure here shouldn't break chain analysis.
+    # Best-effort metadata enrichment (title/method/resolution/organism, used
+    # by e.g. ClustersTab's structure labels and the Overview PDB list) — a
+    # network failure here shouldn't break chain analysis.
     try:
         metadata = await coordinator.pdb_manager.fetch_metadata(list(chain_info.keys()))
         for pid, meta in metadata.items():
             if pid in chain_info:
                 chain_info[pid]["title"] = meta.get("title", "N/A")
+                chain_info[pid]["method"] = meta.get("method", "N/A")
+                chain_info[pid]["resolution"] = meta.get("resolution", "N/A")
+                chain_info[pid]["organism"] = meta.get("organism", "N/A")
     except Exception as e:
         logger.warning(f"Failed to fetch PDB title metadata: {e}")
 

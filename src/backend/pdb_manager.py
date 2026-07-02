@@ -53,10 +53,27 @@ class PDBManager:
         self.cleaned_dir.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
+    def detect_source(pdb_id: str) -> str:
+        """
+        Identify which structure database an ID belongs to, based on its
+        prefix: "AF-" -> AlphaFold, "SM-" -> SWISS-MODEL, "ESM-" -> ESM
+        Metagenomic Atlas, otherwise a standard RCSB PDB ID.
+        """
+        upper = pdb_id.strip().upper()
+        if upper.startswith("AF-"):
+            return "alphafold"
+        if upper.startswith("SM-"):
+            return "swissmodel"
+        if upper.startswith("ESM-"):
+            return "esmfold"
+        return "pdb"
+
+    @staticmethod
     def validate_pdb_id(pdb_id: str) -> bool:
         """
         Validate PDB ID format.
-        Supports standard 4-char PDB IDs and AlphaFold IDs (AF-UniProt-F1).
+        Supports standard 4-char PDB IDs, AlphaFold IDs (AF-UniProt-F1),
+        SWISS-MODEL IDs (SM-UniProt), and ESM Atlas IDs (ESM-MGYPxxxx).
         """
         pdb_id = pdb_id.strip().upper()
         # Standard PDB ID
@@ -64,6 +81,12 @@ class PDBManager:
             return True
         # AlphaFold ID (Supports AF-UniProt-F[Fragment] and optional -v[Version])
         if re.match(r"^AF-[A-Z0-9]+-F[0-9]+(-V[0-9]+)?$", pdb_id):
+            return True
+        # SWISS-MODEL ID (SM-UniProt)
+        if re.match(r"^SM-[A-Z0-9]+$", pdb_id):
+            return True
+        # ESM Metagenomic Atlas ID (ESM-MGYPxxxxxxxxxx)
+        if re.match(r"^ESM-MGYP[0-9]+$", pdb_id):
             return True
         return False
 
@@ -103,11 +126,13 @@ class PDBManager:
         client: Optional[httpx.AsyncClient] = None,
     ) -> Tuple[bool, str, Optional[Path]]:
         """
-        Download a structural file (PDB or AlphaFold CIF) (Asynchronous).
+        Download a structural file from RCSB PDB, AlphaFold DB, SWISS-MODEL
+        Repository, or the ESM Metagenomic Atlas (Asynchronous), based on the
+        ID's prefix (see detect_source()).
         """
         pdb_id = pdb_id.strip()
-        is_af = pdb_id.upper().startswith("AF-")
-        ext = ".cif" if is_af else ".pdb"
+        source = self.detect_source(pdb_id)
+        ext = ".cif" if source == "alphafold" else ".pdb"
 
         # Use lower-case filenames internally to avoid WSL case-sensitivity issues
         safe_id = pdb_id.lower()
@@ -122,7 +147,7 @@ class PDBManager:
         if not self.validate_pdb_id(pdb_id):
             return False, f"Invalid ID format: {pdb_id}", None
 
-        if is_af:
+        if source == "alphafold":
             # AlphaFold DB URL support
             parts = pdb_id.upper().split("-")
             uniprot_id = parts[1]
@@ -185,6 +210,54 @@ class PDBManager:
             except Exception as e:
                 logger.error(f"AlphaFold download crash: {e}")
                 return False, f"Error: {str(e)}", None
+        elif source == "swissmodel":
+            # SWISS-MODEL Repository (homology models, keyed by UniProt ID)
+            uniprot_id = pdb_id.upper().split("-", 1)[1]
+            url = f"https://swissmodel.expasy.org/repository/uniprot/{uniprot_id}.pdb"
+            try:
+                manage_client = client is None
+                if manage_client:
+                    client = httpx.AsyncClient(timeout=self.timeout)
+
+                logger.info(f"Attempting SWISS-MODEL download: {url}")
+                response = await client.get(url, follow_redirects=True)
+                if response.status_code != 200:
+                    logger.error(
+                        f"SWISS-MODEL download for {pdb_id} failed with status {response.status_code}"
+                    )
+                    if manage_client:
+                        await client.aclose()
+                    return (
+                        False,
+                        f"Not found in SWISS-MODEL Repository (Status {response.status_code})",
+                        None,
+                    )
+            except Exception as e:
+                return False, f"SWISS-MODEL download failed: {e}", None
+        elif source == "esmfold":
+            # ESM Metagenomic Atlas (predictions for MGnify metagenomic sequences)
+            mgyp_id = pdb_id.upper().split("-", 1)[1]
+            url = f"https://api.esmatlas.com/fetchPredictedStructure/{mgyp_id}"
+            try:
+                manage_client = client is None
+                if manage_client:
+                    client = httpx.AsyncClient(timeout=self.timeout)
+
+                logger.info(f"Attempting ESM Atlas download: {url}")
+                response = await client.get(url, follow_redirects=True)
+                if response.status_code != 200:
+                    logger.error(
+                        f"ESM Atlas download for {pdb_id} failed with status {response.status_code}"
+                    )
+                    if manage_client:
+                        await client.aclose()
+                    return (
+                        False,
+                        f"Not found in ESM Metagenomic Atlas (Status {response.status_code})",
+                        None,
+                    )
+            except Exception as e:
+                return False, f"ESM Atlas download failed: {e}", None
         else:
             # Standard PDB
             pdb_id = pdb_id.upper()
@@ -299,7 +372,10 @@ class PDBManager:
 
             structure = self._get_structure(pdb_file)
 
-            is_af_model = pdb_file.name.lower().startswith("af-")
+            # AlphaFold and ESMFold both encode per-residue pLDDT confidence
+            # in the B-factor column; SWISS-MODEL homology models don't, so
+            # they're excluded from this pruning heuristic.
+            is_plddt_model = pdb_file.name.lower().startswith(("af-", "esm-"))
 
             class CleanSelect(Select):
                 def accept_residue(self, residue):
@@ -309,8 +385,8 @@ class PDBManager:
                     ):
                         return 0
 
-                    # AlphaFold pLDDT Pruning (Strip disordered regions < 50 if it's an AF model)
-                    if is_af_model:
+                    # pLDDT Pruning (Strip disordered regions < 50 if it's a predicted model)
+                    if is_plddt_model:
                         try:
                             # Bio.PDB residues don't have a single B-factor, we check the first atom (usually N or CA)
                             atoms = list(residue.get_atoms())
@@ -465,7 +541,7 @@ class PDBManager:
             logger.error(f"Failed to parse {pdb_file.name} for renumbering: {e}")
             return {}
 
-        is_af_model = pdb_file.name.lower().startswith("af-")
+        is_plddt_model = pdb_file.name.lower().startswith(("af-", "esm-"))
         model = structure[0]
 
         target_chain_obj = None
@@ -482,7 +558,7 @@ class PDBManager:
             if remove_water and (residue.id[0] == "W" or residue.resname == "HOH"):
                 continue
 
-            if is_af_model:
+            if is_plddt_model:
                 try:
                     atoms = list(residue.get_atoms())
                     if atoms and atoms[0].bfactor < 50:
@@ -546,12 +622,20 @@ class PDBManager:
         original_to_base = {}
         unique_base_ids = []
         af_ids = []
+        sm_ids = []
+        esm_ids = []
 
         for pid in pdb_ids:
             # Preserve original casing in mapping keys
             clean_id = pid.strip().upper()
             if clean_id.startswith("AF-"):
                 af_ids.append(clean_id)
+                original_to_base[pid] = clean_id
+            elif clean_id.startswith("SM-"):
+                sm_ids.append(clean_id)
+                original_to_base[pid] = clean_id
+            elif clean_id.startswith("ESM-"):
+                esm_ids.append(clean_id)
                 original_to_base[pid] = clean_id
             else:
                 base_id = clean_id[:4]
@@ -560,6 +644,8 @@ class PDBManager:
 
         unique_base_ids = list(set(unique_base_ids))
         af_ids = list(set(af_ids))
+        sm_ids = list(set(sm_ids))
+        esm_ids = list(set(esm_ids))
 
         query = """
         query($ids: [String!]!) {
@@ -582,8 +668,48 @@ class PDBManager:
                 "resolution": "N/A",
                 "organism": "N/A",
             }
-            for bid in (unique_base_ids + af_ids)
+            for bid in (unique_base_ids + af_ids + sm_ids + esm_ids)
         }
+
+        async def fetch_uniprot_name_organism(client, uniprot_id, fallback_name):
+            """Best-effort UniProt lookup for a protein's name and organism,
+            shared by the AlphaFold and SWISS-MODEL metadata branches below
+            (both are keyed by UniProt accession)."""
+            try:
+                up_url = f"https://rest.uniprot.org/uniprotkb/{uniprot_id}.json"
+                up_resp = await client.get(up_url, timeout=10)
+                if up_resp.status_code != 200:
+                    logger.warning(
+                        f"UniProt API returned {up_resp.status_code} for {uniprot_id}"
+                    )
+                    return fallback_name, "N/A"
+
+                up_data = up_resp.json()
+                desc = up_data.get("proteinDescription", {})
+
+                name = None
+                name_sources = [
+                    desc.get("recommendedName"),
+                    desc.get("submissionNames", [{}])[0],
+                    desc.get("alternativeNames", [{}])[0],
+                ]
+                for source in name_sources:
+                    if source and isinstance(source, dict):
+                        name = source.get("fullName", {}).get("value")
+                        if name:
+                            break
+
+                if not name:
+                    genes = up_data.get("genes", [{}])
+                    name = genes[0].get("geneName", {}).get("value", fallback_name)
+
+                organism = up_data.get("organism", {}).get("scientificName", "N/A")
+                return name, organism
+            except Exception as e:
+                logger.warning(
+                    f"Failed to fetch UniProt meta for {uniprot_id}: ({type(e).__name__}) {e}"
+                )
+                return fallback_name, "N/A"
 
         try:
             manage_client = client is None
@@ -636,58 +762,75 @@ class PDBManager:
 
             # 2. Fetch AlphaFold Metadata (via UniProt)
             for af_id in af_ids:
+                # Extract UniProt ID (AF-P12345-F1 -> P12345)
+                parts = af_id.split("-")
+                if len(parts) < 2:
+                    continue
+                up_id = parts[1]
+
+                name, organism = await fetch_uniprot_name_organism(
+                    client, up_id, "AF Model"
+                )
+                base_results[af_id] = {
+                    "title": f"[AlphaFold] {name}",
+                    "method": "Predicted (AF2)",
+                    "resolution": "pLDDT Scored",
+                    "organism": organism,
+                }
+
+            # 3. Fetch SWISS-MODEL Metadata (template/method info + UniProt name/organism)
+            for sm_id in sm_ids:
+                up_id = sm_id.split("-", 1)[1]
+
+                name, organism = await fetch_uniprot_name_organism(
+                    client, up_id, "SWISS-MODEL"
+                )
+
+                method = "Homology model"
+                resolution = "N/A"
                 try:
-                    # Extract UniProt ID (AF-P12345-F1 -> P12345)
-                    parts = af_id.split("-")
-                    if len(parts) < 2:
-                        continue
-                    up_id = parts[1]
-
-                    up_url = f"https://rest.uniprot.org/uniprotkb/{up_id}.json"
-                    # Increase timeout for more stable fetching
-                    up_resp = await client.get(up_url, timeout=10)
-
-                    if up_resp.status_code == 200:
-                        up_data = up_resp.json()
-                        desc = up_data.get("proteinDescription", {})
-
-                        # Try various name sources more robustly
-                        name = None
-                        name_sources = [
-                            desc.get("recommendedName"),
-                            desc.get("submissionNames", [{}])[0],
-                            desc.get("alternativeNames", [{}])[0],
-                        ]
-
-                        for source in name_sources:
-                            if source and isinstance(source, dict):
-                                name = source.get("fullName", {}).get("value")
-                                if name:
-                                    break
-
-                        if not name:
-                            # Try gene name as fallback
-                            genes = up_data.get("genes", [{}])
-                            name = genes[0].get("geneName", {}).get("value", "AF Model")
-
-                        organism = up_data.get("organism", {}).get(
-                            "scientificName", "N/A"
-                        )
-                        base_results[af_id] = {
-                            "title": f"[AlphaFold] {name}",
-                            "method": "Predicted (AF2)",
-                            "resolution": "pLDDT Scored",
-                            "organism": organism,
-                        }
-                    else:
-                        logger.warning(
-                            f"UniProt API returned {up_resp.status_code} for {up_id}"
-                        )
+                    sm_url = f"https://swissmodel.expasy.org/repository/uniprot/{up_id}.json"
+                    sm_resp = await client.get(sm_url, timeout=10)
+                    if sm_resp.status_code == 200:
+                        sm_data = sm_resp.json()
+                        models = (sm_data.get("result") or {}).get("structures") or []
+                        if models:
+                            model = models[0]
+                            # SWISS-MODEL Repository aggregates both true
+                            # homology models and experimental PDB structures
+                            # already covering that UniProt entry - "method"
+                            # reflects which one this actually is.
+                            method = model.get("method") or method
+                            template = model.get("template")
+                            coverage = model.get("coverage")
+                            if template:
+                                resolution = f"Template {template}" + (
+                                    f" ({coverage * 100:.0f}% cov.)"
+                                    if isinstance(coverage, (int, float))
+                                    else ""
+                                )
                 except Exception as e:
                     logger.warning(
-                        f"Failed to fetch UniProt meta for {af_id}: ({type(e).__name__}) {e}"
+                        f"Failed to fetch SWISS-MODEL meta for {sm_id}: ({type(e).__name__}) {e}"
                     )
-                    continue
+
+                base_results[sm_id] = {
+                    "title": f"[SWISS-MODEL] {name}",
+                    "method": method,
+                    "resolution": resolution,
+                    "organism": organism,
+                }
+
+            # 4. ESM Atlas Metadata (no per-structure metadata API exists for
+            # these anonymous metagenomic predictions - fields are fixed)
+            for esm_id in esm_ids:
+                mgyp_id = esm_id.split("-", 1)[1]
+                base_results[esm_id] = {
+                    "title": f"[ESMFold] {mgyp_id}",
+                    "method": "Predicted (ESMFold)",
+                    "resolution": "pLDDT Scored",
+                    "organism": "Metagenomic (unclassified)",
+                }
 
             if manage_client:
                 await client.aclose()

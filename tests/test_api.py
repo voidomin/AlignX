@@ -94,7 +94,14 @@ def test_chains_endpoint():
             "4RLT": (True, "Downloaded successfully", Path("dummy_path"))
         }
         mock_analyze.return_value = {"chains": [{"id": "A", "residues_count": 120}]}
-        mock_fetch_metadata.return_value = {"4RLT": {"title": "Test Structure"}}
+        mock_fetch_metadata.return_value = {
+            "4RLT": {
+                "title": "Test Structure",
+                "method": "X-RAY DIFFRACTION",
+                "resolution": "2.10 Å",
+                "organism": "Homo sapiens",
+            }
+        }
 
         response = client.post("/api/chains", json={"pdb_ids": ["4RLT"]})
         assert response.status_code == 200
@@ -103,6 +110,40 @@ def test_chains_endpoint():
         assert "4RLT" in data["chains"]
         assert data["chains"]["4RLT"]["chains"][0]["id"] == "A"
         assert data["chains"]["4RLT"]["title"] == "Test Structure"
+        assert data["chains"]["4RLT"]["method"] == "X-RAY DIFFRACTION"
+        assert data["chains"]["4RLT"]["resolution"] == "2.10 Å"
+        assert data["chains"]["4RLT"]["organism"] == "Homo sapiens"
+        assert data["chains"]["4RLT"]["source"] == "pdb"
+
+
+def test_chains_endpoint_tags_source_for_alphafold_id():
+    """/api/chains must tag each structure with which database it came from,
+    computed directly from the ID prefix (no network call needed)."""
+    with patch(
+        "src.backend.coordinator.PDBManager.batch_download", new_callable=AsyncMock
+    ) as mock_download, patch(
+        "src.backend.coordinator.PDBManager.analyze_structure"
+    ) as mock_analyze, patch(
+        "src.backend.coordinator.PDBManager.fetch_metadata", new_callable=AsyncMock
+    ) as mock_fetch_metadata:
+        mock_download.return_value = {
+            "AF-P69905-F1": (True, "Downloaded successfully", Path("dummy_path"))
+        }
+        mock_analyze.return_value = {"chains": [{"id": "A", "residue_count": 141}]}
+        mock_fetch_metadata.return_value = {
+            "AF-P69905-F1": {
+                "title": "[AlphaFold] Hemoglobin subunit alpha",
+                "method": "Predicted (AF2)",
+                "resolution": "pLDDT Scored",
+                "organism": "Homo sapiens",
+            }
+        }
+
+        response = client.post("/api/chains", json={"pdb_ids": ["AF-P69905-F1"]})
+        assert response.status_code == 200
+        data = response.json()["chains"]["AF-P69905-F1"]
+        assert data["source"] == "alphafold"
+        assert data["method"] == "Predicted (AF2)"
 
 
 def test_memory_endpoints():

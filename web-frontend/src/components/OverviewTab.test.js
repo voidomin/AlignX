@@ -60,6 +60,26 @@ describe('OverviewTab', () => {
         expect(onAddPDB).toHaveBeenCalledWith('3UG9');
     });
 
+    it('accepts AlphaFold, SWISS-MODEL, and ESM Atlas accessions, not just 4-char PDB IDs', () => {
+        const onAddPDB = vi.fn();
+        const tab = makeTab({ onAddPDB });
+        tab.render();
+        const input = tab.element.querySelector('#add-pdb-input');
+        const addBtn = tab.element.querySelector('#add-pdb-btn');
+
+        input.value = 'af-p69905-f1';
+        addBtn.click();
+        expect(onAddPDB).toHaveBeenCalledWith('AF-P69905-F1');
+
+        input.value = 'sm-p69905';
+        addBtn.click();
+        expect(onAddPDB).toHaveBeenCalledWith('SM-P69905');
+
+        input.value = 'esm-mgyp002537940442';
+        addBtn.click();
+        expect(onAddPDB).toHaveBeenCalledWith('ESM-MGYP002537940442');
+    });
+
     it('renders one row per selected PDB with chain options from metadata', () => {
         const tab = makeTab({
             selectedPDBs: ['4RLT', '3UG9'],
@@ -82,6 +102,47 @@ describe('OverviewTab', () => {
         // 3UG9 has no metadata -> falls back to a single Chain A option
         const select3UG9 = rows[1].querySelector('select');
         expect(select3UG9.querySelectorAll('option').length).toBe(1);
+    });
+
+    it('shows a source badge and metadata line for each structure once metadata loads', () => {
+        const tab = makeTab({
+            selectedPDBs: ['4RLT', 'AF-P69905-F1'],
+            pdbMetadata: {
+                '4RLT': {
+                    chains: [{ id: 'A', residue_count: 100 }],
+                    source: 'pdb',
+                    method: 'X-RAY DIFFRACTION',
+                    resolution: '2.10 Å',
+                    organism: 'Homo sapiens',
+                },
+                'AF-P69905-F1': {
+                    chains: [{ id: 'A', residue_count: 141 }],
+                    source: 'alphafold',
+                    method: 'Predicted (AF2)',
+                    resolution: 'pLDDT Scored',
+                    organism: 'Homo sapiens',
+                },
+            },
+        });
+        tab.render();
+
+        const rows = tab.element.querySelectorAll('#pdb-list-container > div');
+        expect(rows[0].querySelector('.source-badge').textContent).toBe('PDB');
+        expect(rows[0].querySelector('.pdb-meta-line').textContent)
+            .toBe('X-RAY DIFFRACTION · 2.10 Å · Homo sapiens');
+
+        expect(rows[1].querySelector('.source-badge').textContent).toBe('AlphaFold');
+        expect(rows[1].querySelector('.pdb-meta-line').textContent)
+            .toBe('Predicted (AF2) · pLDDT Scored · Homo sapiens');
+    });
+
+    it('defaults to a "PDB" badge and omits the metadata line while metadata has not loaded yet', () => {
+        const tab = makeTab({ selectedPDBs: ['4RLT'] });
+        tab.render();
+
+        const row = tab.element.querySelector('#pdb-list-container > div');
+        expect(row.querySelector('.source-badge').textContent).toBe('PDB');
+        expect(row.querySelector('.pdb-meta-line')).toBeNull();
     });
 
     it('fires onChainSelection and onRemovePDB from row controls', () => {

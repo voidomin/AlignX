@@ -25,6 +25,23 @@ class TestPDBManager:
         assert PDBManager.validate_pdb_id("12345") is False
         assert PDBManager.validate_pdb_id("1A0") is False
 
+    def test_pdb_id_validation_swissmodel_and_esmfold(self):
+        """SM- (SWISS-MODEL, keyed by UniProt) and ESM- (ESM Atlas, keyed by
+        MGYP accession) IDs must validate; malformed variants must not."""
+        assert PDBManager.validate_pdb_id("SM-P69905") is True
+        assert PDBManager.validate_pdb_id("sm-p69905") is True
+        assert PDBManager.validate_pdb_id("SM-") is False
+        assert PDBManager.validate_pdb_id("ESM-MGYP002537940442") is True
+        assert PDBManager.validate_pdb_id("esm-mgyp002537940442") is True
+        assert PDBManager.validate_pdb_id("ESM-P69905") is False  # not an MGYP id
+
+    def test_detect_source(self):
+        assert PDBManager.detect_source("4RLT") == "pdb"
+        assert PDBManager.detect_source("AF-P69905-F1") == "alphafold"
+        assert PDBManager.detect_source("SM-P69905") == "swissmodel"
+        assert PDBManager.detect_source("ESM-MGYP002537940442") == "esmfold"
+        assert PDBManager.detect_source("af-p69905-f1") == "alphafold"
+
     @pytest.mark.asyncio
     @patch("src.backend.pdb_manager.httpx.AsyncClient.get")
     async def test_download_pdb_success(self, mock_get, mock_config, temp_workspace):
@@ -47,6 +64,65 @@ class TestPDBManager:
         assert path.exists()
         assert path.name == "1a0j.pdb"
         assert path.read_bytes() == b"ATOM"
+
+    @pytest.mark.asyncio
+    @patch("src.backend.pdb_manager.httpx.AsyncClient.get")
+    async def test_download_swissmodel_success(self, mock_get, mock_config, temp_workspace):
+        """SWISS-MODEL downloads must hit the UniProt-keyed repository URL
+        and save real PDB bytes directly (no .cif conversion, unlike AlphaFold)."""
+        mock_response = AsyncMock()
+        mock_response.status_code = 200
+        mock_response.content = b"ATOM SWISSMODEL"
+        mock_get.return_value = mock_response
+
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+
+        success, msg, path = await manager.download_pdb("SM-P69905")
+
+        assert success is True
+        assert path.name == "sm-p69905.pdb"
+        assert path.read_bytes() == b"ATOM SWISSMODEL"
+        called_url = mock_get.call_args[0][0]
+        assert called_url == "https://swissmodel.expasy.org/repository/uniprot/P69905.pdb"
+
+    @pytest.mark.asyncio
+    @patch("src.backend.pdb_manager.httpx.AsyncClient.get")
+    async def test_download_esmfold_success(self, mock_get, mock_config, temp_workspace):
+        """ESM Atlas downloads must hit the MGYP-keyed fetchPredictedStructure
+        URL and save real PDB bytes directly."""
+        mock_response = AsyncMock()
+        mock_response.status_code = 200
+        mock_response.content = b"ATOM ESMFOLD"
+        mock_get.return_value = mock_response
+
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+
+        success, msg, path = await manager.download_pdb("ESM-MGYP002537940442")
+
+        assert success is True
+        assert path.name == "esm-mgyp002537940442.pdb"
+        assert path.read_bytes() == b"ATOM ESMFOLD"
+        called_url = mock_get.call_args[0][0]
+        assert called_url == "https://api.esmatlas.com/fetchPredictedStructure/MGYP002537940442"
+
+    @pytest.mark.asyncio
+    @patch("src.backend.pdb_manager.httpx.AsyncClient.get")
+    async def test_download_swissmodel_not_found(self, mock_get, mock_config, temp_workspace):
+        """A 404 from SWISS-MODEL must be reported as a clean failure, not a crash."""
+        mock_response = AsyncMock()
+        mock_response.status_code = 404
+        mock_get.return_value = mock_response
+
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+
+        success, msg, path = await manager.download_pdb("SM-NOTREAL")
+
+        assert success is False
+        assert path is None
+        assert "SWISS-MODEL" in msg
 
     def test_analyze_structure(self, mock_config, temp_workspace, dummy_pdb_content):
         """Test structure analysis (chain counting)."""
@@ -76,6 +152,30 @@ class TestPDBManager:
         assert success is True
         assert cleaned_path.exists()
         assert cleaned_path.parent == temp_workspace["cleaned"]
+
+    def test_clean_pdb_prunes_low_plddt_for_esmfold_models(self, mock_config, temp_workspace):
+        """ESMFold structures encode per-residue pLDDT in the B-factor column,
+        same convention as AlphaFold, so low-confidence residues (<50) should
+        be pruned during cleaning just like an AF- model."""
+        manager = PDBManager(mock_config)
+        manager.cleaned_dir = temp_workspace["cleaned"]
+
+        content = (
+            "ATOM      1  N   ALA A   1      11.104  13.203   7.334  1.00 90.00           N\n"
+            "ATOM      2  CA  ALA A   1      12.104  14.203   8.334  1.00 90.00           C\n"
+            "ATOM      3  N   GLY A   2      13.104  15.203   9.334  1.00 20.00           N\n"
+            "ATOM      4  CA  GLY A   2      14.104  16.203  10.334  1.00 20.00           C\n"
+            "TER"
+        )
+        raw_file = temp_workspace["raw"] / "esm-mgyp002537940442.pdb"
+        raw_file.write_text(content)
+
+        success, msg, cleaned_path = manager.clean_pdb(raw_file)
+
+        assert success is True
+        cleaned_content = cleaned_path.read_text()
+        assert "ALA" in cleaned_content
+        assert "GLY" not in cleaned_content  # pLDDT 20 < 50, pruned
 
     def test_clean_specific_chain(self, mock_config, temp_workspace):
         """Test cleaning a specific chain from a multi-chain PDB."""

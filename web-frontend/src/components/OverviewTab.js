@@ -1,5 +1,12 @@
 import { fetchSuggestions, isValidPdbId } from '../api';
 
+const SOURCE_LABELS = {
+    pdb: 'PDB',
+    alphafold: 'AlphaFold',
+    swissmodel: 'SWISS-MODEL',
+    esmfold: 'ESMFold',
+};
+
 export class OverviewTab {
     constructor(props) {
         this.selectedPDBs = props.selectedPDBs || [];
@@ -31,7 +38,7 @@ export class OverviewTab {
             <div class="section-body flex flex-col gap-8">
                 <div class="flex flex-col gap-3">
                     <div class="flex gap-2 relative">
-                        <input id="add-pdb-input" type="text" placeholder="PDB ID (1L2Y) or AlphaFold ID (AF-P12345-F1)" class="flex-grow bg-surface-raised border border-border rounded-md px-3 py-1.5 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase" autocomplete="off"/>
+                        <input id="add-pdb-input" type="text" placeholder="PDB ID, or AF- / SM- / ESM- accession" class="flex-grow bg-surface-raised border border-border rounded-md px-3 py-1.5 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase" autocomplete="off"/>
                         <button id="add-pdb-btn" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Add</button>
                     </div>
                     <div id="add-pdb-suggestions" class="flex gap-2"></div>
@@ -177,7 +184,7 @@ export class OverviewTab {
         this.selectedPDBs.forEach(pid => {
             const meta = this.pdbMetadata[pid];
             const div = document.createElement('div');
-            div.className = "flex items-center justify-between p-3 rounded-md bg-surface-raised border border-border-subtle";
+            div.className = "flex flex-col gap-1.5 p-3 rounded-md bg-surface-raised border border-border-subtle";
 
             let chainsOptionsHTML = "";
             if (meta && meta.chains) {
@@ -189,16 +196,25 @@ export class OverviewTab {
                 chainsOptionsHTML = `<option value="A">Chain A</option>`;
             }
 
+            const sourceLabel = SOURCE_LABELS[meta && meta.source] || 'PDB';
+            const metaParts = meta
+                ? [meta.method, meta.resolution, meta.organism].filter(v => v && v !== 'N/A')
+                : [];
+
             div.innerHTML = `
-                <div class="flex items-center gap-3">
-                    <span class="font-headline-sm text-body-md font-bold text-primary font-mono">${pid}</span>
-                    <select class="bg-surface border border-border rounded-md px-2 py-1 text-body-sm text-secondary focus:outline-none focus:border-accent font-mono chain-select" data-pdb="${pid}">
-                        ${chainsOptionsHTML}
-                    </select>
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <span class="font-headline-sm text-body-md font-bold text-primary font-mono">${pid}</span>
+                        <span class="px-1.5 py-0.5 rounded-md bg-surface border border-border-subtle font-mono text-[10px] text-secondary uppercase source-badge">${sourceLabel}</span>
+                        <select class="bg-surface border border-border rounded-md px-2 py-1 text-body-sm text-secondary focus:outline-none focus:border-accent font-mono chain-select" data-pdb="${pid}">
+                            ${chainsOptionsHTML}
+                        </select>
+                    </div>
+                    <button class="text-error hover:text-red-400 p-1 rounded-md hover:bg-surface transition-colors remove-pdb-btn" data-pdb="${pid}">
+                        <span class="material-symbols-outlined text-[18px]">delete</span>
+                    </button>
                 </div>
-                <button class="text-error hover:text-red-400 p-1 rounded-md hover:bg-surface transition-colors remove-pdb-btn" data-pdb="${pid}">
-                    <span class="material-symbols-outlined text-[18px]">delete</span>
-                </button>
+                ${metaParts.length > 0 ? `<span class="pdb-meta-line font-body-sm text-[11px] text-secondary pl-0.5">${metaParts.join(' · ')}</span>` : ''}
             `;
 
             // Bind events
