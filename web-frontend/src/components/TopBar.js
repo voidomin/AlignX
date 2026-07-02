@@ -127,8 +127,13 @@ export class TopBar {
             }
         };
 
-        update();
-        this.memoryInterval = setInterval(update, 10000);
+        // Delay the first poll rather than firing immediately on page load,
+        // so it doesn't compete with the initial chain-metadata fetch for
+        // the default structures over the browser's limited per-host
+        // connection pool. Poll less aggressively thereafter (20s, was 10s)
+        // to reduce ongoing background request volume.
+        this.initialPollTimeout = setTimeout(update, 3000);
+        this.memoryInterval = setInterval(update, 20000);
     }
 
     updateMemoryDisplay(ramMb) {
@@ -139,6 +144,7 @@ export class TopBar {
     }
 
     destroy() {
+        clearTimeout(this.initialPollTimeout);
         clearInterval(this.memoryInterval);
     }
 }

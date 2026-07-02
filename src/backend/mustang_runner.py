@@ -23,6 +23,16 @@ MUSTANG_URL = "http://lcb.infotech.monash.edu.au/mustang/mustang_v3.2.3.tgz"
 class MustangRunner:
     """Wrapper for running Mustang structural alignment."""
 
+    # Cached across all instances for this process's lifetime. A fresh
+    # MustangRunner (and therefore a fresh check_installation() call) is
+    # created on every AnalysisCoordinator instantiation, which happens on
+    # every relevant API request (e.g. /api/chains). On Windows this check
+    # can shell out to WSL ("wsl which mustang"), and WSL subprocess startup
+    # is slow (multiple seconds) - re-running it per-request was blocking
+    # the event loop and stalling concurrent requests. Installation status
+    # can't change during the server's lifetime, so check once and reuse.
+    _cached_installation = None
+
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize Mustang Runner."""
         self.config = config
@@ -259,7 +269,32 @@ class MustangRunner:
         return False, "Mustang binary not found"
 
     def check_installation(self) -> Tuple[bool, str]:
-        """Check if Mustang is properly installed with multi-platform fallbacks."""
+        """Check if Mustang is properly installed, cached after the first
+        check in this process (see _cached_installation for why)."""
+        if MustangRunner._cached_installation is not None:
+            success, msg, backend, executable, use_wsl = (
+                MustangRunner._cached_installation
+            )
+            self.backend, self.executable, self.use_wsl = (
+                backend,
+                executable,
+                use_wsl,
+            )
+            return success, msg
+
+        success, msg = self._perform_installation_check()
+        MustangRunner._cached_installation = (
+            success,
+            msg,
+            self.backend,
+            self.executable,
+            self.use_wsl,
+        )
+        return success, msg
+
+    def _perform_installation_check(self) -> Tuple[bool, str]:
+        """Multi-platform Mustang installation check (PATH, WSL, local build,
+        compile-from-source fallback). Expensive - see check_installation()."""
         # 1. PATH Check
         path_binary = shutil.which("mustang")
         if path_binary:

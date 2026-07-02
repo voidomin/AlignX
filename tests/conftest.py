@@ -6,6 +6,20 @@ logger = get_logger()
 logger.disabled = True
 
 
+@pytest.fixture(autouse=True)
+def reset_mustang_installation_cache():
+    """MustangRunner caches its installation check at the class level (see
+    mustang_runner.py) since it's expensive and shouldn't re-run per-request
+    in production. Reset it around every test so a real check_installation()
+    call in one test can't leak a stale cached result into another test that
+    expects different mocked behavior."""
+    from src.backend.mustang_runner import MustangRunner
+
+    MustangRunner._cached_installation = None
+    yield
+    MustangRunner._cached_installation = None
+
+
 @pytest.fixture
 def mock_config():
     """Return a standard configuration dictionary for testing."""

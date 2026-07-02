@@ -241,10 +241,15 @@ async def analyze_chains(
             status_code=400, detail=f"Failed to fetch PDBs: {', '.join(failed)}"
         )
 
+    # analyze_structure() does synchronous Bio.PDB parsing (CPU + file I/O
+    # bound). Called directly inside this async handler it would block
+    # uvicorn's single event loop for its full duration, stalling every
+    # other concurrent request (health/memory polling, other tabs' fetches)
+    # - not just this one. asyncio.to_thread offloads it to a worker thread.
     chain_info = {}
     for pid, (success, msg, path) in download_results.items():
         if path:
-            info = coordinator.pdb_manager.analyze_structure(path)
+            info = await asyncio.to_thread(coordinator.pdb_manager.analyze_structure, path)
             info["source"] = PDBManager.detect_source(pid)
             chain_info[pid] = info
 

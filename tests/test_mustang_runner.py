@@ -34,6 +34,26 @@ class TestMustangRunner:
 
         assert found is False
 
+    @patch("shutil.which")
+    def test_check_installation_is_cached_across_instances(self, mock_which, mock_config):
+        """check_installation() shells out (directly, or via a slow WSL
+        subprocess) - a fresh MustangRunner is created per API request, so
+        this must only actually run once per process, not once per request."""
+        mock_which.return_value = "/usr/bin/mustang"
+
+        runner1 = MustangRunner(mock_config)
+        found1, msg1 = runner1.check_installation()
+        assert mock_which.call_count == 1
+
+        # A second, independent instance must reuse the cached result rather
+        # than shelling out again.
+        runner2 = MustangRunner(mock_config)
+        found2, msg2 = runner2.check_installation()
+        assert mock_which.call_count == 1
+        assert (found2, msg2) == (found1, msg1)
+        assert runner2.backend == "native"
+        assert runner2.executable == "/usr/bin/mustang"
+
     def test_construct_command(self, mock_config):
         """Test command construction for alignment."""
         runner = MustangRunner(mock_config)

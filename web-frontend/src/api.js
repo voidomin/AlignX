@@ -30,8 +30,12 @@ export function isValidPdbId(id) {
     );
 }
 
+// priority: 'low' (Fetch Priority API, ignored harmlessly where unsupported)
+// deprioritizes this background status poll behind user-driven requests
+// (chain loads, alignment runs, dashboard stats) competing for the
+// browser's limited per-host connection pool.
 export async function fetchHealth() {
-    const res = await fetch(`${API_BASE}/health`);
+    const res = await fetch(`${API_BASE}/health`, { priority: 'low' });
     if (!res.ok) throw new Error("Health check failed");
     return res.json();
 }
@@ -133,8 +137,9 @@ export async function fetchInteractions(pdbId, ligandId, runId) {
     return res.json();
 }
 
+// See fetchHealth's note on priority: 'low' - same rationale.
 export async function fetchMemoryStats() {
-    const res = await fetch(`${API_BASE}/api/memory`, { headers: authHeaders() });
+    const res = await fetch(`${API_BASE}/api/memory`, { headers: authHeaders(), priority: 'low' });
     if (!res.ok) throw new Error("Memory stats fetch failed");
     return res.json();
 }
