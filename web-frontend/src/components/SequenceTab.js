@@ -1,4 +1,12 @@
-import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl, getAlignmentReportUrl } from '../api';
+import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl, getAlignmentReportUrl, getLabNotebookUrl } from '../api';
+
+const REPORT_SECTIONS = [
+    { key: 'summary', label: 'Summary' },
+    { key: 'insights', label: 'Insights' },
+    { key: 'heatmap', label: 'RMSD Heatmap' },
+    { key: 'tree', label: 'Phylogenetic Tree' },
+    { key: 'matrix', label: 'RMSD Matrix' },
+];
 
 export class SequenceTab {
     constructor() {
@@ -59,16 +67,53 @@ export class SequenceTab {
                         <span class="font-body-sm text-body-sm text-primary font-mono">alignment.fasta</span>
                         <a id="download-fasta-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">View FASTA</a>
                     </div>
+                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
+                        <span class="font-body-sm text-body-sm text-primary font-mono">lab_notebook.html</span>
+                        <a id="download-notebook-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">View Notebook</a>
+                    </div>
                     <div class="flex items-center justify-between py-2">
                         <span class="font-body-sm text-body-sm text-primary font-mono">mustang_report.pdf</span>
                         <a id="download-report-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download PDF</a>
+                    </div>
+                    <div id="report-section-checklist" class="flex flex-wrap gap-x-4 gap-y-1.5 pt-2">
+                        ${REPORT_SECTIONS.map(s => `
+                            <label class="flex items-center gap-1.5 font-label-sm text-label-sm text-secondary cursor-pointer">
+                                <input type="checkbox" class="report-section-checkbox rounded border-border bg-surface-raised text-accent focus:ring-0 focus:ring-offset-0" value="${s.key}" checked/>
+                                ${s.label}
+                            </label>
+                        `).join('')}
                     </div>
                 </div>
             </div>
         `;
         this.element = div;
+        this.setupEventListeners();
         this.refreshStats();
         return div;
+    }
+
+    setupEventListeners() {
+        this.element.querySelectorAll('.report-section-checkbox').forEach(cb => {
+            cb.addEventListener('change', () => this.updateReportLink());
+        });
+    }
+
+    updateReportLink() {
+        if (!this.element) return;
+        const reportLink = this.element.querySelector('#download-report-link');
+        if (!this.currentRunId) return;
+
+        const checkboxes = Array.from(this.element.querySelectorAll('.report-section-checkbox'));
+        const selected = checkboxes.filter(cb => cb.checked).map(cb => cb.value);
+
+        if (selected.length === 0) {
+            reportLink.classList.add('opacity-55', 'pointer-events-none');
+            return;
+        }
+
+        reportLink.classList.remove('opacity-55', 'pointer-events-none');
+        const allChecked = selected.length === checkboxes.length;
+        reportLink.href = getAlignmentReportUrl(this.currentRunId, allChecked ? null : selected);
     }
 
     updateResults(runId, stats) {
@@ -93,23 +138,30 @@ export class SequenceTab {
 
         const pdbLink = this.element.querySelector('#download-pdb-link');
         const fastaLink = this.element.querySelector('#download-fasta-link');
+        const notebookLink = this.element.querySelector('#download-notebook-link');
         const reportLink = this.element.querySelector('#download-report-link');
-        
+
         if (this.currentRunId) {
             pdbLink.href = getAlignmentPdbUrl(this.currentRunId);
             pdbLink.classList.remove('opacity-55', 'pointer-events-none');
-            
+
             fastaLink.href = getAlignmentFastaUrl(this.currentRunId);
             fastaLink.classList.remove('opacity-55', 'pointer-events-none');
 
-            reportLink.href = getAlignmentReportUrl(this.currentRunId);
-            reportLink.classList.remove('opacity-55', 'pointer-events-none');
+            notebookLink.href = getLabNotebookUrl(this.currentRunId);
+            notebookLink.classList.remove('opacity-55', 'pointer-events-none');
+
+            this.element.querySelectorAll('.report-section-checkbox').forEach(cb => { cb.checked = true; });
+            this.updateReportLink();
         } else {
             pdbLink.href = "#";
             pdbLink.classList.add('opacity-55', 'pointer-events-none');
-            
+
             fastaLink.href = "#";
             fastaLink.classList.add('opacity-55', 'pointer-events-none');
+
+            notebookLink.href = "#";
+            notebookLink.classList.add('opacity-55', 'pointer-events-none');
 
             reportLink.href = "#";
             reportLink.classList.add('opacity-55', 'pointer-events-none');

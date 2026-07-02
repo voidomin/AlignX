@@ -5,7 +5,8 @@ vi.mock('../api.js', () => ({
     fetchSequence: vi.fn(),
     getAlignmentPdbUrl: vi.fn((runId) => `http://api/results/${runId}/alignment.pdb`),
     getAlignmentFastaUrl: vi.fn((runId) => `http://api/results/${runId}/alignment.fasta`),
-    getAlignmentReportUrl: vi.fn((runId) => `http://api/api/report?run_id=${runId}`),
+    getAlignmentReportUrl: vi.fn((runId, sections) => `http://api/api/report?run_id=${runId}${sections ? `&sections=${sections.join(',')}` : ''}`),
+    getLabNotebookUrl: vi.fn((runId) => `http://api/api/notebook?run_id=${runId}`),
 }));
 
 import { fetchSequence } from '../api.js';
@@ -73,5 +74,61 @@ describe('SequenceTab', () => {
 
         expect(tab.element.querySelector('#sequence-alignment-grid-wrapper').textContent)
             .toContain('Failed to parse alignment FASTA data.');
+    });
+
+    it('enables the lab notebook link once a run is set', () => {
+        fetchSequence.mockResolvedValue({ sequences: {}, conservation: [] });
+        const tab = new SequenceTab();
+        tab.render();
+
+        tab.updateResults('run_123', { rmsd: 1.0 });
+
+        const notebookLink = tab.element.querySelector('#download-notebook-link');
+        expect(notebookLink.classList.contains('pointer-events-none')).toBe(false);
+        expect(notebookLink.href).toContain('run_123');
+    });
+
+    it('report checklist defaults to all 5 sections checked with no sections param in the URL', () => {
+        fetchSequence.mockResolvedValue({ sequences: {}, conservation: [] });
+        const tab = new SequenceTab();
+        tab.render();
+        tab.updateResults('run_123', { rmsd: 1.0 });
+
+        const checkboxes = tab.element.querySelectorAll('.report-section-checkbox');
+        expect(checkboxes.length).toBe(5);
+        expect(Array.from(checkboxes).every(cb => cb.checked)).toBe(true);
+
+        const reportLink = tab.element.querySelector('#download-report-link');
+        expect(reportLink.href).not.toContain('sections=');
+    });
+
+    it('unchecking a report section updates the download link to a subset', () => {
+        fetchSequence.mockResolvedValue({ sequences: {}, conservation: [] });
+        const tab = new SequenceTab();
+        tab.render();
+        tab.updateResults('run_123', { rmsd: 1.0 });
+
+        const checkboxes = tab.element.querySelectorAll('.report-section-checkbox');
+        checkboxes[0].checked = false;
+        checkboxes[0].dispatchEvent(new Event('change'));
+
+        const reportLink = tab.element.querySelector('#download-report-link');
+        expect(reportLink.href).toContain('sections=insights,heatmap,tree,matrix');
+    });
+
+    it('unchecking every report section disables the download link', () => {
+        fetchSequence.mockResolvedValue({ sequences: {}, conservation: [] });
+        const tab = new SequenceTab();
+        tab.render();
+        tab.updateResults('run_123', { rmsd: 1.0 });
+
+        const checkboxes = tab.element.querySelectorAll('.report-section-checkbox');
+        checkboxes.forEach(cb => {
+            cb.checked = false;
+            cb.dispatchEvent(new Event('change'));
+        });
+
+        const reportLink = tab.element.querySelector('#download-report-link');
+        expect(reportLink.classList.contains('pointer-events-none')).toBe(true);
     });
 });

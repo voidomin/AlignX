@@ -183,6 +183,20 @@ class HistoryDatabase:
             logger.error(f"Failed to count runs: {e}")
             return 0
 
+    def get_aggregate_stats(self, session_id: str = None) -> Dict[str, Any]:
+        """
+        Compute dashboard-level totals across all runs: total run count and
+        total proteins analyzed (summed pdb_ids length per run). Computed in
+        Python over get_all_runs() rather than SQL, since pdb_ids is stored
+        as a JSON string column and run volume here is personal-scale.
+        """
+        runs = self.get_all_runs(session_id=session_id)
+        return {
+            "total_runs": len(runs),
+            "total_proteins_analyzed": sum(len(r["pdb_ids"]) for r in runs),
+            "cache_size_mb": round(self.get_total_cache_size() / (1024 * 1024), 2),
+        }
+
     def get_run(self, run_id: str) -> Optional[Dict[str, Any]]:
         """
         Retrieve a specific run by ID.

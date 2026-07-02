@@ -1,6 +1,7 @@
 import time
 import asyncio
 import pytest
+import pandas as pd
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock, AsyncMock
 from pathlib import Path
@@ -325,6 +326,130 @@ def test_report_endpoint(tmp_path):
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/pdf"
         assert b"%PDF-1.4" in response.content
+
+
+def test_report_endpoint_reconstructs_types_from_sanitized_metadata(tmp_path):
+    """Persisted run metadata has been through sanitize_for_json (Path -> str,
+    DataFrame -> {index, columns, data} dict). ReportGenerator's
+    heatmap/tree/matrix sections need the original types, so the endpoint
+    must reconstruct them rather than pass the sanitized values through
+    (regression test for a real bug: passing the raw dict caused
+    'builtin_function_or_method' object has no attribute 'ndim' deep inside
+    numpy when the insights/matrix sections tried to treat it as a DataFrame)."""
+    dummy_pdf = tmp_path / "mustang_report_test.pdf"
+    dummy_pdf.write_bytes(b"%PDF-1.4 dummy content")
+
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "pathlib.Path.glob", return_value=[]
+    ), patch(
+        "src.backend.report_generator.ReportGenerator.generate_full_report",
+        return_value=dummy_pdf,
+    ) as mock_generate:
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT", "3UG9"],
+            "metadata": {
+                "results": {
+                    "stats": {"mean_rmsd": 1.25},
+                    "id": "run_123",
+                    "heatmap_path": "some/stringified/heatmap.png",
+                    "tree_path": "some/stringified/tree.png",
+                    "rmsd_df": {
+                        "index": ["4RLT", "3UG9"],
+                        "columns": ["4RLT", "3UG9"],
+                        "data": [[0.0, 6.7], [6.7, 0.0]],
+                    },
+                }
+            },
+        }
+
+        response = client.get("/api/report?run_id=run_123")
+        assert response.status_code == 200
+
+        results_arg = mock_generate.call_args[0][0]
+        assert isinstance(results_arg["heatmap_path"], Path)
+        assert isinstance(results_arg["tree_path"], Path)
+        assert isinstance(results_arg["rmsd_df"], pd.DataFrame)
+        assert results_arg["rmsd_df"].loc["4RLT", "3UG9"] == 6.7
+
+
+def test_report_endpoint_sections_param_bypasses_cache(tmp_path):
+    """Requesting specific report sections must always regenerate the PDF
+    (never reuse a cached full report from a prior default request), and the
+    parsed sections list must be passed through to the generator."""
+    dummy_pdf = tmp_path / "mustang_report_test.pdf"
+    dummy_pdf.write_bytes(b"%PDF-1.4 dummy content")
+
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "pathlib.Path.glob", return_value=[tmp_path / "mustang_report_cached.pdf"]
+    ), patch(
+        "src.backend.report_generator.ReportGenerator.generate_full_report",
+        return_value=dummy_pdf,
+    ) as mock_generate:
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT", "3UG9"],
+            "metadata": {"results": {"stats": {"mean_rmsd": 1.25}, "id": "run_123"}},
+        }
+
+        response = client.get("/api/report?run_id=run_123&sections=summary,insights")
+        assert response.status_code == 200
+        mock_generate.assert_called_once()
+        _, kwargs = mock_generate.call_args
+        assert kwargs["sections"] == ["summary", "insights"]
+
+
+def test_stats_endpoint():
+    """Verify the dashboard aggregate-stats endpoint returns totals from
+    HistoryDatabase.get_aggregate_stats()."""
+    with patch("src.backend.api.history_db.get_aggregate_stats") as mock_stats:
+        mock_stats.return_value = {
+            "total_runs": 12,
+            "total_proteins_analyzed": 30,
+            "cache_size_mb": 4.5,
+        }
+        response = client.get("/api/stats")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total_runs"] == 12
+        assert data["total_proteins_analyzed"] == 30
+        assert data["cache_size_mb"] == 4.5
+
+
+def test_notebook_endpoint(tmp_path):
+    """Verify the lab notebook endpoint generates and returns an HTML file,
+    and that Path-typed fields NotebookExporter needs (result_dir,
+    alignment_pdb) are reconstructed rather than trusting the sanitized
+    (stringified) values in persisted run metadata."""
+    dummy_html = tmp_path / "lab_notebook.html"
+    dummy_html.write_text("<html>dummy notebook</html>")
+
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "src.backend.notebook_exporter.NotebookExporter.export"
+    ) as mock_export:
+        mock_export.return_value = dummy_html
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT", "3UG9"],
+            "metadata": {
+                "results": {
+                    "stats": {"mean_rmsd": 1.25},
+                    "id": "run_123",
+                    "result_dir": "some/stringified/path",
+                    "alignment_pdb": "some/stringified/path/alignment.pdb",
+                }
+            },
+        }
+
+        response = client.get("/api/notebook?run_id=run_123")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "text/html; charset=utf-8"
+        assert b"dummy notebook" in response.content
+
+        mock_export.assert_called_once()
+        results_arg = mock_export.call_args[0][0]
+        assert isinstance(results_arg["result_dir"], Path)
+        assert isinstance(results_arg["alignment_pdb"], Path)
 
 
 def test_sanitize_for_json_decodes_plotly_binary_typed_arrays():

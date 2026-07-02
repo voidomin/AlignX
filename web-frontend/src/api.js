@@ -143,6 +143,12 @@ export async function fetchHistory(limit = 20, offset = 0) {
     return res.json();
 }
 
+export async function fetchStats() {
+    const res = await fetch(`${API_BASE}/api/stats`, { headers: authHeaders() });
+    if (!res.ok) throw new Error("Stats fetch failed");
+    return res.json();
+}
+
 export async function fetchSequence(runId) {
     const res = await fetch(`${API_BASE}/api/sequence?run_id=${runId}`, { headers: authHeaders() });
     if (!res.ok) throw new Error("Sequence alignment fetch failed");
@@ -157,6 +163,16 @@ export function getAlignmentFastaUrl(runId) {
     return `${API_BASE}/results/${runId}/alignment.fasta`;
 }
 
-export function getAlignmentReportUrl(runId) {
-    return withApiKey(`${API_BASE}/api/report?run_id=${runId}`);
+// `sections` is optional - omit (or pass all 5 known sections) to get the
+// default full report; pass a subset array to generate a trimmed one.
+export function getAlignmentReportUrl(runId, sections) {
+    const base = `${API_BASE}/api/report?run_id=${runId}`;
+    const url = (sections && sections.length > 0)
+        ? `${base}&sections=${sections.join(',')}`
+        : base;
+    return withApiKey(url);
+}
+
+export function getLabNotebookUrl(runId) {
+    return withApiKey(`${API_BASE}/api/notebook?run_id=${runId}`);
 }

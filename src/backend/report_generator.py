@@ -121,10 +121,17 @@ class ReportGenerator:
 
             # 2. Automated Insights (Key Findings)
             if "insights" in sections:
-                from src.backend.insights import InsightsGenerator
+                # Reuse insights already computed (and persisted) during the
+                # original pipeline run when available. Regenerating here
+                # requires results["rmsd_df"] to be a live pandas DataFrame,
+                # which it no longer is once a run's metadata has been
+                # through sanitize_for_json and reloaded from history.
+                insights = results.get("insights")
+                if insights is None:
+                    from src.backend.insights import InsightsGenerator
 
-                gen = InsightsGenerator({})
-                insights = gen.generate_insights(results)
+                    gen = InsightsGenerator({})
+                    insights = gen.generate_insights(results)
 
                 if insights:
                     pdf.set_font("Arial", "B", 14)

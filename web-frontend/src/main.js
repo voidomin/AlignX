@@ -8,6 +8,7 @@ import { AnalyticsTab } from './components/AnalyticsTab';
 import { ClustersTab } from './components/ClustersTab';
 import { ComparisonTab } from './components/ComparisonTab';
 import { HistoryPanel } from './components/HistoryPanel';
+import { DashboardTab } from './components/DashboardTab';
 import { fetchChains, runAlignment, pollJobUntilDone, fetchLigands, getAlignmentReportUrl, isValidPdbId } from './api';
 
 class App {
@@ -16,7 +17,7 @@ class App {
         this.chainSelections = { "4RLT": "A", "3UG9": "A" };
         this.pdbMetadata = {};
         this.currentRunId = null;
-        this.activeTab = 'overview'; // 'overview' | 'ligands' | 'sequence' | 'analytics' | 'clusters' | 'comparison' | 'history'
+        this.activeTab = 'overview'; // 'dashboard' | 'overview' | 'ligands' | 'sequence' | 'analytics' | 'clusters' | 'comparison' | 'history'
         this.currentLigands = [];
         this.isAligning = false;
 
@@ -70,6 +71,11 @@ class App {
         this.historyPanel = new HistoryPanel({
             onReloadRun: (run) => this.reloadPastRun(run)
         });
+
+        this.dashboardTab = new DashboardTab({
+            onReloadRun: (run) => this.reloadPastRun(run),
+            onQuickStart: (pdbIds) => this.loadQuickStart(pdbIds)
+        });
     }
 
     render(rootElement) {
@@ -118,7 +124,9 @@ class App {
 
         pane.innerHTML = "";
 
-        if (this.activeTab === 'overview') {
+        if (this.activeTab === 'dashboard') {
+            pane.appendChild(this.dashboardTab.render());
+        } else if (this.activeTab === 'overview') {
             pane.appendChild(this.overviewTab.render());
         } else if (this.activeTab === 'ligands') {
             pane.appendChild(this.ligandTab.render());
@@ -187,6 +195,14 @@ class App {
         this.selectedPDBs = this.selectedPDBs.filter(pid => pid !== pdbId);
         delete this.chainSelections[pdbId];
         this.overviewTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
+    }
+
+    loadQuickStart(pdbIds) {
+        this.selectedPDBs = [...pdbIds];
+        this.chainSelections = {};
+        this.overviewTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
+        this.loadChainsMetadata();
+        this.switchTab('overview');
     }
 
     async executeAlignment() {

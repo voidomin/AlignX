@@ -82,6 +82,32 @@ describe('api.js (no API key configured)', () => {
         const { getAlignmentReportUrl } = await import('./api.js');
         expect(getAlignmentReportUrl('run_1')).not.toContain('api_key');
     });
+
+    it('getAlignmentReportUrl omits the sections param by default (unchanged default full-report URL)', async () => {
+        const { getAlignmentReportUrl } = await import('./api.js');
+        expect(getAlignmentReportUrl('run_1')).not.toContain('sections');
+    });
+
+    it('getAlignmentReportUrl appends a comma-joined sections param when a subset is given', async () => {
+        const { getAlignmentReportUrl } = await import('./api.js');
+        const url = getAlignmentReportUrl('run_1', ['summary', 'insights']);
+        expect(url).toContain('sections=summary,insights');
+    });
+
+    it('getLabNotebookUrl points at the notebook endpoint for the given run', async () => {
+        const { getLabNotebookUrl } = await import('./api.js');
+        expect(getLabNotebookUrl('run_1')).toContain('/api/notebook?run_id=run_1');
+    });
+
+    it('fetchStats hits the aggregate stats endpoint', async () => {
+        mockFetchOnce({ total_runs: 3, total_proteins_analyzed: 7, cache_size_mb: 1.2 });
+        const { fetchStats } = await import('./api.js');
+
+        const result = await fetchStats();
+        expect(result.total_runs).toBe(3);
+        const [url] = global.fetch.mock.calls[0];
+        expect(url).toContain('/api/stats');
+    });
 });
 
 describe('api.js (API key configured)', () => {

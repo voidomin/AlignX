@@ -750,6 +750,16 @@ def get_history(
     }
 
 
+@app.get("/api/stats")
+def get_aggregate_stats(session_id: Optional[str] = Query(None)):
+    """
+    Dashboard-level aggregate totals across all runs (total run count,
+    total proteins analyzed, cache size).
+    """
+    _safe_segment(session_id, "session_id")
+    return sanitize_for_json(history_db.get_aggregate_stats(session_id=session_id))
+
+
 @app.get("/api/sequence")
 def get_sequence(run_id: str = Query(...), session_id: Optional[str] = Query(None)):
     """
@@ -792,7 +802,14 @@ def get_sequence(run_id: str = Query(...), session_id: Optional[str] = Query(Non
 
 
 @app.get("/api/report")
-def get_pdf_report(run_id: str = Query(...), session_id: Optional[str] = Query(None)):
+def get_pdf_report(
+    run_id: str = Query(...),
+    session_id: Optional[str] = Query(None),
+    sections: Optional[str] = Query(
+        None,
+        description="Comma-separated report sections to include (summary,insights,heatmap,tree,matrix). Omit for the full default report.",
+    ),
+):
     """
     Generate and retrieve the PDF analysis report for a run.
     """
@@ -801,6 +818,10 @@ def get_pdf_report(run_id: str = Query(...), session_id: Optional[str] = Query(N
 
     _safe_segment(run_id, "run_id")
     _safe_segment(session_id, "session_id")
+
+    section_list = None
+    if sections:
+        section_list = [s.strip() for s in sections.split(",") if s.strip()]
 
     # 1. Fetch run details
     run = history_db.get_run(run_id)
@@ -823,16 +844,34 @@ def get_pdf_report(run_id: str = Query(...), session_id: Optional[str] = Query(N
         stats = metadata.get("stats", {})
         results = {"stats": stats, "id": run_id, "pdb_ids": run.get("pdb_ids", [])}
 
+    # metadata["results"] has been through sanitize_for_json (Path -> str,
+    # DataFrame -> {index, columns, data} dict). ReportGenerator's
+    # heatmap/tree/matrix sections need the original types back.
+    results = dict(results)
+    if isinstance(results.get("heatmap_path"), str):
+        results["heatmap_path"] = Path(results["heatmap_path"])
+    if isinstance(results.get("tree_path"), str):
+        results["tree_path"] = Path(results["tree_path"])
+    if isinstance(results.get("rmsd_df"), dict):
+        rmsd_dict = results["rmsd_df"]
+        results["rmsd_df"] = pd.DataFrame(
+            data=rmsd_dict.get("data"),
+            index=rmsd_dict.get("index"),
+            columns=rmsd_dict.get("columns"),
+        )
+
     # 3. Generate report
     try:
         generator = ReportGenerator(res_dir)
-        # Use existing generated report if it exists to avoid redundant calculations
-        existing_pdfs = list(res_dir.glob("mustang_report_*.pdf"))
+        # Reuse an existing generated report only for the default (all
+        # sections) request — a cached full report must not be served back
+        # for a caller that explicitly asked for a subset of sections.
+        existing_pdfs = list(res_dir.glob("mustang_report_*.pdf")) if not section_list else []
         if existing_pdfs:
             report_path = existing_pdfs[0]
         else:
             report_path = generator.generate_full_report(
-                results, pdb_ids=run.get("pdb_ids", [])
+                results, pdb_ids=run.get("pdb_ids", []), sections=section_list
             )
 
         if not report_path.exists():
@@ -852,6 +891,67 @@ def get_pdf_report(run_id: str = Query(...), session_id: Optional[str] = Query(N
         logger.error(f"Failed to generate report PDF: {e}")
         raise HTTPException(
             status_code=500, detail=f"Failed to generate report PDF: {str(e)}"
+        )
+
+
+@app.get("/api/notebook")
+def get_lab_notebook(run_id: str = Query(...), session_id: Optional[str] = Query(None)):
+    """
+    Generate and retrieve the standalone HTML lab notebook for a run.
+    """
+    from src.backend.notebook_exporter import NotebookExporter
+    from fastapi.responses import FileResponse
+
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    run = history_db.get_run(run_id)
+    if not run:
+        raise HTTPException(
+            status_code=404, detail=f"Run {run_id} not found in history database."
+        )
+
+    res_dir = project_root / "results"
+    if session_id:
+        res_dir = res_dir / session_id
+    res_dir = res_dir / run_id
+
+    metadata = run.get("metadata", {})
+    results = metadata.get("results") or {
+        "stats": metadata.get("stats", {}),
+        "id": run_id,
+        "pdb_ids": run.get("pdb_ids", []),
+    }
+    # metadata["results"] has been through sanitize_for_json (Path -> str),
+    # but NotebookExporter needs real Path objects for these two fields -
+    # reconstruct them from the run_id rather than trust stringified values.
+    results = dict(results)
+    results["result_dir"] = res_dir
+    results["alignment_pdb"] = res_dir / "alignment.pdb"
+
+    try:
+        exporter = NotebookExporter()
+        notebook_path = exporter.export(results, insights=results.get("insights"))
+
+        if not notebook_path.exists():
+            raise HTTPException(
+                status_code=500, detail="Lab notebook file was not created successfully."
+            )
+
+        return FileResponse(
+            path=str(notebook_path),
+            media_type="text/html",
+            filename=f"lab_notebook_{run_id}.html",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+
+        logger = logging.getLogger("uvicorn")
+        logger.error(f"Failed to generate lab notebook: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate lab notebook: {str(e)}"
         )
 
 
