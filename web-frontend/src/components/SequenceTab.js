@@ -190,7 +190,7 @@ export class SequenceTab {
             `;
 
             wrapper.innerHTML = `
-                <table class="w-full text-left border-collapse table-fixed">
+                <table class="text-left border-collapse">
                     <tbody>
                         ${rowsHtml}
                     </tbody>

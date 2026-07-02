@@ -265,6 +265,31 @@ def sanitize_for_json(val: Any) -> Any:
         except Exception:
             pass
 
+    if (
+        isinstance(val, dict)
+        and val.keys() >= {"dtype", "bdata"}
+        and isinstance(val.get("bdata"), str)
+    ):
+        # Plotly 6.x's compact binary typed-array format for numeric trace data
+        # (emitted for figure_factory dendrograms and some Heatmap traces,
+        # regardless of whether the original value was a numpy array or a
+        # plain list — Plotly's trace validators re-coerce it internally).
+        # "shape" is only present for 2D+ arrays (e.g. a heatmap's z); flat 1D
+        # arrays (e.g. a dendrogram trace's x/y) omit it entirely. The pinned
+        # frontend Plotly.js CDN version can't decode either form, so decode
+        # it back into a plain (possibly nested) list here.
+        try:
+            import base64
+
+            raw = base64.b64decode(val["bdata"])
+            arr = np.frombuffer(raw, dtype=val["dtype"])
+            if "shape" in val:
+                shape = tuple(int(s) for s in str(val["shape"]).replace(" ", "").split(","))
+                arr = arr.reshape(shape)
+            return sanitize_for_json(arr)
+        except Exception:
+            return {str(k): sanitize_for_json(v) for k, v in val.items()}
+
     if isinstance(val, dict):
         return {str(k): sanitize_for_json(v) for k, v in val.items()}
     elif isinstance(val, (list, tuple, set)):

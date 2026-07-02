@@ -249,3 +249,33 @@ def test_report_endpoint(tmp_path):
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/pdf"
         assert b"%PDF-1.4" in response.content
+
+
+def test_sanitize_for_json_decodes_plotly_binary_typed_arrays():
+    """Plotly 6.x serializes numeric trace data (e.g. dendrogram x/y, heatmap z)
+    as a compact {dtype, bdata, shape} binary format that the pinned frontend
+    Plotly.js CDN version cannot decode. sanitize_for_json must convert this
+    back into plain (possibly nested) JSON arrays."""
+    import base64
+    import numpy as np
+    from src.backend.api import sanitize_for_json
+
+    # 1D array (no "shape" key, matches ff.create_dendrogram's trace x/y)
+    flat = np.array([0.0, 5.6, 5.6, 0.0])
+    flat_encoded = {"dtype": "f8", "bdata": base64.b64encode(flat.tobytes()).decode()}
+    assert sanitize_for_json(flat_encoded) == flat.tolist()
+
+    # 2D array (with "shape" key, matches a Heatmap's z)
+    matrix = np.array([[0.0, 6.7], [6.7, 0.0]])
+    matrix_encoded = {
+        "dtype": "f8",
+        "bdata": base64.b64encode(matrix.tobytes()).decode(),
+        "shape": "2, 2",
+    }
+    assert sanitize_for_json(matrix_encoded) == matrix.tolist()
+
+    # A dict that merely looks similar (missing bdata) must pass through untouched
+    assert sanitize_for_json({"dtype": "f8", "shape": "2, 2"}) == {
+        "dtype": "f8",
+        "shape": "2, 2",
+    }

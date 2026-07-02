@@ -181,6 +181,14 @@ class PhyloTreeGenerator:
             # This is a bit hacky as dendrogram returns multiple traces
             for i in range(len(fig["data"])):
                 fig["data"][i]["hoverinfo"] = "y+x"
+                # ff.create_dendrogram's traces carry numpy-backed x/y coordinates.
+                # Force them to plain lists so Plotly serializes plain JSON arrays
+                # instead of its compact binary typed-array format, which the
+                # pinned frontend Plotly.js CDN version can't decode.
+                for axis in ("x", "y"):
+                    value = fig["data"][i][axis]
+                    if hasattr(value, "tolist"):
+                        fig["data"][i][axis] = value.tolist()
 
             return fig
 

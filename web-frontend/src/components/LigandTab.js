@@ -1,4 +1,4 @@
-import { fetchInteractions } from '../api';
+import { fetchInteractions, fetchLigands } from '../api';
 
 export class LigandTab {
     constructor(props) {
@@ -9,6 +9,7 @@ export class LigandTab {
         this.ligandsList = [];
         this.element = null;
         this.selectedLigandId = "";
+        this.currentStructureIndex = 0;
     }
 
     render() {
@@ -22,9 +23,13 @@ export class LigandTab {
                     <span class="eyebrow">Fig. — Binding Pocket</span>
                     <h2 class="section-title">Ligand inspector</h2>
                 </div>
-                <select id="ligand-select" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[220px]">
-                    <option value="">No Ligands Loaded</option>
-                </select>
+                <div class="flex gap-2">
+                    <select id="ligand-structure-select" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[140px]">
+                    </select>
+                    <select id="ligand-select" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[220px]">
+                        <option value="">No Ligands Loaded</option>
+                    </select>
+                </div>
             </header>
 
             <div class="section-body flex flex-col gap-4">
@@ -62,6 +67,7 @@ export class LigandTab {
         `;
         this.element = div;
         this.setupEventListeners();
+        this.populateStructurePicker();
         this.populateDropdown();
         return div;
     }
@@ -73,12 +79,53 @@ export class LigandTab {
             this.selectedLigandId = ligandId;
             await this.loadInteractions(ligandId);
         });
+
+        const structureSelect = this.element.querySelector('#ligand-structure-select');
+        structureSelect.addEventListener('change', async (e) => {
+            await this.switchStructure(parseInt(e.target.value, 10));
+        });
     }
 
-    updateLigands(ligands, runId) {
+    populateStructurePicker() {
+        if (!this.element) return;
+        const select = this.element.querySelector('#ligand-structure-select');
+        select.innerHTML = "";
+        this.selectedPDBs.forEach((pdbId, index) => {
+            const opt = document.createElement('option');
+            opt.value = String(index);
+            opt.textContent = pdbId;
+            if (index === this.currentStructureIndex) opt.selected = true;
+            select.appendChild(opt);
+        });
+    }
+
+    async switchStructure(index) {
+        if (index === this.currentStructureIndex) return;
+        this.currentStructureIndex = index;
+        this.selectedLigandId = "";
+        this.clearTable();
+        this.onLigandSelected(this.currentStructureIndex, "");
+
+        if (!this.currentRunId) return;
+
+        const pdbId = this.selectedPDBs[index];
+        try {
+            const ligData = await fetchLigands(pdbId, this.currentRunId);
+            this.ligandsList = ligData.ligands || [];
+        } catch (err) {
+            console.error("Failed to load ligands for structure:", err);
+            this.ligandsList = [];
+        }
+        this.populateDropdown();
+    }
+
+    updateLigands(ligands, runId, selectedPDBs) {
         this.ligandsList = ligands || [];
         this.currentRunId = runId;
+        if (selectedPDBs) this.selectedPDBs = selectedPDBs;
+        this.currentStructureIndex = 0;
         this.selectedLigandId = "";
+        this.populateStructurePicker();
         this.populateDropdown();
         this.clearTable();
     }
@@ -138,7 +185,7 @@ export class LigandTab {
 
         if (!ligandId) {
             this.clearTable();
-            this.onLigandSelected(""); // Trigger reset styles on 3D viewport
+            this.onLigandSelected(this.currentStructureIndex, ""); // Trigger reset styles on 3D viewport
             return;
         }
 
@@ -152,13 +199,13 @@ export class LigandTab {
         `;
 
         try {
-            const referencePdbId = this.selectedPDBs[0];
-            const data = await fetchInteractions(referencePdbId, ligandId, this.currentRunId);
+            const targetPdbId = this.selectedPDBs[this.currentStructureIndex];
+            const data = await fetchInteractions(targetPdbId, ligandId, this.currentRunId);
             const metadata = data.interactions;
             const contacts = metadata.interactions;
 
             // Trigger parent event to update 3D viewer binding site
-            this.onLigandSelected(ligandId, contacts);
+            this.onLigandSelected(this.currentStructureIndex, ligandId, contacts);
 
             desc.innerText = `Conserved catalytic pocket near ligand ${metadata.ligand}. Stable hydrophobic cluster showing coordinated interactions.`;
             
@@ -223,7 +270,7 @@ export class LigandTab {
                         tr.querySelectorAll('td').forEach(td => td.classList.add('text-tertiary', 'font-bold'));
 
                         // Callback to highlight in 3D
-                        this.onResidueSelected(item.chain, item.resi);
+                        this.onResidueSelected(this.currentStructureIndex, item.chain, item.resi);
                     });
 
                     tableBody.appendChild(tr);

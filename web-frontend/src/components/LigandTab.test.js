@@ -3,9 +3,10 @@ import { LigandTab } from './LigandTab.js';
 
 vi.mock('../api.js', () => ({
     fetchInteractions: vi.fn(),
+    fetchLigands: vi.fn(),
 }));
 
-import { fetchInteractions } from '../api.js';
+import { fetchInteractions, fetchLigands } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new LigandTab({
@@ -67,7 +68,7 @@ describe('LigandTab', () => {
         await tab.loadInteractions('RET_A_296');
 
         expect(fetchInteractions).toHaveBeenCalledWith('4RLT', 'RET_A_296', 'run_1');
-        expect(onLigandSelected).toHaveBeenCalledWith('RET_A_296', [
+        expect(onLigandSelected).toHaveBeenCalledWith(0, 'RET_A_296', [
             { resn: 'TYR', chain: 'A', resi: 191, distance: 3.2, type: 'H-Bond' },
         ]);
         expect(tab.element.querySelector('#interaction-count').innerText).toBe('1 Found');
@@ -84,7 +85,7 @@ describe('LigandTab', () => {
 
         await tab.loadInteractions('');
 
-        expect(onLigandSelected).toHaveBeenCalledWith('');
+        expect(onLigandSelected).toHaveBeenCalledWith(0, '');
         expect(tab.element.querySelector('#interactions-table-body').textContent)
             .toContain('Select a ligand to populate interactions.');
     });
@@ -100,5 +101,48 @@ describe('LigandTab', () => {
 
         expect(tab.element.querySelector('#interactions-table-body').textContent)
             .toContain('Failed to calculate pocket site contacts.');
+    });
+
+    it('populates the structure picker with one option per selected PDB', () => {
+        const tab = makeTab({ selectedPDBs: ['4RLT', '3UG9', '1L2Y'] });
+        tab.render();
+
+        const select = tab.element.querySelector('#ligand-structure-select');
+        expect(select.options.length).toBe(3);
+        expect(Array.from(select.options).map(o => o.value)).toEqual(['0', '1', '2']);
+        expect(select.options[1].textContent).toBe('3UG9');
+    });
+
+    it('switching structure refetches ligands for that PDB and notifies the viewer', async () => {
+        fetchLigands.mockResolvedValue({
+            ligands: [{ id: 'ZN_B_50', name: 'ZN', chain: 'B', resi: 50 }],
+        });
+
+        const onLigandSelected = vi.fn();
+        const tab = makeTab({ selectedPDBs: ['4RLT', '3UG9'], onLigandSelected });
+        tab.render();
+        tab.updateLigands([{ id: 'RET_A_296', name: 'RET', chain: 'A', resi: 296 }], 'run_1', ['4RLT', '3UG9']);
+
+        await tab.switchStructure(1);
+
+        expect(fetchLigands).toHaveBeenCalledWith('3UG9', 'run_1');
+        expect(onLigandSelected).toHaveBeenCalledWith(1, '');
+        expect(tab.currentStructureIndex).toBe(1);
+        const select = tab.element.querySelector('#ligand-select');
+        expect(select.options[1].value).toBe('ZN_B_50');
+    });
+
+    it('loadInteractions targets the currently selected structure, not always the first', async () => {
+        fetchInteractions.mockResolvedValue({
+            interactions: { ligand: 'ZN_B_50', interactions: [] },
+        });
+
+        const tab = makeTab({ selectedPDBs: ['4RLT', '3UG9'] });
+        tab.render();
+        tab.currentStructureIndex = 1;
+
+        await tab.loadInteractions('ZN_B_50');
+
+        expect(fetchInteractions).toHaveBeenCalledWith('3UG9', 'ZN_B_50', 'run_1');
     });
 });

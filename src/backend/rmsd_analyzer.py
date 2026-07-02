@@ -86,11 +86,14 @@ class RMSDAnalyzer:
 
             fig = go.Figure(
                 data=go.Heatmap(
-                    z=rmsd_df.values,
-                    x=rmsd_df.columns,
-                    y=rmsd_df.index,
+                    # .tolist() (not the raw ndarray) so Plotly serializes plain
+                    # JSON arrays instead of its compact binary typed-array format,
+                    # which the pinned frontend Plotly.js CDN version can't decode.
+                    z=rmsd_df.values.tolist(),
+                    x=rmsd_df.columns.tolist(),
+                    y=rmsd_df.index.tolist(),
                     colorscale=colorscale,
-                    text=rmsd_df.values,
+                    text=rmsd_df.values.tolist(),
                     texttemplate="%{text:.2f}",
                     textfont={"color": "white"},
                     hoverongaps=False,

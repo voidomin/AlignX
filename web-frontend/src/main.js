@@ -50,15 +50,15 @@ class App {
         this.ligandTab = new LigandTab({
             selectedPDBs: this.selectedPDBs,
             currentRunId: this.currentRunId,
-            onLigandSelected: (ligandId, contacts) => {
+            onLigandSelected: (structureIndex, ligandId, contacts) => {
                 if (ligandId) {
-                    this.viewer3D.showLigandBindingSite(ligandId, contacts);
+                    this.viewer3D.showLigandBindingSite(structureIndex, ligandId, contacts);
                 } else {
                     this.viewer3D.resetCartoonStyles();
                 }
             },
-            onResidueSelected: (chain, resi) => {
-                this.viewer3D.highlightResidue(chain, resi);
+            onResidueSelected: (structureIndex, chain, resi) => {
+                this.viewer3D.highlightResidue(structureIndex, chain, resi);
             }
         });
 
@@ -220,19 +220,17 @@ class App {
             this.ramachandranStats = results.ramachandran_stats;
             this.rmsdDf = results.rmsd_df;
 
-            // Load 3D Superposition
-            const refId = this.selectedPDBs[0];
-            const targetId = this.selectedPDBs[1];
+            // Load 3D Superposition (all N structures)
             await this.viewer3D.loadSuperposition(
                 results.id,
-                refId,
-                targetId,
-                this.chainSelections[refId],
-                this.chainSelections[targetId],
-                results.stats.rmsd
+                this.selectedPDBs,
+                this.chainSelections,
+                results.rmsd_df
             );
 
-            // Fetch Ligands for Reference PDB
+            // Fetch Ligands for the first structure by default; LigandTab can
+            // switch to any of the other N structures on demand.
+            const refId = this.selectedPDBs[0];
             this.currentLigands = [];
             const ligData = await fetchLigands(refId, results.id);
             this.currentLigands = ligData.ligands || [];
@@ -296,29 +294,23 @@ class App {
             this.rmsdDf = null;
         }
 
-        const rmsdValue = stats.rmsd || 0.0;
-
         // Update tabs state
         this.overviewTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
         this.updateTabContentPane();
         
-        // Render 3D Superposition
-        const refId = this.selectedPDBs[0];
-        const targetId = this.selectedPDBs[1];
-        
+        // Render 3D Superposition (all N structures)
         await this.viewer3D.loadSuperposition(
             run.id,
-            refId,
-            targetId,
-            this.chainSelections[refId] || 'A',
-            this.chainSelections[targetId] || 'A',
-            rmsdValue
+            this.selectedPDBs,
+            this.chainSelections,
+            this.rmsdDf
         );
 
         // Load metadata chains asynchronously
         this.loadChainsMetadata();
 
-        // Fetch Ligands
+        // Fetch Ligands for the first structure by default
+        const refId = this.selectedPDBs[0];
         this.currentLigands = [];
         try {
             const ligData = await fetchLigands(refId, run.id);
@@ -362,12 +354,7 @@ class App {
             this.analyticsTab.updateResults(null, null, null, null);
             this.clustersTab.updateResults(null, null);
             this.comparisonTab.updateResults(null);
-            this.viewer3D.resetCartoonStyles();
-            
-            document.getElementById("ambient-placeholder").style.display = "flex";
-            document.getElementById("hud-reference-label").innerText = `Reference: --`;
-            document.getElementById("hud-target-label").innerText = `Target: --`;
-            document.getElementById("rmsd-value-hud").innerText = `-- Å`;
+            this.viewer3D.reset();
 
             this.switchTab('overview');
         }
