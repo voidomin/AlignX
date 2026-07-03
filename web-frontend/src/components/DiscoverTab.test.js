@@ -30,6 +30,8 @@ function makeAnnotatedResults(overrides = {}) {
             top_go_terms: [
                 { id: 'GO:0006952', name: 'defense response', aspect: 'biological_process', neighbor_count: 9 },
             ],
+            neighbors_with_interactions_count: 0,
+            neighbors_with_pathways_count: 0,
             per_neighbor: [],
         },
         ...overrides,
@@ -161,6 +163,36 @@ describe('DiscoverTab', () => {
         expect(tab.element.querySelector('#discover-results').textContent).toContain('Thionin');
     });
 
+    it('student and public views degrade gracefully when there are GO terms but no domain matches', () => {
+        // annotated_neighbor_count > 0 only guarantees SOME signal (domains
+        // OR go_terms), not both - top_domains can be empty on its own.
+        const tab = new DiscoverTab();
+        tab.render();
+        tab.results = makeAnnotatedResults({
+            annotations: {
+                neighbors_considered: 5,
+                total_hit_count: 50,
+                resolvable_hit_count: 20,
+                annotated_neighbor_count: 3,
+                unannotated_neighbor_count: 2,
+                neighbors_with_interactions_count: 0,
+                neighbors_with_pathways_count: 0,
+                top_domains: [],
+                top_go_terms: [
+                    { id: 'GO:0006952', name: 'defense response', aspect: 'biological_process', neighbor_count: 3 },
+                ],
+                per_neighbor: [],
+            },
+        });
+
+        expect(() => tab.renderResults()).not.toThrow();
+        expect(tab.element.querySelector('#discover-results').textContent).toContain('defense response');
+
+        tab.element.querySelector('[data-level="public"]').click();
+        expect(() => {}).not.toThrow();
+        expect(tab.element.querySelector('#discover-results').textContent).toContain('defense response');
+    });
+
     it('switching to the public detail level shows the plain-language summary with a caveat', () => {
         const tab = new DiscoverTab();
         tab.render();
@@ -188,6 +220,54 @@ describe('DiscoverTab', () => {
         expect(text).toContain('Total hits');
         expect(text).toContain('Top structural matches');
         expect(tab.element.querySelectorAll('table tbody tr').length).toBeGreaterThan(0);
+    });
+
+    it('researcher view shows per-neighbor STRING partners and Reactome pathways when present', () => {
+        const tab = new DiscoverTab();
+        tab.render();
+        tab.results = makeAnnotatedResults({
+            annotations: {
+                neighbors_considered: 10,
+                total_hit_count: 1000,
+                resolvable_hit_count: 900,
+                annotated_neighbor_count: 8,
+                unannotated_neighbor_count: 2,
+                neighbors_with_interactions_count: 1,
+                neighbors_with_pathways_count: 0,
+                top_domains: [],
+                top_go_terms: [],
+                per_neighbor: [
+                    {
+                        target: 'AF-P04637-F1-model_v6 Cellular tumor antigen p53',
+                        accession: 'P04637',
+                        domains: [],
+                        go_terms: [],
+                        string_partners: [
+                            { partner_name: 'MDM2', score: 0.999 },
+                            { partner_name: 'MDM4', score: 0.999 },
+                        ],
+                        reactome_pathways: [],
+                    },
+                    {
+                        target: 'AF-A0A000-F1-model_v6 Some other neighbor',
+                        accession: 'A0A000',
+                        domains: [],
+                        go_terms: [],
+                        string_partners: [],
+                        reactome_pathways: [],
+                    },
+                ],
+            },
+        });
+        tab.renderResults();
+        tab.element.querySelector('[data-level="researcher"]').click();
+
+        const text = tab.element.querySelector('#discover-results').textContent;
+        expect(text).toContain('With STRING interactions');
+        expect(text).toContain('MDM2');
+        expect(text).toContain('MDM4');
+        // The neighbor with no partners/pathways shouldn't clutter the list
+        expect(text).not.toContain('A0A000-F1-model_v6 Some other neighbor');
     });
 
     it('disables the run button while a job is in flight and re-enables it after', async () => {

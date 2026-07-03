@@ -655,19 +655,22 @@
             </div>
         `,e.querySelectorAll(`.detail-level-btn`).forEach(e=>{e.addEventListener(`click`,()=>this.setDetailLevel(e.dataset.level))})}renderEmptyAnnotations(e){return`<div class="py-6 text-center text-secondary font-body-sm">${e.hit_count>0?`Found ${e.hit_count} structural matches, but none could be resolved to a protein with known functional annotations yet.`:`No structural matches were found in the searched databases.`}</div>`}renderTieredBody(e){return this.detailLevel===`public`?this.renderPublicView(e):this.detailLevel===`researcher`?this.renderResearcherView(e):this.renderStudentView(e)}renderPublicView(e){let t=e.top_domains[0],n=e.top_go_terms[0];return`
             <div class="p-4 rounded-md bg-surface-raised border border-border-subtle font-body-md leading-relaxed">
-                This structure looks similar to known <strong>${t.name}</strong>-type proteins${n?`, which are typically involved in <strong>${n.name}</strong>`:``}.
+                This structure looks similar to ${t?`known <strong>${t.name}</strong>-type proteins`:`proteins with a known function`}${n?`, which are typically involved in <strong>${n.name}</strong>`:``}.
                 This is a computational inference based on structural similarity, not a confirmed experimental result.
             </div>
-        `}renderStudentView(e){let t=e.top_domains[0];return`
+        `}renderStudentView(e){let t=e.top_domains[0],n=e.top_go_terms[0],r=t?`<p>The most common protein family among these neighbors is <strong>${t.name}</strong>
+               (seen in ${t.neighbor_count} of ${e.annotated_neighbor_count} annotated neighbors).
+               Because structural fold is conserved much longer than sequence identity over evolution, a strong
+               structural match to a known family is meaningful evidence for shared function - even in cases
+               where sequence similarity alone wouldn't have found the connection.</p>`:n?`<p>No single protein family dominates, but a common thread across these neighbors is
+                 <strong>${n.name}</strong> (seen in ${n.neighbor_count} of ${e.annotated_neighbor_count}
+                 annotated neighbors) - a shared Gene Ontology annotation that's meaningful evidence for function
+                 even without a matching domain family.</p>`:``;return`
             <div class="flex flex-col gap-4">
                 <div class="p-4 rounded-md bg-surface-raised border border-border-subtle font-body-md leading-relaxed flex flex-col gap-3">
                     <p>Out of ${e.neighbors_considered} of the most confident structural neighbors,
                     <strong>${e.annotated_neighbor_count}</strong> matched a protein with known functional annotations.</p>
-                    <p>The most common protein family among these neighbors is <strong>${t.name}</strong>
-                    (seen in ${t.neighbor_count} of ${e.annotated_neighbor_count} annotated neighbors).
-                    Because structural fold is conserved much longer than sequence identity over evolution, a strong
-                    structural match to a known family is meaningful evidence for shared function - even in cases
-                    where sequence similarity alone wouldn't have found the connection.</p>
+                    ${r}
                 </div>
                 ${this.renderDomainList(e)}
                 ${this.renderGoTermList(e)}
@@ -679,11 +682,27 @@
                     <div class="stat-row"><span class="stat-key">Resolvable to UniProt</span><span class="stat-value">${e.resolvable_hit_count}</span></div>
                     <div class="stat-row"><span class="stat-key">Annotated neighbors</span><span class="stat-value">${e.annotated_neighbor_count} / ${e.neighbors_considered}</span></div>
                 </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="stat-row"><span class="stat-key">With STRING interactions</span><span class="stat-value">${e.neighbors_with_interactions_count}</span></div>
+                    <div class="stat-row"><span class="stat-key">With Reactome pathways</span><span class="stat-value">${e.neighbors_with_pathways_count}</span></div>
+                </div>
                 ${this.renderDomainList(e)}
                 ${this.renderGoTermList(e)}
+                ${this.renderInteractionsAndPathways(e)}
                 ${this.renderHitTable(this.results.hits)}
             </div>
-        `}renderDomainList(e){return e.top_domains.length?`
+        `}renderInteractionsAndPathways(e){let t=e.per_neighbor.filter(e=>e.string_partners.length>0||e.reactome_pathways.length>0);return t.length?`
+            <div class="flex flex-col gap-2">
+                <span class="eyebrow">Interactions &amp; pathways (per neighbor)</span>
+                ${t.map(e=>`
+                    <div class="flex flex-col gap-1 py-1.5 border-b border-border-subtle">
+                        <span class="font-mono text-[11px] text-secondary">${(e.target||``).slice(0,60)}</span>
+                        ${e.string_partners.length?`<span class="font-body-sm text-[12px]">STRING partners: ${e.string_partners.map(e=>e.partner_name).join(`, `)}</span>`:``}
+                        ${e.reactome_pathways.length?`<span class="font-body-sm text-[12px]">Reactome pathways: ${e.reactome_pathways.map(e=>e.name).join(`, `)}</span>`:``}
+                    </div>
+                `).join(``)}
+            </div>
+        `:``}renderDomainList(e){return e.top_domains.length?`
             <div class="flex flex-col gap-2">
                 <span class="eyebrow">Common domains / families</span>
                 ${e.top_domains.map(e=>`

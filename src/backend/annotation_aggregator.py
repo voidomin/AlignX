@@ -1,17 +1,20 @@
 """
 Annotation Aggregator Module.
 Given a list of Foldseek structural-neighbor hits (see FoldseekClient),
-fetches functional annotations (InterPro domains, QuickGO terms) for
-whichever neighbors we can resolve to a UniProt accession, and aggregates
-them into domain/GO-term frequency summaries across the neighbor set.
+fetches functional annotations (InterPro domains, QuickGO terms, STRING
+interaction partners, Reactome pathways) for whichever neighbors we can
+resolve to a UniProt accession, and aggregates the ontology-based signals
+(domains, GO terms) into frequency summaries across the neighbor set.
 
-This is Phase 3 of the Discover pipeline (docs/ROADMAP_V3.md): raw
-aggregation only. Turning this into a tiered, narrative "function
-hypothesis" report is a later phase.
+This is Phase 3 of the Discover pipeline (docs/ROADMAP_V3.md), extended
+with the STRING/Reactome fast-follow flagged there. Turning this into a
+tiered, narrative "function hypothesis" report is a later phase.
 """
 
 import asyncio
 import re
+import threading
+import time
 from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -23,6 +26,9 @@ logger = get_logger()
 
 INTERPRO_BASE_URL = "https://www.ebi.ac.uk/interpro/api"
 QUICKGO_BASE_URL = "https://www.ebi.ac.uk/QuickGO/services"
+STRING_BASE_URL = "https://version-12-0.string-db.org/api/json"
+REACTOME_BASE_URL = "https://reactome.org/ContentService"
+STRING_CALLER_IDENTITY = "structscope"
 
 # Foldseek's AlphaFold DB hits are named "AF-{UniProt}-F{fragment}[-v{n}] ...".
 # This is currently the only Foldseek target format we can resolve to a
@@ -34,10 +40,41 @@ _AFDB_TARGET_PATTERN = re.compile(r"^AF-([A-Za-z0-9]+)-F\d+", re.IGNORECASE)
 
 DEFAULT_TOP_N_NEIGHBORS = 10
 DEFAULT_TOP_N_SUMMARY = 10
+DEFAULT_TOP_N_PARTNERS = 5
+DEFAULT_TOP_N_PATHWAYS = 5
+
+
+class _RateLimiter:
+    """Serializes requests to a single-QPS-limited API across the process.
+
+    Same threading.Lock-based design as FoldseekClient's rate limiter (see
+    that module's docstring for why asyncio.Lock is unsafe here): each
+    Discover job's annotation fetches run inside their own asyncio.run() on
+    a dedicated worker thread, so concurrent jobs call this from different
+    event loops. A plain threading.Lock is real OS-level mutual exclusion
+    and works correctly across that; blocking the calling thread during the
+    wait is fine since that thread has nothing else to do meanwhile.
+    """
+
+    def __init__(self, min_interval_seconds: float):
+        self._min_interval = min_interval_seconds
+        self._lock = threading.Lock()
+        self._last_request_at: float = 0.0
+
+    async def wait(self) -> None:
+        with self._lock:
+            elapsed = time.monotonic() - self._last_request_at
+            if elapsed < self._min_interval:
+                time.sleep(self._min_interval - elapsed)
+            self._last_request_at = time.monotonic()
 
 
 class AnnotationAggregator:
-    """Fetches and aggregates InterPro/QuickGO annotations for Foldseek hits."""
+    """Fetches and aggregates InterPro/QuickGO/STRING/Reactome annotations
+    for Foldseek hits."""
+
+    # STRING's science-skills reference client uses qps=1; be a good citizen.
+    _string_rate_limiter = _RateLimiter(min_interval_seconds=1.0)
 
     def __init__(self, config: Optional[Dict[str, Any]] = None, timeout: float = 15.0):
         config = config or {}
@@ -115,6 +152,75 @@ class AnnotationAggregator:
             logger.warning(f"QuickGO lookup failed for {accession}: {e}")
             return []
 
+    async def fetch_string_partners(
+        self,
+        accession: str,
+        taxon_id: Optional[int],
+        client: httpx.AsyncClient,
+        limit: int = DEFAULT_TOP_N_PARTNERS,
+    ) -> List[Dict[str, Any]]:
+        """Returns this protein's top STRING interaction partners.
+
+        STRING requires an NCBI taxon ID and only covers organisms with a
+        fully sequenced, published genome - most Foldseek AFDB hits (e.g.
+        metagenomic or less-studied plant/fungal proteins) simply won't be
+        in STRING at all, so an empty result here is the common case, not
+        an error. `taxon_id` comes from the Foldseek hit's own `taxId`
+        field when present, avoiding a separate species-lookup call.
+        """
+        if not taxon_id:
+            return []
+        url = f"{STRING_BASE_URL}/interaction_partners"
+        try:
+            await self._string_rate_limiter.wait()
+            response = await client.post(
+                url,
+                data={
+                    "identifiers": accession,
+                    "species": taxon_id,
+                    "limit": limit,
+                    "caller_identity": STRING_CALLER_IDENTITY,
+                },
+                headers={"Accept": "application/json"},
+            )
+            if response.status_code != 200:
+                return []
+            payload = response.json()
+            if isinstance(payload, dict) and payload.get("Error"):
+                return []  # e.g. "unknown organism" - not in STRING's coverage
+            return [
+                {
+                    "partner_name": r.get("preferredName_B"),
+                    "score": r.get("score"),
+                }
+                for r in payload
+                if isinstance(r, dict) and r.get("preferredName_B")
+            ]
+        except httpx.HTTPError as e:
+            logger.warning(f"STRING lookup failed for {accession}: {e}")
+            return []
+
+    async def fetch_reactome_pathways(
+        self,
+        accession: str,
+        client: httpx.AsyncClient,
+        limit: int = DEFAULT_TOP_N_PATHWAYS,
+    ) -> List[Dict[str, Any]]:
+        """Returns pathways this protein participates in, per Reactome."""
+        url = f"{REACTOME_BASE_URL}/data/mapping/UniProt/{accession}/pathways"
+        try:
+            response = await client.get(url, headers={"Accept": "application/json"})
+            if response.status_code != 200:
+                return []
+            return [
+                {"id": p.get("stId"), "name": p.get("displayName")}
+                for p in response.json() or []
+                if p.get("stId")
+            ][:limit]
+        except httpx.HTTPError as e:
+            logger.warning(f"Reactome lookup failed for {accession}: {e}")
+            return []
+
     async def resolve_go_term_names(
         self, go_ids: List[str], client: httpx.AsyncClient
     ) -> Dict[str, str]:
@@ -153,14 +259,23 @@ class AnnotationAggregator:
             "accession": accession,
             "domains": [],
             "go_terms": [],
+            "string_partners": [],
+            "reactome_pathways": [],
         }
         if accession:
-            domains, quickgo_terms = await asyncio.gather(
+            # Foldseek's own hit payload already carries a taxId for AFDB
+            # matches, so STRING gets it for free - no extra species lookup.
+            taxon_id = hit.get("taxId")
+            domains, quickgo_terms, string_partners, reactome_pathways = await asyncio.gather(
                 self.fetch_interpro_entries(accession, client),
                 self.fetch_quickgo_annotations(accession, client),
+                self.fetch_string_partners(accession, taxon_id, client),
+                self.fetch_reactome_pathways(accession, client),
             )
             neighbor["domains"] = domains
             neighbor["go_terms"] = quickgo_terms
+            neighbor["string_partners"] = string_partners
+            neighbor["reactome_pathways"] = reactome_pathways
         return neighbor
 
     async def aggregate_for_hits(
@@ -270,12 +385,22 @@ class AnnotationAggregator:
         annotated_count = sum(
             1 for n in per_neighbor if n["domains"] or n["go_terms"]
         )
+        # STRING/Reactome coverage is reported separately, not folded into
+        # "annotated_neighbor_count": their absence is expected and common
+        # (STRING only covers organisms with a sequenced genome; Reactome's
+        # curated pathway coverage skews toward well-studied model species),
+        # not a sign the annotation step failed the way an empty
+        # domains/go_terms result would be.
+        interaction_count = sum(1 for n in per_neighbor if n["string_partners"])
+        pathway_count = sum(1 for n in per_neighbor if n["reactome_pathways"])
         return {
             "neighbors_considered": len(sorted_hits),
             "total_hit_count": len(hits),
             "resolvable_hit_count": len(resolvable_hits),
             "annotated_neighbor_count": annotated_count,
             "unannotated_neighbor_count": len(sorted_hits) - annotated_count,
+            "neighbors_with_interactions_count": interaction_count,
+            "neighbors_with_pathways_count": pathway_count,
             "top_domains": top_domains,
             "top_go_terms": top_go_terms,
             "per_neighbor": per_neighbor,
