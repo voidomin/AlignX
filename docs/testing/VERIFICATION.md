@@ -41,7 +41,7 @@ Run the test suite script:
 powershell -File run_tests.ps1
 ```
 *Expected Output:*
-- Pytest runs 43 items successfully and shows no errors.
+- Pytest runs 70 items successfully and shows no errors.
 - Verification scripts are executed automatically as part of the run.
 
 ---
@@ -89,6 +89,11 @@ Run the FastAPI web server locally and verify that the backend endpoints are onl
    Expect an immediate `202` with a `job_id`. Poll `GET /api/jobs/{job_id}` until `status` is `completed` (or `failed`).
 4. **Test API auth (only if `ALIGNX_API_KEY` is set in your `.env`):**
    A request to any `/api/*` route without `X-API-Key` (or `?api_key=`) should return `401`; with the correct key, `200`.
+5. **Test a non-PDB structure source:**
+   ```bash
+   curl -X POST http://127.0.0.1:8000/api/chains -H "Content-Type: application/json" -d "{\"pdb_ids\": [\"AF-P69905-F1\"]}"
+   ```
+   Expect a `200` with `source: "alphafold"` in the response. Same pattern works for `SM-{UniProt}` (SWISS-MODEL) and `ESM-{MGYP accession}` (ESM Atlas) IDs.
 
 ---
 
@@ -99,7 +104,7 @@ Run the Vitest suite covering `api.js` and the JS components (auth headers, job 
 cd web-frontend
 npm test
 ```
-*Expected Output:* all test files pass (currently 13 tests across `api.test.js` and `ClustersTab.test.js`).
+*Expected Output:* all test files pass (currently 68 tests across 9 files, covering `api.js` and every tab/panel component).
 
 ---
 
@@ -120,7 +125,12 @@ Verify the Vite single page application (SPA).
    Access the dev server at: `http://localhost:5173`.
 3. **Verify Full-Stack Single Port Execution (Recommended):**
    Once built using `build_frontend.ps1`, open `http://127.0.0.1:8000/` in your browser.
-   - Verify the sidebar only shows **Active Workspace** and **Session History**.
-   - Check the **Active Workspace** tabs (Overview, Ligands, Sequence, Analytics, Clusters, Compare).
-   - Enter a PDB ID, add it, choose a chain, and click **Run Structural Alignment** — it should show an "Aligning..." state while the background job runs, then populate all tabs once complete.
-   - Run a second alignment with different PDB IDs, then check the **Compare** tab to diff it against the first run.
+   - Check the top bar's tab strip: **Dashboard, Overview, Ligands, Sequence, Analytics, Clusters, Compare, History**.
+   - On **Dashboard**, confirm aggregate stats and recent activity populate (may take a few seconds on first load).
+   - On **Overview**, add at least two structures — try mixing sources, e.g. a plain PDB ID (`4RLT`) alongside an `AF-`, `SM-`, or `ESM-` prefixed ID — and confirm each shows the correct source badge and metadata line.
+   - Choose a chain per structure and click **Run Structural Alignment** — it should show an "Aligning..." state while the background job runs, then populate all tabs once complete.
+   - In the 3D viewer, confirm each structure gets a distinct color and the HUD legend/pairwise RMSD list scale to however many structures were aligned (not just a fixed pair).
+   - On **Ligands**, switch the structure picker between the aligned structures and confirm the ligand list and interactions refresh for each.
+   - On **Sequence**, toggle the report-section checklist and confirm the "Download PDF" link's URL updates; confirm "View Notebook" opens a valid HTML file.
+   - Run a second alignment with different structures, then check the **Compare** tab to diff it against the first run.
+   - On **History**, confirm past runs list and reloading one restores its full state (3D view, stats, tabs).
