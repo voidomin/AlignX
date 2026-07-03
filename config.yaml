@@ -28,6 +28,9 @@ foldseek:
   default_databases:
   - pdb100
   - afdb50
+annotation:
+  timeout: 15
+  top_n_neighbors: 10
 phylip:
   executable: neighbor
   method: neighbor_joining

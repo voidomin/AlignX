@@ -108,4 +108,68 @@ def test_run_discovery_pipeline_defaults_databases_from_config(mock_config, tmp_
 
         assert success is True
         assert results["databases_searched"] == ["pdb100"]
+        assert results["annotations"] is None  # no hits -> nothing to annotate
         mock_search.assert_called_once_with(structure_path, ["pdb100"])
+
+
+def test_run_discovery_pipeline_includes_annotation_summary(mock_config, tmp_path):
+    """When Foldseek returns hits, the pipeline must fetch and attach an
+    annotation summary (InterPro domains / QuickGO terms) alongside them."""
+    structure_path = tmp_path / "af-p01541-f1.pdb"
+    structure_path.write_text("ATOM")
+
+    with patch(
+        "src.backend.discovery_coordinator.PDBManager.download_pdb",
+        new_callable=AsyncMock,
+    ) as mock_download, patch(
+        "src.backend.discovery_coordinator.FoldseekClient.search",
+        new_callable=AsyncMock,
+    ) as mock_search, patch(
+        "src.backend.discovery_coordinator.AnnotationAggregator.aggregate_for_hits",
+        new_callable=AsyncMock,
+    ) as mock_aggregate:
+        mock_download.return_value = (True, "ok", structure_path)
+        mock_search.return_value = {"alignments": [{"target": "AF-P01541-F1-model_v6"}]}
+        mock_aggregate.return_value = {
+            "neighbors_considered": 1,
+            "annotated_neighbor_count": 1,
+            "unannotated_neighbor_count": 0,
+            "top_domains": [{"name": "Thionin", "type": "family", "neighbor_count": 1}],
+            "top_go_terms": [],
+            "per_neighbor": [],
+        }
+
+        coordinator = DiscoveryCoordinator(mock_config)
+        success, _, results = coordinator.run_discovery_pipeline("AF-P01541-F1")
+
+        assert success is True
+        assert results["annotations"]["top_domains"][0]["name"] == "Thionin"
+        mock_aggregate.assert_called_once()
+
+
+def test_run_discovery_pipeline_survives_annotation_failure(mock_config, tmp_path):
+    """A flaky InterPro/QuickGO call must not fail a run that already has
+    valid Foldseek hits - annotations should just come back None."""
+    structure_path = tmp_path / "af-p01541-f1.pdb"
+    structure_path.write_text("ATOM")
+
+    with patch(
+        "src.backend.discovery_coordinator.PDBManager.download_pdb",
+        new_callable=AsyncMock,
+    ) as mock_download, patch(
+        "src.backend.discovery_coordinator.FoldseekClient.search",
+        new_callable=AsyncMock,
+    ) as mock_search, patch(
+        "src.backend.discovery_coordinator.AnnotationAggregator.aggregate_for_hits",
+        new_callable=AsyncMock,
+    ) as mock_aggregate:
+        mock_download.return_value = (True, "ok", structure_path)
+        mock_search.return_value = {"alignments": [{"target": "AF-P01541-F1-model_v6"}]}
+        mock_aggregate.side_effect = RuntimeError("EBI is down")
+
+        coordinator = DiscoveryCoordinator(mock_config)
+        success, _, results = coordinator.run_discovery_pipeline("AF-P01541-F1")
+
+        assert success is True
+        assert results["hit_count"] == 1
+        assert results["annotations"] is None
