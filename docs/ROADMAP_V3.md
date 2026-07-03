@@ -241,7 +241,13 @@ One synthesis step, three renderings of the same underlying result object:
       `threading.Lock` instead; verified both via a regression test (5
       concurrent threads) and live against the real server (2 concurrent
       discovery jobs, both completed with correct distinct results).
-- [ ] **Phase 6 — Naming decision + rebrand** (once Discover mode is real and used).
+- [x] **Phase 6 — Naming decision + rebrand** (once Discover mode is real and used).
+      Done: renamed to "StructScope," bumped to v3.0.0. See §3.3 above for the
+      full rationale and exact scope (SPA/backend branding + docs; GitHub repo
+      name, Streamlit's own branding, and the shared notebook template were
+      deliberately left unchanged). Verified live: page title, TopBar, and
+      the FastAPI OpenAPI metadata all show the new name; 111 backend + 81
+      frontend tests passing.
 
 ## 7. Open questions
 
