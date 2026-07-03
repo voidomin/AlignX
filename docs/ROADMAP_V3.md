@@ -214,9 +214,7 @@ One synthesis step, three renderings of the same underlying result object:
       InterPro/QuickGO first (domains + GO terms are the highest-value signal),
       STRING/Reactome after.
       Done: `src/backend/annotation_aggregator.py`, wired into
-      `DiscoveryCoordinator` as a best-effort step. Only AFDB-format Foldseek
-      targets resolve to a UniProt accession today (PDB/CATH hits need a
-      further ID-mapping lookup - open question, unchanged). Found and fixed
+      `DiscoveryCoordinator` as a best-effort step. Found and fixed
       a real gap live-testing 1CRN: ranking top-N by E-value across all
       databases let near-identical PDB100 hits (same protein, re-solved many
       times) crowd out every annotatable AFDB hit; fixed by filtering to
@@ -233,6 +231,21 @@ One synthesis step, three renderings of the same underlying result object:
       the Discover tab's Researcher view. Verified live against human TP53
       (AF-P04637-F1): correctly surfaced MDM2/MDM4/EP300 as STRING
       interaction partners - p53's textbook-canonical regulators.
+      **PDB->UniProt resolution added as a second post-launch fast-follow**
+      (closes the "PDB/CATH hits need a further ID-mapping lookup" open
+      question below for pdb100 specifically): `resolve_pdb_uniprot_accession()`
+      maps a pdb100 hit's (PDB ID, chain) to a UniProt accession via PDBe's
+      SIFTS API, with `resolve_accession()` trying the free AFDB regex
+      first and falling back to SIFTS. Since resolution can now require a
+      network call, `aggregate_for_hits()` was reworked to oversample a
+      candidate pool (2x top_n_neighbors) by E-value, resolve the whole
+      pool concurrently, then only pay for the 4 full annotation API calls
+      on the top_n_neighbors that actually resolved - not the whole pool.
+      Verified live: 1CRN restricted to pdb100 only (no AFDB fallback,
+      previously zero annotations possible at all) now resolves 20/20
+      candidates and correctly annotates 10/10 neighbors as Thionin family.
+      CATH/gmgcl_id/bfmd hits are still unresolved (not in the default
+      database set, lower priority).
 - [x] **Phase 4 — Tiered report + Discover UI**: frontend tab, detail-level toggle,
       neighbor list with source badges.
       Done: `web-frontend/src/components/DiscoverTab.js`, a new "Discover"
@@ -264,9 +277,19 @@ One synthesis step, three renderings of the same underlying result object:
 - Do we cap Discover to PDB/AFDB/MGnify(ESM) databases only, or expose all 9 Foldseek
   databases as user-selectable (adds UI complexity for likely-marginal value for
   non-expert users)?
-- How do we derive the NCBI taxon ID STRING requires per neighbor automatically
-  (from the neighbor's UniProt organism field) rather than asking the user?
 - What confidence threshold (probability/E-value) should gate whether we show a
   function hypothesis at all, versus saying "no confident structural neighbors found"
   — important for the public tier especially, to avoid confidently-wrong summaries.
+- CATH (`cath50`)/`gmgcl_id`/`bfmd` Foldseek hits still don't resolve to a UniProt
+  accession (only pdb100 via SIFTS and AFDB via regex do) - not in the default
+  database set today, so lower priority, but would need their own ID-mapping path
+  if ever enabled.
+
+**Resolved:**
+- ~~How do we derive the NCBI taxon ID STRING requires per neighbor?~~ Turns out
+  Foldseek's own hit payload already carries a `taxId` field for **every** hit
+  (confirmed for both AFDB and pdb100 targets), so no extra species lookup is
+  needed at all - `fetch_string_partners()` just reads `hit["taxId"]` directly.
+- ~~PDB/CATH hits need a further ID-mapping lookup~~ → done for pdb100 via SIFTS
+  (see Phase 3's fast-follow note above). CATH/gmgcl_id/bfmd remain open (see above).
 - Self-host Foldseek now or defer — depends on how much real usage this gets.
