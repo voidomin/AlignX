@@ -50,6 +50,44 @@ describe('DiscoverTab', () => {
         expect(tab.element.querySelector('#discover-results').innerHTML).toBe('');
     });
 
+    it('renders an attribution/ToS note crediting Foldseek and EBI', () => {
+        const tab = new DiscoverTab();
+        tab.render();
+
+        const text = tab.element.textContent;
+        expect(text).toContain('Foldseek');
+        expect(text).toContain('InterPro');
+        expect(text).toContain('QuickGO');
+        const links = Array.from(tab.element.querySelectorAll('a')).map(a => a.href);
+        expect(links.some(h => h.includes('search.foldseek.com'))).toBe(true);
+        expect(links.some(h => h.includes('ebi.ac.uk'))).toBe(true);
+    });
+
+    it('shows a distinct message while a job is queued vs. actively running', async () => {
+        submitDiscoveryJob.mockResolvedValue({ job_id: 'job1', status: 'queued' });
+        let capturedOnTick;
+        pollJobUntilDone.mockImplementation((jobId, { onTick }) => {
+            capturedOnTick = onTick;
+            return new Promise(() => {}); // never resolves - we only care about status text mid-flight
+        });
+
+        const tab = new DiscoverTab();
+        tab.render();
+        tab.element.querySelector('#discover-input').value = '1CRN';
+
+        const runPromise = tab.handleRun();
+        await Promise.resolve();
+
+        const queuedText = tab.element.querySelector('#discover-status-text').textContent;
+        expect(queuedText.toLowerCase()).toContain('queued');
+        expect(queuedText.toLowerCase()).toContain('rate-limited');
+
+        capturedOnTick({ status: 'running' });
+        const runningText = tab.element.querySelector('#discover-status-text').textContent;
+        expect(runningText.toLowerCase()).toContain('searching');
+        expect(runningText.toLowerCase()).not.toContain('queued');
+    });
+
     it('rejects an invalid structure identifier without calling the API', async () => {
         const tab = new DiscoverTab();
         tab.render();

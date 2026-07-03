@@ -56,11 +56,20 @@ export class DiscoverTab {
                 </div>
 
                 <div id="discover-status" class="hidden font-body-sm text-secondary flex items-center gap-2">
-                    <span class="animate-spin material-symbols-outlined text-[16px]">sync</span>
+                    <span id="discover-status-icon" class="animate-spin material-symbols-outlined text-[16px]">sync</span>
                     <span id="discover-status-text"></span>
                 </div>
                 <div id="discover-error" class="hidden font-body-sm text-error"></div>
                 <div id="discover-results"></div>
+
+                <p class="font-body-sm text-[11px] text-secondary border-t border-border-subtle pt-4">
+                    Structural search via <a href="https://search.foldseek.com/search" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">Foldseek</a>.
+                    Functional annotations via EMBL-EBI's
+                    <a href="https://www.ebi.ac.uk/interpro/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">InterPro</a> and
+                    <a href="https://www.ebi.ac.uk/QuickGO/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">QuickGO</a>.
+                    Results are computational inferences from structural similarity, not experimentally confirmed
+                    function - see each service's own terms of use for details.
+                </p>
             </div>
         `;
 
@@ -100,6 +109,18 @@ export class DiscoverTab {
         if (btn) btn.disabled = isRunning;
     }
 
+    // Foldseek's public API is rate-limited across ALL AlignX users (see
+    // FoldseekClient's process-wide rate limiter), so under real load a job
+    // can sit queued for a while before it actually starts - without a
+    // distinct message for that, it would look like the app hung rather
+    // than fairly waiting its turn behind other users' searches.
+    statusMessageForJob(status) {
+        if (status === 'queued') {
+            return "Queued - Foldseek's search API is shared and rate-limited across all users, so this may wait a moment before starting.";
+        }
+        return 'Searching Foldseek structural databases... this can take a minute or two.';
+    }
+
     async handleRun() {
         const input = this.element.querySelector('#discover-input');
         const pdbId = (input.value || '').trim().toUpperCase();
@@ -111,14 +132,12 @@ export class DiscoverTab {
         this.setError(null);
         this.setRunning(true);
         this.element.querySelector('#discover-results').innerHTML = '';
-        this.setStatus('Searching Foldseek structural databases...');
+        this.setStatus(this.statusMessageForJob('queued'));
 
         try {
             const submission = await submitDiscoveryJob(pdbId);
             const job = await pollJobUntilDone(submission.job_id, {
-                onTick: () => this.setStatus(
-                    'Searching Foldseek structural databases... this can take a minute or two.'
-                ),
+                onTick: (j) => this.setStatus(this.statusMessageForJob(j.status)),
             });
             if (job.status === 'failed') {
                 throw new Error(job.error || 'Discovery pipeline failed.');
