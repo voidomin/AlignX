@@ -25,7 +25,7 @@ Before running calculations, verify that external binaries like Mustang and the 
 Run the setup diagnostics check:
 ```powershell
 # Run using the local virtual environment Python
-.venv\Scripts\python check_setup.py
+.venv\Scripts\python scripts\check_setup.py
 ```
 *Expected Output:*
 - Checks the Python interpreter and verify if Mustang is detected successfully (either via WSL or native binary).
@@ -38,7 +38,7 @@ Run the comprehensive suite of unit tests, which mock external requests and chec
 Run the test suite script:
 ```powershell
 # Executes pytest in the virtual environment
-powershell -File run_tests.ps1
+powershell -File scripts\run_tests.ps1
 ```
 *Expected Output:*
 - Pytest runs 70 items successfully and shows no errors.
@@ -114,7 +114,7 @@ Verify the Vite single page application (SPA).
 1. **Rebuild the Frontend:**
    Make sure the built HTML assets are packaged for production and copied to the backend's static directory.
    ```powershell
-   powershell -File build_frontend.ps1
+   powershell -File scripts\build_frontend.ps1
    ```
 2. **Start Development Dev Server (Optional):**
    If you want to run the front-end dynamically with reload capabilities:
@@ -124,7 +124,7 @@ Verify the Vite single page application (SPA).
    ```
    Access the dev server at: `http://localhost:5173`.
 3. **Verify Full-Stack Single Port Execution (Recommended):**
-   Once built using `build_frontend.ps1`, open `http://127.0.0.1:8000/` in your browser.
+   Once built using `scripts\build_frontend.ps1`, open `http://127.0.0.1:8000/` in your browser.
    - Check the top bar's tab strip: **Dashboard, Overview, Ligands, Sequence, Analytics, Clusters, Compare, History**.
    - On **Dashboard**, confirm aggregate stats and recent activity populate (may take a few seconds on first load).
    - On **Overview**, add at least two structures — try mixing sources, e.g. a plain PDB ID (`4RLT`) alongside an `AF-`, `SM-`, or `ESM-` prefixed ID — and confirm each shows the correct source badge and metadata line.

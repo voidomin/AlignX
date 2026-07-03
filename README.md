@@ -68,7 +68,7 @@ The pipeline requires the **Mustang** binary (v3.2.3).
 
 - **Docker**: handled automatically (see below) — the image compiles Mustang from the bundled `mustang.tgz`.
 - **Windows (local)**: see [docs/setup/WINDOWS_SETUP.md](docs/setup/WINDOWS_SETUP.md) for WSL or Bio3D setup instructions.
-- Run `.venv\Scripts\python check_setup.py` at any point to verify Mustang is detected.
+- Run `.venv\Scripts\python scripts\check_setup.py` at any point to verify Mustang is detected.
 
 ### 3. Run the App
 
@@ -77,7 +77,7 @@ You can run either interface, or containerize the SPA + backend.
 #### Option A: Vite + FastAPI (Recommended — full feature set)
 1. Build the Vite frontend:
    ```powershell
-   powershell -File build_frontend.ps1
+   powershell -File scripts\build_frontend.ps1
    ```
 2. Start the FastAPI backend:
    ```powershell
@@ -96,7 +96,7 @@ _Access at:_ `http://localhost:8501`
 docker build -t alignx .
 docker run -p 8000:8000 --env-file .env alignx
 ```
-The image compiles Mustang from the bundled source and serves the FastAPI backend (with the **already-built** `static/` frontend committed in the repo). If you've changed the frontend, run `build_frontend.ps1` and commit the updated `static/` before building the image.
+The image compiles Mustang from the bundled source and serves the FastAPI backend (with the **already-built** `static/` frontend committed in the repo). If you've changed the frontend, run `scripts\build_frontend.ps1` and commit the updated `static/` before building the image.
 
 ---
 
@@ -116,7 +116,7 @@ Copy `.env.example` to `.env` and customize. Notable production-relevant ones:
 
 Backend (pytest, 70 tests):
 ```powershell
-powershell -File run_tests.ps1
+powershell -File scripts\run_tests.ps1
 ```
 
 Frontend (Vitest, 68 tests):

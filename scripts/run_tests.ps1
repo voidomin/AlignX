@@ -1,5 +1,5 @@
-# Change location to the directory containing this script
-Set-Location $PSScriptRoot
+# Change location to the repo root (this script now lives in scripts/)
+Set-Location (Split-Path $PSScriptRoot -Parent)
 
 # Set PYTHONPATH to include the project root
 $env:PYTHONPATH = ".;$env:PYTHONPATH"
