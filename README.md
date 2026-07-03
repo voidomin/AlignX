@@ -2,7 +2,7 @@
 
 An automated, full-stack bioinformatics pipeline for multiple structural alignment of **any protein family** using Mustang, featuring an N-structure 3D viewer, four structure-source databases, phylogenetic analysis, structural clustering, batch comparison, ligand hunting, and a configurable PDF/HTML report builder.
 
-[![Version](https://img.shields.io/badge/version-2.4.1-orange.svg)](#)
+[![Version](https://img.shields.io/badge/version-2.5.0-orange.svg)](CHANGELOG.md)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -139,6 +139,7 @@ Full step-by-step verification protocol (setup checks, scientific metrics, API s
 | [docs/design/DESIGN.md](docs/design/DESIGN.md) | SPA visual design system (colors, typography, component styling) |
 | [docs/design/UI_UX_DESIGN.md](docs/design/UI_UX_DESIGN.md) | Streamlit UI/UX layout spec and interaction flows |
 | [docs/archive/](docs/archive/) | Superseded planning docs, kept for history |
+| [CHANGELOG.md](CHANGELOG.md) | Release history |
 
 ---
 
