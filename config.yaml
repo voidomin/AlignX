@@ -20,6 +20,14 @@ mustang:
   backend: wsl
   executable_path: null
   timeout: 600
+foldseek:
+  base_url: https://search.foldseek.com
+  timeout: 30
+  poll_interval_seconds: 10
+  max_poll_attempts: 60
+  default_databases:
+  - pdb100
+  - afdb50
 phylip:
   executable: neighbor
   method: neighbor_joining
