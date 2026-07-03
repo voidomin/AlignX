@@ -109,7 +109,7 @@ export class DiscoverTab {
         if (btn) btn.disabled = isRunning;
     }
 
-    // Foldseek's public API is rate-limited across ALL AlignX users (see
+    // Foldseek's public API is rate-limited across ALL StructScope users (see
     // FoldseekClient's process-wide rate limiter), so under real load a job
     // can sit queued for a while before it actually starts - without a
     // distinct message for that, it would look like the app hung rather

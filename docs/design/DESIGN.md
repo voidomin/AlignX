@@ -23,9 +23,9 @@ typography:
   size_base: "16px"
 ---
 
-# Design System Manifest: AlignX Web Application
+# Design System Manifest: StructScope Web Application
 
-This document defines the visual rules and styling system for the AlignX web frontend (`web-frontend/`). It maintains visual consistency across all components.
+This document defines the visual rules and styling system for the StructScope web frontend (`web-frontend/`). It maintains visual consistency across all components.
 
 ---
 

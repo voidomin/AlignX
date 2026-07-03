@@ -69,8 +69,21 @@ not a structure-to-function platform. Worth renaming once the new capability is 
 not before — renaming twice is wasted churn. Criteria for a new name: should not imply
 "alignment only," should read credibly to a researcher, and shouldn't overclaim
 certainty (avoid words like "predict" or "identify" that sound more definitive than a
-structural-homology inference actually is). No name chosen yet — revisit once Discover
-mode has a working prototype and we know what it actually feels like to use.
+structural-homology inference actually is).
+
+**Decided (Phase 6): "StructScope."** Fits the criteria above — the "-scope" framing
+(an instrument for viewing/exploring) doesn't overclaim certainty, and it covers both
+Compare and Discover rather than describing one feature. Rebrand scope for this pass:
+the Vite/FastAPI SPA's UI text, `config.yaml`, README, CHANGELOG, and doc titles/prose.
+Deliberately **not** touched: the GitHub repository name/URL (would break existing
+clones/links), the deployed Streamlit app's own branding (`src/frontend/sidebar.py`
+still literally shows "AlignX" — only its version number moved to 3.0.0, since that
+comes from the shared `config.yaml`), and `src/resources/templates/notebook_template.html`
+(shared output consumed by the Streamlit app's own notebook-export feature, so
+changing it would alter what Streamlit users see). Literal path/URL references (e.g.
+`git clone .../AlignX.git`, directory tree diagrams) were left as-is throughout, since
+they describe the real, unchanged folder/repo name — only prose describing the product
+by name was updated.
 
 ## 4. New feature: structural neighbor search + function annotation ("Discover")
 

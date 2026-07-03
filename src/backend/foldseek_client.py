@@ -45,7 +45,7 @@ class FoldseekError(Exception):
 class _RateLimiter:
     """Serializes outbound requests to Foldseek across the whole process.
 
-    The public API asks for a very low request rate. AlignX may have several
+    The public API asks for a very low request rate. StructScope may have several
     Discover jobs in flight for different users at once, so this limiter is
     shared (a class attribute of FoldseekClient) rather than per-instance, so
     the total outbound rate stays bounded no matter how many jobs are running.

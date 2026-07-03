@@ -2,7 +2,7 @@
             <div class="max-w-[1600px] mx-auto px-6 py-3 flex items-center justify-between gap-6">
                 <div class="flex items-center gap-3 shrink-0">
                     <span class="material-symbols-outlined text-[20px] text-accent">science</span>
-                    <span class="font-headline-md text-headline-md font-bold text-primary">AlignX</span>
+                    <span class="font-headline-md text-headline-md font-bold text-primary">StructScope</span>
                 </div>
 
                 <nav id="topbar-tabs" class="flex gap-1 flex-1 overflow-x-auto">

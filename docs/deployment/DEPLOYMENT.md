@@ -1,6 +1,6 @@
-# Deployment Guide for AlignX
+# Deployment Guide for StructScope
 
-This guide covers deploying AlignX's two interfaces: the primary **Vite + FastAPI** full-stack app (via Docker), and the legacy **Streamlit** app (via Streamlit Cloud / Hugging Face Spaces).
+This guide covers deploying StructScope's two interfaces: the primary **Vite + FastAPI** full-stack app (via Docker), and the separately-deployed **Streamlit** app (via Streamlit Cloud / Hugging Face Spaces).
 
 ---
 

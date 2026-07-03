@@ -7,7 +7,7 @@ def test_valid_config_loading():
     """Test that a valid config.yaml loads correctly."""
     config = load_config("config.yaml")
     assert isinstance(config, dict)
-    assert config["app"]["name"] == "Mustang Structural Alignment Pipeline"
+    assert config["app"]["name"] == "StructScope"
     assert "core" in config
     assert "pdb" in config
 

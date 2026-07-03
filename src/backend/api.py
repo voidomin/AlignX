@@ -43,7 +43,7 @@ try:
 except Exception:
     # Fallback default configuration
     config = {
-        "app": {"name": "AlignX API", "max_proteins": 10},
+        "app": {"name": "StructScope API", "max_proteins": 10},
         "pdb": {
             "source_url": "https://files.rcsb.org/download/",
             "timeout": 10,
@@ -65,8 +65,8 @@ async def lifespan(app: FastAPI):
 
 # Initialize FastAPI App
 app = FastAPI(
-    title="AlignX Web API",
-    description="REST API Backend for AlignX Protein Multiple Structural Alignment",
+    title="StructScope Web API",
+    description="REST API backend for StructScope: protein structural alignment and structure-to-function discovery",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -110,7 +110,7 @@ async def require_api_key(request: Request, call_next):
 # Foldseek API), so they're the actual abuse vector, unlike cheap reads such
 # as /api/history or /api/jobs/{id} polling. Discovery jobs get a tighter
 # ceiling than alignment jobs since they compete for Foldseek's own strict
-# rate limit across every AlignX user (see FoldseekClient's rate limiter).
+# rate limit across every StructScope user (see FoldseekClient's rate limiter).
 # Applies even when ALIGNX_API_KEY is unset, since that's the default/open state.
 _JOB_RATE_LIMIT_MAX = int(os.environ.get("ALIGNX_JOB_RATE_LIMIT_MAX", 5))
 _JOB_RATE_LIMIT_WINDOW_SECONDS = int(

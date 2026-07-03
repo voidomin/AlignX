@@ -1,6 +1,6 @@
-# AlignX Verification Protocol
+# StructScope Verification Protocol
 
-Follow this step-by-step guide to verify the AlignX project setup, backend operations, scientific quality calculations, and frontend SPA interface.
+Follow this step-by-step guide to verify the StructScope project setup, backend operations, scientific quality calculations, and frontend SPA interface.
 
 ---
 

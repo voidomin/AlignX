@@ -1,6 +1,6 @@
 app:
-  name: Mustang Structural Alignment Pipeline
-  version: 2.5.0
+  name: StructScope
+  version: 3.0.0
   max_proteins: 20
 core:
   max_proteins: 20

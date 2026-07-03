@@ -1,8 +1,8 @@
-# 🧬 AlignX — Protein Structural Alignment Pipeline
+# 🧬 StructScope — Protein Structural Alignment & Discovery
 
-An automated, full-stack bioinformatics pipeline for multiple structural alignment of **any protein family** using Mustang, featuring an N-structure 3D viewer, four structure-source databases, phylogenetic analysis, structural clustering, batch comparison, ligand hunting, and a configurable PDF/HTML report builder.
+An automated, full-stack bioinformatics platform covering two workflows: **Compare**, multiple structural alignment of any protein family using Mustang (N-structure 3D viewer, four structure-source databases, phylogenetic analysis, structural clustering, batch comparison, ligand hunting, configurable PDF/HTML reports); and **Discover**, structure-to-function inference for a single unannotated structure via Foldseek structural-neighbor search plus InterPro/QuickGO annotation aggregation — useful for predicted structures (AlphaFold, ESM Atlas) that have no known function yet, since fold is conserved far longer than sequence.
 
-[![Version](https://img.shields.io/badge/version-2.5.0-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-3.0.0-orange.svg)](CHANGELOG.md)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -13,7 +13,7 @@ An automated, full-stack bioinformatics pipeline for multiple structural alignme
 ### 🎨 Two Interfaces, One Backend
 
 - **Vite + FastAPI SPA** — the actively developed interface, driven entirely by the REST API. Covers every feature below, including the ones not yet in the Streamlit app.
-- **Streamlit App** — a separate, currently-deployed interface kept running in parallel. Covers the core alignment/analysis workflow; some newer capabilities (multi-source structure fetching, the Dashboard, the report-section builder) are SPA-only for now.
+- **Streamlit App** — a separate, currently-deployed interface kept running in parallel. Covers the core alignment/analysis workflow; newer capabilities (multi-source structure fetching, the Dashboard, the report-section builder, and Discover mode) are SPA-only for now.
 
 Both share the same `src/backend/` pipeline and Mustang core — they're two front ends on one analysis engine, not two separate products.
 
@@ -29,6 +29,10 @@ Add structures from four databases by ID prefix, mixed freely in the same alignm
 | ESM Metagenomic Atlas | `ESM-{MGYP accession}` | `ESM-MGYP002537940442` |
 
 Each structure shows its source database and available metadata (method, resolution, organism) right in the workspace list, so it's clear what you're aligning and how much confidence to place in it.
+
+### 🔎 Structural Discovery ("what is this?")
+
+Have one structure and no idea what it does? The **Discover** tab searches it against Foldseek's structural databases (PDB, AlphaFold DB, MGnify/ESM Atlas) to find known proteins with a similar fold, then pulls functional annotations (InterPro domains/families, QuickGO terms) for the resolvable neighbors and aggregates them into a domain/GO-term consensus. Structure is conserved far longer than sequence, so this finds connections sequence search alone would miss — especially useful for metagenomic "dark matter" proteins from ESM Atlas. Results render at one of three detail levels (Public / Student / Researcher) from the same underlying data, with explicit confidence framing throughout — this is a computational inference, not a confirmed experimental result.
 
 ### 🧠 Advanced Analysis
 
@@ -189,6 +193,9 @@ If you use this pipeline in your research, please cite:
 - **AlphaFold DB**: Varadi M, et al. _Nucleic Acids Research_. 2022.
 - **SWISS-MODEL Repository**: Bienert S, et al. _Nucleic Acids Research_. 2017.
 - **ESM Metagenomic Atlas**: Lin Z, et al. _Science_. 2023.
+- **Foldseek**: van Kempen M, et al. _Nature Biotechnology_. 2024.
+- **InterPro**: Paysan-Lafosse T, et al. _Nucleic Acids Research_. 2023.
+- **QuickGO / Gene Ontology**: Binns D, et al. _Bioinformatics_. 2009.
 
 **Issues?** Open a GitHub issue or contact at `akashkbhat4414@gmail.com`.
 
