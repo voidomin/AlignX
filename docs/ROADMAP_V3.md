@@ -185,8 +185,10 @@ One synthesis step, three renderings of the same underlying result object:
 
 ## 6. Phased plan
 
-- [ ] **Phase 1 — Foldseek prototype**: `FoldseekClient`, one hardcoded test structure,
+- [x] **Phase 1 — Foldseek prototype**: `FoldseekClient`, one hardcoded test structure,
       confirm we can submit/poll/retrieve real hits against `pdb100` + `afdb50`.
+      Done: `src/backend/foldseek_client.py` + `tests/test_foldseek_client.py`,
+      verified live against 1CRN (returned correct thionin-family hits).
 - [ ] **Phase 2 — Single-structure pipeline**: `DiscoveryCoordinator` +
       `/api/jobs/discover`, returning raw Foldseek hits with no annotation yet.
 - [ ] **Phase 3 — Annotation aggregation**: `AnnotationAggregator` wired to
