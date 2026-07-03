@@ -210,8 +210,13 @@ One synthesis step, three renderings of the same underlying result object:
       resolvable hits before ranking. Verified live post-fix: 9/10 top
       neighbors correctly annotated as Thionin family/superfamily with GO
       terms for defense response, extracellular region, toxin activity.
-- [ ] **Phase 4 — Tiered report + Discover UI**: frontend tab, detail-level toggle,
+- [x] **Phase 4 — Tiered report + Discover UI**: frontend tab, detail-level toggle,
       neighbor list with source badges.
+      Done: `web-frontend/src/components/DiscoverTab.js`, a new "Discover"
+      tab next to Overview's Compare mode. Public/Student/Researcher toggle
+      renders the same underlying result at three depths. Verified live in
+      a real browser against 1CRN through the actual running server - all
+      three views render correctly with real data, zero console errors.
 - [ ] **Phase 5 — Attribution/ToS surface + rate-limit queueing UX**.
 - [ ] **Phase 6 — Naming decision + rebrand** (once Discover mode is real and used).
 
