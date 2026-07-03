@@ -262,9 +262,10 @@ export class DiscoverTab {
     renderResearcherView(ann) {
         return `
             <div class="flex flex-col gap-4">
-                <div class="grid grid-cols-3 gap-4">
+                <div class="grid grid-cols-4 gap-4">
                     <div class="stat-row"><span class="stat-key">Total hits</span><span class="stat-value">${ann.total_hit_count}</span></div>
-                    <div class="stat-row"><span class="stat-key">Resolvable to UniProt</span><span class="stat-value">${ann.resolvable_hit_count}</span></div>
+                    <div class="stat-row"><span class="stat-key">Candidates examined</span><span class="stat-value">${ann.candidates_examined}</span></div>
+                    <div class="stat-row"><span class="stat-key">Resolvable to UniProt</span><span class="stat-value">${ann.resolvable_hit_count} / ${ann.candidates_examined}</span></div>
                     <div class="stat-row"><span class="stat-key">Annotated neighbors</span><span class="stat-value">${ann.annotated_neighbor_count} / ${ann.neighbors_considered}</span></div>
                 </div>
                 <div class="grid grid-cols-2 gap-4">

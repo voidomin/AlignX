@@ -38,6 +38,24 @@ class TestExtractUniprotAccession:
         assert AnnotationAggregator.extract_uniprot_accession("") is None
 
 
+class TestExtractPdbChain:
+
+    def test_extracts_pdb_id_and_chain(self):
+        target = "1ab1-assembly1.cif.gz_A SI FORM CRAMBIN"
+        assert AnnotationAggregator.extract_pdb_chain(target) == ("1AB1", "A")
+
+    def test_strips_assembly_copy_suffix_from_chain(self):
+        target = "2ij9-assembly1.cif.gz_A-2 Crystal Structure of Uridylate Kinase"
+        assert AnnotationAggregator.extract_pdb_chain(target) == ("2IJ9", "A")
+
+    def test_returns_none_for_afdb_target(self):
+        target = "AF-P01541-F1-model_v6 Denclatoxin-B"
+        assert AnnotationAggregator.extract_pdb_chain(target) is None
+
+    def test_returns_none_for_empty_target(self):
+        assert AnnotationAggregator.extract_pdb_chain("") is None
+
+
 def _mock_response(status_code=200, json_data=None):
     response = AsyncMock()
     response.status_code = status_code
@@ -193,6 +211,116 @@ class TestFetchReactomePathways:
         assert pathways == []
 
 
+class TestResolvePdbUniprotAccession:
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_resolves_chain_to_accession(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "1crn": {
+                    "UniProt": {
+                        "P01542": {
+                            "name": "CRAM_CRAAB",
+                            "mappings": [{"chain_id": "A", "identity": 0.98}],
+                        }
+                    }
+                }
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            accession = await aggregator.resolve_pdb_uniprot_accession("1CRN", "A", client)
+        assert accession == "P01542"
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_for_unmapped_chain(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "1abc": {
+                    "UniProt": {
+                        "P00000": {"mappings": [{"chain_id": "B"}]},
+                    }
+                }
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            accession = await aggregator.resolve_pdb_uniprot_accession("1ABC", "A", client)
+        assert accession is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_non_200(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            accession = await aggregator.resolve_pdb_uniprot_accession("ZZZZ", "A", client)
+        assert accession is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_uses_cache_to_avoid_refetching_same_entry(self, mock_get):
+        """Multiple hits/chains from the same PDB entry (common - a
+        well-studied protein is often deposited many times) shouldn't
+        trigger a fresh SIFTS call each time."""
+        mock_get.return_value = _mock_response(
+            json_data={
+                "1crn": {
+                    "UniProt": {
+                        "P01542": {"mappings": [{"chain_id": "A"}]},
+                    }
+                }
+            }
+        )
+        aggregator = AnnotationAggregator()
+        cache = {}
+        async with httpx.AsyncClient() as client:
+            first = await aggregator.resolve_pdb_uniprot_accession("1CRN", "A", client, cache)
+            second = await aggregator.resolve_pdb_uniprot_accession("1CRN", "A", client, cache)
+
+        assert first == "P01542"
+        assert second == "P01542"
+        mock_get.assert_called_once()
+
+
+class TestResolveAccession:
+
+    @pytest.mark.asyncio
+    async def test_prefers_afdb_regex_over_sifts_lookup(self):
+        aggregator = AnnotationAggregator()
+        with patch.object(
+            aggregator, "resolve_pdb_uniprot_accession", new_callable=AsyncMock
+        ) as mock_sifts:
+            hit = {"target": "AF-P01541-F1-model_v6 Denclatoxin-B"}
+            async with httpx.AsyncClient() as client:
+                accession = await aggregator.resolve_accession(hit, client)
+            assert accession == "P01541"
+            mock_sifts.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_sifts_for_pdb_targets(self):
+        aggregator = AnnotationAggregator()
+        with patch.object(
+            aggregator, "resolve_pdb_uniprot_accession", new_callable=AsyncMock
+        ) as mock_sifts:
+            mock_sifts.return_value = "P01542"
+            hit = {"target": "1ab1-assembly1.cif.gz_A SI FORM CRAMBIN"}
+            async with httpx.AsyncClient() as client:
+                accession = await aggregator.resolve_accession(hit, client)
+            assert accession == "P01542"
+            mock_sifts.assert_called_once_with("1AB1", "A", client, None)
+
+    @pytest.mark.asyncio
+    async def test_returns_none_for_unresolvable_target(self):
+        aggregator = AnnotationAggregator()
+        hit = {"target": "gmgcl-some-unrelated-format"}
+        async with httpx.AsyncClient() as client:
+            accession = await aggregator.resolve_accession(hit, client)
+        assert accession is None
+
+
 class TestResolveGoTermNames:
 
     @pytest.mark.asyncio
@@ -218,12 +346,13 @@ class TestAggregateForHits:
 
     @pytest.mark.asyncio
     @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_pdb_uniprot_accession")
     @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways")
     @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners")
     @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations")
     @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries")
     async def test_aggregates_domains_and_go_terms_across_neighbors(
-        self, mock_interpro, mock_quickgo, mock_string, mock_reactome, mock_resolve
+        self, mock_interpro, mock_quickgo, mock_string, mock_reactome, mock_pdb_sifts, mock_resolve
     ):
         def interpro_side_effect(accession, client):
             if accession == "P01541":
@@ -259,14 +388,15 @@ class TestAggregateForHits:
         mock_quickgo.side_effect = quickgo_side_effect
         mock_string.return_value = []
         mock_reactome.return_value = []
+        mock_pdb_sifts.return_value = None  # simulate: no SIFTS mapping for this entry
         mock_resolve.return_value = {}
 
         hits = [
             {"target": "AF-P01541-F1-model_v6 Denclatoxin-B", "eval": 2.168e-05},
             {"target": "AF-Q43226-F1-model_v6 Thionin class 1", "eval": 0.00164},
-            # Unresolvable (no UniProt accession embedded) - must be excluded
-            # from ranking entirely, not just left unannotated, so it can't
-            # crowd out a resolvable hit further down the real hit list.
+            # Unresolvable in this test (SIFTS mocked to return None) - must
+            # be excluded from ranking entirely, not just left unannotated,
+            # so it can't crowd out a resolvable hit further down the list.
             {"target": "1ab1-assembly1.cif.gz_A SI FORM CRAMBIN", "eval": 0.0000001},
         ]
 
@@ -321,23 +451,27 @@ class TestAggregateForHits:
 
     @pytest.mark.asyncio
     @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_pdb_uniprot_accession")
     @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways")
     @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners")
     @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations")
     @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries")
     async def test_unresolvable_hits_cannot_crowd_out_resolvable_ones(
-        self, mock_interpro, mock_quickgo, mock_string, mock_reactome, mock_resolve
+        self, mock_interpro, mock_quickgo, mock_string, mock_reactome, mock_pdb_sifts, mock_resolve
     ):
         """Regression test for a real gap found live-testing 1CRN: a wall of
         near-identical PDB100 hits (re-solved structures of the exact same
         protein) can have far lower E-values than every AFDB hit, so ranking
         top_n across ALL hits before filtering left zero annotatable
         neighbors even though good AFDB matches existed. Filtering to
-        resolvable hits first fixes this."""
+        resolvable hits first fixes this. (PDB hits are mocked as having no
+        SIFTS mapping here, to isolate this from the separate PDB-resolution
+        feature and its own tests.)"""
         mock_interpro.return_value = [{"accession": "IPR001010", "name": "Thionin", "type": "family", "go_terms": []}]
         mock_quickgo.return_value = []
         mock_string.return_value = []
         mock_reactome.return_value = []
+        mock_pdb_sifts.return_value = None
         mock_resolve.return_value = {}
 
         # 15 unresolvable PDB hits, all with far smaller E-values than the
@@ -382,3 +516,38 @@ class TestAggregateForHits:
 
         assert result["neighbors_considered"] == 2
         assert mock_interpro.call_count == 2
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries")
+    async def test_only_fully_annotates_the_kept_neighbors_not_the_whole_candidate_pool(
+        self, mock_interpro, mock_quickgo, mock_string, mock_reactome, mock_resolve
+    ):
+        """The candidate pool is oversampled (CANDIDATE_OVERSAMPLE_FACTOR x
+        top_n_neighbors) so a few unresolvable hits can't starve the
+        annotation budget - but once enough hits resolve, the 4 full
+        annotation API calls should only run for the top_n_neighbors kept,
+        not for every resolved candidate in the larger pool."""
+        mock_interpro.return_value = []
+        mock_quickgo.return_value = []
+        mock_string.return_value = []
+        mock_reactome.return_value = []
+        mock_resolve.return_value = {}
+
+        # All 10 hits resolve (AFDB format); with top_n_neighbors=2 and the
+        # default 2x oversample, the candidate pool is 4, but only the top 2
+        # resolved hits should get the full 4-API annotation treatment.
+        hits = [
+            {"target": f"AF-P0000{i}-F1-model_v6 X", "eval": i * 0.001} for i in range(10)
+        ]
+
+        aggregator = AnnotationAggregator()
+        result = await aggregator.aggregate_for_hits(hits, top_n_neighbors=2)
+
+        assert result["candidates_examined"] == 4  # 2 * CANDIDATE_OVERSAMPLE_FACTOR
+        assert result["resolvable_hit_count"] == 4  # all 4 candidates resolved
+        assert result["neighbors_considered"] == 2  # but only top_n_neighbors kept
+        assert mock_interpro.call_count == 2  # annotation only fetched for the 2 kept

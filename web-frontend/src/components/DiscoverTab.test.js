@@ -21,7 +21,8 @@ function makeAnnotatedResults(overrides = {}) {
         annotations: {
             neighbors_considered: 10,
             total_hit_count: 179,
-            resolvable_hit_count: 123,
+            candidates_examined: 20,
+            resolvable_hit_count: 18,
             annotated_neighbor_count: 9,
             unannotated_neighbor_count: 1,
             top_domains: [
@@ -138,6 +139,7 @@ describe('DiscoverTab', () => {
             annotations: {
                 neighbors_considered: 3,
                 total_hit_count: 5,
+                candidates_examined: 3,
                 resolvable_hit_count: 0,
                 annotated_neighbor_count: 0,
                 unannotated_neighbor_count: 3,
@@ -172,6 +174,7 @@ describe('DiscoverTab', () => {
             annotations: {
                 neighbors_considered: 5,
                 total_hit_count: 50,
+                candidates_examined: 20,
                 resolvable_hit_count: 20,
                 annotated_neighbor_count: 3,
                 unannotated_neighbor_count: 2,
@@ -229,7 +232,8 @@ describe('DiscoverTab', () => {
             annotations: {
                 neighbors_considered: 10,
                 total_hit_count: 1000,
-                resolvable_hit_count: 900,
+                candidates_examined: 20,
+                resolvable_hit_count: 18,
                 annotated_neighbor_count: 8,
                 unannotated_neighbor_count: 2,
                 neighbors_with_interactions_count: 1,

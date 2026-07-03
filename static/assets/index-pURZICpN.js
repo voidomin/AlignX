@@ -677,9 +677,10 @@
             </div>
         `}renderResearcherView(e){return`
             <div class="flex flex-col gap-4">
-                <div class="grid grid-cols-3 gap-4">
+                <div class="grid grid-cols-4 gap-4">
                     <div class="stat-row"><span class="stat-key">Total hits</span><span class="stat-value">${e.total_hit_count}</span></div>
-                    <div class="stat-row"><span class="stat-key">Resolvable to UniProt</span><span class="stat-value">${e.resolvable_hit_count}</span></div>
+                    <div class="stat-row"><span class="stat-key">Candidates examined</span><span class="stat-value">${e.candidates_examined}</span></div>
+                    <div class="stat-row"><span class="stat-key">Resolvable to UniProt</span><span class="stat-value">${e.resolvable_hit_count} / ${e.candidates_examined}</span></div>
                     <div class="stat-row"><span class="stat-key">Annotated neighbors</span><span class="stat-value">${e.annotated_neighbor_count} / ${e.neighbors_considered}</span></div>
                 </div>
                 <div class="grid grid-cols-2 gap-4">

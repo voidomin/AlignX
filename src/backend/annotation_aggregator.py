@@ -28,20 +28,32 @@ INTERPRO_BASE_URL = "https://www.ebi.ac.uk/interpro/api"
 QUICKGO_BASE_URL = "https://www.ebi.ac.uk/QuickGO/services"
 STRING_BASE_URL = "https://version-12-0.string-db.org/api/json"
 REACTOME_BASE_URL = "https://reactome.org/ContentService"
+SIFTS_BASE_URL = "https://www.ebi.ac.uk/pdbe/api/mappings/uniprot"
 STRING_CALLER_IDENTITY = "structscope"
 
-# Foldseek's AlphaFold DB hits are named "AF-{UniProt}-F{fragment}[-v{n}] ...".
-# This is currently the only Foldseek target format we can resolve to a
-# UniProt accession without an extra lookup (PDB/CATH hits are named after
-# the structure file, not a UniProt accession - see docs/ROADMAP_V3.md's
-# open questions). Neighbors we can't resolve are still returned, just
-# without annotations.
+# Foldseek's AlphaFold DB hits are named "AF-{UniProt}-F{fragment}[-v{n}] ...",
+# which embeds a UniProt accession directly - free to extract, no lookup.
 _AFDB_TARGET_PATTERN = re.compile(r"^AF-([A-Za-z0-9]+)-F\d+", re.IGNORECASE)
+
+# pdb100 hits are named "{pdbid}-assembly{n}.cif.gz_{chain} {title}", e.g.
+# "1ab1-assembly1.cif.gz_A SI FORM CRAMBIN" or, for a specific biological
+# assembly copy, "2ij9-assembly1.cif.gz_A-2" (the "-2" is an assembly copy
+# suffix, not part of the real author chain ID, and must be stripped before
+# querying SIFTS). These don't embed a UniProt accession, but PDBe's SIFTS
+# mapping API resolves {pdb_id, chain} -> UniProt accession directly - see
+# resolve_pdb_uniprot_accession(). CATH/gmgcl_id/bfmd hits still aren't
+# resolved (open question, unchanged - see docs/ROADMAP_V3.md).
+_PDB_TARGET_PATTERN = re.compile(r"^([0-9A-Za-z]{4})-assembly\d+\.cif\.gz_(\S+)")
 
 DEFAULT_TOP_N_NEIGHBORS = 10
 DEFAULT_TOP_N_SUMMARY = 10
 DEFAULT_TOP_N_PARTNERS = 5
 DEFAULT_TOP_N_PATHWAYS = 5
+# How many extra candidates (beyond top_n_neighbors) to consider when
+# ranking, so a few unresolvable hits (e.g. from a database we can't map,
+# or a PDB entry with no SIFTS mapping) can't starve the annotation step of
+# a full top_n_neighbors' worth of real signal.
+CANDIDATE_OVERSAMPLE_FACTOR = 2
 
 
 class _RateLimiter:
@@ -87,6 +99,71 @@ class AnnotationAggregator:
         e.g. "AF-P01541-F1-model_v6 Denclatoxin-B" -> "P01541"."""
         match = _AFDB_TARGET_PATTERN.match((target or "").strip())
         return match.group(1).upper() if match else None
+
+    @staticmethod
+    def extract_pdb_chain(target: str) -> Optional[Tuple[str, str]]:
+        """Pulls (pdb_id, chain_id) out of a Foldseek pdb100 target string,
+        e.g. "1ab1-assembly1.cif.gz_A SI FORM CRAMBIN" -> ("1AB1", "A"). Any
+        trailing "-{n}" assembly-copy suffix on the chain (e.g. "A-2") is
+        stripped, since SIFTS mappings are keyed by the real author chain ID."""
+        match = _PDB_TARGET_PATTERN.match((target or "").strip())
+        if not match:
+            return None
+        pdb_id, raw_chain = match.groups()
+        chain_id = re.sub(r"-\d+$", "", raw_chain)
+        return pdb_id.upper(), chain_id
+
+    async def resolve_pdb_uniprot_accession(
+        self,
+        pdb_id: str,
+        chain_id: str,
+        client: httpx.AsyncClient,
+        cache: Optional[Dict[str, Dict[str, Optional[str]]]] = None,
+    ) -> Optional[str]:
+        """Resolves a (PDB entry, chain) pair to a UniProt accession via
+        PDBe's SIFTS mapping API. `cache` (keyed by pdb_id -> {chain_id:
+        accession}) lets one aggregate_for_hits() call avoid re-fetching the
+        same entry's mapping for multiple hits/chains that share it (common,
+        since a well-studied protein is often deposited many times)."""
+        if cache is not None and pdb_id in cache:
+            return cache[pdb_id].get(chain_id)
+
+        chain_accessions: Dict[str, Optional[str]] = {}
+        try:
+            response = await client.get(
+                f"{SIFTS_BASE_URL}/{pdb_id.lower()}", headers={"Accept": "application/json"}
+            )
+            if response.status_code == 200:
+                entry = response.json().get(pdb_id.lower(), {})
+                for accession, info in (entry.get("UniProt") or {}).items():
+                    for mapping in info.get("mappings", []):
+                        mapped_chain = mapping.get("chain_id")
+                        if mapped_chain:
+                            chain_accessions[mapped_chain] = accession.upper()
+        except httpx.HTTPError as e:
+            logger.warning(f"SIFTS lookup failed for {pdb_id}: {e}")
+
+        if cache is not None:
+            cache[pdb_id] = chain_accessions
+        return chain_accessions.get(chain_id)
+
+    async def resolve_accession(
+        self,
+        hit: Dict[str, Any],
+        client: httpx.AsyncClient,
+        pdb_cache: Optional[Dict[str, Dict[str, Optional[str]]]] = None,
+    ) -> Optional[str]:
+        """Resolves a Foldseek hit to a UniProt accession via whichever
+        method applies to its target format: the free AFDB regex first,
+        then a live SIFTS lookup for pdb100 hits."""
+        target = hit.get("target", "")
+        accession = self.extract_uniprot_accession(target)
+        if accession:
+            return accession
+        pdb_chain = self.extract_pdb_chain(target)
+        if pdb_chain:
+            return await self.resolve_pdb_uniprot_accession(*pdb_chain, client, pdb_cache)
+        return None
 
     async def fetch_interpro_entries(
         self, accession: str, client: httpx.AsyncClient
@@ -250,12 +327,15 @@ class AnnotationAggregator:
             return 1e9
 
     async def _annotate_neighbor(
-        self, hit: Dict[str, Any], client: httpx.AsyncClient
+        self, hit: Dict[str, Any], accession: str, client: httpx.AsyncClient
     ) -> Dict[str, Any]:
-        target = hit.get("target", "")
-        accession = self.extract_uniprot_accession(target)
+        """Fetches the full annotation set for a hit that's already been
+        resolved to a UniProt accession (see resolve_accession()). Kept
+        separate from resolution so aggregate_for_hits can resolve a larger,
+        cheap candidate pool before paying for these 4 API calls only on
+        the accessions it actually keeps."""
         neighbor: Dict[str, Any] = {
-            "target": target,
+            "target": hit.get("target", ""),
             "accession": accession,
             "domains": [],
             "go_terms": [],
@@ -286,32 +366,53 @@ class AnnotationAggregator:
     ) -> Dict[str, Any]:
         """
         Fetches annotations for the most confident *resolvable* Foldseek
-        hits (lowest E-value first among hits with a UniProt accession we
-        can extract) and aggregates them into domain/GO-term frequency
-        summaries.
+        hits (lowest E-value first among hits that resolve to a UniProt
+        accession - AFDB hits via a free regex, pdb100 hits via a live
+        SIFTS lookup, see resolve_accession()) and aggregates them into
+        domain/GO-term frequency summaries.
 
-        Ranking is restricted to resolvable hits before taking top_n rather
-        than taking top_n across all hits first: a query that already has a
-        PDB entry (e.g. re-solved many times by X-ray/NMR) gets a wall of
-        near-identical, vanishingly-low-E-value PDB100 hits that would
-        otherwise crowd out every annotatable AFDB hit further down the
-        list, resulting in zero annotations despite good matches existing
-        (found via live testing on 1CRN - see docs/ROADMAP_V3.md).
+        Resolution requiring a network call (for pdb100 hits) means we can't
+        cheaply pre-filter the *entire* hit list before ranking the way the
+        old AFDB-only version could. Instead this takes a modestly
+        oversampled candidate pool (CANDIDATE_OVERSAMPLE_FACTOR x
+        top_n_neighbors) by E-value and resolves (cheap: a regex, or one
+        SIFTS call per distinct PDB entry) all of them concurrently first,
+        keeps the first top_n_neighbors that actually resolved (in original
+        E-value order), and only THEN pays for the 4 full-annotation API
+        calls per neighbor kept - not for the whole oversampled pool. This
+        preserves the original fix's intent - a query that already has a
+        PDB entry (re-solved many times by X-ray/NMR) shouldn't let a wall
+        of near-identical hits crowd out the annotation budget - without
+        either resolving every single hit up front or wastefully
+        fully-annotating more candidates than we'll actually use (found via
+        live testing on 1CRN, see docs/ROADMAP_V3.md).
 
         Returns a dict with "neighbors_considered", "total_hit_count",
-        "resolvable_hit_count", "annotated_neighbor_count",
-        "unannotated_neighbor_count", "top_domains", "top_go_terms", and
-        "per_neighbor" (each neighbor's raw domains/go_terms, for a later
-        tiered-report phase to render at whatever depth it needs).
+        "candidates_examined", "resolvable_hit_count",
+        "annotated_neighbor_count", "unannotated_neighbor_count",
+        "top_domains", "top_go_terms", and "per_neighbor" (each neighbor's
+        raw domains/go_terms, for a later tiered-report phase to render at
+        whatever depth it needs).
         """
-        resolvable_hits = [
-            h for h in hits if self.extract_uniprot_accession(h.get("target", ""))
-        ]
-        sorted_hits = sorted(resolvable_hits, key=self._hit_sort_key)[:top_n_neighbors]
+        candidate_pool_size = top_n_neighbors * CANDIDATE_OVERSAMPLE_FACTOR
+        candidates = sorted(hits, key=self._hit_sort_key)[:candidate_pool_size]
+
+        pdb_cache: Dict[str, Dict[str, Optional[str]]] = {}
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
+            accessions = await asyncio.gather(
+                *(self.resolve_accession(hit, client, pdb_cache) for hit in candidates)
+            )
+            resolved_count = sum(1 for acc in accessions if acc)
+            resolved_pairs = [
+                (hit, acc) for hit, acc in zip(candidates, accessions) if acc
+            ][:top_n_neighbors]
+
             per_neighbor = await asyncio.gather(
-                *(self._annotate_neighbor(hit, client) for hit in sorted_hits)
+                *(
+                    self._annotate_neighbor(hit, acc, client)
+                    for hit, acc in resolved_pairs
+                )
             )
 
             # GO names from InterPro's embedded terms are already resolved;
@@ -394,11 +495,12 @@ class AnnotationAggregator:
         interaction_count = sum(1 for n in per_neighbor if n["string_partners"])
         pathway_count = sum(1 for n in per_neighbor if n["reactome_pathways"])
         return {
-            "neighbors_considered": len(sorted_hits),
+            "neighbors_considered": len(per_neighbor),
             "total_hit_count": len(hits),
-            "resolvable_hit_count": len(resolvable_hits),
+            "candidates_examined": len(candidates),
+            "resolvable_hit_count": resolved_count,
             "annotated_neighbor_count": annotated_count,
-            "unannotated_neighbor_count": len(sorted_hits) - annotated_count,
+            "unannotated_neighbor_count": len(per_neighbor) - annotated_count,
             "neighbors_with_interactions_count": interaction_count,
             "neighbors_with_pathways_count": pathway_count,
             "top_domains": top_domains,
