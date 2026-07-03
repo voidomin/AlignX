@@ -217,7 +217,17 @@ One synthesis step, three renderings of the same underlying result object:
       renders the same underlying result at three depths. Verified live in
       a real browser against 1CRN through the actual running server - all
       three views render correctly with real data, zero console errors.
-- [ ] **Phase 5 — Attribution/ToS surface + rate-limit queueing UX**.
+- [x] **Phase 5 — Attribution/ToS surface + rate-limit queueing UX**.
+      Done: low-friction attribution footer (Foldseek/InterPro/QuickGO,
+      linked to their terms) always visible in the Discover tab; distinct
+      "queued" vs "running" status messaging while polling. Also found and
+      fixed a real deadlock while starting this phase: the Foldseek rate
+      limiter's `asyncio.Lock` is not safe across the different event
+      loops/threads concurrent Discover jobs actually run on - one of three
+      concurrent callers hung forever in direct testing. Fixed with a
+      `threading.Lock` instead; verified both via a regression test (5
+      concurrent threads) and live against the real server (2 concurrent
+      discovery jobs, both completed with correct distinct results).
 - [ ] **Phase 6 — Naming decision + rebrand** (once Discover mode is real and used).
 
 ## 7. Open questions
