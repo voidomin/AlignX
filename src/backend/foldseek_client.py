@@ -8,6 +8,7 @@ skill: https://github.com/google-deepmind/science-skills
 """
 
 import asyncio
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -48,18 +49,30 @@ class _RateLimiter:
     Discover jobs in flight for different users at once, so this limiter is
     shared (a class attribute of FoldseekClient) rather than per-instance, so
     the total outbound rate stays bounded no matter how many jobs are running.
+
+    Each Discover job runs its Foldseek calls inside its own asyncio.run()
+    on a dedicated worker thread (see DiscoveryCoordinator /
+    asyncio.to_thread usage in api.py), so concurrent jobs call wait() from
+    *different event loops in different threads*. asyncio.Lock is not safe
+    across event loops - its internal waiter Futures are bound to whichever
+    loop created them, and a waiter on one loop can hang forever waiting on
+    a release from another (confirmed directly: 1 of 3 concurrent callers
+    never returned). A plain threading.Lock is real OS-level mutual
+    exclusion and works correctly here; blocking the calling thread during
+    the wait is fine since each job's worker thread has nothing else to do
+    while waiting its turn.
     """
 
     def __init__(self, min_interval_seconds: float):
         self._min_interval = min_interval_seconds
-        self._lock = asyncio.Lock()
+        self._lock = threading.Lock()
         self._last_request_at: float = 0.0
 
     async def wait(self) -> None:
-        async with self._lock:
+        with self._lock:
             elapsed = time.monotonic() - self._last_request_at
             if elapsed < self._min_interval:
-                await asyncio.sleep(self._min_interval - elapsed)
+                time.sleep(self._min_interval - elapsed)
             self._last_request_at = time.monotonic()
 
 

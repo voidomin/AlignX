@@ -1,3 +1,5 @@
+import asyncio
+import threading
 from unittest.mock import patch, AsyncMock, MagicMock
 
 import pytest
@@ -135,3 +137,46 @@ class TestFoldseekClient:
         client = FoldseekClient()
         result = await client.fetch_results("ticket-1")
         assert result == {"alignments": [{"target": "1ABC"}]}
+
+
+class TestRateLimiterCrossThreadSafety:
+    """Regression test: each Discover job runs its Foldseek calls inside its
+    own asyncio.run() on a dedicated worker thread, so concurrent jobs hit
+    the shared, class-level rate limiter from different event loops. An
+    asyncio.Lock-based limiter hung one of three concurrent callers forever
+    in direct testing (its waiter Futures are bound to the loop that
+    created them, not safe to release from a different loop) - this must
+    stay a threading.Lock, not regress back to asyncio.Lock."""
+
+    def test_concurrent_waiters_from_different_threads_all_complete(self):
+        limiter = FoldseekClient._rate_limiter
+        original_interval = limiter._min_interval
+        limiter._min_interval = 0.2
+        limiter._last_request_at = 0.0
+
+        completed = []
+        errors = []
+
+        def run_in_thread(name):
+            async def go():
+                await limiter.wait()
+
+            try:
+                asyncio.run(go())
+                completed.append(name)
+            except Exception as e:
+                errors.append((name, e))
+
+        threads = [
+            threading.Thread(target=run_in_thread, args=(f"job-{i}",)) for i in range(5)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5)
+
+        limiter._min_interval = original_interval
+
+        assert not any(t.is_alive() for t in threads), "a waiter thread hung"
+        assert errors == []
+        assert len(completed) == 5
