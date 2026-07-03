@@ -521,3 +521,142 @@ def test_sanitize_for_json_decodes_plotly_binary_typed_arrays():
         "dtype": "f8",
         "shape": "2, 2",
     }
+
+
+def test_discover_endpoint_rejects_missing_pdb_id():
+    api_module._job_submission_timestamps.clear()
+    response = client.post("/api/jobs/discover", json={"pdb_id": ""})
+    assert response.status_code == 400
+
+
+def test_discover_endpoint_rejects_invalid_pdb_id():
+    api_module._job_submission_timestamps.clear()
+    response = client.post("/api/jobs/discover", json={"pdb_id": "not-a-valid-id"})
+    assert response.status_code == 400
+
+
+def test_discover_endpoint_rejects_path_traversal():
+    api_module._job_submission_timestamps.clear()
+    response = client.post("/api/jobs/discover", json={"pdb_id": "../../etc"})
+    assert response.status_code == 400
+
+
+def test_discover_endpoint_rejects_unknown_database():
+    api_module._job_submission_timestamps.clear()
+    response = client.post(
+        "/api/jobs/discover", json={"pdb_id": "4RLT", "databases": ["not-a-real-db"]}
+    )
+    assert response.status_code == 400
+
+
+def test_discover_job_submission_returns_queued():
+    """Submitting a valid discovery job returns a job_id immediately with
+    status "queued" - it must not block on the (potentially slow, rate
+    limited) Foldseek pipeline."""
+    api_module.discovery_jobs.clear()
+    api_module._job_submission_timestamps.clear()
+    with patch(
+        "src.backend.discovery_coordinator.DiscoveryCoordinator.run_discovery_pipeline"
+    ) as mock_run:
+        mock_run.return_value = (True, "ok", {"pdb_id": "4RLT"})
+
+        response = client.post("/api/jobs/discover", json={"pdb_id": "4RLT"})
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "queued"
+        assert body["job_id"] in api_module.discovery_jobs
+
+    api_module.discovery_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_discover_job_execution_completes_and_is_pollable():
+    """Directly exercises _execute_discovery_job (the background task the
+    endpoint schedules via asyncio.create_task) end-to-end, then confirms
+    GET /api/jobs/{job_id} - the same endpoint used for alignment jobs -
+    surfaces the DiscoveryCoordinator result."""
+    api_module.discovery_jobs.clear()
+    job_id = "test-discover-job"
+    api_module.discovery_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    with patch(
+        "src.backend.discovery_coordinator.DiscoveryCoordinator.run_discovery_pipeline"
+    ) as mock_run:
+        mock_run.return_value = (
+            True,
+            "Discovery completed successfully",
+            {
+                "pdb_id": "4RLT",
+                "source": "pdb",
+                "databases_searched": ["pdb100", "afdb50"],
+                "hit_count": 1,
+                "hits": [{"target": "1ABC", "prob": 0.99}],
+            },
+        )
+        await api_module._execute_discovery_job(job_id, pdb_id="4RLT", databases=None, session_id=None)
+
+    poll = client.get(f"/api/jobs/{job_id}")
+    assert poll.json()["status"] == "completed"
+    assert poll.json()["results"]["hit_count"] == 1
+    assert poll.json()["results"]["hits"][0]["target"] == "1ABC"
+
+    api_module.discovery_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_discover_job_execution_surfaces_pipeline_failure():
+    api_module.discovery_jobs.clear()
+    job_id = "test-discover-job-fail"
+    api_module.discovery_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    with patch(
+        "src.backend.discovery_coordinator.DiscoveryCoordinator.run_discovery_pipeline"
+    ) as mock_run:
+        mock_run.return_value = (False, "Foldseek search failed: timed out", None)
+        await api_module._execute_discovery_job(job_id, pdb_id="4RLT", databases=None, session_id=None)
+
+    poll = client.get(f"/api/jobs/{job_id}")
+    assert poll.json()["status"] == "failed"
+    assert "Foldseek search failed" in poll.json()["error"]
+
+    api_module.discovery_jobs.clear()
+
+
+def test_discover_job_submission_rate_limit():
+    api_module._job_submission_timestamps.clear()
+    with patch.object(api_module, "_DISCOVERY_RATE_LIMIT_MAX", 1), patch(
+        "src.backend.discovery_coordinator.DiscoveryCoordinator.run_discovery_pipeline"
+    ) as mock_run:
+        mock_run.return_value = (True, "ok", {"pdb_id": "4RLT"})
+        r1 = client.post("/api/jobs/discover", json={"pdb_id": "4RLT"})
+        r2 = client.post("/api/jobs/discover", json={"pdb_id": "3UG9"})
+
+        assert r1.status_code == 202
+        assert r2.status_code == 429
+
+    api_module._job_submission_timestamps.clear()
+    api_module.discovery_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_discovery_job_sweep_drops_old_finished_jobs_but_keeps_recent_and_running():
+    now = time.time()
+    api_module.discovery_jobs.clear()
+    api_module.discovery_jobs.update(
+        {
+            "old_completed": {"status": "completed", "finished_at": now - 10_000},
+            "recent_completed": {"status": "completed", "finished_at": now},
+            "still_running": {"status": "running", "created_at": now - 10_000},
+        }
+    )
+
+    with patch.object(api_module, "_JOB_TTL_SECONDS", 60), patch(
+        "asyncio.sleep", new_callable=AsyncMock
+    ) as mock_sleep:
+        mock_sleep.side_effect = [None, asyncio.CancelledError()]
+        with pytest.raises(asyncio.CancelledError):
+            await api_module._sweep_discovery_jobs()
+
+    remaining = set(api_module.discovery_jobs.keys())
+    assert remaining == {"recent_completed", "still_running"}
+    api_module.discovery_jobs.clear()

@@ -27,6 +27,8 @@ sys.path.insert(0, str(project_root))
 from src.utils.config_loader import load_config
 from src.utils.logger import get_logger
 from src.backend.coordinator import AnalysisCoordinator
+from src.backend.discovery_coordinator import DiscoveryCoordinator
+from src.backend.foldseek_client import FoldseekClient, FoldseekError
 from src.backend.database import HistoryDatabase
 from src.backend.ligand_analyzer import LigandAnalyzer
 from src.backend.pdb_manager import PDBManager
@@ -55,8 +57,10 @@ except Exception:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     sweep_task = asyncio.create_task(_sweep_alignment_jobs())
+    discovery_sweep_task = asyncio.create_task(_sweep_discovery_jobs())
     yield
     sweep_task.cancel()
+    discovery_sweep_task.cancel()
 
 
 # Initialize FastAPI App
@@ -101,14 +105,18 @@ async def require_api_key(request: Request, call_next):
     return await call_next(request)
 
 
-# Rate limit alignment-job submissions specifically — that's the endpoint that
-# triggers real compute (Mustang + phylogenetics), so it's the actual abuse
-# vector, unlike cheap reads such as /api/history or /api/jobs/{id} polling.
+# Rate limit job-submission endpoints specifically — those trigger real
+# compute/external calls (Mustang + phylogenetics, or the shared-rate-limited
+# Foldseek API), so they're the actual abuse vector, unlike cheap reads such
+# as /api/history or /api/jobs/{id} polling. Discovery jobs get a tighter
+# ceiling than alignment jobs since they compete for Foldseek's own strict
+# rate limit across every AlignX user (see FoldseekClient's rate limiter).
 # Applies even when ALIGNX_API_KEY is unset, since that's the default/open state.
 _JOB_RATE_LIMIT_MAX = int(os.environ.get("ALIGNX_JOB_RATE_LIMIT_MAX", 5))
 _JOB_RATE_LIMIT_WINDOW_SECONDS = int(
     os.environ.get("ALIGNX_JOB_RATE_LIMIT_WINDOW_SECONDS", 60)
 )
+_DISCOVERY_RATE_LIMIT_MAX = int(os.environ.get("ALIGNX_DISCOVERY_RATE_LIMIT_MAX", 3))
 _job_submission_timestamps: Dict[str, List[float]] = {}
 
 
@@ -119,20 +127,31 @@ def _rate_limit_client_key(request: Request) -> str:
     return f"ip:{request.client.host if request.client else 'unknown'}"
 
 
+def _job_rate_limit_max(path: str) -> Optional[int]:
+    """Resolved per-request (not baked into a dict at import time) so tests
+    can patch _JOB_RATE_LIMIT_MAX / _DISCOVERY_RATE_LIMIT_MAX directly."""
+    if path == "/api/jobs/align":
+        return _JOB_RATE_LIMIT_MAX
+    if path == "/api/jobs/discover":
+        return _DISCOVERY_RATE_LIMIT_MAX
+    return None
+
+
 @app.middleware("http")
 async def rate_limit_job_submissions(request: Request, call_next):
-    if request.method == "POST" and request.url.path == "/api/jobs/align":
-        key = _rate_limit_client_key(request)
+    job_max = _job_rate_limit_max(request.url.path)
+    if request.method == "POST" and job_max is not None:
+        key = f"{request.url.path}:{_rate_limit_client_key(request)}"
         now = time.time()
         cutoff = now - _JOB_RATE_LIMIT_WINDOW_SECONDS
         timestamps = [t for t in _job_submission_timestamps.get(key, []) if t > cutoff]
-        if len(timestamps) >= _JOB_RATE_LIMIT_MAX:
+        if len(timestamps) >= job_max:
             return JSONResponse(
                 status_code=429,
                 content={
                     "detail": (
-                        f"Rate limit exceeded: max {_JOB_RATE_LIMIT_MAX} alignment "
-                        f"submissions per {_JOB_RATE_LIMIT_WINDOW_SECONDS}s."
+                        f"Rate limit exceeded: max {job_max} submissions to "
+                        f"{request.url.path} per {_JOB_RATE_LIMIT_WINDOW_SECONDS}s."
                     )
                 },
             )
@@ -450,12 +469,112 @@ async def submit_alignment_job(
 @app.get("/api/jobs/{job_id}")
 def get_alignment_job(job_id: str):
     """
-    Poll the status/result of a submitted alignment job.
+    Poll the status/result of a submitted job (alignment or discovery - job
+    IDs are unique uuid4 hex strings, so one polling endpoint covers both).
     """
-    job = alignment_jobs.get(job_id)
+    job = alignment_jobs.get(job_id) or discovery_jobs.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found.")
     return {"job_id": job_id, **job}
+
+
+# In-memory job registry for the async single-structure discovery pipeline
+# (Foldseek structural search). Mirrors alignment_jobs above: Foldseek jobs
+# can take a while (upload + poll + fetch, plus the shared rate limiter -
+# see FoldseekClient), so they run on a background thread and are polled via
+# job_id rather than blocking the HTTP request.
+discovery_jobs: Dict[str, Dict[str, Any]] = {}
+
+
+async def _sweep_discovery_jobs():
+    """Periodically drop finished discovery jobs older than _JOB_TTL_SECONDS."""
+    while True:
+        await asyncio.sleep(_JOB_SWEEP_INTERVAL_SECONDS)
+        now = time.time()
+        stale_ids = [
+            jid
+            for jid, job in discovery_jobs.items()
+            if job.get("status") in ("completed", "failed")
+            and now - job.get("finished_at", now) > _JOB_TTL_SECONDS
+        ]
+        for jid in stale_ids:
+            discovery_jobs.pop(jid, None)
+
+
+def _run_discovery_pipeline(
+    pdb_id: str,
+    databases: Optional[List[str]],
+    session_id: Optional[str],
+) -> Dict[str, Any]:
+    """Blocking pipeline execution, run on a worker thread by the job runner."""
+    coordinator = DiscoveryCoordinator(config, session_id=session_id)
+    success, msg, results = coordinator.run_discovery_pipeline(
+        pdb_id=pdb_id, databases=databases
+    )
+    if not success:
+        raise RuntimeError(f"Discovery failed: {msg}")
+    return {"message": msg, "results": sanitize_for_json(results)}
+
+
+async def _execute_discovery_job(job_id: str, **pipeline_kwargs):
+    discovery_jobs[job_id]["status"] = "running"
+    created_at = discovery_jobs[job_id].get("created_at", time.time())
+    try:
+        outcome = await asyncio.to_thread(_run_discovery_pipeline, **pipeline_kwargs)
+        discovery_jobs[job_id] = {
+            "status": "completed",
+            "created_at": created_at,
+            "finished_at": time.time(),
+            **outcome,
+        }
+    except Exception as e:
+        discovery_jobs[job_id] = {
+            "status": "failed",
+            "created_at": created_at,
+            "finished_at": time.time(),
+            "error": str(e),
+        }
+
+
+@app.post("/api/jobs/discover", status_code=202)
+async def submit_discovery_job(
+    pdb_id: str = Body(..., embed=True),
+    databases: Optional[List[str]] = Body(default=None, embed=True),
+    session_id: Optional[str] = Query(None),
+):
+    """
+    Submit a single-structure Foldseek discovery run as a background job:
+    finds structurally similar proteins for one query structure. Unlike
+    /api/jobs/align, this takes exactly one structure, not 2+.
+    Returns immediately with a job_id; poll GET /api/jobs/{job_id} for status.
+    """
+    if not pdb_id or not pdb_id.strip():
+        raise HTTPException(status_code=400, detail="pdb_id is required.")
+    _safe_segment(pdb_id, "pdb_id")
+    if not PDBManager.validate_pdb_id(pdb_id):
+        raise HTTPException(
+            status_code=400, detail=f"Invalid structure identifier: {pdb_id}"
+        )
+    if databases:
+        try:
+            FoldseekClient.validate_databases(databases)
+        except FoldseekError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    _safe_segment(session_id, "session_id")
+
+    job_id = uuid.uuid4().hex
+    discovery_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    asyncio.create_task(
+        _execute_discovery_job(
+            job_id,
+            pdb_id=pdb_id,
+            databases=databases,
+            session_id=session_id,
+        )
+    )
+
+    return {"job_id": job_id, "status": "queued"}
 
 
 @app.post("/api/clusters")

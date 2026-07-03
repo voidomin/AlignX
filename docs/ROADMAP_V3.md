@@ -189,8 +189,14 @@ One synthesis step, three renderings of the same underlying result object:
       confirm we can submit/poll/retrieve real hits against `pdb100` + `afdb50`.
       Done: `src/backend/foldseek_client.py` + `tests/test_foldseek_client.py`,
       verified live against 1CRN (returned correct thionin-family hits).
-- [ ] **Phase 2 — Single-structure pipeline**: `DiscoveryCoordinator` +
+- [x] **Phase 2 — Single-structure pipeline**: `DiscoveryCoordinator` +
       `/api/jobs/discover`, returning raw Foldseek hits with no annotation yet.
+      Done: `src/backend/discovery_coordinator.py`, new job-queue endpoints
+      (`POST /api/jobs/discover`, shared `GET /api/jobs/{job_id}` polling,
+      TTL sweep, per-path rate limiting tighter than alignment jobs).
+      Verified live end-to-end through the running server (not just mocked
+      tests): submitted 1CRN, got back the same 179 thionin-family hits as
+      the Phase 1 prototype.
 - [ ] **Phase 3 — Annotation aggregation**: `AnnotationAggregator` wired to
       InterPro/QuickGO first (domains + GO terms are the highest-value signal),
       STRING/Reactome after.
