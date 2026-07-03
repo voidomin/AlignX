@@ -212,7 +212,7 @@ One synthesis step, three renderings of the same underlying result object:
       the Phase 1 prototype.
 - [x] **Phase 3 — Annotation aggregation**: `AnnotationAggregator` wired to
       InterPro/QuickGO first (domains + GO terms are the highest-value signal),
-      STRING/Reactome after (not yet done - tracked as a fast-follow).
+      STRING/Reactome after.
       Done: `src/backend/annotation_aggregator.py`, wired into
       `DiscoveryCoordinator` as a best-effort step. Only AFDB-format Foldseek
       targets resolve to a UniProt accession today (PDB/CATH hits need a
@@ -223,6 +223,16 @@ One synthesis step, three renderings of the same underlying result object:
       resolvable hits before ranking. Verified live post-fix: 9/10 top
       neighbors correctly annotated as Thionin family/superfamily with GO
       terms for defense response, extracellular region, toxin activity.
+      **STRING/Reactome added as a post-launch fast-follow**: `fetch_string_partners()`
+      reuses the taxId Foldseek's own hit payload already carries (no extra
+      species lookup needed), degrades gracefully to empty for the many
+      organisms STRING doesn't cover; `fetch_reactome_pathways()` maps a
+      UniProt accession straight to pathway membership. Both reported as
+      their own coverage counts, separate from `annotated_neighbor_count`,
+      since their absence is common and not a sign of failure. Surfaced in
+      the Discover tab's Researcher view. Verified live against human TP53
+      (AF-P04637-F1): correctly surfaced MDM2/MDM4/EP300 as STRING
+      interaction partners - p53's textbook-canonical regulators.
 - [x] **Phase 4 — Tiered report + Discover UI**: frontend tab, detail-level toggle,
       neighbor list with source badges.
       Done: `web-frontend/src/components/DiscoverTab.js`, a new "Discover"
