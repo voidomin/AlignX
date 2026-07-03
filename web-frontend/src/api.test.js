@@ -39,6 +39,28 @@ describe('api.js (no API key configured)', () => {
         expect(url).toContain('/api/jobs/align');
     });
 
+    it('submitDiscoveryJob posts pdb_id (and optional databases) to the discover endpoint', async () => {
+        mockFetchOnce({ job_id: 'disc123', status: 'queued' });
+        const { submitDiscoveryJob } = await import('./api.js');
+
+        const result = await submitDiscoveryJob('1CRN', ['pdb100', 'afdb50']);
+
+        expect(result.job_id).toBe('disc123');
+        const [url, options] = global.fetch.mock.calls[0];
+        expect(url).toContain('/api/jobs/discover');
+        expect(JSON.parse(options.body)).toEqual({ pdb_id: '1CRN', databases: ['pdb100', 'afdb50'] });
+    });
+
+    it('submitDiscoveryJob omits databases when not provided', async () => {
+        mockFetchOnce({ job_id: 'disc456', status: 'queued' });
+        const { submitDiscoveryJob } = await import('./api.js');
+
+        await submitDiscoveryJob('1CRN');
+
+        const [, options] = global.fetch.mock.calls[0];
+        expect(JSON.parse(options.body)).toEqual({ pdb_id: '1CRN' });
+    });
+
     it('pollJobUntilDone polls until status is completed', async () => {
         const responses = [
             { status: 'queued' },

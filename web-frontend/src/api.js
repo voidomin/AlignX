@@ -97,6 +97,21 @@ export async function pollJobUntilDone(jobId, { intervalMs = 1500, onTick = null
     }
 }
 
+export async function submitDiscoveryJob(pdbId, databases) {
+    const body = { pdb_id: pdbId };
+    if (databases && databases.length > 0) body.databases = databases;
+    const res = await fetch(`${API_BASE}/api/jobs/discover`, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Discovery submission failed");
+    }
+    return res.json();
+}
+
 export async function fetchClusters(rmsdDf, threshold) {
     const res = await fetch(`${API_BASE}/api/clusters`, {
         method: 'POST',

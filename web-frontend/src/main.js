@@ -9,6 +9,7 @@ import { ClustersTab } from './components/ClustersTab';
 import { ComparisonTab } from './components/ComparisonTab';
 import { HistoryPanel } from './components/HistoryPanel';
 import { DashboardTab } from './components/DashboardTab';
+import { DiscoverTab } from './components/DiscoverTab';
 import { fetchChains, runAlignment, pollJobUntilDone, fetchLigands, getAlignmentReportUrl, isValidPdbId } from './api';
 
 class App {
@@ -17,7 +18,7 @@ class App {
         this.chainSelections = { "4RLT": "A", "3UG9": "A" };
         this.pdbMetadata = {};
         this.currentRunId = null;
-        this.activeTab = 'overview'; // 'dashboard' | 'overview' | 'ligands' | 'sequence' | 'analytics' | 'clusters' | 'comparison' | 'history'
+        this.activeTab = 'overview'; // 'dashboard' | 'overview' | 'discover' | 'ligands' | 'sequence' | 'analytics' | 'clusters' | 'comparison' | 'history'
         this.currentLigands = [];
         this.isAligning = false;
 
@@ -76,6 +77,8 @@ class App {
             onReloadRun: (run) => this.reloadPastRun(run),
             onQuickStart: (pdbIds) => this.loadQuickStart(pdbIds)
         });
+
+        this.discoverTab = new DiscoverTab();
     }
 
     render(rootElement) {
@@ -128,6 +131,8 @@ class App {
             pane.appendChild(this.dashboardTab.render());
         } else if (this.activeTab === 'overview') {
             pane.appendChild(this.overviewTab.render());
+        } else if (this.activeTab === 'discover') {
+            pane.appendChild(this.discoverTab.render());
         } else if (this.activeTab === 'ligands') {
             pane.appendChild(this.ligandTab.render());
             this.ligandTab.updateLigands(this.currentLigands, this.currentRunId, this.selectedPDBs);

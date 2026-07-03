@@ -3,6 +3,7 @@ import { fetchMemoryStats, triggerClearMemory, fetchHealth } from '../api';
 const TABS = [
     { key: 'dashboard', label: 'Dashboard' },
     { key: 'overview', label: 'Overview' },
+    { key: 'discover', label: 'Discover' },
     { key: 'ligands', label: 'Ligands' },
     { key: 'sequence', label: 'Sequence' },
     { key: 'analytics', label: 'Analytics' },
