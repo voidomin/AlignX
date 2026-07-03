@@ -197,9 +197,19 @@ One synthesis step, three renderings of the same underlying result object:
       Verified live end-to-end through the running server (not just mocked
       tests): submitted 1CRN, got back the same 179 thionin-family hits as
       the Phase 1 prototype.
-- [ ] **Phase 3 — Annotation aggregation**: `AnnotationAggregator` wired to
+- [x] **Phase 3 — Annotation aggregation**: `AnnotationAggregator` wired to
       InterPro/QuickGO first (domains + GO terms are the highest-value signal),
-      STRING/Reactome after.
+      STRING/Reactome after (not yet done - tracked as a fast-follow).
+      Done: `src/backend/annotation_aggregator.py`, wired into
+      `DiscoveryCoordinator` as a best-effort step. Only AFDB-format Foldseek
+      targets resolve to a UniProt accession today (PDB/CATH hits need a
+      further ID-mapping lookup - open question, unchanged). Found and fixed
+      a real gap live-testing 1CRN: ranking top-N by E-value across all
+      databases let near-identical PDB100 hits (same protein, re-solved many
+      times) crowd out every annotatable AFDB hit; fixed by filtering to
+      resolvable hits before ranking. Verified live post-fix: 9/10 top
+      neighbors correctly annotated as Thionin family/superfamily with GO
+      terms for defense response, extracellular region, toxin activity.
 - [ ] **Phase 4 — Tiered report + Discover UI**: frontend tab, detail-level toggle,
       neighbor list with source badges.
 - [ ] **Phase 5 — Attribution/ToS surface + rate-limit queueing UX**.
