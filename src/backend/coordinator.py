@@ -150,6 +150,7 @@ class AnalysisCoordinator:
                 progress_callback(0.3, "🧹 Cleaning PDB files...", 2)
 
             cleaned_files = []
+            failed_cleaning = []
             for pdb_file in pdb_files:
                 pdb_id = pdb_file.stem.split("_")[0].upper()
                 target_chain = chain_selection.get(pdb_id) if chain_selection else None
@@ -174,6 +175,19 @@ class AnalysisCoordinator:
                     cleaned_files.append(cleaned_path)
                 else:
                     logger.warning(f"Could not clean {pdb_file}: {msg}")
+                    failed_cleaning.append(f"{pdb_id} ({msg})")
+
+            # A structure that fails cleaning must not be silently dropped -
+            # continuing with fewer structures than requested would produce
+            # a misleading result (e.g. the final RMSD matrix would still be
+            # shaped for the full requested set, with fabricated values for
+            # whichever structure got excluded).
+            if failed_cleaning:
+                return (
+                    False,
+                    f"Failed to prepare structures for alignment: {'; '.join(failed_cleaning)}",
+                    None,
+                )
 
             # 3. STRUCTURAL ALIGNMENT (Step 3)
             if progress_callback:

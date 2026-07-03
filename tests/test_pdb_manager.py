@@ -153,10 +153,10 @@ class TestPDBManager:
         assert cleaned_path.exists()
         assert cleaned_path.parent == temp_workspace["cleaned"]
 
-    def test_clean_pdb_prunes_low_plddt_for_esmfold_models(self, mock_config, temp_workspace):
-        """ESMFold structures encode per-residue pLDDT in the B-factor column,
-        same convention as AlphaFold, so low-confidence residues (<50) should
-        be pruned during cleaning just like an AF- model."""
+    def test_clean_pdb_prunes_low_plddt_for_alphafold_0_to_100_scale(self, mock_config, temp_workspace):
+        """AlphaFold structures encode per-residue pLDDT in the B-factor
+        column on a 0-100 scale, so low-confidence residues (<50) should be
+        pruned during cleaning."""
         manager = PDBManager(mock_config)
         manager.cleaned_dir = temp_workspace["cleaned"]
 
@@ -167,7 +167,7 @@ class TestPDBManager:
             "ATOM      4  CA  GLY A   2      14.104  16.203  10.334  1.00 20.00           C\n"
             "TER"
         )
-        raw_file = temp_workspace["raw"] / "esm-mgyp002537940442.pdb"
+        raw_file = temp_workspace["raw"] / "af-p12345-f1.pdb"
         raw_file.write_text(content)
 
         success, msg, cleaned_path = manager.clean_pdb(raw_file)
@@ -176,6 +176,33 @@ class TestPDBManager:
         cleaned_content = cleaned_path.read_text()
         assert "ALA" in cleaned_content
         assert "GLY" not in cleaned_content  # pLDDT 20 < 50, pruned
+
+    def test_clean_pdb_detects_0_to_1_plddt_scale_for_esmfold(self, mock_config, temp_workspace):
+        """Regression test: ESM Atlas structures write per-residue confidence
+        as a 0-1 fraction, not AlphaFold's 0-100 scale (e.g. a real ESMFold
+        structure's max B-factor was 0.96). Naively comparing that against
+        the same "< 50" threshold used for AlphaFold would strip every
+        residue (0.96 < 50), leaving zero CA atoms and silently failing the
+        whole structure - this must auto-detect the scale instead."""
+        manager = PDBManager(mock_config)
+        manager.cleaned_dir = temp_workspace["cleaned"]
+
+        content = (
+            "ATOM      1  N   ALA A   1      11.104  13.203   7.334  1.00  0.90           N\n"
+            "ATOM      2  CA  ALA A   1      12.104  14.203   8.334  1.00  0.90           C\n"
+            "ATOM      3  N   GLY A   2      13.104  15.203   9.334  1.00  0.20           N\n"
+            "ATOM      4  CA  GLY A   2      14.104  16.203  10.334  1.00  0.20           C\n"
+            "TER"
+        )
+        raw_file = temp_workspace["raw"] / "esm-mgyp002537940442.pdb"
+        raw_file.write_text(content)
+
+        success, msg, cleaned_path = manager.clean_pdb(raw_file)
+
+        assert success is True
+        cleaned_content = cleaned_path.read_text()
+        assert "ALA" in cleaned_content  # 0.90 * 100 = 90 >= 50, kept
+        assert "GLY" not in cleaned_content  # 0.20 * 100 = 20 < 50, pruned
 
     def test_clean_specific_chain(self, mock_config, temp_workspace):
         """Test cleaning a specific chain from a multi-chain PDB."""
@@ -229,3 +256,28 @@ class TestPDBManager:
         # Water (48) and the ligand (401, no CA) are stripped; the two
         # standard residues become sequential 1, 2.
         assert mapping == {49: 1, 50: 2}
+
+    def test_build_residue_renumber_map_detects_0_to_1_plddt_scale_for_esmfold(
+        self, mock_config, temp_workspace
+    ):
+        """Same 0-1 vs 0-100 pLDDT scale detection as clean_pdb() - without
+        it, an esm- file's low-confidence residues (all bfactor <= 1.0)
+        would be misread as universally below the 50 threshold and pruned."""
+        manager = PDBManager(mock_config)
+
+        content = (
+            "ATOM      1  N   ALA A   1      11.104  13.203   7.334  1.00  0.90           N\n"
+            "ATOM      2  CA  ALA A   1      12.104  14.203   8.334  1.00  0.90           C\n"
+            "ATOM      3  N   GLY A   2      13.104  15.203   9.334  1.00  0.20           N\n"
+            "ATOM      4  CA  GLY A   2      14.104  16.203  10.334  1.00  0.20           C\n"
+            "TER"
+        )
+        raw_file = temp_workspace["raw"] / "esm-mgyp002537940442.pdb"
+        raw_file.write_text(content)
+
+        mapping = manager.build_residue_renumber_map(
+            raw_file, chain="A", remove_heteroatoms=True, remove_water=True
+        )
+
+        # Only ALA (0.90 * 100 = 90 >= 50) survives; GLY (20) is pruned.
+        assert mapping == {1: 1}

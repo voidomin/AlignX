@@ -377,6 +377,25 @@ class PDBManager:
             # they're excluded from this pruning heuristic.
             is_plddt_model = pdb_file.name.lower().startswith(("af-", "esm-"))
 
+            # AlphaFold writes pLDDT on a 0-100 scale, but ESM Atlas
+            # structures write it as a 0-1 fraction instead. Detect which
+            # convention this file actually uses (rather than assuming
+            # AlphaFold's) so the same "< 50" threshold means the same thing
+            # either way - without this, every residue of a 0-1-scale
+            # structure gets stripped (0.96 < 50 is always true), leaving
+            # zero CA atoms and silently failing the whole structure.
+            plddt_scale = 1.0
+            if is_plddt_model:
+                try:
+                    max_bfactor = max(
+                        (atom.bfactor for atom in structure.get_atoms()),
+                        default=0.0,
+                    )
+                    if max_bfactor <= 1.5:
+                        plddt_scale = 100.0
+                except Exception:
+                    pass
+
             class CleanSelect(Select):
                 def accept_residue(self, residue):
                     # Remove water
@@ -390,7 +409,7 @@ class PDBManager:
                         try:
                             # Bio.PDB residues don't have a single B-factor, we check the first atom (usually N or CA)
                             atoms = list(residue.get_atoms())
-                            if atoms and atoms[0].bfactor < 50:
+                            if atoms and (atoms[0].bfactor * plddt_scale) < 50:
                                 return 0
                         except (AttributeError, IndexError):
                             pass
@@ -542,6 +561,19 @@ class PDBManager:
             return {}
 
         is_plddt_model = pdb_file.name.lower().startswith(("af-", "esm-"))
+        # See the matching scale-detection note in clean_pdb() - ESM Atlas
+        # structures use a 0-1 confidence scale, not AlphaFold's 0-100.
+        plddt_scale = 1.0
+        if is_plddt_model:
+            try:
+                max_bfactor = max(
+                    (atom.bfactor for atom in structure.get_atoms()), default=0.0
+                )
+                if max_bfactor <= 1.5:
+                    plddt_scale = 100.0
+            except Exception:
+                pass
+
         model = structure[0]
 
         target_chain_obj = None
@@ -561,7 +593,7 @@ class PDBManager:
             if is_plddt_model:
                 try:
                     atoms = list(residue.get_atoms())
-                    if atoms and atoms[0].bfactor < 50:
+                    if atoms and (atoms[0].bfactor * plddt_scale) < 50:
                         continue
                 except (AttributeError, IndexError):
                     pass
