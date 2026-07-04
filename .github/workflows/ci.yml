@@ -1,4 +1,4 @@
-name: Mustang CI
+name: StructScope CI
 
 on:
   push:
