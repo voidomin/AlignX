@@ -86,6 +86,41 @@ class DebugConfig(BaseModel):
     save_raw_outputs: bool = False
 
 
+class FoldseekLocalConfig(BaseModel):
+    """Settings for the self-hosted Foldseek backend (see FoldseekRunner) -
+    a local binary + search database as an alternative to the public API's
+    shared rate limit. Provisioning a real database is a deployment-time
+    step; these fields just point at wherever that ends up living."""
+
+    binary_path: Optional[str] = None
+    database_dir: Optional[str] = None
+    timeout: int = Field(300, ge=1)
+
+
+class FoldseekConfig(BaseModel):
+    backend: str = Field("api")
+    base_url: str = Field("https://search.foldseek.com")
+    timeout: int = Field(30, ge=1)
+    poll_interval_seconds: int = Field(10, ge=1)
+    max_poll_attempts: int = Field(60, ge=1)
+    default_databases: List[str] = Field(
+        default_factory=lambda: ["pdb100", "afdb50"]
+    )
+    local: FoldseekLocalConfig = Field(default_factory=FoldseekLocalConfig)
+
+    @field_validator("backend")
+    @classmethod
+    def validate_backend(cls, v: str) -> str:
+        if v.lower() not in ("api", "local"):
+            raise ValueError("backend must be 'api' or 'local'")
+        return v.lower()
+
+
+class AnnotationConfig(BaseModel):
+    timeout: int = Field(15, ge=1)
+    top_n_neighbors: int = Field(10, ge=1)
+
+
 class PipelineConfig(BaseModel):
     """Root configuration model."""
 
@@ -101,6 +136,8 @@ class PipelineConfig(BaseModel):
     performance: PerformanceConfig
     debug: DebugConfig
     cache: Optional[CacheConfig] = Field(default_factory=CacheConfig)
+    foldseek: Optional[FoldseekConfig] = Field(default_factory=FoldseekConfig)
+    annotation: Optional[AnnotationConfig] = Field(default_factory=AnnotationConfig)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to raw dictionary for backward compatibility."""
