@@ -113,10 +113,14 @@ export class DashboardTab {
                     pids = [run.pdb_ids];
                 }
 
+                const runType = (run.metadata && run.metadata.run_type) || 'compare';
+                const runTypeLabel = runType === 'discover' ? 'Discover' : 'Compare';
+
                 const row = document.createElement('div');
                 row.className = "flex justify-between items-center py-3 border-b border-border-subtle hover:bg-surface-raised transition-colors cursor-pointer group px-2 -mx-2 rounded-md";
                 row.innerHTML = `
                     <div class="flex items-center gap-4">
+                        <span class="px-1.5 py-0.5 rounded-md bg-surface border border-border-subtle font-mono text-[10px] text-secondary uppercase">${runTypeLabel}</span>
                         <span class="font-body-sm font-bold text-primary group-hover:text-accent font-mono">${run.id}</span>
                         <div class="flex gap-1">
                             ${pids.map(pid => `<span class="px-1.5 py-0.5 rounded-md bg-surface-raised border border-border-subtle font-mono text-[10px] text-secondary">${pid}</span>`).join("")}

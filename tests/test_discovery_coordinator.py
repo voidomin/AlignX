@@ -1,8 +1,22 @@
 from pathlib import Path
 from unittest.mock import patch, AsyncMock
 
+import pytest
+
 from src.backend.discovery_coordinator import DiscoveryCoordinator
 from src.backend.foldseek_client import FoldseekError
+
+
+@pytest.fixture(autouse=True)
+def mock_history_db_save():
+    """A successful run_discovery_pipeline() now persists to HistoryDatabase
+    (real sqlite I/O against run_history.db) so Discover runs show up on
+    the Dashboard/History tab. Mock it in every test so the suite doesn't
+    write test data into the project's actual history database."""
+    with patch(
+        "src.backend.discovery_coordinator.HistoryDatabase.save_run", return_value=True
+    ) as mock_save:
+        yield mock_save
 
 
 def test_run_discovery_pipeline_rejects_invalid_id(mock_config):
@@ -252,3 +266,58 @@ def test_run_discovery_pipeline_reports_local_backend_search_failure(mock_config
         assert success is False
         assert "Foldseek binary not found" in msg
         assert results is None
+
+
+def test_run_discovery_pipeline_saves_to_history_on_success(
+    mock_config, tmp_path, mock_history_db_save
+):
+    """Discover runs must show up on the Dashboard/History tab the same way
+    Compare runs already do - unlike Compare, there's no result directory
+    to reload, so the full results dict is stashed in metadata.results and
+    "run_type": "discover" tells the frontend how to route a click on it."""
+    structure_path = tmp_path / "af-p01541-f1.pdb"
+    structure_path.write_text("ATOM")
+
+    with patch(
+        "src.backend.discovery_coordinator.PDBManager.download_pdb",
+        new_callable=AsyncMock,
+    ) as mock_download, patch(
+        "src.backend.discovery_coordinator.FoldseekClient.search",
+        new_callable=AsyncMock,
+    ) as mock_search, patch(
+        "src.backend.discovery_coordinator.AnnotationAggregator.aggregate_for_hits",
+        new_callable=AsyncMock,
+    ) as mock_aggregate:
+        mock_download.return_value = (True, "ok", structure_path)
+        mock_search.return_value = {"alignments": [{"target": "AF-P01541-F1-model_v6"}]}
+        mock_aggregate.return_value = {
+            "neighbors_considered": 1,
+            "annotated_neighbor_count": 1,
+            "unannotated_neighbor_count": 0,
+            "top_domains": [],
+            "top_go_terms": [],
+            "per_neighbor": [],
+        }
+
+        coordinator = DiscoveryCoordinator(mock_config, session_id="session-1")
+        success, _, results = coordinator.run_discovery_pipeline("AF-P01541-F1")
+
+        assert success is True
+        mock_history_db_save.assert_called_once()
+        args, kwargs = mock_history_db_save.call_args
+        assert args[0] == results["id"]
+        assert args[1] == results["name"]
+        assert args[2] == ["AF-P01541-F1"]
+        assert kwargs["metadata"]["run_type"] == "discover"
+        assert kwargs["metadata"]["results"]["pdb_id"] == "AF-P01541-F1"
+        assert kwargs["session_id"] == "session-1"
+
+
+def test_run_discovery_pipeline_does_not_save_to_history_on_failure(
+    mock_config, mock_history_db_save
+):
+    coordinator = DiscoveryCoordinator(mock_config)
+    success, _, _ = coordinator.run_discovery_pipeline("not-a-valid-id")
+
+    assert success is False
+    mock_history_db_save.assert_not_called()

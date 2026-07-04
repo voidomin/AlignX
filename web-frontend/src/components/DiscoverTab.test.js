@@ -291,4 +291,25 @@ describe('DiscoverTab', () => {
 
         expect(tab.element.querySelector('#discover-run-btn').disabled).toBe(false);
     });
+
+    it('loadSavedResults populates the input and renders a past Discover run when the tab is already rendered', () => {
+        const tab = new DiscoverTab();
+        tab.render();
+
+        tab.loadSavedResults(makeAnnotatedResults());
+
+        expect(tab.element.querySelector('#discover-input').value).toBe('1CRN');
+        expect(tab.element.querySelector('#discover-results').textContent).toContain('1CRN');
+        expect(tab.detailLevel).toBe('student');
+    });
+
+    it('loadSavedResults before the tab has ever rendered still shows results once render() runs', () => {
+        const tab = new DiscoverTab();
+        tab.loadSavedResults(makeAnnotatedResults());
+
+        const el = tab.render();
+
+        expect(el.querySelector('#discover-input').value).toBe('1CRN');
+        expect(el.querySelector('#discover-results').textContent).toContain('1CRN');
+    });
 });

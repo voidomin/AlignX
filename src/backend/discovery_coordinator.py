@@ -12,6 +12,7 @@ report on top of this data is a later phase, not implemented here yet.
 import asyncio
 import shutil
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -20,6 +21,7 @@ from src.backend.pdb_manager import PDBManager
 from src.backend.foldseek_client import FoldseekClient, FoldseekError
 from src.backend.foldseek_runner import FoldseekRunner
 from src.backend.annotation_aggregator import AnnotationAggregator
+from src.backend.coordinator import sanitize_for_json
 from src.utils.cache_manager import CacheManager
 from src.backend.database import HistoryDatabase
 
@@ -104,7 +106,14 @@ class DiscoveryCoordinator:
                 except Exception as e:
                     logger.warning(f"Annotation aggregation failed for {pdb_id}: {e}")
 
+            now = datetime.now()
+            run_id = f"discover_{int(now.timestamp())}"
+            run_name = f"Discovery: {pdb_id.strip().upper()} ({now.strftime('%H:%M')})"
+
             results = {
+                "id": run_id,
+                "name": run_name,
+                "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
                 "pdb_id": pdb_id.strip().upper(),
                 "source": PDBManager.detect_source(pdb_id),
                 "databases_searched": databases,
@@ -112,6 +121,25 @@ class DiscoveryCoordinator:
                 "hits": hits,
                 "annotations": annotations,
             }
+
+            # Persist to history so Discover runs show up on the Dashboard
+            # and History tab the same way Compare (alignment) runs already
+            # do - "run_type": "discover" in metadata lets the frontend tell
+            # the two apart and route a click on a past run appropriately,
+            # since there's no shared result shape between them (no
+            # alignment.pdb/RMSD matrix to reload for a Discover run).
+            self.history_db.save_run(
+                run_id,
+                run_name,
+                [pdb_id.strip().upper()],
+                result_path=Path("results") / (self.session_id or "") / run_id,
+                metadata={
+                    "run_type": "discover",
+                    "results": sanitize_for_json(results),
+                },
+                session_id=self.session_id,
+            )
+
             return True, "Discovery completed successfully", results
 
         except Exception as e:

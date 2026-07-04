@@ -88,8 +88,12 @@ export class HistoryPanel {
                 }
             } catch(e){}
 
+            const runType = (run.metadata && run.metadata.run_type) || 'compare';
+            const runTypeLabel = runType === 'discover' ? 'Discover' : 'Compare';
+
             div.innerHTML = `
                 <div class="flex items-center gap-4">
+                    <span class="px-1.5 py-0.5 rounded-md bg-surface border border-border-subtle font-mono text-[10px] text-secondary uppercase">${runTypeLabel}</span>
                     <span class="font-body-sm font-bold text-primary group-hover:text-accent font-mono">${run.id}</span>
                     <div class="flex gap-1">
                         ${pids.map(pid => `<span class="px-1.5 py-0.5 rounded-md bg-surface-raised border border-border-subtle font-mono text-[10px] text-secondary">${pid}</span>`).join("")}

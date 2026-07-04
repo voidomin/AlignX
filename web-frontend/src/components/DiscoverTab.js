@@ -79,7 +79,10 @@ export class DiscoverTab {
             if (e.key === 'Enter') this.handleRun();
         });
 
-        if (this.results) this.renderResults();
+        if (this.results) {
+            this.element.querySelector('#discover-input').value = this.results.pdb_id;
+            this.renderResults();
+        }
         return div;
     }
 
@@ -157,6 +160,22 @@ export class DiscoverTab {
     setDetailLevel(level) {
         this.detailLevel = level;
         if (this.results) this.renderResults();
+    }
+
+    // Reopens a Discover run loaded from the Dashboard/History tab. Unlike
+    // Compare runs, there's no result directory/RMSD matrix to reload -
+    // the full result was stashed in history metadata at save time, so
+    // this just hands it back to the same rendering path a fresh run uses.
+    loadSavedResults(results) {
+        this.results = results;
+        this.detailLevel = 'student';
+        if (this.element) {
+            const input = this.element.querySelector('#discover-input');
+            if (input && results) input.value = results.pdb_id;
+            this.setError(null);
+            this.setStatus(null);
+            this.renderResults();
+        }
     }
 
     renderResults() {
