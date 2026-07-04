@@ -189,12 +189,18 @@ One synthesis step, three renderings of the same underlying result object:
 - Rate-limit-aware job queue: Discover jobs may need to queue behind each other
   server-side given the 0.1 qps Foldseek ceiling — needs a visible "queued" state in
   the UI so a public multi-user deployment doesn't look broken under load.
-- Decide self-host vs. rely on the public Foldseek API long-term: relying on
+- **Self-hosting: code done, database provisioning still open.** Relying on
   `search.foldseek.com` is the fast path to a working prototype, but a public-facing
   product at any real scale will hit that rate ceiling fast (0.1 qps ≈ one search per
-  10 seconds, shared across every user). Self-hosting Foldseek + a PDB/AFDB search
-  database is the scale-up path if this gets real usage — flagged here as a known
-  future constraint, not something to solve now.
+  10 seconds, shared across every user). `FoldseekRunner` (`src/backend/foldseek_runner.py`)
+  now makes local execution possible - a `foldseek.backend: local` config toggle,
+  proven live against a real WSL Foldseek install and a small hand-built test
+  database (correctly matched 1LYZ to 2LYZ/3LYZ, correctly rejected an unrelated
+  kinase). What's still genuinely open is a deployment decision, not code: whoever
+  runs this at real scale needs to actually provision a production-size PDB100/AFDB
+  search database (GBs to 100+ GB, plus `foldseek createtaxdb` for taxonomy/STRING
+  support) and point `foldseek.local.database_dir` at it. Deliberately not attempted
+  here - same category of decision as "install WSL" was for Mustang.
 
 ## 6. Phased plan
 
@@ -284,6 +290,9 @@ One synthesis step, three renderings of the same underlying result object:
   accession (only pdb100 via SIFTS and AFDB via regex do) - not in the default
   database set today, so lower priority, but would need their own ID-mapping path
   if ever enabled.
+- When to actually provision a production-scale local Foldseek database (see §5's
+  self-hosting note) — depends on how much real usage this gets; the code path is
+  ready (`foldseek.backend: local`), the multi-GB+ database itself is not.
 
 **Resolved:**
 - ~~How do we derive the NCBI taxon ID STRING requires per neighbor?~~ Turns out
@@ -292,4 +301,6 @@ One synthesis step, three renderings of the same underlying result object:
   needed at all - `fetch_string_partners()` just reads `hit["taxId"]` directly.
 - ~~PDB/CATH hits need a further ID-mapping lookup~~ → done for pdb100 via SIFTS
   (see Phase 3's fast-follow note above). CATH/gmgcl_id/bfmd remain open (see above).
-- Self-host Foldseek now or defer — depends on how much real usage this gets.
+- ~~Self-host Foldseek now or defer?~~ → the code/config path is done and
+  live-verified (`FoldseekRunner`); deferred is *provisioning a production
+  database*, which is now the only remaining piece (see above).
