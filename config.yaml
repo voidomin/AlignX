@@ -21,6 +21,14 @@ mustang:
   executable_path: null
   timeout: 600
 foldseek:
+  # "api": public search.foldseek.com (default - no setup required, but
+  #   shared across all users at ~0.1 req/s, see docs/ROADMAP_V3.md Phase 5).
+  # "local": a Foldseek binary + database on this machine (see
+  #   foldseek.local below) - the scale-up path once "api" becomes a real
+  #   bottleneck. Requires actually installing Foldseek and a search
+  #   database, which is a deployment-time operational step, not something
+  #   toggling this setting does by itself.
+  backend: api
   base_url: https://search.foldseek.com
   timeout: 30
   poll_interval_seconds: 10
@@ -28,6 +36,10 @@ foldseek:
   default_databases:
   - pdb100
   - afdb50
+  local:
+    binary_path: null
+    database_dir: null
+    timeout: 300
 annotation:
   timeout: 15
   top_n_neighbors: 10

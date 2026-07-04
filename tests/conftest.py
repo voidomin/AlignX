@@ -20,6 +20,17 @@ def reset_mustang_installation_cache():
     MustangRunner._cached_installation = None
 
 
+@pytest.fixture(autouse=True)
+def reset_foldseek_runner_installation_cache():
+    """Same rationale as reset_mustang_installation_cache above, for
+    FoldseekRunner's equivalent class-level installation cache."""
+    from src.backend.foldseek_runner import FoldseekRunner
+
+    FoldseekRunner._cached_installation = None
+    yield
+    FoldseekRunner._cached_installation = None
+
+
 @pytest.fixture
 def mock_config():
     """Return a standard configuration dictionary for testing."""

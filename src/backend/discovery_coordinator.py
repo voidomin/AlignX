@@ -10,12 +10,15 @@ report on top of this data is a later phase, not implemented here yet.
 """
 
 import asyncio
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.utils.logger import get_logger
 from src.backend.pdb_manager import PDBManager
 from src.backend.foldseek_client import FoldseekClient, FoldseekError
+from src.backend.foldseek_runner import FoldseekRunner
 from src.backend.annotation_aggregator import AnnotationAggregator
 from src.utils.cache_manager import CacheManager
 from src.backend.database import HistoryDatabase
@@ -33,6 +36,7 @@ class DiscoveryCoordinator:
         self.cache_manager = CacheManager(config, self.history_db)
         self.pdb_manager = PDBManager(config, self.cache_manager, session_id=session_id)
         self.foldseek_client = FoldseekClient(config)
+        self.foldseek_runner = FoldseekRunner(config)
         self.annotation_aggregator = AnnotationAggregator(config)
 
     def run_discovery_pipeline(
@@ -67,14 +71,21 @@ class DiscoveryCoordinator:
             if not success or not structure_path:
                 return False, f"Failed to download {pdb_id}: {msg}", None
 
-            try:
-                raw_result = asyncio.run(
-                    self.foldseek_client.search(structure_path, databases)
-                )
-            except FoldseekError as e:
-                return False, f"Foldseek search failed: {e}", None
+            backend = self.config.get("foldseek", {}).get("backend", "api")
+            if backend == "local":
+                success, msg, hits = self._search_local(structure_path)
+                if not success:
+                    return False, msg, None
+                databases = [f"local:{self.config['foldseek']['local']['database_dir']}"]
+            else:
+                try:
+                    raw_result = asyncio.run(
+                        self.foldseek_client.search(structure_path, databases)
+                    )
+                except FoldseekError as e:
+                    return False, f"Foldseek search failed: {e}", None
 
-            hits = self.foldseek_client.parse_hits(raw_result)
+                hits = self.foldseek_client.parse_hits(raw_result)
 
             # Annotation lookups are best-effort: a flaky InterPro/QuickGO
             # response must not fail the whole discovery run when we already
@@ -106,3 +117,33 @@ class DiscoveryCoordinator:
         except Exception as e:
             logger.error(f"Discovery pipeline error: {e}", exc_info=True)
             return False, str(e), None
+
+    def _search_local(
+        self, structure_path: Path
+    ) -> Tuple[bool, str, Optional[List[Dict[str, Any]]]]:
+        """Runs the search via a locally-installed Foldseek binary against
+        `foldseek.local.database_dir` instead of the public API. See
+        FoldseekRunner's module docstring for what "local" does and doesn't
+        cover (proven against a small test database; provisioning a
+        production-scale database is a separate deployment step)."""
+        database_dir = self.config.get("foldseek", {}).get("local", {}).get(
+            "database_dir"
+        )
+        if not database_dir:
+            return (
+                False,
+                "Local Foldseek backend selected but foldseek.local.database_dir "
+                "is not configured.",
+                None,
+            )
+
+        tmp_dir = Path(tempfile.mkdtemp(prefix="foldseek_local_"))
+        try:
+            success, msg, hits = self.foldseek_runner.search_against_directory(
+                structure_path, Path(database_dir), tmp_dir
+            )
+            if not success:
+                return False, msg, None
+            return True, msg, hits
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)

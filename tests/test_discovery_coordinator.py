@@ -173,3 +173,82 @@ def test_run_discovery_pipeline_survives_annotation_failure(mock_config, tmp_pat
         assert success is True
         assert results["hit_count"] == 1
         assert results["annotations"] is None
+
+
+def test_run_discovery_pipeline_uses_local_backend_when_configured(mock_config, tmp_path):
+    structure_path = tmp_path / "4rlt.pdb"
+    structure_path.write_text("ATOM")
+    config = {
+        **mock_config,
+        "foldseek": {"backend": "local", "local": {"database_dir": "/some/db"}},
+    }
+
+    with patch(
+        "src.backend.discovery_coordinator.PDBManager.download_pdb",
+        new_callable=AsyncMock,
+    ) as mock_download, patch(
+        "src.backend.discovery_coordinator.FoldseekRunner.search_against_directory"
+    ) as mock_local_search, patch(
+        "src.backend.discovery_coordinator.FoldseekClient.search",
+        new_callable=AsyncMock,
+    ) as mock_api_search:
+        mock_download.return_value = (True, "ok", structure_path)
+        mock_local_search.return_value = (
+            True,
+            "Local Foldseek search completed successfully",
+            [{"target": "2lyz", "eval": 1e-20, "prob": 1.0, "seqId": 100.0}],
+        )
+
+        coordinator = DiscoveryCoordinator(config)
+        success, msg, results = coordinator.run_discovery_pipeline("4RLT")
+
+        assert success is True
+        assert results["hit_count"] == 1
+        assert results["hits"][0]["target"] == "2lyz"
+        assert results["databases_searched"] == ["local:/some/db"]
+        mock_local_search.assert_called_once()
+        mock_api_search.assert_not_called()
+
+
+def test_run_discovery_pipeline_local_backend_requires_database_dir(mock_config, tmp_path):
+    structure_path = tmp_path / "4rlt.pdb"
+    structure_path.write_text("ATOM")
+    config = {**mock_config, "foldseek": {"backend": "local", "local": {}}}
+
+    with patch(
+        "src.backend.discovery_coordinator.PDBManager.download_pdb",
+        new_callable=AsyncMock,
+    ) as mock_download:
+        mock_download.return_value = (True, "ok", structure_path)
+
+        coordinator = DiscoveryCoordinator(config)
+        success, msg, results = coordinator.run_discovery_pipeline("4RLT")
+
+        assert success is False
+        assert "database_dir is not configured" in msg
+        assert results is None
+
+
+def test_run_discovery_pipeline_reports_local_backend_search_failure(mock_config, tmp_path):
+    structure_path = tmp_path / "4rlt.pdb"
+    structure_path.write_text("ATOM")
+    config = {
+        **mock_config,
+        "foldseek": {"backend": "local", "local": {"database_dir": "/some/db"}},
+    }
+
+    with patch(
+        "src.backend.discovery_coordinator.PDBManager.download_pdb",
+        new_callable=AsyncMock,
+    ) as mock_download, patch(
+        "src.backend.discovery_coordinator.FoldseekRunner.search_against_directory"
+    ) as mock_local_search:
+        mock_download.return_value = (True, "ok", structure_path)
+        mock_local_search.return_value = (False, "Foldseek binary not found", [])
+
+        coordinator = DiscoveryCoordinator(config)
+        success, msg, results = coordinator.run_discovery_pipeline("4RLT")
+
+        assert success is False
+        assert "Foldseek binary not found" in msg
+        assert results is None
