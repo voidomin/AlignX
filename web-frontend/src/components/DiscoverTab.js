@@ -1,4 +1,4 @@
-import { submitDiscoveryJob, pollJobUntilDone, isValidPdbId } from '../api';
+import { submitDiscoveryJob, pollJobUntilDone, isValidPdbId, getDiscoveryReportUrl, getDiscoveryExportUrl } from '../api';
 
 const SOURCE_LABELS = {
     pdb: 'PDB',
@@ -201,6 +201,22 @@ export class DiscoverTab {
             ? this.renderEmptyAnnotations(r)
             : this.renderTieredBody(ann);
 
+        // Discover runs are always saved to history (see DiscoveryCoordinator),
+        // so a completed result should always have an id - guard anyway in
+        // case of an older/malformed result with no id to build a URL from.
+        const downloadHTML = r.id ? `
+            <div class="flex gap-4">
+                <a href="${getDiscoveryReportUrl(r.id)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 font-label-sm text-label-sm text-secondary hover:text-primary transition-colors">
+                    <span class="material-symbols-outlined text-[16px]">description</span>
+                    Download Report
+                </a>
+                <a href="${getDiscoveryExportUrl(r.id)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 font-label-sm text-label-sm text-secondary hover:text-primary transition-colors">
+                    <span class="material-symbols-outlined text-[16px]">data_object</span>
+                    Download JSON
+                </a>
+            </div>
+        ` : '';
+
         container.innerHTML = `
             <div class="flex flex-col gap-4 border-t border-border pt-6">
                 <div class="flex items-center justify-between flex-wrap gap-3">
@@ -211,6 +227,7 @@ export class DiscoverTab {
                     </div>
                     ${detailToggleHTML}
                 </div>
+                ${downloadHTML}
                 ${bodyHTML}
             </div>
         `;

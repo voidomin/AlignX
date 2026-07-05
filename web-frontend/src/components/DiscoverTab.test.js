@@ -5,12 +5,15 @@ vi.mock('../api.js', () => ({
     submitDiscoveryJob: vi.fn(),
     pollJobUntilDone: vi.fn(),
     isValidPdbId: vi.fn((id) => /^[0-9A-Z]{4}$/.test(id) || /^AF-/.test(id)),
+    getDiscoveryReportUrl: vi.fn((runId) => `http://mock/api/discover/report?run_id=${runId}`),
+    getDiscoveryExportUrl: vi.fn((runId) => `http://mock/api/discover/export?run_id=${runId}`),
 }));
 
 import { submitDiscoveryJob, pollJobUntilDone } from '../api.js';
 
 function makeAnnotatedResults(overrides = {}) {
     return {
+        id: 'discover_123',
         pdb_id: '1CRN',
         source: 'pdb',
         databases_searched: ['pdb100', 'afdb50'],
@@ -152,6 +155,28 @@ describe('DiscoverTab', () => {
 
         expect(tab.element.querySelector('#discover-results').textContent)
             .toContain('none could be resolved to a protein with known functional annotations');
+    });
+
+    it('shows download report/JSON links pointing at the run id when a result has one', () => {
+        const tab = new DiscoverTab();
+        tab.render();
+        tab.results = makeAnnotatedResults();
+        tab.renderResults();
+
+        const links = Array.from(tab.element.querySelectorAll('#discover-results a')).map(a => a.href);
+        expect(links.some(h => h.includes('/api/discover/report?run_id=discover_123'))).toBe(true);
+        expect(links.some(h => h.includes('/api/discover/export?run_id=discover_123'))).toBe(true);
+    });
+
+    it('omits download links when a result has no id', () => {
+        const tab = new DiscoverTab();
+        tab.render();
+        tab.results = makeAnnotatedResults({ id: undefined });
+        tab.renderResults();
+
+        const text = tab.element.querySelector('#discover-results').textContent;
+        expect(text).not.toContain('Download Report');
+        expect(text).not.toContain('Download JSON');
     });
 
     it('defaults to the student detail level and shows the narrative explanation', () => {

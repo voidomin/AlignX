@@ -204,3 +204,11 @@ export function getAlignmentReportUrl(runId, sections) {
 export function getLabNotebookUrl(runId) {
     return withApiKey(`${API_BASE}/api/notebook?run_id=${runId}`);
 }
+
+export function getDiscoveryReportUrl(runId) {
+    return withApiKey(`${API_BASE}/api/discover/report?run_id=${runId}`);
+}
+
+export function getDiscoveryExportUrl(runId) {
+    return withApiKey(`${API_BASE}/api/discover/export?run_id=${runId}`);
+}

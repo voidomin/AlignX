@@ -1,3 +1,4 @@
+import tempfile
 import time
 import asyncio
 import pytest
@@ -491,6 +492,96 @@ def test_notebook_endpoint(tmp_path):
         results_arg = mock_export.call_args[0][0]
         assert isinstance(results_arg["result_dir"], Path)
         assert isinstance(results_arg["alignment_pdb"], Path)
+
+
+def _discover_run(run_id="discover_123", results_overrides=None):
+    results = {
+        "id": run_id,
+        "pdb_id": "1CRN",
+        "source": "pdb",
+        "databases_searched": ["pdb100"],
+        "hit_count": 1,
+        "hits": [{"target": "AF-P01541-F1-model_v6", "prob": 1.0, "eval": 1e-5, "seqId": 50}],
+        "annotations": {
+            "neighbors_considered": 1,
+            "total_hit_count": 1,
+            "candidates_examined": 1,
+            "resolvable_hit_count": 1,
+            "annotated_neighbor_count": 1,
+            "unannotated_neighbor_count": 0,
+            "neighbors_with_interactions_count": 0,
+            "neighbors_with_pathways_count": 0,
+            "top_domains": [{"name": "Thionin", "type": "family", "neighbor_count": 1}],
+            "top_go_terms": [],
+            "per_neighbor": [],
+        },
+    }
+    if results_overrides:
+        results.update(results_overrides)
+    return {
+        "id": run_id,
+        "pdb_ids": ["1CRN"],
+        "metadata": {"run_type": "discover", "results": results},
+    }
+
+
+def test_discover_report_endpoint_generates_html():
+    dummy_html_dir = Path(tempfile.mkdtemp())
+    dummy_html = dummy_html_dir / "report.html"
+    dummy_html.write_text("<html>dummy discover report</html>")
+
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "src.backend.discovery_report_exporter.DiscoveryReportExporter.export"
+    ) as mock_export:
+        mock_get_run.return_value = _discover_run()
+        mock_export.return_value = dummy_html
+
+        response = client.get("/api/discover/report?run_id=discover_123")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "text/html; charset=utf-8"
+        assert b"dummy discover report" in response.content
+        mock_export.assert_called_once()
+
+
+def test_discover_report_endpoint_rejects_compare_run():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run:
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT", "3UG9"],
+            "metadata": {"results": {"id": "run_123"}},  # no run_type -> compare
+        }
+        response = client.get("/api/discover/report?run_id=run_123")
+        assert response.status_code == 400
+        assert "not a Discover run" in response.json()["detail"]
+
+
+def test_discover_report_endpoint_404s_for_unknown_run():
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        response = client.get("/api/discover/report?run_id=nope")
+        assert response.status_code == 404
+
+
+def test_discover_export_json_endpoint_returns_raw_results():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run:
+        mock_get_run.return_value = _discover_run()
+        response = client.get("/api/discover/export?run_id=discover_123")
+
+        assert response.status_code == 200
+        assert response.json()["pdb_id"] == "1CRN"
+        assert "attachment" in response.headers["content-disposition"]
+        assert "discover_123.json" in response.headers["content-disposition"]
+
+
+def test_discover_export_json_endpoint_rejects_compare_run():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run:
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT", "3UG9"],
+            "metadata": {"results": {"id": "run_123"}},
+        }
+        response = client.get("/api/discover/export?run_id=run_123")
+        assert response.status_code == 400
 
 
 def test_sanitize_for_json_decodes_plotly_binary_typed_arrays():

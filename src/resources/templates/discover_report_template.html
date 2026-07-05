@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>StructScope Discovery Report - {{ pdb_id }}</title>
+    <style>
+      :root {
+        --bg: #100e0b;
+        --surface: #171310;
+        --surface-raised: #1e1813;
+        --border: #2c2620;
+        --border-subtle: #221d18;
+        --primary: #ede7dc;
+        --secondary: #a79e8e;
+        --accent: #e2846a;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 40px 24px;
+        background: var(--bg);
+        color: var(--primary);
+        font-family: ui-monospace, "SF Mono", Consolas, monospace;
+        line-height: 1.5;
+      }
+      .page { max-width: 880px; margin: 0 auto; }
+      .eyebrow {
+        display: inline-block;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+      h1 { font-size: 28px; margin: 0 0 4px 0; }
+      h2 { font-size: 16px; margin: 32px 0 12px 0; color: var(--primary); }
+      .meta-line { color: var(--secondary); font-size: 13px; margin-bottom: 24px; }
+      .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        background: var(--surface);
+        border: 1px solid var(--border-subtle);
+        font-size: 10px;
+        text-transform: uppercase;
+        color: var(--secondary);
+      }
+      .card {
+        background: var(--surface-raised);
+        border: 1px solid var(--border-subtle);
+        border-radius: 8px;
+        padding: 16px 20px;
+        margin-bottom: 16px;
+      }
+      .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+      .stat-row { border-top: 1px solid var(--border); padding-top: 8px; }
+      .stat-key {
+        display: block;
+        font-size: 10px;
+        text-transform: uppercase;
+        color: var(--secondary);
+        letter-spacing: 0.05em;
+      }
+      .stat-value { font-size: 22px; font-weight: 600; }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border-subtle); }
+      th { color: var(--secondary); font-size: 11px; text-transform: uppercase; font-weight: 500; }
+      .row-between { display: flex; justify-content: space-between; align-items: baseline; }
+      .footer {
+        margin-top: 40px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border-subtle);
+        font-size: 11px;
+        color: var(--secondary);
+      }
+      .footer a { color: var(--accent); }
+      .empty { color: var(--secondary); font-size: 13px; padding: 12px 0; }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <span class="eyebrow">StructScope &mdash; Structural Discovery Report</span>
+      <h1>{{ pdb_id }} <span class="badge">{{ source_label }}</span></h1>
+      <div class="meta-line">
+        Generated {{ generated_at }} &middot; {{ hit_count }} structural matches
+        ({{ databases_searched }})
+      </div>
+
+      {% if annotations %}
+      <div class="stat-grid">
+        <div class="stat-row">
+          <span class="stat-key">Total hits</span>
+          <span class="stat-value">{{ annotations.total_hit_count }}</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-key">Resolvable to UniProt</span>
+          <span class="stat-value">{{ annotations.resolvable_hit_count }} / {{ annotations.candidates_examined }}</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-key">Annotated neighbors</span>
+          <span class="stat-value">{{ annotations.annotated_neighbor_count }} / {{ annotations.neighbors_considered }}</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-key">With interactions / pathways</span>
+          <span class="stat-value">{{ annotations.neighbors_with_interactions_count }} / {{ annotations.neighbors_with_pathways_count }}</span>
+        </div>
+      </div>
+
+      <h2>Common domains / families</h2>
+      {% if annotations.top_domains %}
+      <table>
+        <thead><tr><th>Name</th><th>Type</th><th>Neighbors</th></tr></thead>
+        <tbody>
+          {% for d in annotations.top_domains %}
+          <tr><td>{{ d.name }}</td><td>{{ d.type }}</td><td>{{ d.neighbor_count }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty">No common domain/family found among annotated neighbors.</div>
+      {% endif %}
+
+      <h2>Common GO terms</h2>
+      {% if annotations.top_go_terms %}
+      <table>
+        <thead><tr><th>Term</th><th>Aspect</th><th>Neighbors</th></tr></thead>
+        <tbody>
+          {% for g in annotations.top_go_terms %}
+          <tr><td>{{ g.name or g.id }}</td><td>{{ g.aspect }}</td><td>{{ g.neighbor_count }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty">No common GO term found among annotated neighbors.</div>
+      {% endif %}
+
+      <h2>Interactions &amp; pathways (per neighbor)</h2>
+      {% if interaction_rows %}
+      <table>
+        <thead><tr><th>Neighbor</th><th>STRING partners</th><th>Reactome pathways</th></tr></thead>
+        <tbody>
+          {% for row in interaction_rows %}
+          <tr>
+            <td>{{ row.target }}</td>
+            <td>{{ row.partners }}</td>
+            <td>{{ row.pathways }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty">No STRING interaction or Reactome pathway data found among annotated neighbors.</div>
+      {% endif %}
+      {% else %}
+      <div class="card">No annotation data available for this run.</div>
+      {% endif %}
+
+      <h2>Top structural matches</h2>
+      {% if hit_rows %}
+      <table>
+        <thead><tr><th>Target</th><th>Prob</th><th>E-value</th><th>Seq ID</th></tr></thead>
+        <tbody>
+          {% for h in hit_rows %}
+          <tr>
+            <td>{{ h.target }}</td>
+            <td>{{ h.prob }}</td>
+            <td>{{ h.eval }}</td>
+            <td>{{ h.seqId }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty">No structural matches found.</div>
+      {% endif %}
+
+      <div class="footer">
+        Structural search via <a href="https://search.foldseek.com/search">Foldseek</a>.
+        Functional annotations via EMBL-EBI's <a href="https://www.ebi.ac.uk/interpro/">InterPro</a>,
+        <a href="https://www.ebi.ac.uk/QuickGO/">QuickGO</a>, <a href="https://string-db.org/">STRING</a>,
+        and <a href="https://reactome.org/">Reactome</a>. Results are computational inferences from
+        structural similarity, not experimentally confirmed function &mdash; see each service's own
+        terms of use for details.
+      </div>
+    </div>
+  </body>
+</html>

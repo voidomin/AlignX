@@ -1084,6 +1084,77 @@ def get_lab_notebook(run_id: str = Query(...), session_id: Optional[str] = Query
         )
 
 
+def _get_discover_run_results(run_id: str) -> Dict[str, Any]:
+    """Shared lookup for the two Discover export endpoints below: finds the
+    saved run, confirms it's actually a Discover run (not a Compare run -
+    the two have unrelated result shapes), and returns its results dict."""
+    _safe_segment(run_id, "run_id")
+    run = history_db.get_run(run_id)
+    if not run:
+        raise HTTPException(
+            status_code=404, detail=f"Run {run_id} not found in history database."
+        )
+    metadata = run.get("metadata", {})
+    if metadata.get("run_type") != "discover":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Run {run_id} is not a Discover run (use /api/report for Compare runs).",
+        )
+    results = metadata.get("results")
+    if not results:
+        raise HTTPException(
+            status_code=404, detail=f"No stored results for Discover run {run_id}."
+        )
+    return results
+
+
+@app.get("/api/discover/report")
+def get_discovery_report(run_id: str = Query(...)):
+    """
+    Generate and retrieve a standalone HTML report for a Discover run -
+    the export/report parity Compare mode has always had.
+    """
+    from src.backend.discovery_report_exporter import DiscoveryReportExporter
+    from fastapi.responses import FileResponse
+
+    results = _get_discover_run_results(run_id)
+
+    try:
+        exporter = DiscoveryReportExporter()
+        report_path = exporter.export(results)
+        if not report_path.exists():
+            raise HTTPException(
+                status_code=500, detail="Discovery report file was not created."
+            )
+        return FileResponse(
+            path=str(report_path),
+            media_type="text/html",
+            filename=f"discover_report_{run_id}.html",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate discovery report: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate discovery report: {str(e)}"
+        )
+
+
+@app.get("/api/discover/export")
+def export_discovery_json(run_id: str = Query(...)):
+    """Downloads the raw JSON result for a Discover run - for programmatic
+    reuse, unlike the human-readable HTML report above."""
+    from fastapi.responses import JSONResponse
+
+    results = _get_discover_run_results(run_id)
+    return JSONResponse(
+        content=results,
+        headers={
+            "Content-Disposition": f'attachment; filename="discover_{run_id}.json"'
+        },
+    )
+
+
 # Mount static site for frontend SPA
 static_frontend_dir = project_root / "static"
 static_frontend_dir.mkdir(exist_ok=True)

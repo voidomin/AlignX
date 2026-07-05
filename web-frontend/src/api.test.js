@@ -140,6 +140,16 @@ describe('api.js (no API key configured)', () => {
         expect(getLabNotebookUrl('run_1')).toContain('/api/notebook?run_id=run_1');
     });
 
+    it('getDiscoveryReportUrl points at the discover report endpoint for the given run', async () => {
+        const { getDiscoveryReportUrl } = await import('./api.js');
+        expect(getDiscoveryReportUrl('discover_1')).toContain('/api/discover/report?run_id=discover_1');
+    });
+
+    it('getDiscoveryExportUrl points at the discover export endpoint for the given run', async () => {
+        const { getDiscoveryExportUrl } = await import('./api.js');
+        expect(getDiscoveryExportUrl('discover_1')).toContain('/api/discover/export?run_id=discover_1');
+    });
+
     it('fetchStats hits the aggregate stats endpoint', async () => {
         mockFetchOnce({ total_runs: 3, total_proteins_analyzed: 7, cache_size_mb: 1.2 });
         const { fetchStats } = await import('./api.js');
