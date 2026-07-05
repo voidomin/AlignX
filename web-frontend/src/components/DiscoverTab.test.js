@@ -28,10 +28,18 @@ function makeAnnotatedResults(overrides = {}) {
             resolvable_hit_count: 18,
             annotated_neighbor_count: 9,
             unannotated_neighbor_count: 1,
+            min_confident_probability: 0.5,
+            high_confidence_annotated_count: 9,
             top_domains: [
                 { name: 'Thionin', type: 'family', interpro_accession: 'IPR001010', neighbor_count: 9 },
             ],
             top_go_terms: [
+                { id: 'GO:0006952', name: 'defense response', aspect: 'biological_process', neighbor_count: 9 },
+            ],
+            high_confidence_top_domains: [
+                { name: 'Thionin', type: 'family', interpro_accession: 'IPR001010', neighbor_count: 9 },
+            ],
+            high_confidence_top_go_terms: [
                 { id: 'GO:0006952', name: 'defense response', aspect: 'biological_process', neighbor_count: 9 },
             ],
             neighbors_with_interactions_count: 0,
@@ -157,6 +165,69 @@ describe('DiscoverTab', () => {
             .toContain('none could be resolved to a protein with known functional annotations');
     });
 
+    it('shows a low-confidence message instead of a hypothesis when annotations exist but none clear the confidence gate', () => {
+        const tab = new DiscoverTab();
+        tab.render();
+        tab.results = makeAnnotatedResults({
+            annotations: {
+                neighbors_considered: 3,
+                total_hit_count: 5,
+                candidates_examined: 3,
+                resolvable_hit_count: 3,
+                annotated_neighbor_count: 2,
+                unannotated_neighbor_count: 1,
+                min_confident_probability: 0.5,
+                high_confidence_annotated_count: 0,
+                neighbors_with_interactions_count: 0,
+                neighbors_with_pathways_count: 0,
+                top_domains: [{ name: 'Thionin', type: 'family', neighbor_count: 2 }],
+                top_go_terms: [],
+                high_confidence_top_domains: [],
+                high_confidence_top_go_terms: [],
+                per_neighbor: [],
+            },
+        });
+        tab.renderResults();
+
+        const text = tab.element.querySelector('#discover-results').textContent;
+        expect(text).toContain('none matched with high enough structural confidence');
+        expect(text).not.toContain('most confident structural neighbors');
+        // The low-confidence domain data must not leak into the narrative,
+        // even though it's technically present in the unfiltered top_domains.
+        expect(text).not.toContain('This structure looks similar to');
+    });
+
+    it('researcher view is never blocked by the confidence gate, even with zero high-confidence matches', () => {
+        const tab = new DiscoverTab();
+        tab.render();
+        tab.results = makeAnnotatedResults({
+            annotations: {
+                neighbors_considered: 3,
+                total_hit_count: 5,
+                candidates_examined: 3,
+                resolvable_hit_count: 3,
+                annotated_neighbor_count: 2,
+                unannotated_neighbor_count: 1,
+                min_confident_probability: 0.5,
+                high_confidence_annotated_count: 0,
+                neighbors_with_interactions_count: 0,
+                neighbors_with_pathways_count: 0,
+                top_domains: [{ name: 'Thionin', type: 'family', neighbor_count: 2 }],
+                top_go_terms: [],
+                high_confidence_top_domains: [],
+                high_confidence_top_go_terms: [],
+                per_neighbor: [],
+            },
+        });
+        tab.renderResults();
+        tab.element.querySelector('[data-level="researcher"]').click();
+
+        const text = tab.element.querySelector('#discover-results').textContent;
+        expect(text).toContain('Thionin');
+        expect(text).toContain('Total hits');
+        expect(text).not.toContain('none matched with high enough structural confidence');
+    });
+
     it('shows download report/JSON links pointing at the run id when a result has one', () => {
         const tab = new DiscoverTab();
         tab.render();
@@ -203,10 +274,16 @@ describe('DiscoverTab', () => {
                 resolvable_hit_count: 20,
                 annotated_neighbor_count: 3,
                 unannotated_neighbor_count: 2,
+                min_confident_probability: 0.5,
+                high_confidence_annotated_count: 3,
                 neighbors_with_interactions_count: 0,
                 neighbors_with_pathways_count: 0,
                 top_domains: [],
                 top_go_terms: [
+                    { id: 'GO:0006952', name: 'defense response', aspect: 'biological_process', neighbor_count: 3 },
+                ],
+                high_confidence_top_domains: [],
+                high_confidence_top_go_terms: [
                     { id: 'GO:0006952', name: 'defense response', aspect: 'biological_process', neighbor_count: 3 },
                 ],
                 per_neighbor: [],
@@ -261,10 +338,14 @@ describe('DiscoverTab', () => {
                 resolvable_hit_count: 18,
                 annotated_neighbor_count: 8,
                 unannotated_neighbor_count: 2,
+                min_confident_probability: 0.5,
+                high_confidence_annotated_count: 8,
                 neighbors_with_interactions_count: 1,
                 neighbors_with_pathways_count: 0,
                 top_domains: [],
                 top_go_terms: [],
+                high_confidence_top_domains: [],
+                high_confidence_top_go_terms: [],
                 per_neighbor: [
                     {
                         target: 'AF-P04637-F1-model_v6 Cellular tumor antigen p53',

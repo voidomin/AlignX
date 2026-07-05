@@ -123,6 +123,11 @@ class AnnotationConfig(BaseModel):
     # multi-week cache is reasonable - see AnnotationAggregator's
     # persistent cache (HistoryDatabase.get/set_annotation_cache).
     cache_ttl_days: int = Field(30, ge=1)
+    # Minimum Foldseek match probability (0-1) a neighbor's OWN structural
+    # hit needs to count toward a Public/Student function hypothesis -
+    # having curated annotations isn't enough on its own if the structural
+    # match was weak. See AnnotationAggregator.high_confidence_annotated_count.
+    min_confident_probability: float = Field(0.5, ge=0.0, le=1.0)
 
 
 class PipelineConfig(BaseModel):

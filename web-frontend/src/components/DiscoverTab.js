@@ -197,9 +197,7 @@ export class DiscoverTab {
             </div>
         `;
 
-        const bodyHTML = (!ann || ann.annotated_neighbor_count === 0)
-            ? this.renderEmptyAnnotations(r)
-            : this.renderTieredBody(ann);
+        const bodyHTML = this.renderBody(r, ann);
 
         // Discover runs are always saved to history (see DiscoveryCoordinator),
         // so a completed result should always have an id - guard anyway in
@@ -237,6 +235,27 @@ export class DiscoverTab {
         });
     }
 
+    // Researcher always sees whatever data exists (its own empty-state
+    // handling per section already covers zero domains/GO terms/hits
+    // gracefully) - only Public/Student are gated on confidence, since
+    // stating a function hypothesis from a single weak structural match
+    // would be misleading precisely for the audiences least equipped to
+    // judge that for themselves.
+    renderBody(r, ann) {
+        if (!ann || ann.annotated_neighbor_count === 0) {
+            return this.renderEmptyAnnotations(r);
+        }
+        if (this.detailLevel === 'researcher') {
+            return this.renderResearcherView(ann);
+        }
+        if (ann.high_confidence_annotated_count === 0) {
+            return this.renderLowConfidenceMessage(ann);
+        }
+        return this.detailLevel === 'public'
+            ? this.renderPublicView(ann)
+            : this.renderStudentView(ann);
+    }
+
     renderEmptyAnnotations(r) {
         const reason = r.hit_count > 0
             ? `Found ${r.hit_count} structural matches, but none could be resolved to a protein with known functional annotations yet.`
@@ -244,19 +263,28 @@ export class DiscoverTab {
         return `<div class="py-6 text-center text-secondary font-body-sm">${reason}</div>`;
     }
 
-    renderTieredBody(ann) {
-        if (this.detailLevel === 'public') return this.renderPublicView(ann);
-        if (this.detailLevel === 'researcher') return this.renderResearcherView(ann);
-        return this.renderStudentView(ann);
+    renderLowConfidenceMessage(ann) {
+        return `
+            <div class="py-6 text-center text-secondary font-body-sm max-w-[480px] mx-auto">
+                Found ${ann.annotated_neighbor_count} structurally similar protein(s) with known
+                functional annotations, but none matched with high enough structural confidence
+                (Foldseek probability &ge; ${ann.min_confident_probability}) to state a reliable
+                function hypothesis here. Switch to the Researcher view to see the raw data and
+                judge for yourself.
+            </div>
+        `;
     }
 
     renderPublicView(ann) {
-        // annotated_neighbor_count > 0 only guarantees SOME signal exists
-        // (domains OR go_terms) - a neighbor set can have GO terms with zero
-        // domain matches (or vice versa), so top_domains/top_go_terms must
-        // each be treated as independently possibly-empty here.
-        const topDomain = ann.top_domains[0];
-        const topGo = ann.top_go_terms[0];
+        // This method is only reached once renderBody() has already gated
+        // on high_confidence_annotated_count > 0, so pull from the
+        // confidence-filtered lists, not the unfiltered top_domains/
+        // top_go_terms (which can include domains/terms that only came
+        // from a low-confidence match). Domains and GO terms are each
+        // still independently possibly-empty (a neighbor set can have GO
+        // terms with zero domain matches, or vice versa).
+        const topDomain = ann.high_confidence_top_domains[0];
+        const topGo = ann.high_confidence_top_go_terms[0];
         const subject = topDomain ? `known <strong>${topDomain.name}</strong>-type proteins` : 'proteins with a known function';
         const involvement = topGo ? `, which are typically involved in <strong>${topGo.name}</strong>` : '';
         return `
@@ -268,29 +296,30 @@ export class DiscoverTab {
     }
 
     renderStudentView(ann) {
-        const topDomain = ann.top_domains[0];
-        const topGo = ann.top_go_terms[0];
+        const topDomain = ann.high_confidence_top_domains[0];
+        const topGo = ann.high_confidence_top_go_terms[0];
         const consensusParagraph = topDomain
             ? `<p>The most common protein family among these neighbors is <strong>${topDomain.name}</strong>
-               (seen in ${topDomain.neighbor_count} of ${ann.annotated_neighbor_count} annotated neighbors).
+               (seen in ${topDomain.neighbor_count} of ${ann.high_confidence_annotated_count} confidently-matched neighbors).
                Because structural fold is conserved much longer than sequence identity over evolution, a strong
                structural match to a known family is meaningful evidence for shared function - even in cases
                where sequence similarity alone wouldn't have found the connection.</p>`
             : topGo
               ? `<p>No single protein family dominates, but a common thread across these neighbors is
-                 <strong>${topGo.name}</strong> (seen in ${topGo.neighbor_count} of ${ann.annotated_neighbor_count}
-                 annotated neighbors) - a shared Gene Ontology annotation that's meaningful evidence for function
+                 <strong>${topGo.name}</strong> (seen in ${topGo.neighbor_count} of ${ann.high_confidence_annotated_count}
+                 confidently-matched neighbors) - a shared Gene Ontology annotation that's meaningful evidence for function
                  even without a matching domain family.</p>`
               : '';
         return `
             <div class="flex flex-col gap-4">
                 <div class="p-4 rounded-md bg-surface-raised border border-border-subtle font-body-md leading-relaxed flex flex-col gap-3">
                     <p>Out of ${ann.neighbors_considered} of the most confident structural neighbors,
-                    <strong>${ann.annotated_neighbor_count}</strong> matched a protein with known functional annotations.</p>
+                    <strong>${ann.high_confidence_annotated_count}</strong> matched a protein with known functional
+                    annotations at high enough structural confidence (Foldseek probability &ge; ${ann.min_confident_probability}).</p>
                     ${consensusParagraph}
                 </div>
-                ${this.renderDomainList(ann)}
-                ${this.renderGoTermList(ann)}
+                ${this.renderDomainList(ann, ann.high_confidence_top_domains)}
+                ${this.renderGoTermList(ann, ann.high_confidence_top_go_terms)}
             </div>
         `;
     }
@@ -304,9 +333,10 @@ export class DiscoverTab {
                     <div class="stat-row"><span class="stat-key">Resolvable to UniProt</span><span class="stat-value">${ann.resolvable_hit_count} / ${ann.candidates_examined}</span></div>
                     <div class="stat-row"><span class="stat-key">Annotated neighbors</span><span class="stat-value">${ann.annotated_neighbor_count} / ${ann.neighbors_considered}</span></div>
                 </div>
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-3 gap-4">
                     <div class="stat-row"><span class="stat-key">With STRING interactions</span><span class="stat-value">${ann.neighbors_with_interactions_count}</span></div>
                     <div class="stat-row"><span class="stat-key">With Reactome pathways</span><span class="stat-value">${ann.neighbors_with_pathways_count}</span></div>
+                    <div class="stat-row"><span class="stat-key">High-confidence (prob &ge; ${ann.min_confident_probability})</span><span class="stat-value">${ann.high_confidence_annotated_count} / ${ann.annotated_neighbor_count}</span></div>
                 </div>
                 ${this.renderDomainList(ann)}
                 ${this.renderGoTermList(ann)}
@@ -335,12 +365,12 @@ export class DiscoverTab {
         `;
     }
 
-    renderDomainList(ann) {
-        if (!ann.top_domains.length) return '';
+    renderDomainList(ann, domains = ann.top_domains) {
+        if (!domains.length) return '';
         return `
             <div class="flex flex-col gap-2">
                 <span class="eyebrow">Common domains / families</span>
-                ${ann.top_domains.map(d => `
+                ${domains.map(d => `
                     <div class="flex justify-between items-center py-1.5 border-b border-border-subtle">
                         <span class="font-body-sm">${d.name} <span class="text-secondary text-[11px]">(${d.type})</span></span>
                         <span class="font-mono text-[11px] text-secondary">${d.neighbor_count} neighbors</span>
@@ -350,12 +380,12 @@ export class DiscoverTab {
         `;
     }
 
-    renderGoTermList(ann) {
-        if (!ann.top_go_terms.length) return '';
+    renderGoTermList(ann, goTerms = ann.top_go_terms) {
+        if (!goTerms.length) return '';
         return `
             <div class="flex flex-col gap-2">
                 <span class="eyebrow">Common GO terms</span>
-                ${ann.top_go_terms.map(g => `
+                ${goTerms.map(g => `
                     <div class="flex justify-between items-center py-1.5 border-b border-border-subtle">
                         <span class="font-body-sm">${g.name || g.id} <span class="text-secondary text-[11px]">(${g.aspect || 'n/a'})</span></span>
                         <span class="font-mono text-[11px] text-secondary">${g.neighbor_count} neighbors</span>

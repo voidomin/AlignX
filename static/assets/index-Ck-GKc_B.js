@@ -643,7 +643,7 @@
                     <button data-level="${e.key}" class="detail-level-btn px-3 py-1 rounded-md font-label-sm text-label-sm transition-colors ${this.detailLevel===e.key?`bg-accent-muted text-accent`:`text-secondary hover:text-primary`}">${e.label}</button>
                 `).join(``)}
             </div>
-        `,a=!n||n.annotated_neighbor_count===0?this.renderEmptyAnnotations(t):this.renderTieredBody(n),o=t.id?`
+        `,a=this.renderBody(t,n),o=t.id?`
             <div class="flex gap-4">
                 <a href="${k(t.id)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 font-label-sm text-label-sm text-secondary hover:text-primary transition-colors">
                     <span class="material-symbols-outlined text-[16px]">description</span>
@@ -667,27 +667,36 @@
                 ${o}
                 ${a}
             </div>
-        `,e.querySelectorAll(`.detail-level-btn`).forEach(e=>{e.addEventListener(`click`,()=>this.setDetailLevel(e.dataset.level))})}renderEmptyAnnotations(e){return`<div class="py-6 text-center text-secondary font-body-sm">${e.hit_count>0?`Found ${e.hit_count} structural matches, but none could be resolved to a protein with known functional annotations yet.`:`No structural matches were found in the searched databases.`}</div>`}renderTieredBody(e){return this.detailLevel===`public`?this.renderPublicView(e):this.detailLevel===`researcher`?this.renderResearcherView(e):this.renderStudentView(e)}renderPublicView(e){let t=e.top_domains[0],n=e.top_go_terms[0];return`
+        `,e.querySelectorAll(`.detail-level-btn`).forEach(e=>{e.addEventListener(`click`,()=>this.setDetailLevel(e.dataset.level))})}renderBody(e,t){return!t||t.annotated_neighbor_count===0?this.renderEmptyAnnotations(e):this.detailLevel===`researcher`?this.renderResearcherView(t):t.high_confidence_annotated_count===0?this.renderLowConfidenceMessage(t):this.detailLevel===`public`?this.renderPublicView(t):this.renderStudentView(t)}renderEmptyAnnotations(e){return`<div class="py-6 text-center text-secondary font-body-sm">${e.hit_count>0?`Found ${e.hit_count} structural matches, but none could be resolved to a protein with known functional annotations yet.`:`No structural matches were found in the searched databases.`}</div>`}renderLowConfidenceMessage(e){return`
+            <div class="py-6 text-center text-secondary font-body-sm max-w-[480px] mx-auto">
+                Found ${e.annotated_neighbor_count} structurally similar protein(s) with known
+                functional annotations, but none matched with high enough structural confidence
+                (Foldseek probability &ge; ${e.min_confident_probability}) to state a reliable
+                function hypothesis here. Switch to the Researcher view to see the raw data and
+                judge for yourself.
+            </div>
+        `}renderPublicView(e){let t=e.high_confidence_top_domains[0],n=e.high_confidence_top_go_terms[0];return`
             <div class="p-4 rounded-md bg-surface-raised border border-border-subtle font-body-md leading-relaxed">
                 This structure looks similar to ${t?`known <strong>${t.name}</strong>-type proteins`:`proteins with a known function`}${n?`, which are typically involved in <strong>${n.name}</strong>`:``}.
                 This is a computational inference based on structural similarity, not a confirmed experimental result.
             </div>
-        `}renderStudentView(e){let t=e.top_domains[0],n=e.top_go_terms[0],r=t?`<p>The most common protein family among these neighbors is <strong>${t.name}</strong>
-               (seen in ${t.neighbor_count} of ${e.annotated_neighbor_count} annotated neighbors).
+        `}renderStudentView(e){let t=e.high_confidence_top_domains[0],n=e.high_confidence_top_go_terms[0],r=t?`<p>The most common protein family among these neighbors is <strong>${t.name}</strong>
+               (seen in ${t.neighbor_count} of ${e.high_confidence_annotated_count} confidently-matched neighbors).
                Because structural fold is conserved much longer than sequence identity over evolution, a strong
                structural match to a known family is meaningful evidence for shared function - even in cases
                where sequence similarity alone wouldn't have found the connection.</p>`:n?`<p>No single protein family dominates, but a common thread across these neighbors is
-                 <strong>${n.name}</strong> (seen in ${n.neighbor_count} of ${e.annotated_neighbor_count}
-                 annotated neighbors) - a shared Gene Ontology annotation that's meaningful evidence for function
+                 <strong>${n.name}</strong> (seen in ${n.neighbor_count} of ${e.high_confidence_annotated_count}
+                 confidently-matched neighbors) - a shared Gene Ontology annotation that's meaningful evidence for function
                  even without a matching domain family.</p>`:``;return`
             <div class="flex flex-col gap-4">
                 <div class="p-4 rounded-md bg-surface-raised border border-border-subtle font-body-md leading-relaxed flex flex-col gap-3">
                     <p>Out of ${e.neighbors_considered} of the most confident structural neighbors,
-                    <strong>${e.annotated_neighbor_count}</strong> matched a protein with known functional annotations.</p>
+                    <strong>${e.high_confidence_annotated_count}</strong> matched a protein with known functional
+                    annotations at high enough structural confidence (Foldseek probability &ge; ${e.min_confident_probability}).</p>
                     ${r}
                 </div>
-                ${this.renderDomainList(e)}
-                ${this.renderGoTermList(e)}
+                ${this.renderDomainList(e,e.high_confidence_top_domains)}
+                ${this.renderGoTermList(e,e.high_confidence_top_go_terms)}
             </div>
         `}renderResearcherView(e){return`
             <div class="flex flex-col gap-4">
@@ -697,9 +706,10 @@
                     <div class="stat-row"><span class="stat-key">Resolvable to UniProt</span><span class="stat-value">${e.resolvable_hit_count} / ${e.candidates_examined}</span></div>
                     <div class="stat-row"><span class="stat-key">Annotated neighbors</span><span class="stat-value">${e.annotated_neighbor_count} / ${e.neighbors_considered}</span></div>
                 </div>
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-3 gap-4">
                     <div class="stat-row"><span class="stat-key">With STRING interactions</span><span class="stat-value">${e.neighbors_with_interactions_count}</span></div>
                     <div class="stat-row"><span class="stat-key">With Reactome pathways</span><span class="stat-value">${e.neighbors_with_pathways_count}</span></div>
+                    <div class="stat-row"><span class="stat-key">High-confidence (prob &ge; ${e.min_confident_probability})</span><span class="stat-value">${e.high_confidence_annotated_count} / ${e.annotated_neighbor_count}</span></div>
                 </div>
                 ${this.renderDomainList(e)}
                 ${this.renderGoTermList(e)}
@@ -717,20 +727,20 @@
                     </div>
                 `).join(``)}
             </div>
-        `:``}renderDomainList(e){return e.top_domains.length?`
+        `:``}renderDomainList(e,t=e.top_domains){return t.length?`
             <div class="flex flex-col gap-2">
                 <span class="eyebrow">Common domains / families</span>
-                ${e.top_domains.map(e=>`
+                ${t.map(e=>`
                     <div class="flex justify-between items-center py-1.5 border-b border-border-subtle">
                         <span class="font-body-sm">${e.name} <span class="text-secondary text-[11px]">(${e.type})</span></span>
                         <span class="font-mono text-[11px] text-secondary">${e.neighbor_count} neighbors</span>
                     </div>
                 `).join(``)}
             </div>
-        `:``}renderGoTermList(e){return e.top_go_terms.length?`
+        `:``}renderGoTermList(e,t=e.top_go_terms){return t.length?`
             <div class="flex flex-col gap-2">
                 <span class="eyebrow">Common GO terms</span>
-                ${e.top_go_terms.map(e=>`
+                ${t.map(e=>`
                     <div class="flex justify-between items-center py-1.5 border-b border-border-subtle">
                         <span class="font-body-sm">${e.name||e.id} <span class="text-secondary text-[11px]">(${e.aspect||`n/a`})</span></span>
                         <span class="font-mono text-[11px] text-secondary">${e.neighbor_count} neighbors</span>

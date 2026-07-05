@@ -644,3 +644,99 @@ class TestAggregateForHits:
         assert result["resolvable_hit_count"] == 4  # all 4 candidates resolved
         assert result["neighbors_considered"] == 2  # but only top_n_neighbors kept
         assert mock_interpro.call_count == 2  # annotation only fetched for the 2 kept
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries")
+    async def test_confidence_gate_excludes_low_probability_matches_from_hypothesis(
+        self, mock_interpro, mock_quickgo, mock_string, mock_reactome, mock_resolve
+    ):
+        """Having curated annotations isn't enough on its own to state a
+        function hypothesis if the structural match itself was weak - a
+        neighbor only counts toward high_confidence_annotated_count (and
+        the high_confidence_top_* lists) if its own Foldseek prob also
+        clears min_confident_probability."""
+        mock_interpro.return_value = [
+            {"accession": "IPR001010", "name": "Thionin", "type": "family", "go_terms": []}
+        ]
+        mock_quickgo.return_value = []
+        mock_string.return_value = []
+        mock_reactome.return_value = []
+        mock_resolve.return_value = {}
+
+        hits = [
+            {"target": "AF-P01541-F1-model_v6 High confidence", "eval": 1e-10, "prob": 0.95},
+            {"target": "AF-Q43226-F1-model_v6 Low confidence", "eval": 0.01, "prob": 0.2},
+        ]
+
+        aggregator = AnnotationAggregator()
+        result = await aggregator.aggregate_for_hits(hits, top_n_neighbors=10)
+
+        assert result["annotated_neighbor_count"] == 2  # both got InterPro data
+        assert result["high_confidence_annotated_count"] == 1  # only the prob=0.95 one
+        assert result["min_confident_probability"] == 0.5
+        assert len(result["top_domains"]) == 1
+        assert result["top_domains"][0]["neighbor_count"] == 2  # unfiltered: both count
+        assert len(result["high_confidence_top_domains"]) == 1
+        assert result["high_confidence_top_domains"][0]["neighbor_count"] == 1  # filtered: only 1
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries")
+    async def test_confidence_gate_respects_custom_threshold_from_config(
+        self, mock_interpro, mock_quickgo, mock_string, mock_reactome, mock_resolve
+    ):
+        mock_interpro.return_value = [
+            {"accession": "IPR001010", "name": "Thionin", "type": "family", "go_terms": []}
+        ]
+        mock_quickgo.return_value = []
+        mock_string.return_value = []
+        mock_reactome.return_value = []
+        mock_resolve.return_value = {}
+
+        hits = [{"target": "AF-P01541-F1-model_v6 X", "eval": 1e-10, "prob": 0.6}]
+
+        strict_aggregator = AnnotationAggregator(
+            config={"annotation": {"min_confident_probability": 0.9}}
+        )
+        strict_result = await strict_aggregator.aggregate_for_hits(hits, top_n_neighbors=10)
+        assert strict_result["high_confidence_annotated_count"] == 0
+
+        lenient_aggregator = AnnotationAggregator(
+            config={"annotation": {"min_confident_probability": 0.5}}
+        )
+        lenient_result = await lenient_aggregator.aggregate_for_hits(hits, top_n_neighbors=10)
+        assert lenient_result["high_confidence_annotated_count"] == 1
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries")
+    async def test_confidence_gate_treats_missing_prob_as_unconfident(
+        self, mock_interpro, mock_quickgo, mock_string, mock_reactome, mock_resolve
+    ):
+        """A hit with no prob field at all (e.g. a malformed/non-standard
+        Foldseek response) must not silently count as confident."""
+        mock_interpro.return_value = [
+            {"accession": "IPR001010", "name": "Thionin", "type": "family", "go_terms": []}
+        ]
+        mock_quickgo.return_value = []
+        mock_string.return_value = []
+        mock_reactome.return_value = []
+        mock_resolve.return_value = {}
+
+        hits = [{"target": "AF-P01541-F1-model_v6 X", "eval": 1e-10}]  # no "prob" key
+
+        aggregator = AnnotationAggregator()
+        result = await aggregator.aggregate_for_hits(hits, top_n_neighbors=10)
+
+        assert result["annotated_neighbor_count"] == 1
+        assert result["high_confidence_annotated_count"] == 0

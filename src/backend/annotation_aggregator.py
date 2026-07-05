@@ -107,6 +107,18 @@ class AnnotationAggregator:
         # (or a different user) looks up a popular protein again.
         self.cache_db = cache_db
         self.cache_ttl_days = annotation_cfg.get("cache_ttl_days", 30)
+        # Gates whether the Public/Student tiers state a function
+        # hypothesis at all (see aggregate_for_hits'
+        # high_confidence_annotated_count) - having *any* curated
+        # annotation isn't enough on its own if the structural match
+        # itself was weak. 0.5 matches common structural-bioinformatics
+        # practice for "same fold" significance (e.g. TM-align/Dali-style
+        # thresholds); Foldseek's own docs describe prob approaching 1.0
+        # as "extreme confidence," so this is a deliberately permissive
+        # floor, not a strict one - see docs/ROADMAP_V3.md open questions.
+        self.min_confident_probability = annotation_cfg.get(
+            "min_confident_probability", 0.5
+        )
 
     async def _get_or_fetch(
         self, cache_key: str, service: str, fetch_fn
@@ -431,6 +443,14 @@ class AnnotationAggregator:
         neighbor: Dict[str, Any] = {
             "target": hit.get("target", ""),
             "accession": accession,
+            # Foldseek's own structural-match confidence for this hit,
+            # independent of whether the accession happened to have
+            # curated functional annotations. Needed to gate the
+            # Public/Student "function hypothesis" narrative on match
+            # quality, not just on annotation presence - see
+            # aggregate_for_hits' high_confidence_annotated_count.
+            "prob": hit.get("prob"),
+            "eval": hit.get("eval"),
             "domains": [],
             "go_terms": [],
             "string_partners": [],
@@ -524,10 +544,24 @@ class AnnotationAggregator:
         domain_meta: Dict[Tuple[str, str], Dict[str, Any]] = {}
         go_counter: Counter = Counter()
         go_meta: Dict[str, Dict[str, Any]] = {}
+        # Parallel counters restricted to neighbors whose OWN structural
+        # match confidence (Foldseek's prob, independent of whether the
+        # accession happened to have curated annotations) clears
+        # min_confident_probability. Public/Student should only state a
+        # function hypothesis from this filtered set - Researcher still
+        # gets the unfiltered top_domains/top_go_terms below, since
+        # researchers want the full picture with confidence numbers
+        # visible, not a hidden filter.
+        confident_domain_counter: Counter = Counter()
+        confident_go_counter: Counter = Counter()
 
         for neighbor in per_neighbor:
             neighbor_domain_keys = set()
             neighbor_go_ids = set()
+            is_confident = (
+                isinstance(neighbor.get("prob"), (int, float))
+                and neighbor["prob"] >= self.min_confident_probability
+            )
 
             for domain in neighbor["domains"]:
                 key = (domain.get("name"), domain.get("type"))
@@ -550,8 +584,12 @@ class AnnotationAggregator:
 
             for key in neighbor_domain_keys:
                 domain_counter[key] += 1
+                if is_confident:
+                    confident_domain_counter[key] += 1
             for gid in neighbor_go_ids:
                 go_counter[gid] += 1
+                if is_confident:
+                    confident_go_counter[gid] += 1
 
         top_domains = [
             {
@@ -562,6 +600,17 @@ class AnnotationAggregator:
             }
             for (name, entry_type), count in domain_counter.most_common(top_n_summary)
         ]
+        high_confidence_top_domains = [
+            {
+                "name": name,
+                "type": entry_type,
+                "interpro_accession": domain_meta[(name, entry_type)].get("accession"),
+                "neighbor_count": count,
+            }
+            for (name, entry_type), count in confident_domain_counter.most_common(
+                top_n_summary
+            )
+        ]
         top_go_terms = [
             {
                 "id": gid,
@@ -571,6 +620,15 @@ class AnnotationAggregator:
             }
             for gid, count in go_counter.most_common(top_n_summary)
         ]
+        high_confidence_top_go_terms = [
+            {
+                "id": gid,
+                "name": go_meta[gid].get("name"),
+                "aspect": go_meta[gid].get("aspect"),
+                "neighbor_count": count,
+            }
+            for gid, count in confident_go_counter.most_common(top_n_summary)
+        ]
 
         # All neighbors here already have a resolved accession (see above);
         # "annotated" now distinguishes those where InterPro/QuickGO actually
@@ -579,6 +637,18 @@ class AnnotationAggregator:
         # annotations yet).
         annotated_count = sum(
             1 for n in per_neighbor if n["domains"] or n["go_terms"]
+        )
+        # A neighbor only counts here if it's BOTH annotated AND its own
+        # Foldseek match probability clears min_confident_probability -
+        # having curated annotations isn't enough on its own if the
+        # structural match itself was weak. This gates whether Public/
+        # Student state a function hypothesis at all (see DiscoverTab).
+        high_confidence_annotated_count = sum(
+            1
+            for n in per_neighbor
+            if (n["domains"] or n["go_terms"])
+            and isinstance(n.get("prob"), (int, float))
+            and n["prob"] >= self.min_confident_probability
         )
         # STRING/Reactome coverage is reported separately, not folded into
         # "annotated_neighbor_count": their absence is expected and common
@@ -595,9 +665,13 @@ class AnnotationAggregator:
             "resolvable_hit_count": resolved_count,
             "annotated_neighbor_count": annotated_count,
             "unannotated_neighbor_count": len(per_neighbor) - annotated_count,
+            "min_confident_probability": self.min_confident_probability,
+            "high_confidence_annotated_count": high_confidence_annotated_count,
             "neighbors_with_interactions_count": interaction_count,
             "neighbors_with_pathways_count": pathway_count,
             "top_domains": top_domains,
             "top_go_terms": top_go_terms,
+            "high_confidence_top_domains": high_confidence_top_domains,
+            "high_confidence_top_go_terms": high_confidence_top_go_terms,
             "per_neighbor": per_neighbor,
         }
