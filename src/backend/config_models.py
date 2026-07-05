@@ -119,6 +119,10 @@ class FoldseekConfig(BaseModel):
 class AnnotationConfig(BaseModel):
     timeout: int = Field(15, ge=1)
     top_n_neighbors: int = Field(10, ge=1)
+    # InterPro/QuickGO/SIFTS/STRING/Reactome data changes rarely, so a
+    # multi-week cache is reasonable - see AnnotationAggregator's
+    # persistent cache (HistoryDatabase.get/set_annotation_cache).
+    cache_ttl_days: int = Field(30, ge=1)
 
 
 class PipelineConfig(BaseModel):

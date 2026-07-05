@@ -48,6 +48,14 @@ class HistoryDatabase:
                         last_accessed TEXT NOT NULL
                     )
                 """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS annotation_cache (
+                        cache_key TEXT PRIMARY KEY,
+                        service TEXT NOT NULL,
+                        payload TEXT NOT NULL,
+                        cached_at TEXT NOT NULL
+                    )
+                """)
                 # Migration: add session_id column if missing (existing DBs)
                 try:
                     cursor.execute("ALTER TABLE runs ADD COLUMN session_id TEXT")
@@ -355,3 +363,58 @@ class HistoryDatabase:
         except Exception as e:
             logger.error(f"Failed to get total cache size: {e}")
             return 0
+
+    def get_annotation_cache(
+        self, cache_key: str, max_age_days: int = 30
+    ) -> Optional[str]:
+        """
+        Retrieve a cached annotation API response (raw JSON string) if
+        present and not older than max_age_days. Used by AnnotationAggregator
+        to avoid refetching InterPro/QuickGO/SIFTS/STRING/Reactome data for
+        an accession/entry someone already looked up recently - this data
+        changes rarely, so a multi-week TTL is appropriate.
+
+        Returns None on a cache miss OR an expired entry (the caller is
+        expected to refetch and call set_annotation_cache() either way).
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT payload, cached_at FROM annotation_cache WHERE cache_key = ?",
+                    (cache_key,),
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                payload, cached_at = row
+                age_days = (
+                    datetime.now() - datetime.strptime(cached_at, "%Y-%m-%d %H:%M:%S")
+                ).total_seconds() / 86400
+                if age_days > max_age_days:
+                    return None
+                return payload
+        except Exception as e:
+            logger.error(f"Failed to read annotation cache for {cache_key}: {e}")
+            return None
+
+    def set_annotation_cache(self, cache_key: str, service: str, payload: str) -> bool:
+        """Stores a raw JSON string response under cache_key. `service` is
+        purely descriptive (e.g. "interpro", "sifts") for debugging/cache
+        inspection - lookups are always by cache_key alone."""
+        try:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT OR REPLACE INTO annotation_cache (cache_key, service, payload, cached_at)
+                    VALUES (?, ?, ?, ?)
+                """,
+                    (cache_key, service, payload, now),
+                )
+                conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to write annotation cache for {cache_key}: {e}")
+            return False

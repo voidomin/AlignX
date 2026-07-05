@@ -39,7 +39,9 @@ class DiscoveryCoordinator:
         self.pdb_manager = PDBManager(config, self.cache_manager, session_id=session_id)
         self.foldseek_client = FoldseekClient(config)
         self.foldseek_runner = FoldseekRunner(config)
-        self.annotation_aggregator = AnnotationAggregator(config)
+        self.annotation_aggregator = AnnotationAggregator(
+            config, cache_db=self.history_db
+        )
 
     def run_discovery_pipeline(
         self,

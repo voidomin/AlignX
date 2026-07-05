@@ -1,4 +1,6 @@
 import os
+import sqlite3
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -38,3 +40,54 @@ def test_get_aggregate_stats_scoped_to_session(db):
 
     assert stats["total_runs"] == 1
     assert stats["total_proteins_analyzed"] == 2
+
+
+class TestAnnotationCache:
+    """Tests for the annotation_cache table (see AnnotationAggregator's
+    _get_or_fetch, which uses these two methods to avoid refetching
+    InterPro/QuickGO/SIFTS/STRING/Reactome data for an accession someone
+    already looked up recently)."""
+
+    def test_round_trips_a_cached_value(self, db):
+        db.set_annotation_cache("interpro:P01541", "interpro", '{"foo": "bar"}')
+        assert db.get_annotation_cache("interpro:P01541") == '{"foo": "bar"}'
+
+    def test_returns_none_on_cache_miss(self, db):
+        assert db.get_annotation_cache("interpro:NOPE") is None
+
+    def test_returns_none_for_expired_entries(self, db, tmp_path):
+        db.set_annotation_cache("interpro:P01541", "interpro", '{"foo": "bar"}')
+
+        # Backdate the cached_at timestamp past the TTL directly, since
+        # set_annotation_cache always stamps "now".
+        old_timestamp = (datetime.now() - timedelta(days=40)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        with sqlite3.connect(db.db_path) as conn:
+            conn.execute(
+                "UPDATE annotation_cache SET cached_at = ? WHERE cache_key = ?",
+                (old_timestamp, "interpro:P01541"),
+            )
+            conn.commit()
+
+        assert db.get_annotation_cache("interpro:P01541", max_age_days=30) is None
+
+    def test_respects_custom_max_age(self, db, tmp_path):
+        db.set_annotation_cache("interpro:P01541", "interpro", '{"foo": "bar"}')
+        old_timestamp = (datetime.now() - timedelta(days=5)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        with sqlite3.connect(db.db_path) as conn:
+            conn.execute(
+                "UPDATE annotation_cache SET cached_at = ? WHERE cache_key = ?",
+                (old_timestamp, "interpro:P01541"),
+            )
+            conn.commit()
+
+        assert db.get_annotation_cache("interpro:P01541", max_age_days=30) is not None
+        assert db.get_annotation_cache("interpro:P01541", max_age_days=1) is None
+
+    def test_set_overwrites_existing_entry(self, db):
+        db.set_annotation_cache("interpro:P01541", "interpro", '{"v": 1}')
+        db.set_annotation_cache("interpro:P01541", "interpro", '{"v": 2}')
+        assert db.get_annotation_cache("interpro:P01541") == '{"v": 2}'

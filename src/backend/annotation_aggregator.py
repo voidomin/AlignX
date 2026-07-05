@@ -12,6 +12,7 @@ tiered, narrative "function hypothesis" report is a later phase.
 """
 
 import asyncio
+import json
 import re
 import threading
 import time
@@ -88,10 +89,51 @@ class AnnotationAggregator:
     # STRING's science-skills reference client uses qps=1; be a good citizen.
     _string_rate_limiter = _RateLimiter(min_interval_seconds=1.0)
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, timeout: float = 15.0):
+    def __init__(
+        self,
+        config: Optional[Dict[str, Any]] = None,
+        timeout: float = 15.0,
+        cache_db: Optional[Any] = None,
+    ):
         config = config or {}
         annotation_cfg = config.get("annotation", {})
         self.timeout = annotation_cfg.get("timeout", timeout)
+        # Duck-typed (get_annotation_cache/set_annotation_cache) rather than
+        # importing HistoryDatabase directly, since callers already have one
+        # instance to share (DiscoveryCoordinator's self.history_db) and
+        # constructing a second sqlite connection here would be wasteful.
+        # InterPro/QuickGO/SIFTS/STRING/Reactome data changes rarely, so
+        # caching it avoids refetching the same accession every time someone
+        # (or a different user) looks up a popular protein again.
+        self.cache_db = cache_db
+        self.cache_ttl_days = annotation_cfg.get("cache_ttl_days", 30)
+
+    async def _get_or_fetch(
+        self, cache_key: str, service: str, fetch_fn
+    ) -> Any:
+        """Checks the persistent annotation cache before calling fetch_fn
+        (an async no-arg callable), and stores whatever it returns. A cache
+        read/write failure is not fatal - it just means this call behaves
+        as if there were no cache, same as when cache_db is None."""
+        if self.cache_db:
+            try:
+                cached = self.cache_db.get_annotation_cache(
+                    cache_key, self.cache_ttl_days
+                )
+                if cached is not None:
+                    return json.loads(cached)
+            except Exception as e:
+                logger.warning(f"Annotation cache read failed for {cache_key}: {e}")
+
+        result = await fetch_fn()
+
+        if self.cache_db:
+            try:
+                self.cache_db.set_annotation_cache(cache_key, service, json.dumps(result))
+            except Exception as e:
+                logger.warning(f"Annotation cache write failed for {cache_key}: {e}")
+
+        return result
 
     @staticmethod
     def extract_uniprot_accession(target: str) -> Optional[str]:
@@ -128,20 +170,25 @@ class AnnotationAggregator:
         if cache is not None and pdb_id in cache:
             return cache[pdb_id].get(chain_id)
 
-        chain_accessions: Dict[str, Optional[str]] = {}
-        try:
-            response = await client.get(
-                f"{SIFTS_BASE_URL}/{pdb_id.lower()}", headers={"Accept": "application/json"}
-            )
-            if response.status_code == 200:
-                entry = response.json().get(pdb_id.lower(), {})
-                for accession, info in (entry.get("UniProt") or {}).items():
-                    for mapping in info.get("mappings", []):
-                        mapped_chain = mapping.get("chain_id")
-                        if mapped_chain:
-                            chain_accessions[mapped_chain] = accession.upper()
-        except httpx.HTTPError as e:
-            logger.warning(f"SIFTS lookup failed for {pdb_id}: {e}")
+        async def _fetch() -> Dict[str, Optional[str]]:
+            chain_accessions: Dict[str, Optional[str]] = {}
+            try:
+                response = await client.get(
+                    f"{SIFTS_BASE_URL}/{pdb_id.lower()}",
+                    headers={"Accept": "application/json"},
+                )
+                if response.status_code == 200:
+                    entry = response.json().get(pdb_id.lower(), {})
+                    for accession, info in (entry.get("UniProt") or {}).items():
+                        for mapping in info.get("mappings", []):
+                            mapped_chain = mapping.get("chain_id")
+                            if mapped_chain:
+                                chain_accessions[mapped_chain] = accession.upper()
+            except httpx.HTTPError as e:
+                logger.warning(f"SIFTS lookup failed for {pdb_id}: {e}")
+            return chain_accessions
+
+        chain_accessions = await self._get_or_fetch(f"sifts:{pdb_id}", "sifts", _fetch)
 
         if cache is not None:
             cache[pdb_id] = chain_accessions
@@ -171,63 +218,71 @@ class AnnotationAggregator:
         """Returns InterPro entries (domains/families/sites) matching a
         UniProt protein, each with any GO terms InterPro itself associates
         with that entry."""
-        url = f"{INTERPRO_BASE_URL}/entry/interpro/protein/uniprot/{accession}"
-        try:
-            response = await client.get(
-                url, params={"page_size": 50}, headers={"Accept": "application/json"}
-            )
-            if response.status_code != 200:
-                return []
-            entries = []
-            for item in response.json().get("results", []):
-                meta = item.get("metadata", {})
-                entries.append(
-                    {
-                        "accession": meta.get("accession"),
-                        "name": meta.get("name"),
-                        "type": meta.get("type"),
-                        "go_terms": [
-                            {
-                                "id": g.get("identifier"),
-                                "name": g.get("name"),
-                                "aspect": (g.get("category") or {}).get("name"),
-                            }
-                            for g in meta.get("go_terms") or []
-                        ],
-                    }
+
+        async def _fetch() -> List[Dict[str, Any]]:
+            url = f"{INTERPRO_BASE_URL}/entry/interpro/protein/uniprot/{accession}"
+            try:
+                response = await client.get(
+                    url, params={"page_size": 50}, headers={"Accept": "application/json"}
                 )
-            return entries
-        except httpx.HTTPError as e:
-            logger.warning(f"InterPro lookup failed for {accession}: {e}")
-            return []
+                if response.status_code != 200:
+                    return []
+                entries = []
+                for item in response.json().get("results", []):
+                    meta = item.get("metadata", {})
+                    entries.append(
+                        {
+                            "accession": meta.get("accession"),
+                            "name": meta.get("name"),
+                            "type": meta.get("type"),
+                            "go_terms": [
+                                {
+                                    "id": g.get("identifier"),
+                                    "name": g.get("name"),
+                                    "aspect": (g.get("category") or {}).get("name"),
+                                }
+                                for g in meta.get("go_terms") or []
+                            ],
+                        }
+                    )
+                return entries
+            except httpx.HTTPError as e:
+                logger.warning(f"InterPro lookup failed for {accession}: {e}")
+                return []
+
+        return await self._get_or_fetch(f"interpro:{accession}", "interpro", _fetch)
 
     async def fetch_quickgo_annotations(
         self, accession: str, client: httpx.AsyncClient
     ) -> List[Dict[str, Any]]:
         """Returns this protein's own GO annotations from QuickGO (broader
         and evidence-coded, unlike InterPro's generic per-domain GO terms)."""
-        url = f"{QUICKGO_BASE_URL}/annotation/search"
-        try:
-            response = await client.get(
-                url,
-                params={"geneProductId": f"UniProtKB:{accession}", "limit": 100},
-                headers={"Accept": "application/json"},
-            )
-            if response.status_code != 200:
+
+        async def _fetch() -> List[Dict[str, Any]]:
+            url = f"{QUICKGO_BASE_URL}/annotation/search"
+            try:
+                response = await client.get(
+                    url,
+                    params={"geneProductId": f"UniProtKB:{accession}", "limit": 100},
+                    headers={"Accept": "application/json"},
+                )
+                if response.status_code != 200:
+                    return []
+                return [
+                    {
+                        "id": r.get("goId"),
+                        "aspect": r.get("goAspect"),
+                        "qualifier": r.get("qualifier"),
+                        "evidence": r.get("goEvidence"),
+                    }
+                    for r in response.json().get("results") or []
+                    if r.get("goId")
+                ]
+            except httpx.HTTPError as e:
+                logger.warning(f"QuickGO lookup failed for {accession}: {e}")
                 return []
-            return [
-                {
-                    "id": r.get("goId"),
-                    "aspect": r.get("goAspect"),
-                    "qualifier": r.get("qualifier"),
-                    "evidence": r.get("goEvidence"),
-                }
-                for r in response.json().get("results") or []
-                if r.get("goId")
-            ]
-        except httpx.HTTPError as e:
-            logger.warning(f"QuickGO lookup failed for {accession}: {e}")
-            return []
+
+        return await self._get_or_fetch(f"quickgo:{accession}", "quickgo", _fetch)
 
     async def fetch_string_partners(
         self,
@@ -247,35 +302,41 @@ class AnnotationAggregator:
         """
         if not taxon_id:
             return []
-        url = f"{STRING_BASE_URL}/interaction_partners"
-        try:
-            await self._string_rate_limiter.wait()
-            response = await client.post(
-                url,
-                data={
-                    "identifiers": accession,
-                    "species": taxon_id,
-                    "limit": limit,
-                    "caller_identity": STRING_CALLER_IDENTITY,
-                },
-                headers={"Accept": "application/json"},
-            )
-            if response.status_code != 200:
+
+        async def _fetch() -> List[Dict[str, Any]]:
+            url = f"{STRING_BASE_URL}/interaction_partners"
+            try:
+                await self._string_rate_limiter.wait()
+                response = await client.post(
+                    url,
+                    data={
+                        "identifiers": accession,
+                        "species": taxon_id,
+                        "limit": limit,
+                        "caller_identity": STRING_CALLER_IDENTITY,
+                    },
+                    headers={"Accept": "application/json"},
+                )
+                if response.status_code != 200:
+                    return []
+                payload = response.json()
+                if isinstance(payload, dict) and payload.get("Error"):
+                    return []  # e.g. "unknown organism" - not in STRING's coverage
+                return [
+                    {
+                        "partner_name": r.get("preferredName_B"),
+                        "score": r.get("score"),
+                    }
+                    for r in payload
+                    if isinstance(r, dict) and r.get("preferredName_B")
+                ]
+            except httpx.HTTPError as e:
+                logger.warning(f"STRING lookup failed for {accession}: {e}")
                 return []
-            payload = response.json()
-            if isinstance(payload, dict) and payload.get("Error"):
-                return []  # e.g. "unknown organism" - not in STRING's coverage
-            return [
-                {
-                    "partner_name": r.get("preferredName_B"),
-                    "score": r.get("score"),
-                }
-                for r in payload
-                if isinstance(r, dict) and r.get("preferredName_B")
-            ]
-        except httpx.HTTPError as e:
-            logger.warning(f"STRING lookup failed for {accession}: {e}")
-            return []
+
+        return await self._get_or_fetch(
+            f"string:{accession}:{taxon_id}", "string", _fetch
+        )
 
     async def fetch_reactome_pathways(
         self,
@@ -284,30 +345,52 @@ class AnnotationAggregator:
         limit: int = DEFAULT_TOP_N_PATHWAYS,
     ) -> List[Dict[str, Any]]:
         """Returns pathways this protein participates in, per Reactome."""
-        url = f"{REACTOME_BASE_URL}/data/mapping/UniProt/{accession}/pathways"
-        try:
-            response = await client.get(url, headers={"Accept": "application/json"})
-            if response.status_code != 200:
+
+        async def _fetch() -> List[Dict[str, Any]]:
+            url = f"{REACTOME_BASE_URL}/data/mapping/UniProt/{accession}/pathways"
+            try:
+                response = await client.get(url, headers={"Accept": "application/json"})
+                if response.status_code != 200:
+                    return []
+                return [
+                    {"id": p.get("stId"), "name": p.get("displayName")}
+                    for p in response.json() or []
+                    if p.get("stId")
+                ][:limit]
+            except httpx.HTTPError as e:
+                logger.warning(f"Reactome lookup failed for {accession}: {e}")
                 return []
-            return [
-                {"id": p.get("stId"), "name": p.get("displayName")}
-                for p in response.json() or []
-                if p.get("stId")
-            ][:limit]
-        except httpx.HTTPError as e:
-            logger.warning(f"Reactome lookup failed for {accession}: {e}")
-            return []
+
+        return await self._get_or_fetch(f"reactome:{accession}", "reactome", _fetch)
 
     async def resolve_go_term_names(
         self, go_ids: List[str], client: httpx.AsyncClient
     ) -> Dict[str, str]:
         """Batch-resolves GO IDs to human-readable names (QuickGO's
-        annotation search endpoint returns IDs but not names)."""
+        annotation search endpoint returns IDs but not names). GO term names
+        are essentially static, so each ID is cached individually - a
+        request for 50 IDs where 45 are already cached only needs to fetch
+        the remaining 5 from QuickGO."""
         unique_ids = sorted(set(gid for gid in go_ids if gid))
         names: Dict[str, str] = {}
+
+        uncached_ids = []
+        for gid in unique_ids:
+            if self.cache_db:
+                try:
+                    cached = self.cache_db.get_annotation_cache(
+                        f"goterm:{gid}", self.cache_ttl_days
+                    )
+                    if cached is not None:
+                        names[gid] = json.loads(cached)
+                        continue
+                except Exception as e:
+                    logger.warning(f"GO term cache read failed for {gid}: {e}")
+            uncached_ids.append(gid)
+
         chunk_size = 50
-        for i in range(0, len(unique_ids), chunk_size):
-            chunk = unique_ids[i : i + chunk_size]
+        for i in range(0, len(uncached_ids), chunk_size):
+            chunk = uncached_ids[i : i + chunk_size]
             url = f"{QUICKGO_BASE_URL}/ontology/go/terms/{','.join(chunk)}"
             try:
                 response = await client.get(url, headers={"Accept": "application/json"})
@@ -315,6 +398,17 @@ class AnnotationAggregator:
                     for term in response.json().get("results", []):
                         if term.get("id") and term.get("name"):
                             names[term["id"]] = term["name"]
+                            if self.cache_db:
+                                try:
+                                    self.cache_db.set_annotation_cache(
+                                        f"goterm:{term['id']}",
+                                        "goterm",
+                                        json.dumps(term["name"]),
+                                    )
+                                except Exception as e:
+                                    logger.warning(
+                                        f"GO term cache write failed for {term['id']}: {e}"
+                                    )
             except httpx.HTTPError as e:
                 logger.warning(f"GO term name resolution failed for {chunk}: {e}")
         return names

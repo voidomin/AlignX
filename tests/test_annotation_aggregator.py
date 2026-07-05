@@ -63,6 +63,76 @@ def _mock_response(status_code=200, json_data=None):
     return response
 
 
+class TestGetOrFetch:
+    """Tests for the persistent-cache wrapper every fetch_* method routes
+    through. A mocked cache_db (duck-typed: get_annotation_cache /
+    set_annotation_cache) stands in for HistoryDatabase here - the real
+    integration with HistoryDatabase is covered by tests/test_database.py."""
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_skips_fetch_fn(self):
+        cache_db = MagicMock()
+        cache_db.get_annotation_cache.return_value = '{"cached": true}'
+        aggregator = AnnotationAggregator(cache_db=cache_db)
+        fetch_fn = AsyncMock()
+
+        result = await aggregator._get_or_fetch("key1", "svc", fetch_fn)
+
+        assert result == {"cached": True}
+        fetch_fn.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_cache_miss_calls_fetch_fn_and_stores_result(self):
+        cache_db = MagicMock()
+        cache_db.get_annotation_cache.return_value = None
+        aggregator = AnnotationAggregator(cache_db=cache_db)
+        fetch_fn = AsyncMock(return_value=[{"name": "Thionin"}])
+
+        result = await aggregator._get_or_fetch("key1", "svc", fetch_fn)
+
+        assert result == [{"name": "Thionin"}]
+        fetch_fn.assert_called_once()
+        cache_db.set_annotation_cache.assert_called_once_with(
+            "key1", "svc", '[{"name": "Thionin"}]'
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_cache_db_always_calls_fetch_fn(self):
+        aggregator = AnnotationAggregator(cache_db=None)
+        fetch_fn = AsyncMock(return_value=["fresh"])
+
+        result = await aggregator._get_or_fetch("key1", "svc", fetch_fn)
+
+        assert result == ["fresh"]
+        fetch_fn.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cache_read_failure_falls_back_to_fetch_fn(self):
+        """A broken cache must degrade to "as if there were no cache", not
+        break the whole annotation step."""
+        cache_db = MagicMock()
+        cache_db.get_annotation_cache.side_effect = RuntimeError("db is locked")
+        aggregator = AnnotationAggregator(cache_db=cache_db)
+        fetch_fn = AsyncMock(return_value=["fresh"])
+
+        result = await aggregator._get_or_fetch("key1", "svc", fetch_fn)
+
+        assert result == ["fresh"]
+        fetch_fn.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cache_write_failure_does_not_lose_the_result(self):
+        cache_db = MagicMock()
+        cache_db.get_annotation_cache.return_value = None
+        cache_db.set_annotation_cache.side_effect = RuntimeError("disk full")
+        aggregator = AnnotationAggregator(cache_db=cache_db)
+        fetch_fn = AsyncMock(return_value=["fresh"])
+
+        result = await aggregator._get_or_fetch("key1", "svc", fetch_fn)
+
+        assert result == ["fresh"]
+
+
 class TestFetchInterproEntries:
 
     @pytest.mark.asyncio
@@ -106,6 +176,29 @@ class TestFetchInterproEntries:
         async with httpx.AsyncClient() as client:
             entries = await aggregator.fetch_interpro_entries("NOPE", client)
         assert entries == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_second_call_for_same_accession_uses_cache_not_network(self, mock_get):
+        """End-to-end proof that a real fetch method (not just the isolated
+        _get_or_fetch wrapper) actually skips the network on a cache hit."""
+        mock_get.return_value = _mock_response(
+            json_data={"results": [{"metadata": {"name": "Thionin", "type": "family"}}]}
+        )
+        cache_db = MagicMock()
+        stored = {}
+        cache_db.get_annotation_cache.side_effect = lambda key, *a, **k: stored.get(key)
+        cache_db.set_annotation_cache.side_effect = (
+            lambda key, service, payload: stored.update({key: payload})
+        )
+        aggregator = AnnotationAggregator(cache_db=cache_db)
+
+        async with httpx.AsyncClient() as client:
+            first = await aggregator.fetch_interpro_entries("P01541", client)
+            second = await aggregator.fetch_interpro_entries("P01541", client)
+
+        assert first == second
+        assert mock_get.call_count == 1  # second call served entirely from cache
 
 
 class TestFetchQuickgoAnnotations:

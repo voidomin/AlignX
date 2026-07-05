@@ -43,6 +43,7 @@ foldseek:
 annotation:
   timeout: 15
   top_n_neighbors: 10
+  cache_ttl_days: 30
 phylip:
   executable: neighbor
   method: neighbor_joining
