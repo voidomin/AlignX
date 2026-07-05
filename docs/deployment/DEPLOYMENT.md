@@ -16,8 +16,8 @@ This is the production path: a single container running the FastAPI backend, ser
 ### Build & Run
 
 ```bash
-docker build -t alignx .
-docker run -p 8000:8000 --env-file .env alignx
+docker build -t structscope .
+docker run -p 8000:8000 --env-file .env structscope
 ```
 
 The app is now live at `http://localhost:8000` (or your host's address).
@@ -35,12 +35,16 @@ Set these in your `.env` (copy from `.env.example`) before building/running for 
 
 ```bash
 docker run -p 8000:8000 --env-file .env \
-  -v alignx_results:/app/results \
-  -v alignx_data:/app/data \
-  alignx
+  -v structscope_results:/app/results \
+  -v structscope_data:/app/data \
+  structscope
 ```
 
-`run_history.db` is a single file rather than a directory, so it can't be targeted by a named volume the same way — either bind-mount a host directory over `/app` and place the file inside it, or point `HistoryDatabase(db_path=...)` (in `src/backend/api.py`) at a path under one of the mounted volumes above.
+`run_history.db` is a single file rather than a directory, so it can't be targeted by a named volume the same way — either bind-mount a host directory over `/app` and place the file inside it, or point `HistoryDatabase(db_path=...)` (in `src/backend/api.py`) at a path under one of the mounted volumes above. This file holds more than run history now: it also has the `annotation_cache` table (InterPro/QuickGO/SIFTS/STRING/Reactome lookups, ~30-day TTL by default - see `annotation.cache_ttl_days`), so losing it on every container recreation means Discover mode loses its cache too, not just the History tab.
+
+### Network Requirements
+
+Beyond RCSB/AlphaFold/SWISS-MODEL/ESM Atlas (already required for Compare mode's structure downloads), **Discover mode adds outbound HTTPS calls to five more third-party services**: `search.foldseek.com`, `www.ebi.ac.uk` (InterPro + QuickGO + the SIFTS PDB-to-UniProt mapping), `string-db.org`, and `reactome.org`. If the container runs behind a restrictive egress firewall, allowlist these or Discover jobs will fail (Compare mode is unaffected). To avoid depending on the public Foldseek API entirely (rate-limited to ~0.1 req/s shared across every user), see `foldseek.backend: local` in `config.yaml` and `src/backend/foldseek_runner.py` - self-hosting a Foldseek binary + search database is the scale-up path, but provisioning a real production-scale database is a separate, non-trivial step (see `docs/ROADMAP_V3.md`).
 
 ### Health Check
 
@@ -52,9 +56,9 @@ curl http://localhost:8000/health
 
 ---
 
-## ☁️ Option 2: Streamlit Community Cloud (Legacy UI only)
+## ☁️ Option 2: Streamlit Community Cloud (Streamlit UI only)
 
-Deploys `app.py` (the Streamlit interface). Does **not** deploy the Vite SPA or FastAPI backend — use this only if you specifically want the Streamlit experience hosted for free.
+Deploys `app.py` (the Streamlit interface). Does **not** deploy the Vite SPA or FastAPI backend, so it doesn't include Discover mode (SPA-only, see README) — use this only if you specifically want the Streamlit experience hosted for free.
 
 ### Steps
 
@@ -84,7 +88,7 @@ Streamlit Community Cloud uses ephemeral storage:
 
 ---
 
-## 🤗 Option 3: Hugging Face Spaces (Legacy UI only)
+## 🤗 Option 3: Hugging Face Spaces (Streamlit UI only)
 
 Same caveat as above — Streamlit UI only.
 
