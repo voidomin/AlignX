@@ -283,9 +283,6 @@ One synthesis step, three renderings of the same underlying result object:
 - Do we cap Discover to PDB/AFDB/MGnify(ESM) databases only, or expose all 9 Foldseek
   databases as user-selectable (adds UI complexity for likely-marginal value for
   non-expert users)?
-- What confidence threshold (probability/E-value) should gate whether we show a
-  function hypothesis at all, versus saying "no confident structural neighbors found"
-  — important for the public tier especially, to avoid confidently-wrong summaries.
 - CATH (`cath50`)/`gmgcl_id`/`bfmd` Foldseek hits still don't resolve to a UniProt
   accession (only pdb100 via SIFTS and AFDB via regex do) - not in the default
   database set today, so lower priority, but would need their own ID-mapping path
@@ -304,3 +301,12 @@ One synthesis step, three renderings of the same underlying result object:
 - ~~Self-host Foldseek now or defer?~~ → the code/config path is done and
   live-verified (`FoldseekRunner`); deferred is *provisioning a production
   database*, which is now the only remaining piece (see above).
+- ~~What confidence threshold should gate a function hypothesis?~~ → done:
+  `annotation.min_confident_probability` (default 0.5, Foldseek's own prob field)
+  gates Public/Student specifically - `high_confidence_annotated_count`/
+  `high_confidence_top_domains`/`high_confidence_top_go_terms` are computed
+  separately from the unfiltered versions Researcher still sees in full.
+  Verified live: a real 1CRN query where all matches cleared prob=1.0 correctly
+  showed the narrative; the gate itself was exercised via unit tests (a
+  low-probability match with real annotation data correctly falls back to a
+  distinct "found matches, but none confident enough" message instead).
