@@ -285,9 +285,15 @@ One synthesis step, three renderings of the same underlying result object:
   GMGC's own API (see Resolved below) - this is expected rather than a gap,
   though: it's specifically metagenomic "dark matter" sequences, many of
   which genuinely have no existing annotation to find, in any database.
-- When to actually provision a production-scale local Foldseek database (see §5's
-  self-hosting note) — depends on how much real usage this gets; the code path is
-  ready (`foldseek.backend: local`), the multi-GB+ database itself is not.
+- Exactly which database(s) and at what scale to provision for a real
+  production deployment — depends on how much real usage this gets and what
+  it's used for (see §5's self-hosting note). The tooling and the decision
+  process are no longer open, just the final choice: `scripts/provision_foldseek_db.sh`
+  wraps Foldseek's own database-download command, and provisioning a real
+  (if modest-scale) CATH50 database with it has been live-verified end-to-end
+  (see Resolved below) — scaling up to `PDB`/`Alphafold/UniProt50` or the full
+  `Alphafold/UniProt` (~700GB) is the same script, a bigger download, and a
+  deliberate choice about disk/bandwidth budget, not new code.
 
 **Resolved:**
 - ~~How do we derive the NCBI taxon ID STRING requires per neighbor?~~ Turns out
@@ -323,8 +329,14 @@ One synthesis step, three renderings of the same underlying result object:
   remains open (see above), and even that's an expected limitation of the
   data, not a missing resolution path.
 - ~~Self-host Foldseek now or defer?~~ → the code/config path is done and
-  live-verified (`FoldseekRunner`); deferred is *provisioning a production
-  database*, which is now the only remaining piece (see above).
+  live-verified (`FoldseekRunner`). Provisioning a database is no longer
+  deferred either: `scripts/provision_foldseek_db.sh` wraps Foldseek's own
+  `foldseek databases` command, and was run for real to download and build
+  a complete CATH50 database (~970MB download, ~1.9GB extracted) - a real
+  Discover query against it correctly found 1CRN's own CATH domain entry
+  (prob 1.0). What's still a deliberate deployment choice, not a gap, is
+  *which* database and at what scale for real production traffic (see
+  above).
 - ~~Do we cap Discover to PDB/AFDB/MGnify(ESM) databases only, or expose all 9
   Foldseek databases as user-selectable?~~ → the backend (`FoldseekClient`,
   `DiscoveryCoordinator.run_discovery_pipeline(databases=...)`,
