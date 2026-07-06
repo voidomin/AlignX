@@ -2,6 +2,12 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.6.0]
+
+### Fixed
+- **Config validation could crash Streamlit over a Discover-only mistake**: `load_config()` validates the entire `config.yaml` through one Pydantic model shared by every caller, Streamlit's `app.py`/`pages/` included - but Streamlit never reads the `foldseek:`/`annotation:`/`cache:` sections at all. A bad value in any of those (e.g. a future Discover-driven schema tightening, or a typo) would `SystemExit(1)` the whole config load, taking Streamlit down over a section it doesn't use. `PipelineConfig` now validates those three sections independently: an invalid one logs a warning and falls back to that section's own defaults instead of failing the whole config. Every other section (`app`, `mustang`, `pdb`, etc.) still hard-fails as before, since both interfaces genuinely depend on those.
+- Also relevant now that `main` (active Discover/SPA development) and `streamlit-stable` (frozen at the currently-deployed commit, now what Streamlit Cloud actually deploys from) are separate branches - this removes one more way work on `main` could have broken the live app even before the branch split, and closes it for `streamlit-stable` too since `config_models.py` is Streamlit-only-adjacent, not Discover-exclusive.
+
 ## [3.5.0]
 
 A first real security/ops hardening pass, prompted by a codebase survey rather than a specific incident: fix a real auth gap, add CI coverage that was previously manual/ad hoc, verify concurrent-load behavior for real, and write down what's been checked vs. still open.

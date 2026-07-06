@@ -2,8 +2,11 @@
 Configuration models for the Mustang pipeline using Pydantic V2.
 """
 
+import logging
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator, ValidationError
+
+logger = logging.getLogger(__name__)
 
 
 class CacheConfig(BaseModel):
@@ -130,6 +133,22 @@ class AnnotationConfig(BaseModel):
     min_confident_probability: float = Field(0.5, ge=0.0, le=1.0)
 
 
+# Sections only the FastAPI/Discover side ever reads - config.yaml is
+# validated by the SAME PipelineConfig for every caller, Streamlit's
+# app.py/pages/ included (see src/utils/config_loader.py), even though
+# Streamlit never touches any of these. A schema problem here must not
+# take down the whole config load for an interface that doesn't even use
+# it - see PipelineConfig._soften_optional_sections below. This already
+# almost happened for real: the commit that tightened FoldseekConfig/
+# AnnotationConfig's validation would have done exactly this for anyone
+# with a malformed foldseek:/annotation: block.
+_SOFT_VALIDATED_SECTIONS: Dict[str, type] = {
+    "cache": CacheConfig,
+    "foldseek": FoldseekConfig,
+    "annotation": AnnotationConfig,
+}
+
+
 class PipelineConfig(BaseModel):
     """Root configuration model."""
 
@@ -147,6 +166,35 @@ class PipelineConfig(BaseModel):
     cache: Optional[CacheConfig] = Field(default_factory=CacheConfig)
     foldseek: Optional[FoldseekConfig] = Field(default_factory=FoldseekConfig)
     annotation: Optional[AnnotationConfig] = Field(default_factory=AnnotationConfig)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _soften_optional_sections(cls, data: Any) -> Any:
+        """A bad value in an optional, Discover-only section (foldseek/
+        annotation/cache) must not fail validation of the entire config -
+        every other section is required precisely because both Compare and
+        Discover (and Streamlit) genuinely depend on them, but these three
+        are used by Discover/perf-tuning only. Falls back to that section's
+        own defaults with a logged warning instead of raising, so a mistake
+        here can never SystemExit(1) an interface that doesn't even read it."""
+        if not isinstance(data, dict):
+            return data
+        for key, model_cls in _SOFT_VALIDATED_SECTIONS.items():
+            section = data.get(key)
+            if section is not None:
+                try:
+                    model_cls(**section)
+                except ValidationError as e:
+                    logger.warning(
+                        f"Ignoring invalid '{key}' config section (falling back "
+                        f"to defaults) - this only affects Discover mode, not "
+                        f"Compare or the Streamlit app: {e}"
+                    )
+                    # Pydantic v2's default_factory only kicks in for a MISSING
+                    # key - explicitly passing None would just set the field to
+                    # None instead, so the key must be removed entirely.
+                    del data[key]
+        return data
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to raw dictionary for backward compatibility."""
