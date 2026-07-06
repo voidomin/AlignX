@@ -2,6 +2,17 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.4.0]
+
+### Added
+- **`gmgcl_id` annotation resolution**: the last remaining unresolvable default-eligible Foldseek database now resolves too, just not via UniProt. Live-probing GMGC's own API (`gmgc.embl.de/api_help.cgi`) showed a gmgcl_id target's real gene ID (everything before the `_trun_{n}[.pdb]` suffix Foldseek/PDB-export bookkeeping appends) resolves directly to Pfam/eggNOG annotation via `/unigene/{id}/features` - no UniProt accession involved at all. `fetch_gmgc_features()` queries this and feeds any Pfam domain hits into the same domain-aggregation pipeline InterPro domains use. Only `mgnify_esm30` remains unresolved, and that's expected (metagenomic "dark matter" sequences), not a gap.
+- The Discover tab's database picker now marks only `mgnify_esm30` as non-annotatable (previously also marked `gmgcl_id`); its attribution footer now credits STRING, Reactome, PDBe SIFTS, and GMGC alongside Foldseek/InterPro/QuickGO.
+- **`bash scripts/provision_foldseek_db.sh`**: wraps Foldseek's own `foldseek databases` command with the exact `config.yaml` wiring needed afterward, for whoever provisions a real production-scale self-hosted database (deferred in `docs/ROADMAP_V3.md` §7 as a deployment decision, not a code gap). Documents realistic size tradeoffs across CATH50/PDB/AFDB50/full-AFDB and a known upstream bug where `foldseek databases BFMD` doesn't currently work.
+
+### Verified
+- Live end-to-end against 1CRN: `gmgcl_id` alone now resolves 12/12 candidates and annotates 5/12 with real Pfam domains (`Phage_portal`, `Phage_Mu_F`, etc.) via GMGC's own API - previously 0/0.
+- Ran the new provisioning script for real: downloaded (~970MB) and built a complete CATH50 database (~1.9GB extracted, not a toy subset), then pointed `foldseek.local.database_dir` at it and confirmed a real 1CRN Discover query against it correctly found 1CRN's own CATH domain entry (prob 1.0) plus related structures - the first fully real (not hand-built) self-hosted database exercised end-to-end in this project.
+
 ## [3.3.0]
 
 ### Added

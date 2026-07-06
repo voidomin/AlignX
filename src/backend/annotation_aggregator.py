@@ -3,12 +3,14 @@ Annotation Aggregator Module.
 Given a list of Foldseek structural-neighbor hits (see FoldseekClient),
 fetches functional annotations (InterPro domains, QuickGO terms, STRING
 interaction partners, Reactome pathways) for whichever neighbors we can
-resolve to a UniProt accession, and aggregates the ontology-based signals
-(domains, GO terms) into frequency summaries across the neighbor set.
+resolve to a UniProt accession, plus Pfam domains from GMGC's own API for
+gmgcl_id hits (which have no UniProt accession at all), and aggregates the
+ontology-based signals (domains, GO terms) into frequency summaries across
+the neighbor set.
 
 This is Phase 3 of the Discover pipeline (docs/ROADMAP_V3.md), extended
-with the STRING/Reactome fast-follow flagged there. Turning this into a
-tiered, narrative "function hypothesis" report is a later phase.
+with the STRING/Reactome/GMGC fast-follows flagged there. Turning this
+into a tiered, narrative "function hypothesis" report is a later phase.
 """
 
 import asyncio
@@ -30,6 +32,7 @@ QUICKGO_BASE_URL = "https://www.ebi.ac.uk/QuickGO/services"
 STRING_BASE_URL = "https://version-12-0.string-db.org/api/json"
 REACTOME_BASE_URL = "https://reactome.org/ContentService"
 SIFTS_BASE_URL = "https://www.ebi.ac.uk/pdbe/api/mappings/uniprot"
+GMGC_BASE_URL = "https://gmgc.embl.de/api/v1.0"
 STRING_CALLER_IDENTITY = "structscope"
 
 # Foldseek's AlphaFold DB hits are named "AF-{UniProt}-F{fragment}[-v{n}] ...",
@@ -58,14 +61,28 @@ _CATH_DOMAIN_PATTERN = re.compile(r"^([0-9][A-Za-z0-9]{3})([A-Za-z0-9])\d{2}$")
 # "LevyLab_Q8U2A3_V1_4_relaxed_B" and "ProtVar_P08559_Q9Y6H1_B" (a variant
 # pair - the first accession is used). Confirmed live against 1CRN. The
 # pattern is UniProt's own official accession regex (6- or 10-character
-# form); gmgcl_id ("GMGC10.211_012_347...") and mgnify_esm30 ("MGYP...")
-# hits have no such token and remain genuinely unresolvable - they're not
-# UniProt-keyed at all, not just missing a lookup step (mgnify_esm30 in
-# particular is expected to often have no existing annotation at all, since
-# it's specifically metagenomic "dark matter" sequences - see
+# form); mgnify_esm30 ("MGYP...") hits have no such token and are genuinely
+# unresolvable - they're not UniProt-keyed at all, not just missing a lookup
+# step, and are expected to often have no existing annotation at all, since
+# it's specifically metagenomic "dark matter" sequences (see
 # docs/ROADMAP_V3.md).
 _UNIPROT_ACCESSION_RE = re.compile(
     r"^([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})$"
+)
+
+# gmgcl_id hits are named "GMGC10.{9-digit cluster id}.{eggnog-mapper name
+# or "UNKNOWN"}_trun_{n}.pdb" - not UniProt-keyed at all, but GMGC's own API
+# (gmgc.embl.de/api_help.cgi) resolves the gene ID itself (everything before
+# "_trun_{n}[.pdb]", which Foldseek/PDB-export bookkeeping appended and isn't
+# part of the real ID) directly to Pfam/eggNOG annotation - no UniProt
+# involved. Confirmed live: e.g. "GMGC10.040_893_565.PILY1_trun_2.pdb" ->
+# gene ID "GMGC10.040_893_565.PILY1" -> a real Pfam domain hit
+# (Neisseria_PilC) via GMGC's /unigene/{id}/features endpoint. The name
+# segment can itself contain underscores (e.g. "SCLAV_5304" in GMGC's own
+# docs), so the pattern is non-greedy up to the first "_trun_{n}" suffix
+# rather than splitting on the last underscore.
+_GMGC_TARGET_PATTERN = re.compile(
+    r"^(GMGC10\.\d{3}_\d{3}_\d{3}\.\S+?)_trun_\d+(?:\.pdb)?$", re.IGNORECASE
 )
 
 DEFAULT_TOP_N_NEIGHBORS = 10
@@ -211,6 +228,16 @@ class AnnotationAggregator:
             if _UNIPROT_ACCESSION_RE.match(token.upper()):
                 return token.upper()
         return None
+
+    @staticmethod
+    def extract_gmgc_gene_id(target: str) -> Optional[str]:
+        """Pulls the real GMGC gene ID out of a Foldseek gmgcl_id target
+        string, e.g. "GMGC10.040_893_565.PILY1_trun_2.pdb" ->
+        "GMGC10.040_893_565.PILY1". Unlike every other resolvable database,
+        this isn't a UniProt accession - GMGC's own API annotates it
+        directly, see fetch_gmgc_features()."""
+        match = _GMGC_TARGET_PATTERN.match((target or "").strip())
+        return match.group(1) if match else None
 
     async def resolve_pdb_uniprot_accession(
         self,
@@ -425,6 +452,43 @@ class AnnotationAggregator:
 
         return await self._get_or_fetch(f"reactome:{accession}", "reactome", _fetch)
 
+    async def fetch_gmgc_features(
+        self, gene_id: str, client: httpx.AsyncClient
+    ) -> List[Dict[str, Any]]:
+        """Returns Pfam domain hits for a GMGC unigene via GMGC's own
+        /unigene/{id}/features endpoint. gmgcl_id hits have no UniProt
+        accession at all (unlike every other resolvable database), so this
+        bypasses the InterPro/QuickGO/STRING/Reactome pipeline entirely and
+        queries GMGC's own eggNOG-mapper-derived annotation directly.
+        Confirmed live: real hits do carry named Pfam domains, not just the
+        "UNKNOWN" placeholder some gene IDs show."""
+
+        async def _fetch() -> List[Dict[str, Any]]:
+            url = f"{GMGC_BASE_URL}/unigene/{gene_id}/features"
+            try:
+                response = await client.get(url, headers={"Accept": "application/json"})
+                if response.status_code != 200:
+                    return []
+                pfam_hits = (response.json().get("features") or {}).get("pfam") or []
+                domains = []
+                for entry in pfam_hits:
+                    domain_id = (entry.get("domain") or "").split(":")[-1]
+                    if domain_id:
+                        domains.append(
+                            {
+                                "accession": domain_id,
+                                "name": domain_id,
+                                "type": "pfam",
+                                "go_terms": [],
+                            }
+                        )
+                return domains
+            except httpx.HTTPError as e:
+                logger.warning(f"GMGC features lookup failed for {gene_id}: {e}")
+                return []
+
+        return await self._get_or_fetch(f"gmgc:{gene_id}", "gmgc", _fetch)
+
     async def resolve_go_term_names(
         self, go_ids: List[str], client: httpx.AsyncClient
     ) -> Dict[str, str]:
@@ -483,16 +547,23 @@ class AnnotationAggregator:
             return 1e9
 
     async def _annotate_neighbor(
-        self, hit: Dict[str, Any], accession: str, client: httpx.AsyncClient
+        self,
+        hit: Dict[str, Any],
+        accession: Optional[str],
+        client: httpx.AsyncClient,
+        gmgc_gene_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Fetches the full annotation set for a hit that's already been
-        resolved to a UniProt accession (see resolve_accession()). Kept
-        separate from resolution so aggregate_for_hits can resolve a larger,
-        cheap candidate pool before paying for these 4 API calls only on
-        the accessions it actually keeps."""
+        resolved - either to a UniProt accession (see resolve_accession()),
+        routing through InterPro/QuickGO/STRING/Reactome, or to a GMGC gene
+        ID (see extract_gmgc_gene_id()), routing through GMGC's own Pfam
+        annotation instead since gmgcl_id hits have no UniProt accession at
+        all. Kept separate from resolution so aggregate_for_hits can resolve
+        a larger, cheap candidate pool before paying for the full annotation
+        calls only on the neighbors it actually keeps."""
         neighbor: Dict[str, Any] = {
             "target": hit.get("target", ""),
-            "accession": accession,
+            "accession": accession or gmgc_gene_id,
             # Foldseek's own structural-match confidence for this hit,
             # independent of whether the accession happened to have
             # curated functional annotations. Needed to gate the
@@ -520,6 +591,10 @@ class AnnotationAggregator:
             neighbor["go_terms"] = quickgo_terms
             neighbor["string_partners"] = string_partners
             neighbor["reactome_pathways"] = reactome_pathways
+        elif gmgc_gene_id:
+            # No UniProt accession to key STRING/Reactome on for a GMGC gene
+            # - just the Pfam domain signal GMGC's own API provides.
+            neighbor["domains"] = await self.fetch_gmgc_features(gmgc_gene_id, client)
         return neighbor
 
     async def aggregate_for_hits(
@@ -567,15 +642,27 @@ class AnnotationAggregator:
             accessions = await asyncio.gather(
                 *(self.resolve_accession(hit, client, pdb_cache) for hit in candidates)
             )
-            resolved_count = sum(1 for acc in accessions if acc)
+            # gmgcl_id hits have no UniProt accession at all (see
+            # extract_gmgc_gene_id()'s docstring), so they're only checked
+            # for a GMGC-resolvable gene ID once UniProt resolution has
+            # already failed - the two are mutually exclusive per hit.
+            gmgc_gene_ids = [
+                None if acc else self.extract_gmgc_gene_id(hit.get("target", ""))
+                for hit, acc in zip(candidates, accessions)
+            ]
+            resolved_count = sum(
+                1 for acc, gid in zip(accessions, gmgc_gene_ids) if acc or gid
+            )
             resolved_pairs = [
-                (hit, acc) for hit, acc in zip(candidates, accessions) if acc
+                (hit, acc, gid)
+                for hit, acc, gid in zip(candidates, accessions, gmgc_gene_ids)
+                if acc or gid
             ][:top_n_neighbors]
 
             per_neighbor = await asyncio.gather(
                 *(
-                    self._annotate_neighbor(hit, acc, client)
-                    for hit, acc in resolved_pairs
+                    self._annotate_neighbor(hit, acc, client, gmgc_gene_id=gid)
+                    for hit, acc, gid in resolved_pairs
                 )
             )
 

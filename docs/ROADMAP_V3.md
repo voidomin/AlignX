@@ -280,14 +280,11 @@ One synthesis step, three renderings of the same underlying result object:
 
 ## 7. Open questions
 
-- `gmgcl_id` (Global Microbial Gene Catalog) Foldseek hits still don't resolve to
-  a UniProt accession - their target IDs (`GMGC10.211_012_347.UNKNOWN_trun_1.pdb`)
-  don't embed one and have no free ID-mapping API the way pdb100/cath50 do via
-  SIFTS. Would need a GMGC-specific lookup (e.g. `gmgc.embl.de`'s own API) as a
-  new dependency for uncertain benefit - lower priority. `mgnify_esm30`
-  (MGYP-accession) hits are in the same boat, but that's expected rather than a
-  gap: it's specifically metagenomic "dark matter" sequences, many of which
-  genuinely have no existing annotation to find.
+- `mgnify_esm30` (MGYP-accession) hits have no UniProt mapping and no
+  dedicated annotation source of their own the way `gmgcl_id` now has via
+  GMGC's own API (see Resolved below) - this is expected rather than a gap,
+  though: it's specifically metagenomic "dark matter" sequences, many of
+  which genuinely have no existing annotation to find, in any database.
 - When to actually provision a production-scale local Foldseek database (see §5's
   self-hosting note) — depends on how much real usage this gets; the code path is
   ready (`foldseek.backend: local`), the multi-GB+ database itself is not.
@@ -312,7 +309,19 @@ One synthesis step, three renderings of the same underlying result object:
   correctly annotates 10/10 neighbors as Thionin family (previously 0/0); `BFVD`
   alone resolves 20/20 candidates (annotation count is low because InterPro/
   QuickGO simply have sparse curated coverage of viral proteins, not because
-  resolution failed). Only `gmgcl_id` remains open (see above).
+  resolution failed). `gmgcl_id` turned out resolvable too, just not via
+  UniProt at all: its target IDs are
+  `GMGC10.{cluster_id}.{eggnog_name_or_UNKNOWN}_trun_{n}.pdb`, and the part
+  before `_trun_{n}` is a real gene ID that GMGC's own API
+  (`gmgc.embl.de/api_help.cgi`) resolves directly to Pfam/eggNOG annotation -
+  `fetch_gmgc_features()` queries `/unigene/{id}/features` and feeds any Pfam
+  domain hits into the same domain-aggregation pipeline InterPro domains use,
+  bypassing UniProt/InterPro/QuickGO/STRING/Reactome entirely for these hits
+  (no accession exists to key them on). Live-verified against 1CRN: 12/12
+  `gmgcl_id` candidates resolved, 5/12 annotated with real Pfam domains
+  (`Phage_portal`, `Phage_Mu_F`, etc.) - previously 0/0. Only `mgnify_esm30`
+  remains open (see above), and even that's an expected limitation of the
+  data, not a missing resolution path.
 - ~~Self-host Foldseek now or defer?~~ → the code/config path is done and
   live-verified (`FoldseekRunner`); deferred is *provisioning a production
   database*, which is now the only remaining piece (see above).
@@ -322,9 +331,9 @@ One synthesis step, three renderings of the same underlying result object:
   `POST /api/jobs/discover`'s `databases` field) already supported an arbitrary
   subset end-to-end; the only gap was frontend UI. Added a checkbox picker to
   `DiscoverTab.js` covering all 9 databases, defaulting to the same `pdb100` +
-  `afdb50` set as before, with databases that don't resolve to annotations
-  (`mgnify_esm30`, `gmgcl_id` - see below) marked so the user knows they'll get
-  structural hits but no domain/GO summary from them. Live-verified:
+  `afdb50` set as before, with the one database that doesn't resolve to
+  annotations (`mgnify_esm30` - see below) marked so the user knows they'll
+  get structural hits but no domain/GO summary from it. Live-verified:
   restricting a real job to `pdb100` only round-tripped correctly through the
   public Foldseek API.
 - ~~What confidence threshold should gate a function hypothesis?~~ → done:

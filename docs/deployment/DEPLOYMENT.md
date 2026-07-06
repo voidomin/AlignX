@@ -44,7 +44,20 @@ docker run -p 8000:8000 --env-file .env \
 
 ### Network Requirements
 
-Beyond RCSB/AlphaFold/SWISS-MODEL/ESM Atlas (already required for Compare mode's structure downloads), **Discover mode adds outbound HTTPS calls to five more third-party services**: `search.foldseek.com`, `www.ebi.ac.uk` (InterPro + QuickGO + the SIFTS PDB-to-UniProt mapping), `string-db.org`, and `reactome.org`. If the container runs behind a restrictive egress firewall, allowlist these or Discover jobs will fail (Compare mode is unaffected). To avoid depending on the public Foldseek API entirely (rate-limited to ~0.1 req/s shared across every user), see `foldseek.backend: local` in `config.yaml` and `src/backend/foldseek_runner.py` - self-hosting a Foldseek binary + search database is the scale-up path, but provisioning a real production-scale database is a separate, non-trivial step (see `docs/ROADMAP_V3.md`).
+Beyond RCSB/AlphaFold/SWISS-MODEL/ESM Atlas (already required for Compare mode's structure downloads), **Discover mode adds outbound HTTPS calls to six more third-party services**: `search.foldseek.com`, `www.ebi.ac.uk` (InterPro + QuickGO + the SIFTS PDB-to-UniProt mapping), `string-db.org`, `reactome.org`, and `gmgc.embl.de` (native annotation for `gmgcl_id` hits). If the container runs behind a restrictive egress firewall, allowlist these or Discover jobs will fail (Compare mode is unaffected). To avoid depending on the public Foldseek API entirely (rate-limited to ~0.1 req/s shared across every user), see `foldseek.backend: local` in `config.yaml` and `src/backend/foldseek_runner.py` - self-hosting a Foldseek binary + search database is the scale-up path (see below for provisioning a real database).
+
+### Provisioning a self-hosted Foldseek database
+
+`foldseek.backend: local` needs a real Foldseek search database on disk - `bash scripts/provision_foldseek_db.sh <database-name> <output-dir>` wraps Foldseek's own `foldseek databases` command (which downloads and indexes one of Foldseek's officially-distributed databases) with the exact config wiring you need afterward. Run it on the host/volume that will actually serve Discover traffic, not in CI or during development - depending on which database you pick, this ranges from under a gigabyte to hundreds of gigabytes and can take minutes to many hours.
+
+Live-verified end-to-end: `bash scripts/provision_foldseek_db.sh CATH50 /path/to/dbs` downloaded (~970MB) and built a real, complete CATH50 database (~1.9GB extracted on disk), and pointing `foldseek.local.database_dir` at the result correctly found 1CRN's own real CATH domain entry (prob 1.0) plus related structures - the same discrimination the public API gives, from a fully real (not hand-built) database.
+
+Picking a database (see the script's own comments for the full list and more detail):
+- **CATH50** - domain-clustered CATH database, ~1GB download. Good default if you want a real, complete, self-hosted database without a large disk/bandwidth commitment.
+- **PDB** - the full Protein Data Bank, matching Discover's default `pdb100`. Larger than CATH50 but still far smaller than any AlphaFold option.
+- **Alphafold/UniProt50-minimal** or **Alphafold/Swiss-Prot** - matches Discover's default `afdb50` coverage (or a reviewed-only subset) at a small fraction of the full AlphaFold DB's size.
+- **Alphafold/UniProt** (the full AlphaFold Protein Structure Database) - Foldseek's own docs list this at ~700GB download / ~950GB extracted. Only provision this if you specifically need full AFDB coverage; the UniProt50 options above cover the same structures far more cheaply.
+- **BFMD** - as of this writing, `foldseek databases BFMD ...` has an open upstream bug where the download doesn't work despite being listed (steineggerlab/foldseek#563) - don't rely on it without checking that issue first.
 
 ### Health Check
 

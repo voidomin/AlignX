@@ -64,7 +64,7 @@ describe('DiscoverTab', () => {
         expect(tab.element.querySelector('#discover-results').innerHTML).toBe('');
     });
 
-    it('renders an attribution/ToS note crediting Foldseek and EBI', () => {
+    it('renders an attribution/ToS note crediting every annotation source', () => {
         const tab = new DiscoverTab();
         tab.render();
 
@@ -72,9 +72,15 @@ describe('DiscoverTab', () => {
         expect(text).toContain('Foldseek');
         expect(text).toContain('InterPro');
         expect(text).toContain('QuickGO');
+        expect(text).toContain('STRING');
+        expect(text).toContain('Reactome');
+        expect(text).toContain('GMGC');
         const links = Array.from(tab.element.querySelectorAll('a')).map(a => a.href);
         expect(links.some(h => h.includes('search.foldseek.com'))).toBe(true);
         expect(links.some(h => h.includes('ebi.ac.uk'))).toBe(true);
+        expect(links.some(h => h.includes('string-db.org'))).toBe(true);
+        expect(links.some(h => h.includes('reactome.org'))).toBe(true);
+        expect(links.some(h => h.includes('gmgc.embl.de'))).toBe(true);
     });
 
     it('shows a distinct message while a job is queued vs. actively running', async () => {

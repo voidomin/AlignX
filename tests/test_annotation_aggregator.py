@@ -1,4 +1,4 @@
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import patch, AsyncMock, MagicMock, ANY
 
 import httpx
 import pytest
@@ -102,6 +102,34 @@ class TestExtractEmbeddedUniprotAccession:
 
     def test_returns_none_for_empty_target(self):
         assert AnnotationAggregator.extract_embedded_uniprot_accession("") is None
+
+
+class TestExtractGmgcGeneId:
+
+    def test_extracts_gene_id_with_unknown_name(self):
+        target = "GMGC10.211_012_347.UNKNOWN_trun_1.pdb"
+        assert AnnotationAggregator.extract_gmgc_gene_id(target) == "GMGC10.211_012_347.UNKNOWN"
+
+    def test_extracts_gene_id_with_named_annotation(self):
+        target = "GMGC10.040_893_565.PILY1_trun_2.pdb"
+        assert AnnotationAggregator.extract_gmgc_gene_id(target) == "GMGC10.040_893_565.PILY1"
+
+    def test_handles_underscore_in_gene_name(self):
+        # GMGC's own docs show names like "SCLAV_5304" that themselves
+        # contain an underscore - must not be confused with the "_trun_N"
+        # suffix and truncated early.
+        target = "GMGC10.054_598_380.SCLAV_5304_trun_0.pdb"
+        assert AnnotationAggregator.extract_gmgc_gene_id(target) == "GMGC10.054_598_380.SCLAV_5304"
+
+    def test_returns_none_for_non_gmgc_target(self):
+        target = "AF-P01541-F1-model_v6 Denclatoxin-B"
+        assert AnnotationAggregator.extract_gmgc_gene_id(target) is None
+
+    def test_returns_none_for_mgnify_esm_atlas_target(self):
+        assert AnnotationAggregator.extract_gmgc_gene_id("MGYP001043648370.pdb.gz") is None
+
+    def test_returns_none_for_empty_target(self):
+        assert AnnotationAggregator.extract_gmgc_gene_id("") is None
 
 
 def _mock_response(status_code=200, json_data=None):
@@ -350,6 +378,50 @@ class TestFetchReactomePathways:
         async with httpx.AsyncClient() as client:
             pathways = await aggregator.fetch_reactome_pathways("NOPE", client)
         assert pathways == []
+
+
+class TestFetchGmgcFeatures:
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_parses_pfam_domains(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "features": {
+                    "pfam": [
+                        {"domain": "Pfam:Neisseria_PilC", "evalue": 6.6e-49, "bitscore": 165.1},
+                    ],
+                    "eggnog": {"predicted_protein_name": "pilY1"},
+                }
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            domains = await aggregator.fetch_gmgc_features("GMGC10.040_893_565.PILY1", client)
+
+        assert domains == [
+            {"accession": "Neisseria_PilC", "name": "Neisseria_PilC", "type": "pfam", "go_terms": []},
+        ]
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_when_no_pfam_hits(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={"features": {"eggnog": {"go_terms": []}}}
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            domains = await aggregator.fetch_gmgc_features("GMGC10.211_012_347.UNKNOWN", client)
+        assert domains == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_on_non_200(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            domains = await aggregator.fetch_gmgc_features("GMGC10.nonexistent.X", client)
+        assert domains == []
 
 
 class TestResolvePdbUniprotAccession:
@@ -638,6 +710,41 @@ class TestAggregateForHits:
         assert result["per_neighbor"][0]["reactome_pathways"] == [
             {"id": "R-HSA-111448", "name": "Activation of NOXA"}
         ]
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_gmgc_features")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations")
+    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries")
+    async def test_gmgc_hit_with_no_uniprot_accession_still_gets_annotated(
+        self, mock_interpro, mock_quickgo, mock_string, mock_reactome, mock_gmgc, mock_resolve
+    ):
+        """A gmgcl_id hit has no UniProt accession at all - unlike every
+        other resolvable database - so it must never reach the UniProt-based
+        fetches, only fetch_gmgc_features."""
+        mock_interpro.return_value = []
+        mock_quickgo.return_value = []
+        mock_string.return_value = []
+        mock_reactome.return_value = []
+        mock_gmgc.return_value = [
+            {"accession": "Neisseria_PilC", "name": "Neisseria_PilC", "type": "pfam", "go_terms": []}
+        ]
+        mock_resolve.return_value = {}
+
+        hits = [{"target": "GMGC10.040_893_565.PILY1_trun_2.pdb", "eval": 1e-49, "prob": 0.9}]
+
+        aggregator = AnnotationAggregator()
+        result = await aggregator.aggregate_for_hits(hits, top_n_neighbors=10)
+
+        mock_gmgc.assert_called_once_with("GMGC10.040_893_565.PILY1", ANY)
+        mock_interpro.assert_not_called()
+        mock_quickgo.assert_not_called()
+        assert result["resolvable_hit_count"] == 1
+        assert result["annotated_neighbor_count"] == 1
+        assert result["top_domains"][0]["name"] == "Neisseria_PilC"
+        assert result["top_domains"][0]["type"] == "pfam"
 
     @pytest.mark.asyncio
     @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names")

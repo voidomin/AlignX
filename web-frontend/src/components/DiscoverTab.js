@@ -14,13 +14,15 @@ const DETAIL_LEVELS = [
 ];
 
 // The full set Foldseek's public API accepts (FoldseekClient.ALLOWED_DATABASES).
-// `annotatable: false` marks databases whose hit IDs don't embed or resolve to
-// a UniProt accession at all (see annotation_aggregator.py's resolve_accession)
-// - picking one of those still returns structural hits but no domain/GO
-// summary. gmgcl_id and mgnify_esm30 are the only two left: their target IDs
-// are GMGC/MGYP accessions with no UniProt mapping, not just missing a lookup
-// step (mgnify_esm30 in particular is often *expected* to have no existing
-// annotation, since it's specifically metagenomic "dark matter" sequences).
+// `annotatable: false` marks databases whose hit IDs don't resolve to any
+// functional annotation at all - picking one of those still returns
+// structural hits but no domain/GO summary. mgnify_esm30 is the only one
+// left: its MGYP-accession target IDs have no UniProt mapping and no
+// dedicated annotation source of their own, and are often *expected* to
+// have no existing annotation, since it's specifically metagenomic "dark
+// matter" sequences. gmgcl_id hits resolve via GMGC's own API instead of
+// UniProt (see annotation_aggregator.py's fetch_gmgc_features), not every
+// database routes through the same resolution mechanism.
 const DATABASE_OPTIONS = [
     { key: 'pdb100', label: 'PDB', hint: 'Experimentally solved structures', annotatable: true, default: true },
     { key: 'afdb50', label: 'AlphaFold DB', hint: '50%-redundancy-reduced', annotatable: true, default: true },
@@ -30,7 +32,7 @@ const DATABASE_OPTIONS = [
     { key: 'BFVD', label: 'BFVD', hint: 'Big Fantastic Virus Database', annotatable: true, default: false },
     { key: 'bfmd', label: 'BFMD', hint: 'Big Fantastic Metagenomics Database', annotatable: true, default: false },
     { key: 'mgnify_esm30', label: 'MGnify / ESM Atlas', hint: "Metagenomic 'dark matter' proteins", annotatable: false, default: false },
-    { key: 'gmgcl_id', label: 'GMGC', hint: 'Global Microbial Gene Catalog', annotatable: false, default: false },
+    { key: 'gmgcl_id', label: 'GMGC', hint: 'Global Microbial Gene Catalog', annotatable: true, default: false },
 ];
 
 // Single-structure "what is this?" workflow: submit one structure to
@@ -107,8 +109,12 @@ export class DiscoverTab {
                 <p class="font-body-sm text-[11px] text-secondary border-t border-border-subtle pt-4">
                     Structural search via <a href="https://search.foldseek.com/search" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">Foldseek</a>.
                     Functional annotations via EMBL-EBI's
-                    <a href="https://www.ebi.ac.uk/interpro/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">InterPro</a> and
-                    <a href="https://www.ebi.ac.uk/QuickGO/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">QuickGO</a>.
+                    <a href="https://www.ebi.ac.uk/interpro/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">InterPro</a>,
+                    <a href="https://www.ebi.ac.uk/QuickGO/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">QuickGO</a>, and
+                    <a href="https://www.ebi.ac.uk/pdbe/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">PDBe SIFTS</a>,
+                    <a href="https://string-db.org/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">STRING</a>,
+                    <a href="https://reactome.org/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">Reactome</a>, and
+                    <a href="https://gmgc.embl.de/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">GMGC</a>.
                     Results are computational inferences from structural similarity, not experimentally confirmed
                     function - see each service's own terms of use for details.
                 </p>
