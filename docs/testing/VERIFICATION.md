@@ -15,6 +15,7 @@ graph TD
     C --> D[4. FastAPI Web Server Check]
     D --> E[5. Frontend Unit Tests]
     E --> F[6. Frontend Compilation & UI Flow]
+    F --> G[7. Discover Mode Verification]
 ```
 
 ---
@@ -41,7 +42,7 @@ Run the test suite script:
 powershell -File scripts\run_tests.ps1
 ```
 *Expected Output:*
-- Pytest runs 70 items successfully and shows no errors.
+- Pytest runs 172 items successfully and shows no errors.
 - Verification scripts are executed automatically as part of the run.
 
 ---
@@ -104,7 +105,7 @@ Run the Vitest suite covering `api.js` and the JS components (auth headers, job 
 cd web-frontend
 npm test
 ```
-*Expected Output:* all test files pass (currently 68 tests across 9 files, covering `api.js` and every tab/panel component).
+*Expected Output:* all test files pass (currently 91 tests across the suite, covering `api.js` and every tab/panel component, including `DiscoverTab.js`).
 
 ---
 
@@ -134,3 +135,24 @@ Verify the Vite single page application (SPA).
    - On **Sequence**, toggle the report-section checklist and confirm the "Download PDF" link's URL updates; confirm "View Notebook" opens a valid HTML file.
    - Run a second alignment with different structures, then check the **Compare** tab to diff it against the first run.
    - On **History**, confirm past runs list and reloading one restores its full state (3D view, stats, tabs).
+
+---
+
+### Step 7: Discover Mode Verification
+Verify the structure-to-function inference pipeline (Foldseek search + InterPro/QuickGO/STRING/Reactome/SIFTS annotation aggregation), separate from the Compare workflow above.
+
+1. **Submit a Discover job:**
+   ```bash
+   curl -X POST http://127.0.0.1:8000/api/jobs/discover -H "Content-Type: application/json" -d "{\"pdb_id\": \"AF-P69905-F1\"}"
+   ```
+   Expect an immediate `202` with a `job_id`. Poll `GET /api/jobs/{job_id}` until `status` is `completed` (or `failed`) — this calls the live public Foldseek API (shared rate limit, ~0.1 req/s), so it may take a minute or more.
+2. **Verify the three detail levels in the browser:**
+   On the **Discover** tab, submit a structure ID and confirm the Public/Student/Researcher toggle changes what's shown for the same underlying result — Researcher should show the unfiltered domain/GO-term lists plus a "High-confidence" stat, while Public/Student show only the confidence-gated ("`annotation.min_confident_probability`-cleared") subset.
+3. **Verify the low-confidence path:**
+   If a result has zero neighbors clearing the confidence threshold, Public/Student should show an explicit low-confidence message rather than an empty or misleadingly confident result.
+4. **Verify export/report parity:**
+   From a completed Discover run, confirm both "Download Report" (`GET /api/discover/report`, a self-contained HTML file) and "Download JSON" (`GET /api/discover/export`) links work.
+5. **Verify History integration:**
+   Confirm the completed Discover run appears on the **Dashboard** and **History** tab with a `DISCOVER` badge (distinct from `COMPARE`-badged Compare runs), and that reopening it from History repopulates the Discover tab (not the Compare workspace).
+6. **(Optional) Verify the self-hosted Foldseek backend:**
+   Set `foldseek.backend: local` in `config.yaml` with `foldseek.local.binary_path`/`database_dir` pointed at a real Foldseek binary and search database, restart the server, and repeat step 1 — confirm the job completes without calling the public API.

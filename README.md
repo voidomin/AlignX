@@ -2,7 +2,7 @@
 
 An automated, full-stack bioinformatics platform covering two workflows: **Compare**, multiple structural alignment of any protein family using Mustang (N-structure 3D viewer, four structure-source databases, phylogenetic analysis, structural clustering, batch comparison, ligand hunting, configurable PDF/HTML reports); and **Discover**, structure-to-function inference for a single unannotated structure via Foldseek structural-neighbor search plus InterPro/QuickGO annotation aggregation — useful for predicted structures (AlphaFold, ESM Atlas) that have no known function yet, since fold is conserved far longer than sequence.
 
-[![Version](https://img.shields.io/badge/version-3.0.0-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-3.1.0-orange.svg)](CHANGELOG.md)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -32,7 +32,15 @@ Each structure shows its source database and available metadata (method, resolut
 
 ### 🔎 Structural Discovery ("what is this?")
 
-Have one structure and no idea what it does? The **Discover** tab searches it against Foldseek's structural databases (PDB, AlphaFold DB, MGnify/ESM Atlas) to find known proteins with a similar fold, then pulls functional annotations (InterPro domains/families, QuickGO terms) for the resolvable neighbors and aggregates them into a domain/GO-term consensus. Structure is conserved far longer than sequence, so this finds connections sequence search alone would miss — especially useful for metagenomic "dark matter" proteins from ESM Atlas. Results render at one of three detail levels (Public / Student / Researcher) from the same underlying data, with explicit confidence framing throughout — this is a computational inference, not a confirmed experimental result.
+Have one structure and no idea what it does? The **Discover** tab searches it against Foldseek's structural databases (PDB, AlphaFold DB, MGnify/ESM Atlas) to find known proteins with a similar fold, then pulls functional annotations for the resolvable neighbors and aggregates them into a domain/GO-term consensus. Structure is conserved far longer than sequence, so this finds connections sequence search alone would miss — especially useful for metagenomic "dark matter" proteins from ESM Atlas.
+
+- **Five annotation sources**: InterPro (domains/families), QuickGO (GO terms), STRING (protein-protein interaction partners), Reactome (pathway membership), and PDBe's SIFTS mapping (resolves PDB-entry hits to a UniProt accession, not just AlphaFold DB hits).
+- **Confidence-gated function hypothesis**: a neighbor's curated annotations only count toward the stated hypothesis if its own Foldseek match probability also clears a configurable threshold (`annotation.min_confident_probability`, default 0.5) — having *some* annotation data isn't enough on its own if the structural match itself was weak.
+- **Three detail levels** (Public / Student / Researcher) rendering the same underlying result at different depths, with explicit confidence framing throughout — this is a computational inference, not a confirmed experimental result.
+- **Persistent annotation cache**: InterPro/QuickGO/SIFTS/STRING/Reactome lookups are cached (default 30-day TTL), so re-querying a protein someone already looked up doesn't refetch from scratch.
+- **History integration**: Discover runs show up on the Dashboard and History tab alongside Compare runs (with a `DISCOVER`/`COMPARE` badge), and can be reopened later.
+- **Export**: a standalone HTML report or raw JSON, per run — the same export/report parity Compare mode has always had.
+- **Self-hostable search backend**: defaults to the public Foldseek API; `foldseek.backend: local` (see `config.yaml`) switches to a local Foldseek binary + search database for deployments that outgrow the public API's shared rate limit.
 
 ### 🧠 Advanced Analysis
 
@@ -196,6 +204,8 @@ If you use this pipeline in your research, please cite:
 - **Foldseek**: van Kempen M, et al. _Nature Biotechnology_. 2024.
 - **InterPro**: Paysan-Lafosse T, et al. _Nucleic Acids Research_. 2023.
 - **QuickGO / Gene Ontology**: Binns D, et al. _Bioinformatics_. 2009.
+- **STRING**: Szklarczyk D, et al. _Nucleic Acids Research_. 2023;51(D1):D638-D646.
+- **Reactome**: Ragueneau E, et al. _Nucleic Acids Research_. 2026;54(D1):D673-D681.
 
 **Issues?** Open a GitHub issue or contact at `akashkbhat4414@gmail.com`.
 
