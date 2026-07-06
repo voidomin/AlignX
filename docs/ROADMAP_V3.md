@@ -280,10 +280,14 @@ One synthesis step, three renderings of the same underlying result object:
 
 ## 7. Open questions
 
-- CATH (`cath50`)/`gmgcl_id`/`bfmd` Foldseek hits still don't resolve to a UniProt
-  accession (only pdb100 via SIFTS and AFDB via regex do) - not in the default
-  database set today, so lower priority, but would need their own ID-mapping path
-  if ever enabled.
+- `gmgcl_id` (Global Microbial Gene Catalog) Foldseek hits still don't resolve to
+  a UniProt accession - their target IDs (`GMGC10.211_012_347.UNKNOWN_trun_1.pdb`)
+  don't embed one and have no free ID-mapping API the way pdb100/cath50 do via
+  SIFTS. Would need a GMGC-specific lookup (e.g. `gmgc.embl.de`'s own API) as a
+  new dependency for uncertain benefit - lower priority. `mgnify_esm30`
+  (MGYP-accession) hits are in the same boat, but that's expected rather than a
+  gap: it's specifically metagenomic "dark matter" sequences, many of which
+  genuinely have no existing annotation to find.
 - When to actually provision a production-scale local Foldseek database (see §5's
   self-hosting note) — depends on how much real usage this gets; the code path is
   ready (`foldseek.backend: local`), the multi-GB+ database itself is not.
@@ -294,7 +298,21 @@ One synthesis step, three renderings of the same underlying result object:
   (confirmed for both AFDB and pdb100 targets), so no extra species lookup is
   needed at all - `fetch_string_partners()` just reads `hit["taxId"]` directly.
 - ~~PDB/CATH hits need a further ID-mapping lookup~~ → done for pdb100 via SIFTS
-  (see Phase 3's fast-follow note above). CATH/gmgcl_id/bfmd remain open (see above).
+  (see Phase 3's fast-follow note above), and now also for `cath50`: live-probing
+  the actual target ID format (`1cbnA00`) showed it's a 7-character CATH domain
+  ID - 4-char PDB code + 1-char chain + 2-digit domain number - i.e. the *same*
+  (pdb_id, chain) pair pdb100 hits carry, just formatted differently, so it
+  resolves through the identical SIFTS lookup (`extract_cath_pdb_chain()`).
+  `bfmd` and `BFVD` turned out to embed a UniProt accession directly as one
+  underscore/dot/hyphen-delimited token in the target string (e.g. `bfmd`'s
+  `LevyLab_Q8U2A3_V1_4_relaxed_B`, `BFVD`'s
+  `A0A7U0G8Z5_unrelaxed_rank_..._seed_000`) - free to extract via UniProt's own
+  accession regex, no lookup needed (`extract_embedded_uniprot_accession()`).
+  Live-verified against 1CRN: `cath50` alone now resolves 20/20 candidates and
+  correctly annotates 10/10 neighbors as Thionin family (previously 0/0); `BFVD`
+  alone resolves 20/20 candidates (annotation count is low because InterPro/
+  QuickGO simply have sparse curated coverage of viral proteins, not because
+  resolution failed). Only `gmgcl_id` remains open (see above).
 - ~~Self-host Foldseek now or defer?~~ → the code/config path is done and
   live-verified (`FoldseekRunner`); deferred is *provisioning a production
   database*, which is now the only remaining piece (see above).
@@ -304,9 +322,9 @@ One synthesis step, three renderings of the same underlying result object:
   `POST /api/jobs/discover`'s `databases` field) already supported an arbitrary
   subset end-to-end; the only gap was frontend UI. Added a checkbox picker to
   `DiscoverTab.js` covering all 9 databases, defaulting to the same `pdb100` +
-  `afdb50` set as before, with databases that don't yet resolve to annotations
-  (`mgnify_esm30`, `cath50`, `BFVD`, `gmgcl_id`, `bfmd`) marked so the user knows
-  they'll get structural hits but no domain/GO summary from them. Live-verified:
+  `afdb50` set as before, with databases that don't resolve to annotations
+  (`mgnify_esm30`, `gmgcl_id` - see below) marked so the user knows they'll get
+  structural hits but no domain/GO summary from them. Live-verified:
   restricting a real job to `pdb100` only round-tripped correctly through the
   public Foldseek API.
 - ~~What confidence threshold should gate a function hypothesis?~~ → done:

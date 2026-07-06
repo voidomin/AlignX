@@ -56,6 +56,54 @@ class TestExtractPdbChain:
         assert AnnotationAggregator.extract_pdb_chain("") is None
 
 
+class TestExtractCathPdbChain:
+
+    def test_extracts_pdb_id_and_chain_from_cath_domain_id(self):
+        assert AnnotationAggregator.extract_cath_pdb_chain("1cbnA00") == ("1CBN", "A")
+
+    def test_returns_none_for_pdb100_target(self):
+        target = "1ab1-assembly1.cif.gz_A SI FORM CRAMBIN"
+        assert AnnotationAggregator.extract_cath_pdb_chain(target) is None
+
+    def test_returns_none_for_empty_target(self):
+        assert AnnotationAggregator.extract_cath_pdb_chain("") is None
+
+
+class TestExtractEmbeddedUniprotAccession:
+
+    def test_extracts_from_bfvd_target(self):
+        target = "A0A7U0G8Z5_unrelaxed_rank_001_alphafold2_ptm_model_2_seed_000"
+        assert AnnotationAggregator.extract_embedded_uniprot_accession(target) == "A0A7U0G8Z5"
+
+    def test_extracts_from_bfmd_levylab_target(self):
+        target = "LevyLab_Q8U2A3_V1_4_relaxed_B"
+        assert AnnotationAggregator.extract_embedded_uniprot_accession(target) == "Q8U2A3"
+
+    def test_extracts_first_accession_from_bfmd_variant_pair_target(self):
+        target = "ProtVar_P08559_Q9Y6H1_B"
+        assert AnnotationAggregator.extract_embedded_uniprot_accession(target) == "P08559"
+
+    def test_extracts_short_form_accession(self):
+        target = "R4T7Q6_unrelaxed_rank_001_alphafold2_ptm_model_2_seed_000"
+        assert AnnotationAggregator.extract_embedded_uniprot_accession(target) == "R4T7Q6"
+
+    def test_returns_none_for_gmgc_target(self):
+        target = "GMGC10.211_012_347.UNKNOWN_trun_1.pdb"
+        assert AnnotationAggregator.extract_embedded_uniprot_accession(target) is None
+
+    def test_returns_none_for_mgnify_esm_atlas_target(self):
+        assert AnnotationAggregator.extract_embedded_uniprot_accession("MGYP001043648370.pdb.gz") is None
+
+    def test_returns_none_for_uniparc_id(self):
+        # UPI-prefixed UniParc IDs aren't UniProt accessions - a real hit
+        # seen in a live BFVD/mgnify_esm30 query, must not false-positive.
+        target = "UPI001E6A929D_unrelaxed_rank_001_alphafold2_ptm_model_2_seed_000"
+        assert AnnotationAggregator.extract_embedded_uniprot_accession(target) is None
+
+    def test_returns_none_for_empty_target(self):
+        assert AnnotationAggregator.extract_embedded_uniprot_accession("") is None
+
+
 def _mock_response(status_code=200, json_data=None):
     response = AsyncMock()
     response.status_code = status_code
@@ -412,6 +460,55 @@ class TestResolveAccession:
         async with httpx.AsyncClient() as client:
             accession = await aggregator.resolve_accession(hit, client)
         assert accession is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_for_gmgc_target(self):
+        aggregator = AnnotationAggregator()
+        hit = {"target": "GMGC10.211_012_347.UNKNOWN_trun_1.pdb"}
+        async with httpx.AsyncClient() as client:
+            accession = await aggregator.resolve_accession(hit, client)
+        assert accession is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_for_mgnify_esm_atlas_target(self):
+        aggregator = AnnotationAggregator()
+        hit = {"target": "MGYP001043648370.pdb.gz"}
+        async with httpx.AsyncClient() as client:
+            accession = await aggregator.resolve_accession(hit, client)
+        assert accession is None
+
+    @pytest.mark.asyncio
+    async def test_resolves_bfvd_target_via_embedded_accession(self):
+        aggregator = AnnotationAggregator()
+        with patch.object(
+            aggregator, "resolve_pdb_uniprot_accession", new_callable=AsyncMock
+        ) as mock_sifts:
+            hit = {"target": "A0A7U0G8Z5_unrelaxed_rank_001_alphafold2_ptm_model_2_seed_000"}
+            async with httpx.AsyncClient() as client:
+                accession = await aggregator.resolve_accession(hit, client)
+            assert accession == "A0A7U0G8Z5"
+            mock_sifts.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_resolves_bfmd_target_via_embedded_accession(self):
+        aggregator = AnnotationAggregator()
+        hit = {"target": "LevyLab_Q8U2A3_V1_4_relaxed_B"}
+        async with httpx.AsyncClient() as client:
+            accession = await aggregator.resolve_accession(hit, client)
+        assert accession == "Q8U2A3"
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_sifts_for_cath_domain_targets(self):
+        aggregator = AnnotationAggregator()
+        with patch.object(
+            aggregator, "resolve_pdb_uniprot_accession", new_callable=AsyncMock
+        ) as mock_sifts:
+            mock_sifts.return_value = "P01542"
+            hit = {"target": "1cbnA00"}
+            async with httpx.AsyncClient() as client:
+                accession = await aggregator.resolve_accession(hit, client)
+            assert accession == "P01542"
+            mock_sifts.assert_called_once_with("1CBN", "A", client, None)
 
 
 class TestResolveGoTermNames:

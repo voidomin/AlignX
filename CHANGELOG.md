@@ -2,6 +2,16 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.3.0]
+
+### Added
+- **CATH and BFVD/BFMD annotation resolution**: three of the four Foldseek databases the annotation pipeline couldn't resolve to a UniProt accession are now resolvable. Live-probing each database's actual target ID format (rather than assuming from documentation) showed `cath50` hits are a 7-character CATH domain ID - 4-char PDB code + 1-char chain + 2-digit domain number - i.e. the same (pdb_id, chain) pair pdb100 hits carry, just differently formatted, so it resolves through the identical SIFTS lookup (`extract_cath_pdb_chain()`). `bfmd` and `BFVD` hits embed a UniProt accession directly as a delimited token in the target string (e.g. `LevyLab_Q8U2A3_V1_4_relaxed_B`), extractable for free via UniProt's own accession regex (`extract_embedded_uniprot_accession()`), no lookup needed.
+- The Discover tab's database picker now marks only `mgnify_esm30` and `gmgcl_id` as non-annotatable (previously marked all 5 non-default databases); `gmgcl_id`'s target IDs (`GMGC10.211_012_347...`) genuinely have no embedded accession or free ID-mapping API, and `mgnify_esm30` (MGYP-accession "dark matter" sequences) is expected to often lack any existing annotation at all - both remain the one open item in `docs/ROADMAP_V3.md` §7.
+
+### Verified
+- Live end-to-end against 1CRN: `cath50` alone now resolves 20/20 candidates and correctly annotates 10/10 neighbors as Thionin family (previously 0/0 before this fix). `BFVD` alone resolves 20/20 candidates to real accessions (annotation count stays low only because InterPro/QuickGO have sparse curated coverage of viral proteins, not because resolution failed).
+- Re-verified the self-hosted Foldseek backend (`foldseek.backend: local`) end-to-end from a clean slate: downloaded the official Foldseek static binary, built a fresh 3-structure test database (2LYZ/3LYZ/1CRN), and confirmed `DiscoveryCoordinator` correctly discriminates real structural similarity through it - a 2LYZ query hit 2LYZ/3LYZ (both lysozyme, prob 1.0) and correctly scored 1CRN (an unrelated fold) at prob 0.0, not just returning every file in the target directory. Provisioning an actual production-scale database remains the one deferred piece - see `docs/ROADMAP_V3.md` §7.
+
 ## [3.2.0]
 
 ### Added

@@ -14,20 +14,23 @@ const DETAIL_LEVELS = [
 ];
 
 // The full set Foldseek's public API accepts (FoldseekClient.ALLOWED_DATABASES).
-// `annotatable: false` marks databases whose hit IDs don't resolve to a UniProt
-// accession yet (see annotation_aggregator.py's resolve_accession - only the
-// AF-{UniProt}-F{n} regex and pdb100's SIFTS lookup are wired up today), so
-// picking one of those still returns structural hits but no domain/GO summary.
+// `annotatable: false` marks databases whose hit IDs don't embed or resolve to
+// a UniProt accession at all (see annotation_aggregator.py's resolve_accession)
+// - picking one of those still returns structural hits but no domain/GO
+// summary. gmgcl_id and mgnify_esm30 are the only two left: their target IDs
+// are GMGC/MGYP accessions with no UniProt mapping, not just missing a lookup
+// step (mgnify_esm30 in particular is often *expected* to have no existing
+// annotation, since it's specifically metagenomic "dark matter" sequences).
 const DATABASE_OPTIONS = [
     { key: 'pdb100', label: 'PDB', hint: 'Experimentally solved structures', annotatable: true, default: true },
     { key: 'afdb50', label: 'AlphaFold DB', hint: '50%-redundancy-reduced', annotatable: true, default: true },
     { key: 'afdb-swissprot', label: 'AlphaFold DB (SwissProt)', hint: 'Reviewed UniProt entries only', annotatable: true, default: false },
     { key: 'afdb-proteome', label: 'AlphaFold DB (Proteomes)', hint: 'Full reference proteomes', annotatable: true, default: false },
+    { key: 'cath50', label: 'CATH', hint: 'Structural domain classification', annotatable: true, default: false },
+    { key: 'BFVD', label: 'BFVD', hint: 'Big Fantastic Virus Database', annotatable: true, default: false },
+    { key: 'bfmd', label: 'BFMD', hint: 'Big Fantastic Metagenomics Database', annotatable: true, default: false },
     { key: 'mgnify_esm30', label: 'MGnify / ESM Atlas', hint: "Metagenomic 'dark matter' proteins", annotatable: false, default: false },
-    { key: 'cath50', label: 'CATH', hint: 'Structural domain classification', annotatable: false, default: false },
-    { key: 'BFVD', label: 'BFVD', hint: 'Big Fantastic Virus Database', annotatable: false, default: false },
     { key: 'gmgcl_id', label: 'GMGC', hint: 'Global Microbial Gene Catalog', annotatable: false, default: false },
-    { key: 'bfmd', label: 'BFMD', hint: 'Big Fantastic Metagenomics Database', annotatable: false, default: false },
 ];
 
 // Single-structure "what is this?" workflow: submit one structure to

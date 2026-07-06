@@ -42,9 +42,31 @@ _AFDB_TARGET_PATTERN = re.compile(r"^AF-([A-Za-z0-9]+)-F\d+", re.IGNORECASE)
 # suffix, not part of the real author chain ID, and must be stripped before
 # querying SIFTS). These don't embed a UniProt accession, but PDBe's SIFTS
 # mapping API resolves {pdb_id, chain} -> UniProt accession directly - see
-# resolve_pdb_uniprot_accession(). CATH/gmgcl_id/bfmd hits still aren't
-# resolved (open question, unchanged - see docs/ROADMAP_V3.md).
+# resolve_pdb_uniprot_accession().
 _PDB_TARGET_PATTERN = re.compile(r"^([0-9A-Za-z]{4})-assembly\d+\.cif\.gz_(\S+)")
+
+# cath50 hits are named as a 7-character CATH domain ID: 4-char PDB code +
+# 1-char author chain + 2-digit domain number within that chain, e.g.
+# "1cbnA00" -> PDB "1CBN", chain "A". This is directly a (pdb_id, chain)
+# pair, same as pdb100's, so it resolves through the same SIFTS lookup -
+# see resolve_accession(). Confirmed live against 1CRN's cath50 hits.
+_CATH_DOMAIN_PATTERN = re.compile(r"^([0-9][A-Za-z0-9]{3})([A-Za-z0-9])\d{2}$")
+
+# BFVD and bfmd hits embed a UniProt accession as one underscore/dot/hyphen-
+# delimited token in their target string - e.g. BFVD's
+# "A0A7U0G8Z5_unrelaxed_rank_001_alphafold2_ptm_model_2_seed_000" or bfmd's
+# "LevyLab_Q8U2A3_V1_4_relaxed_B" and "ProtVar_P08559_Q9Y6H1_B" (a variant
+# pair - the first accession is used). Confirmed live against 1CRN. The
+# pattern is UniProt's own official accession regex (6- or 10-character
+# form); gmgcl_id ("GMGC10.211_012_347...") and mgnify_esm30 ("MGYP...")
+# hits have no such token and remain genuinely unresolvable - they're not
+# UniProt-keyed at all, not just missing a lookup step (mgnify_esm30 in
+# particular is expected to often have no existing annotation at all, since
+# it's specifically metagenomic "dark matter" sequences - see
+# docs/ROADMAP_V3.md).
+_UNIPROT_ACCESSION_RE = re.compile(
+    r"^([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})$"
+)
 
 DEFAULT_TOP_N_NEIGHBORS = 10
 DEFAULT_TOP_N_SUMMARY = 10
@@ -167,6 +189,29 @@ class AnnotationAggregator:
         chain_id = re.sub(r"-\d+$", "", raw_chain)
         return pdb_id.upper(), chain_id
 
+    @staticmethod
+    def extract_cath_pdb_chain(target: str) -> Optional[Tuple[str, str]]:
+        """Pulls (pdb_id, chain_id) out of a Foldseek cath50 target string
+        (a CATH domain ID), e.g. "1cbnA00" -> ("1CBN", "A")."""
+        match = _CATH_DOMAIN_PATTERN.match((target or "").strip())
+        if not match:
+            return None
+        pdb_id, chain_id = match.groups()
+        return pdb_id.upper(), chain_id
+
+    @staticmethod
+    def extract_embedded_uniprot_accession(target: str) -> Optional[str]:
+        """Finds a UniProt-accession-shaped token embedded in a Foldseek
+        target string (BFVD/bfmd), e.g.
+        "LevyLab_Q8U2A3_V1_4_relaxed_B" -> "Q8U2A3". Returns the first
+        matching token; a bfmd variant-pair target has two, and either is a
+        valid resolvable neighbor, so there's no strong reason to prefer one
+        over the other beyond "the one that appears first"."""
+        for token in re.split(r"[_.\-]", (target or "").strip()):
+            if _UNIPROT_ACCESSION_RE.match(token.upper()):
+                return token.upper()
+        return None
+
     async def resolve_pdb_uniprot_accession(
         self,
         pdb_id: str,
@@ -214,12 +259,17 @@ class AnnotationAggregator:
     ) -> Optional[str]:
         """Resolves a Foldseek hit to a UniProt accession via whichever
         method applies to its target format: the free AFDB regex first,
-        then a live SIFTS lookup for pdb100 hits."""
+        then an embedded-accession token (BFVD/bfmd), then a live SIFTS
+        lookup for pdb100/cath50 hits (both resolve to a (pdb_id, chain)
+        pair, just via different target formats)."""
         target = hit.get("target", "")
         accession = self.extract_uniprot_accession(target)
         if accession:
             return accession
-        pdb_chain = self.extract_pdb_chain(target)
+        embedded = self.extract_embedded_uniprot_accession(target)
+        if embedded:
+            return embedded
+        pdb_chain = self.extract_pdb_chain(target) or self.extract_cath_pdb_chain(target)
         if pdb_chain:
             return await self.resolve_pdb_uniprot_accession(*pdb_chain, client, pdb_cache)
         return None

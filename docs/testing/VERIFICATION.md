@@ -158,3 +158,8 @@ Verify the structure-to-function inference pipeline (Foldseek search + InterPro/
    Set `foldseek.backend: local` in `config.yaml` with `foldseek.local.binary_path`/`database_dir` pointed at a real Foldseek binary and search database, restart the server, and repeat step 1 — confirm the job completes without calling the public API.
 7. **Verify the database picker:**
    On the **Discover** tab, expand the "Databases" disclosure below the input — confirm `pdb100`/`afdb50` (PDB / AlphaFold DB) are checked by default and the other 7 are not. Uncheck both defaults and check a different one (e.g. CATH), submit, and confirm the completed run's `databases_searched` reflects the custom selection, not the default. Confirm unchecking every box blocks submission with an inline error instead of calling the API. Reopen a past run from History and confirm the picker's checkboxes update to match that run's actual `databases_searched`.
+8. **Verify CATH/BFVD/BFMD annotation resolution:**
+   ```bash
+   curl -X POST http://127.0.0.1:8000/api/jobs/discover -H "Content-Type: application/json" -d "{\"pdb_id\": \"1CRN\", \"databases\": [\"cath50\"]}"
+   ```
+   Poll to completion and confirm `annotations.resolvable_hit_count` is nonzero (CATH domain IDs resolve via the same SIFTS path as pdb100). Repeat with `"databases": ["BFVD"]` or `["bfmd"]` and confirm the same (these embed a UniProt accession directly in the target ID). Only `mgnify_esm30` and `gmgcl_id` are expected to still show `resolvable_hit_count: 0` for essentially every candidate — see `docs/ROADMAP_V3.md` §7.
