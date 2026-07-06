@@ -202,10 +202,26 @@ def render_3d_structure(
                 viewer.zoomTo();
                 viewer.render();
                 viewer.zoom(0.8, 1000);
-                
-                // Enable gentle auto-rotation
+
+                // Brief auto-rotation to signal the view is interactive, then
+                // stop - viewer.spin() drives an unbounded requestAnimationFrame
+                // render loop with no built-in timeout, and this view can be one
+                // of 4 simultaneous viewers on screen (see _render_superimposed_view
+                // in src/frontend/tabs/structure.py) - 4 of these spinning forever
+                // is enough sustained GPU/CPU load to make the whole browser tab
+                // hang, not just this component. Also stop immediately on any
+                // user interaction so it doesn't fight manual rotation.
                 viewer.spin("y", 0.5);
-                
+                let spinTimer_{unique_id} = setTimeout(() => viewer.spin(false), 3000);
+                let stopSpin_{unique_id} = () => {{
+                    clearTimeout(spinTimer_{unique_id});
+                    viewer.spin(false);
+                }};
+                let container_{unique_id} = document.getElementById("container_{unique_id}");
+                container_{unique_id}.addEventListener("mousedown", stopSpin_{unique_id});
+                container_{unique_id}.addEventListener("touchstart", stopSpin_{unique_id});
+                container_{unique_id}.addEventListener("wheel", stopSpin_{unique_id});
+
                 // Snapshot Function
                 window.takeSnapshot = function() {{
                     const canvas = document.querySelector("#container_{unique_id} canvas");
@@ -341,10 +357,21 @@ def render_ligand_view(
                 }}
                 
                 viewer.render();
-                
-                // Enable gentle auto-rotation (only when no highlights selected)
+
+                // Brief auto-rotation (only when no highlights selected), then
+                // stop - see render_3d_structure's comment on why an unbounded
+                // spin() render loop is a real perf/hang risk, not just a nit.
                 if (highlightedResidues.length === 0) {{
                     viewer.spin("y", 0.5);
+                    let ligandSpinTimer_{unique_id} = setTimeout(() => viewer.spin(false), 3000);
+                    let stopLigandSpin_{unique_id} = () => {{
+                        clearTimeout(ligandSpinTimer_{unique_id});
+                        viewer.spin(false);
+                    }};
+                    let ligandContainer_{unique_id} = document.getElementById("ligand_{unique_id}");
+                    ligandContainer_{unique_id}.addEventListener("mousedown", stopLigandSpin_{unique_id});
+                    ligandContainer_{unique_id}.addEventListener("touchstart", stopLigandSpin_{unique_id});
+                    ligandContainer_{unique_id}.addEventListener("wheel", stopLigandSpin_{unique_id});
                 }}
             </script>
         </body>
