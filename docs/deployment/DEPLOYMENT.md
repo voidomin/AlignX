@@ -11,7 +11,7 @@ This is the production path: a single container running the FastAPI backend, ser
 ### Prerequisites
 
 1. Docker installed locally or on your host.
-2. The frontend built and committed: run `powershell -File build_frontend.ps1` after any frontend change, then commit the updated `static/` directory. The Dockerfile does **not** run `npm install`/`npm run build` itself — it copies whatever is already in `static/`.
+2. The frontend built and committed: run `powershell -File scripts\build_frontend.ps1` after any frontend change, then commit the updated `static/` directory. The Dockerfile does **not** run `npm install`/`npm run build` itself — it copies whatever is already in `static/`.
 
 ### Build & Run
 
