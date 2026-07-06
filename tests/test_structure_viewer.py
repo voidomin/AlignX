@@ -25,6 +25,24 @@ def test_render_3d_structure(tmp_path, dummy_pdb_content):
     assert '"A": [1, 2]' in html_hl
 
 
+def test_render_3d_structure_auto_rotation_stops_itself(tmp_path, dummy_pdb_content):
+    """viewer.spin() drives an unbounded requestAnimationFrame render loop
+    with no built-in timeout - since this view can be one of 4 simultaneous
+    viewers on screen at once (see _render_superimposed_view), that many
+    perpetual spin loops is real, sustained GPU/CPU load, not a one-time
+    render cost. Must stop on its own after a few seconds, and immediately
+    on user interaction."""
+    pdb_file = tmp_path / "test.pdb"
+    pdb_file.write_text(dummy_pdb_content)
+
+    html = render_3d_structure(pdb_file, unique_id="test_1")
+
+    assert "setTimeout(() => viewer.spin(false), 3000)" in html
+    assert 'addEventListener("mousedown"' in html
+    assert 'addEventListener("touchstart"' in html
+    assert 'addEventListener("wheel"' in html
+
+
 def test_render_synced_grid(tmp_path, dummy_pdb_content):
     """Test synchronized 3D grid layout generation."""
     pdb_file = tmp_path / "aligned.pdb"
@@ -89,3 +107,24 @@ def test_render_ligand_view(tmp_path, dummy_pdb_content):
     assert "highlightedResidues" in html_hl
     assert "addLabel" in html_hl
     assert 'sel.chain + ":" + sel.resi' in html_hl
+
+
+def test_render_ligand_view_auto_rotation_stops_itself(tmp_path, dummy_pdb_content):
+    """Same unbounded-spin-loop risk as render_3d_structure - must stop on
+    its own, and immediately on interaction, when no rows are highlighted
+    (the only case where this view auto-rotates at all)."""
+    pdb_file = tmp_path / "ligand_site.pdb"
+    pdb_file.write_text(dummy_pdb_content)
+    ligand_data = {
+        "ligand": "RET_A_296",
+        "interactions": [
+            {"residue": "ALA", "chain": "A", "resi": 12, "distance": 3.4, "type": "Hydrophobic"},
+        ],
+    }
+
+    html = render_ligand_view(pdb_file, ligand_data, unique_id="test_ligand")
+
+    assert "setTimeout(() => viewer.spin(false), 3000)" in html
+    assert 'addEventListener("mousedown"' in html
+    assert 'addEventListener("touchstart"' in html
+    assert 'addEventListener("wheel"' in html
