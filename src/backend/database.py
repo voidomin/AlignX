@@ -13,6 +13,19 @@ class HistoryDatabase:
     Manages a SQLite database to store and retrieve analysis history.
     """
 
+    # Both DiscoveryCoordinator and AnalysisCoordinator construct their own
+    # HistoryDatabase() per job rather than sharing api.py's module-level
+    # instance, so under concurrent job submissions this constructor runs
+    # once per in-flight job. Retrying the CREATE TABLE/ALTER TABLE
+    # migration every single time - each needing its own SQLite write lock
+    # - measurably serializes concurrent job startup once run_history.db
+    # has grown large (found via a real concurrency test hitting a ~170MB
+    # dev database: a handful of concurrent job submissions took minutes
+    # instead of seconds). Once a given db_path has been migrated in this
+    # process, every later HistoryDatabase() for that same path can skip
+    # straight through without re-running the migration attempt.
+    _migrated_db_paths: set = set()
+
     def __init__(self, db_path: str = "run_history.db"):
         """
         Initialize the database connection.
@@ -21,12 +34,14 @@ class HistoryDatabase:
             db_path: Path to the SQLite database file
         """
         self.db_path = db_path
-        self._init_db()
+        if db_path not in HistoryDatabase._migrated_db_paths:
+            self._init_db()
+            HistoryDatabase._migrated_db_paths.add(db_path)
 
     def _init_db(self):
         """Create the runs table if it doesn't exist."""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, timeout=30) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS runs (
@@ -96,7 +111,7 @@ class HistoryDatabase:
             pdb_ids_json = json.dumps(pdb_ids)
             metadata_json = json.dumps(metadata or {})
 
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, timeout=30) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
@@ -140,7 +155,7 @@ class HistoryDatabase:
             List of run dictionaries
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, timeout=30) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
 
@@ -177,7 +192,7 @@ class HistoryDatabase:
         pagination metadata alongside get_all_runs.
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, timeout=30) as conn:
                 cursor = conn.cursor()
                 if session_id:
                     cursor.execute(
@@ -210,7 +225,7 @@ class HistoryDatabase:
         Retrieve a specific run by ID.
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, timeout=30) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM runs WHERE id = ?", (run_id,))
@@ -231,7 +246,7 @@ class HistoryDatabase:
     def delete_run(self, run_id: str) -> bool:
         """Delete a run from the database."""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, timeout=30) as conn:
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM runs WHERE id = ?", (run_id,))
                 conn.commit()
@@ -248,7 +263,7 @@ class HistoryDatabase:
             session_id: If provided, only return runs for this session
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, timeout=30) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
 
@@ -279,7 +294,7 @@ class HistoryDatabase:
     def clear_all_runs(self) -> bool:
         """Clear all runs from the database."""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, timeout=30) as conn:
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM runs")
                 conn.commit()
@@ -296,7 +311,7 @@ class HistoryDatabase:
         """Register or update a PDB file in the cache table."""
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, timeout=30) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
@@ -315,7 +330,7 @@ class HistoryDatabase:
         """Update the last accessed timestamp for a cache item."""
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, timeout=30) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "UPDATE pdb_cache SET last_accessed = ? WHERE id = ?",
@@ -330,7 +345,7 @@ class HistoryDatabase:
     def get_oldest_cache_items(self) -> List[Dict[str, Any]]:
         """Retrieve cache items ordered by last accessed (oldest first)."""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, timeout=30) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM pdb_cache ORDER BY last_accessed ASC")
@@ -343,7 +358,7 @@ class HistoryDatabase:
     def remove_cache_item(self, item_id: str) -> bool:
         """Remove an item from the cache database."""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, timeout=30) as conn:
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM pdb_cache WHERE id = ?", (item_id,))
                 conn.commit()
@@ -355,7 +370,7 @@ class HistoryDatabase:
     def get_total_cache_size(self) -> int:
         """Get the total size of all items in the cache (bytes)."""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, timeout=30) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT SUM(size_bytes) FROM pdb_cache")
                 result = cursor.fetchone()
@@ -378,7 +393,7 @@ class HistoryDatabase:
         expected to refetch and call set_annotation_cache() either way).
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, timeout=30) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT payload, cached_at FROM annotation_cache WHERE cache_key = ?",
@@ -404,7 +419,7 @@ class HistoryDatabase:
         inspection - lookups are always by cache_key alone."""
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, timeout=30) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """

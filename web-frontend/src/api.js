@@ -184,11 +184,11 @@ export async function fetchSequence(runId) {
 }
 
 export function getAlignmentPdbUrl(runId) {
-    return `${API_BASE}/results/${runId}/alignment.pdb`;
+    return withApiKey(`${API_BASE}/results/${runId}/alignment.pdb`);
 }
 
 export function getAlignmentFastaUrl(runId) {
-    return `${API_BASE}/results/${runId}/alignment.fasta`;
+    return withApiKey(`${API_BASE}/results/${runId}/alignment.fasta`);
 }
 
 // `sections` is optional - omit (or pass all 5 known sections) to get the

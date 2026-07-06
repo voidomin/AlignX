@@ -26,7 +26,7 @@ The app is now live at `http://localhost:8000` (or your host's address).
 
 Set these in your `.env` (copy from `.env.example`) before building/running for anything beyond local testing:
 
-- **`ALIGNX_API_KEY`** — set a real secret. Without it, every `/api/*` route is open to anyone who can reach the container.
+- **`ALIGNX_API_KEY`** — set a real secret. Without it, every `/api/*` route (plus `/results` and `/raw`, which serve generated reports/notebooks and downloaded structure files directly off disk) is open to anyone who can reach the container.
 - **`ALIGNX_CORS_ORIGINS`** — set to your actual frontend origin(s) (comma-separated). The default `*` is fine for local testing only.
 
 ### Persistent Storage
@@ -66,6 +66,14 @@ The image defines a `HEALTHCHECK` hitting `GET /health`. Confirm it manually wit
 ```bash
 curl http://localhost:8000/health
 ```
+
+### Known Limitation: Single-Process Job State
+
+`alignment_jobs`, `discovery_jobs`, and the job-submission rate limiter (`src/backend/api.py`) are plain in-memory Python dicts, not backed by a shared store. This is fine for a single-process deployment (the default - the Dockerfile's `ENTRYPOINT` starts one `uvicorn` worker), which a real concurrency test (`tests/test_concurrency.py`) confirmed handles concurrent submissions correctly - no race conditions, rate limits enforced accurately, no cross-job data corruption under real concurrent load.
+
+It does **not** work correctly if you run multiple worker processes or replicas behind a load balancer (e.g. `uvicorn --workers 4`, or multiple container replicas): each process has its own independent set of dicts, so a client could submit a job to one worker and get a `404 Job not found` polling a different one, and the rate limiter's quota is per-process rather than global. Stick to a single worker process (scale vertically, not horizontally) until job state is moved to a shared store (e.g. the existing SQLite `run_history.db`, or Redis) - not attempted here since it's a real architecture change, not a quick fix.
+
+While investigating job-submission concurrency, the same test suite also caught a real, fixed performance bug: `HistoryDatabase.__init__` re-ran its full `CREATE TABLE`/`ALTER TABLE` schema migration on *every single construction* (both `DiscoveryCoordinator` and `AnalysisCoordinator` construct their own `HistoryDatabase()` per job), which measurably serialized concurrent job startup once `run_history.db` grows large - a handful of concurrent submissions took minutes instead of seconds against a real ~170MB dev database. Fixed by memoizing "already migrated" per `db_path` for the life of the process.
 
 ---
 

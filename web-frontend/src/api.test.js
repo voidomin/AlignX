@@ -124,6 +124,12 @@ describe('api.js (no API key configured)', () => {
         expect(getAlignmentReportUrl('run_1')).not.toContain('api_key');
     });
 
+    it('getAlignmentPdbUrl/getAlignmentFastaUrl do not append an api_key param when no key is configured', async () => {
+        const { getAlignmentPdbUrl, getAlignmentFastaUrl } = await import('./api.js');
+        expect(getAlignmentPdbUrl('run_1')).not.toContain('api_key');
+        expect(getAlignmentFastaUrl('run_1')).not.toContain('api_key');
+    });
+
     it('getAlignmentReportUrl omits the sections param by default (unchanged default full-report URL)', async () => {
         const { getAlignmentReportUrl } = await import('./api.js');
         expect(getAlignmentReportUrl('run_1')).not.toContain('sections');
@@ -184,5 +190,15 @@ describe('api.js (API key configured)', () => {
     it('appends api_key as a query param on the report URL', async () => {
         const { getAlignmentReportUrl } = await import('./api.js');
         expect(getAlignmentReportUrl('run_1')).toContain('api_key=secret-key');
+    });
+
+    it('appends api_key as a query param on the /results-backed PDB and FASTA URLs', async () => {
+        // /results is gated by the same ALIGNX_API_KEY check as /api/* on the
+        // backend (see api.py's require_api_key middleware) - these two
+        // link/fetch targets must carry the key too, or they 401 once a key
+        // is configured.
+        const { getAlignmentPdbUrl, getAlignmentFastaUrl } = await import('./api.js');
+        expect(getAlignmentPdbUrl('run_1')).toContain('api_key=secret-key');
+        expect(getAlignmentFastaUrl('run_1')).toContain('api_key=secret-key');
     });
 });

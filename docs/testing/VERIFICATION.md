@@ -16,6 +16,7 @@ graph TD
     D --> E[5. Frontend Unit Tests]
     E --> F[6. Frontend Compilation & UI Flow]
     F --> G[7. Discover Mode Verification]
+    G --> H[8. Security & CI Verification]
 ```
 
 ---
@@ -42,7 +43,7 @@ Run the test suite script:
 powershell -File scripts\run_tests.ps1
 ```
 *Expected Output:*
-- Pytest runs 172 items successfully and shows no errors.
+- Pytest runs 210 items successfully and shows no errors.
 - Verification scripts are executed automatically as part of the run.
 
 ---
@@ -105,7 +106,7 @@ Run the Vitest suite covering `api.js` and the JS components (auth headers, job 
 cd web-frontend
 npm test
 ```
-*Expected Output:* all test files pass (currently 91 tests across the suite, covering `api.js` and every tab/panel component, including `DiscoverTab.js`).
+*Expected Output:* all test files pass (currently 99 tests across the suite, covering `api.js` and every tab/panel component, including `DiscoverTab.js`).
 
 ---
 
@@ -165,3 +166,38 @@ Verify the structure-to-function inference pipeline (Foldseek search + InterPro/
    Poll to completion and confirm `annotations.resolvable_hit_count` is nonzero (CATH domain IDs resolve via the same SIFTS path as pdb100). Repeat with `"databases": ["BFVD"]` or `["bfmd"]` (these embed a UniProt accession directly in the target ID) and `"databases": ["gmgcl_id"]` (resolves via GMGC's own API instead of UniProt - see `annotations.top_domains` for real Pfam hits like `Phage_portal`) and confirm the same. Only `mgnify_esm30` is expected to still show `resolvable_hit_count: 0` for essentially every candidate — see `docs/ROADMAP_V3.md` §7.
 9. **(Optional) Verify provisioning a real self-hosted Foldseek database:**
    Run `bash scripts/provision_foldseek_db.sh CATH50 /some/path` (real download, ~1GB, several minutes). Point `foldseek.local.database_dir` at the resulting output prefix and `foldseek.backend: local` in `config.yaml`, restart the server, and repeat step 6 above — confirm a real query correctly finds structural matches against the full downloaded database, not just a small hand-built one.
+
+---
+
+### Step 8: Security & CI Verification
+Verify the API-key auth boundary, and that CI actually validates the production Docker image and dependency health rather than just running unit tests.
+
+1. **Verify `/results` and `/raw` are gated by `ALIGNX_API_KEY` when set:**
+   ```bash
+   ALIGNX_API_KEY=secret-key .venv\Scripts\uvicorn src.backend.api:app --host 127.0.0.1 --port 8000
+   ```
+   ```bash
+   curl -i http://127.0.0.1:8000/results/some_run/alignment.pdb
+   ```
+   Expect `401` with no key. Repeat with `-H "X-API-Key: secret-key"` or `?api_key=secret-key` appended - expect a `404` (no such file - proves the request passed the auth check and reached `StaticFiles`), not `401`. Confirm `curl http://127.0.0.1:8000/` (the SPA shell) is never gated regardless of the key.
+2. **Verify concurrent job submission stays correct under real load:**
+   ```powershell
+   .venv\Scripts\python -m pytest tests/test_concurrency.py -v
+   ```
+   Confirm all 3 tests pass: the rate limiter holds exactly at its configured limit under a genuine concurrent burst (not just sequential requests), different clients get independent rate-limit buckets, and many concurrent Discover jobs each resolve to their own correct result with no cross-job data corruption.
+3. **Verify the Docker CI job locally:**
+   ```bash
+   docker build -t structscope:verify .
+   docker run -d --name structscope-verify -p 8000:8000 structscope:verify
+   curl --retry 10 --retry-delay 2 --retry-connrefused http://localhost:8000/health
+   docker rm -f structscope-verify
+   ```
+   This is exactly what `.github/workflows/ci.yml`'s `docker-build` job runs on every push/PR.
+4. **Verify dependency scanning is clean:**
+   ```powershell
+   pip install pip-audit; pip-audit -r requirements.txt
+   ```
+   ```powershell
+   cd web-frontend; npm audit --audit-level=high
+   ```
+   Both should report zero known vulnerabilities (matching CI). A finding here means a real dependency CVE needs addressing, not a test bug.

@@ -89,9 +89,17 @@ app.add_middleware(
 _ALIGNX_API_KEY = os.environ.get("ALIGNX_API_KEY")
 
 
+_AUTH_REQUIRED_PREFIXES = ("/api/", "/results/", "/raw/")
+
+
 @app.middleware("http")
 async def require_api_key(request: Request, call_next):
-    if _ALIGNX_API_KEY and request.url.path.startswith("/api/"):
+    # /results and /raw serve generated reports/notebooks and downloaded
+    # structure files directly off disk via StaticFiles - session/run
+    # folder names aren't secrets, so without this check anyone who can
+    # reach the server could browse or guess their way into another
+    # session's files even with an API key configured for everything else.
+    if _ALIGNX_API_KEY and request.url.path.startswith(_AUTH_REQUIRED_PREFIXES):
         # Header is preferred; query param fallback exists so plain <a>/window.open
         # links (e.g. the PDF report download) can still authenticate.
         provided = request.headers.get("X-API-Key") or request.query_params.get(

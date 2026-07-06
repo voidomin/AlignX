@@ -14,7 +14,6 @@ this module does, the same way installing WSL/Mustang itself is left to
 the user rather than automated.
 """
 
-import re
 import shutil
 import subprocess
 import sys

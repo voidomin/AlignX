@@ -2,7 +2,7 @@
 
 An automated, full-stack bioinformatics platform covering two workflows: **Compare**, multiple structural alignment of any protein family using Mustang (N-structure 3D viewer, four structure-source databases, phylogenetic analysis, structural clustering, batch comparison, ligand hunting, configurable PDF/HTML reports); and **Discover**, structure-to-function inference for a single unannotated structure via Foldseek structural-neighbor search plus InterPro/QuickGO annotation aggregation — useful for predicted structures (AlphaFold, ESM Atlas) that have no known function yet, since fold is conserved far longer than sequence.
 
-[![Version](https://img.shields.io/badge/version-3.4.0-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-3.5.0-orange.svg)](CHANGELOG.md)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -119,7 +119,7 @@ Copy `.env.example` to `.env` and customize. Notable production-relevant ones:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `ALIGNX_API_KEY` | unset (open) | Requires this value in the `X-API-Key` header (or `?api_key=` query param) on all `/api/*` routes. Leave unset for local dev. |
+| `ALIGNX_API_KEY` | unset (open) | Requires this value in the `X-API-Key` header (or `?api_key=` query param) on all `/api/*`, `/results/*`, and `/raw/*` routes. Leave unset for local dev. |
 | `ALIGNX_CORS_ORIGINS` | `*` | Comma-separated list of allowed CORS origins. Restrict to your real frontend origin(s) in production. |
 | `MUSTANG_BACKEND` | `auto` | `native`, `bio3d`, or `wsl`. |
 
@@ -153,6 +153,7 @@ Full step-by-step verification protocol (setup checks, scientific metrics, API s
 | [docs/design/UI_UX_DESIGN.md](docs/design/UI_UX_DESIGN.md) | Streamlit UI/UX layout spec and interaction flows |
 | [docs/archive/](docs/archive/) | Superseded planning docs, kept for history |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
+| [SECURITY.md](SECURITY.md) | Vulnerability reporting, what's been checked, known limitations |
 
 ---
 

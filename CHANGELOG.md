@@ -2,6 +2,21 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.5.0]
+
+A first real security/ops hardening pass, prompted by a codebase survey rather than a specific incident: fix a real auth gap, add CI coverage that was previously manual/ad hoc, verify concurrent-load behavior for real, and write down what's been checked vs. still open.
+
+### Fixed
+- **Real auth bypass**: `/results` and `/raw` (serving generated reports/notebooks and downloaded structure files directly off disk) sat outside the `require_api_key` middleware's `/api/` prefix check entirely, so every file under them was open to anyone who could reach the server even with `ALIGNX_API_KEY` configured for everything else - session/run folder names aren't secrets, so this was a real information-disclosure gap, not theoretical. Fixed on the backend (middleware now also covers `/results/` and `/raw/`) and the frontend (`getAlignmentPdbUrl`/`getAlignmentFastaUrl` now carry the API key as a query param, matching every other download link).
+- **A real performance bug found by load-testing**: `HistoryDatabase.__init__` re-ran its full schema migration (`CREATE TABLE`/`ALTER TABLE`) on every single construction - and both `DiscoveryCoordinator` and `AnalysisCoordinator` construct a fresh `HistoryDatabase()` per job - which measurably serialized concurrent job startup once `run_history.db` grows large (a handful of concurrent submissions took minutes instead of seconds against a real ~170MB dev database). Fixed by memoizing "already migrated" per `db_path` for the process lifetime, plus raising SQLite's busy-timeout from the 5s default to 30s across the board.
+
+### Added
+- **CI now builds and smoke-tests the actual production Docker image** on every push/PR (previously manual/ad hoc, per this file's own past "Verified" entries) - build, run, poll `/health`, tear down.
+- **CI now scans for known dependency vulnerabilities**: `pip-audit` against `requirements.txt`, `npm audit --audit-level=high` for the frontend. Both were clean when added.
+- **`tests/test_concurrency.py`**: real concurrency tests (httpx `AsyncClient` + `ASGITransport`, not just sequential `TestClient` calls) verifying the job-submission rate limiter holds exactly at its limit under a genuine concurrent burst, partitions independently per client, and that many concurrent Discover jobs stay individually correct (no cross-job data corruption) - this is what surfaced the `HistoryDatabase` bug above.
+- **`SECURITY.md`**: vulnerability reporting process, an honest list of what's actually been checked (auth, path traversal, SQL/command injection, dependency scanning, rate limiting) vs. known limitations (no independent audit, in-memory job state doesn't survive multiple worker processes, CORS defaults wide open if `ALIGNX_CORS_ORIGINS` is forgotten).
+- **`docs/deployment/DEPLOYMENT.md`** gained a "Known Limitation: Single-Process Job State" section - `alignment_jobs`/`discovery_jobs`/the rate limiter are in-memory dicts, verified correct for a single worker process, explicitly documented as broken across multiple workers/replicas until job state is externalized.
+
 ## [3.4.0]
 
 ### Added

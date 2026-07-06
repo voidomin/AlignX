@@ -1,4 +1,3 @@
-from pathlib import Path
 from unittest.mock import patch, AsyncMock
 
 from src.backend.coordinator import AnalysisCoordinator

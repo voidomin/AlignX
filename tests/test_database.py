@@ -1,4 +1,3 @@
-import os
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -91,3 +90,57 @@ class TestAnnotationCache:
         db.set_annotation_cache("interpro:P01541", "interpro", '{"v": 1}')
         db.set_annotation_cache("interpro:P01541", "interpro", '{"v": 2}')
         assert db.get_annotation_cache("interpro:P01541") == '{"v": 2}'
+
+
+class TestMigrationMemoization:
+    """DiscoveryCoordinator/AnalysisCoordinator each construct their own
+    HistoryDatabase() per job rather than sharing one instance, so under
+    concurrent job submissions this constructor runs once per in-flight
+    job - a real concurrency test (tests/test_concurrency.py) found that
+    re-running the schema migration on every single construction measurably
+    serializes concurrent job startup once the database file is large.
+    HistoryDatabase._init_db() should only actually touch the database the
+    first time a given db_path is seen in this process."""
+
+    def test_second_construction_for_same_path_skips_init(self, tmp_path, monkeypatch):
+        calls = []
+        original_init_db = HistoryDatabase._init_db
+
+        def spy_init_db(self):
+            calls.append(self.db_path)
+            return original_init_db(self)
+
+        monkeypatch.setattr(HistoryDatabase, "_init_db", spy_init_db)
+
+        db_path = str(tmp_path / "shared.db")
+        HistoryDatabase(db_path)
+        HistoryDatabase(db_path)
+        HistoryDatabase(db_path)
+
+        assert calls == [db_path]
+
+    def test_different_paths_each_get_migrated_once(self, tmp_path, monkeypatch):
+        calls = []
+        original_init_db = HistoryDatabase._init_db
+
+        def spy_init_db(self):
+            calls.append(self.db_path)
+            return original_init_db(self)
+
+        monkeypatch.setattr(HistoryDatabase, "_init_db", spy_init_db)
+
+        path_a = str(tmp_path / "a.db")
+        path_b = str(tmp_path / "b.db")
+        HistoryDatabase(path_a)
+        HistoryDatabase(path_b)
+        HistoryDatabase(path_a)
+
+        assert calls == [path_a, path_b]
+
+    def test_skipping_init_still_leaves_a_usable_database(self, tmp_path):
+        db_path = str(tmp_path / "usable.db")
+        HistoryDatabase(db_path)  # runs the real migration
+        db = HistoryDatabase(db_path)  # skips it (memoized)
+
+        db.save_run("run_1", "Run 1", ["4RLT"], Path("results/run_1"))
+        assert db.get_aggregate_stats()["total_runs"] == 1

@@ -33,6 +33,11 @@ jobs:
         run: |
           black --check .
 
+      - name: Audit Python dependencies for known vulnerabilities
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt
+
       - name: Test with pytest
         run: |
           pytest tests/
@@ -59,8 +64,50 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Audit npm dependencies for known vulnerabilities
+        run: npm audit --audit-level=high
+
       - name: Run Vitest
         run: npm test
 
       - name: Build (sanity check)
         run: npm run build
+
+  docker-build:
+    name: Docker build + smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Prior to this job, every Docker-image verification in this project's
+      # history was manual/ad hoc (see CHANGELOG "Verified" entries) - this
+      # runs the actual production Dockerfile (Mustang compile included) on
+      # every push/PR instead of relying on someone remembering to do it.
+      - name: Build image
+        run: docker build -t structscope:ci .
+
+      - name: Run container
+        run: docker run -d --name structscope-ci -p 8000:8000 structscope:ci
+
+      - name: Wait for the container to report healthy
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/health; then
+              echo
+              echo "Container is healthy."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Container never became healthy within 60s." >&2
+          docker logs structscope-ci
+          exit 1
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs structscope-ci
+
+      - name: Stop and remove container
+        if: always()
+        run: docker rm -f structscope-ci

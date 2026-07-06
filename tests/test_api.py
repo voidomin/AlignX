@@ -13,6 +13,52 @@ from src.backend.api import app
 client = TestClient(app)
 
 
+class TestApiKeyAuth:
+    """/results and /raw serve generated reports and structure files
+    directly off disk (session/run folder names aren't secrets), so they
+    must be gated by ALIGNX_API_KEY exactly like /api/* is - a real bug
+    once let these two prefixes bypass auth entirely. The SPA shell itself
+    (mounted at "/") must stay open regardless, since that's what serves
+    the UI a user needs to even reach a login/key-entry flow."""
+
+    def test_results_blocked_without_key_when_configured(self):
+        with patch.object(api_module, "_ALIGNX_API_KEY", "secret-key"):
+            response = client.get("/results/some_run/alignment.pdb")
+        assert response.status_code == 401
+
+    def test_raw_blocked_without_key_when_configured(self):
+        with patch.object(api_module, "_ALIGNX_API_KEY", "secret-key"):
+            response = client.get("/raw/some_session/1CRN.pdb")
+        assert response.status_code == 401
+
+    def test_results_passes_through_with_valid_header(self):
+        with patch.object(api_module, "_ALIGNX_API_KEY", "secret-key"):
+            response = client.get(
+                "/results/some_run/alignment.pdb",
+                headers={"X-API-Key": "secret-key"},
+            )
+        # No such file exists - a 404 (not 401) proves the auth middleware
+        # let the request through to StaticFiles.
+        assert response.status_code == 404
+
+    def test_results_passes_through_with_valid_query_param(self):
+        with patch.object(api_module, "_ALIGNX_API_KEY", "secret-key"):
+            response = client.get(
+                "/results/some_run/alignment.pdb?api_key=secret-key"
+            )
+        assert response.status_code == 404
+
+    def test_results_open_when_no_api_key_configured(self):
+        with patch.object(api_module, "_ALIGNX_API_KEY", None):
+            response = client.get("/results/some_run/alignment.pdb")
+        assert response.status_code == 404
+
+    def test_spa_root_never_gated_by_api_key(self):
+        with patch.object(api_module, "_ALIGNX_API_KEY", "secret-key"):
+            response = client.get("/")
+        assert response.status_code != 401
+
+
 def test_health_endpoint():
     """Verify that the health check endpoint returns correct status."""
     with patch(
