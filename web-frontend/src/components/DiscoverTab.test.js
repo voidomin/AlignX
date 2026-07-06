@@ -123,7 +123,7 @@ describe('DiscoverTab', () => {
 
         await tab.handleRun();
 
-        expect(submitDiscoveryJob).toHaveBeenCalledWith('1CRN');
+        expect(submitDiscoveryJob).toHaveBeenCalledWith('1CRN', ['pdb100', 'afdb50']);
         expect(tab.results.pdb_id).toBe('1CRN');
         expect(tab.element.querySelector('#discover-results').textContent).toContain('1CRN');
         expect(tab.element.querySelector('#discover-error').classList.contains('hidden')).toBe(true);
@@ -417,5 +417,83 @@ describe('DiscoverTab', () => {
 
         expect(el.querySelector('#discover-input').value).toBe('1CRN');
         expect(el.querySelector('#discover-results').textContent).toContain('1CRN');
+    });
+
+    describe('database picker', () => {
+        it('defaults to pdb100 and afdb50 checked, everything else unchecked', () => {
+            const tab = new DiscoverTab();
+            tab.render();
+
+            const checked = Array.from(tab.element.querySelectorAll('.discover-db-checkbox:checked')).map(cb => cb.dataset.db);
+            expect(checked.sort()).toEqual(['afdb50', 'pdb100']);
+            expect(tab.element.querySelector('#discover-db-summary').textContent).toContain('2 of');
+        });
+
+        it('unchecking/checking a database updates the selection and the summary text', () => {
+            const tab = new DiscoverTab();
+            tab.render();
+
+            const cathBox = tab.element.querySelector('.discover-db-checkbox[data-db="cath50"]');
+            cathBox.checked = true;
+            cathBox.dispatchEvent(new Event('change'));
+
+            expect(tab.selectedDatabases.has('cath50')).toBe(true);
+            expect(tab.element.querySelector('#discover-db-summary').textContent).toContain('3 of');
+
+            const pdbBox = tab.element.querySelector('.discover-db-checkbox[data-db="pdb100"]');
+            pdbBox.checked = false;
+            pdbBox.dispatchEvent(new Event('change'));
+
+            expect(tab.selectedDatabases.has('pdb100')).toBe(false);
+        });
+
+        it('blocks the run with an error when no database is selected', async () => {
+            const tab = new DiscoverTab();
+            tab.render();
+            tab.element.querySelector('#discover-input').value = '1CRN';
+            tab.selectedDatabases.clear();
+
+            await tab.handleRun();
+
+            expect(submitDiscoveryJob).not.toHaveBeenCalled();
+            expect(tab.element.querySelector('#discover-error').textContent).toContain('at least one database');
+        });
+
+        it('submits whichever databases are currently checked, not just the default set', async () => {
+            submitDiscoveryJob.mockResolvedValue({ job_id: 'job1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({ status: 'completed', results: makeAnnotatedResults() });
+
+            const tab = new DiscoverTab();
+            tab.render();
+            tab.element.querySelector('#discover-input').value = '1CRN';
+
+            const mgnifyBox = tab.element.querySelector('.discover-db-checkbox[data-db="mgnify_esm30"]');
+            mgnifyBox.checked = true;
+            mgnifyBox.dispatchEvent(new Event('change'));
+
+            await tab.handleRun();
+
+            expect(submitDiscoveryJob).toHaveBeenCalledWith('1CRN', expect.arrayContaining(['pdb100', 'afdb50', 'mgnify_esm30']));
+        });
+
+        it('loadSavedResults re-checks the boxes to match the reopened run\'s actual database list', () => {
+            const tab = new DiscoverTab();
+            tab.render();
+
+            tab.loadSavedResults(makeAnnotatedResults({ databases_searched: ['pdb100', 'cath50'] }));
+
+            const checked = Array.from(tab.element.querySelectorAll('.discover-db-checkbox:checked')).map(cb => cb.dataset.db);
+            expect(checked.sort()).toEqual(['cath50', 'pdb100']);
+        });
+
+        it('loadSavedResults leaves the picker selection alone for a local-backend run with no recognizable database name', () => {
+            const tab = new DiscoverTab();
+            tab.render();
+
+            tab.loadSavedResults(makeAnnotatedResults({ databases_searched: ['local:/some/db/dir'] }));
+
+            const checked = Array.from(tab.element.querySelectorAll('.discover-db-checkbox:checked')).map(cb => cb.dataset.db);
+            expect(checked.sort()).toEqual(['afdb50', 'pdb100']);
+        });
     });
 });

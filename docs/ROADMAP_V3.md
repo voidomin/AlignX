@@ -280,9 +280,6 @@ One synthesis step, three renderings of the same underlying result object:
 
 ## 7. Open questions
 
-- Do we cap Discover to PDB/AFDB/MGnify(ESM) databases only, or expose all 9 Foldseek
-  databases as user-selectable (adds UI complexity for likely-marginal value for
-  non-expert users)?
 - CATH (`cath50`)/`gmgcl_id`/`bfmd` Foldseek hits still don't resolve to a UniProt
   accession (only pdb100 via SIFTS and AFDB via regex do) - not in the default
   database set today, so lower priority, but would need their own ID-mapping path
@@ -301,6 +298,17 @@ One synthesis step, three renderings of the same underlying result object:
 - ~~Self-host Foldseek now or defer?~~ → the code/config path is done and
   live-verified (`FoldseekRunner`); deferred is *provisioning a production
   database*, which is now the only remaining piece (see above).
+- ~~Do we cap Discover to PDB/AFDB/MGnify(ESM) databases only, or expose all 9
+  Foldseek databases as user-selectable?~~ → the backend (`FoldseekClient`,
+  `DiscoveryCoordinator.run_discovery_pipeline(databases=...)`,
+  `POST /api/jobs/discover`'s `databases` field) already supported an arbitrary
+  subset end-to-end; the only gap was frontend UI. Added a checkbox picker to
+  `DiscoverTab.js` covering all 9 databases, defaulting to the same `pdb100` +
+  `afdb50` set as before, with databases that don't yet resolve to annotations
+  (`mgnify_esm30`, `cath50`, `BFVD`, `gmgcl_id`, `bfmd`) marked so the user knows
+  they'll get structural hits but no domain/GO summary from them. Live-verified:
+  restricting a real job to `pdb100` only round-tripped correctly through the
+  public Foldseek API.
 - ~~What confidence threshold should gate a function hypothesis?~~ → done:
   `annotation.min_confident_probability` (default 0.5, Foldseek's own prob field)
   gates Public/Student specifically - `high_confidence_annotated_count`/

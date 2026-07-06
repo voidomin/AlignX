@@ -2,6 +2,14 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.2.0]
+
+### Added
+- **Foldseek database selection UX**: the Discover tab's request pipeline (`FoldseekClient`, `DiscoveryCoordinator`, `POST /api/jobs/discover`) already supported searching an arbitrary subset of Foldseek's 9 databases, but there was no UI to choose one - every search silently used the `pdb100`+`afdb50` default. Added a checkbox picker covering all 9 databases (defaulting to the same two as before), with the 5 that don't yet resolve to functional annotations (`mgnify_esm30`, `cath50`, `BFVD`, `gmgcl_id`, `bfmd`) marked so it's clear upfront they'll only return structural hits. Reopening a past run from History re-checks the boxes to match what that run actually searched. Closes the corresponding open question in `docs/ROADMAP_V3.md` §7.
+
+### Verified
+- Live end-to-end: a real Discover job restricted to `pdb100` only (excluding the default `afdb50`) round-tripped correctly through the public Foldseek API, confirmed via `databases_searched` in the completed result.
+
 ## [3.1.0]
 
 Seven fast-follow items closing gaps left by the initial Discover launch (v3.0.0): feature parity with Compare mode (history, export), the annotation pipeline's remaining coverage/scale/safety questions, and deployment verification.

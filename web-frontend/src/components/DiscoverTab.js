@@ -13,6 +13,23 @@ const DETAIL_LEVELS = [
     { key: 'researcher', label: 'Researcher' },
 ];
 
+// The full set Foldseek's public API accepts (FoldseekClient.ALLOWED_DATABASES).
+// `annotatable: false` marks databases whose hit IDs don't resolve to a UniProt
+// accession yet (see annotation_aggregator.py's resolve_accession - only the
+// AF-{UniProt}-F{n} regex and pdb100's SIFTS lookup are wired up today), so
+// picking one of those still returns structural hits but no domain/GO summary.
+const DATABASE_OPTIONS = [
+    { key: 'pdb100', label: 'PDB', hint: 'Experimentally solved structures', annotatable: true, default: true },
+    { key: 'afdb50', label: 'AlphaFold DB', hint: '50%-redundancy-reduced', annotatable: true, default: true },
+    { key: 'afdb-swissprot', label: 'AlphaFold DB (SwissProt)', hint: 'Reviewed UniProt entries only', annotatable: true, default: false },
+    { key: 'afdb-proteome', label: 'AlphaFold DB (Proteomes)', hint: 'Full reference proteomes', annotatable: true, default: false },
+    { key: 'mgnify_esm30', label: 'MGnify / ESM Atlas', hint: "Metagenomic 'dark matter' proteins", annotatable: false, default: false },
+    { key: 'cath50', label: 'CATH', hint: 'Structural domain classification', annotatable: false, default: false },
+    { key: 'BFVD', label: 'BFVD', hint: 'Big Fantastic Virus Database', annotatable: false, default: false },
+    { key: 'gmgcl_id', label: 'GMGC', hint: 'Global Microbial Gene Catalog', annotatable: false, default: false },
+    { key: 'bfmd', label: 'BFMD', hint: 'Big Fantastic Metagenomics Database', annotatable: false, default: false },
+];
+
 // Single-structure "what is this?" workflow: submit one structure to
 // Foldseek, then render the resulting neighbor hits + annotation summary
 // at whichever detail level the user picks. Self-contained, unlike
@@ -23,6 +40,7 @@ export class DiscoverTab {
         this.isRunning = false;
         this.detailLevel = 'student';
         this.results = null;
+        this.selectedDatabases = new Set(DATABASE_OPTIONS.filter(d => d.default).map(d => d.key));
     }
 
     render() {
@@ -55,6 +73,27 @@ export class DiscoverTab {
                     </button>
                 </div>
 
+                <details id="discover-db-picker" class="group">
+                    <summary class="font-body-sm text-[11px] text-secondary cursor-pointer select-none hover:text-primary w-fit">
+                        Databases: <span id="discover-db-summary" class="font-mono"></span>
+                        <span class="material-symbols-outlined text-[14px] align-middle group-open:rotate-180 transition-transform">expand_more</span>
+                    </summary>
+                    <div class="flex flex-col gap-2 pt-3">
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            ${DATABASE_OPTIONS.map(d => `
+                                <label class="flex items-start gap-2 p-2 rounded-sm border border-border-subtle bg-surface hover:border-border cursor-pointer">
+                                    <input type="checkbox" data-db="${d.key}" class="discover-db-checkbox mt-0.5" ${this.selectedDatabases.has(d.key) ? 'checked' : ''} />
+                                    <span class="flex flex-col">
+                                        <span class="font-label-sm text-label-sm">${d.label}${!d.annotatable ? ' <span class="text-secondary" title="Hits shown, but no domain/GO annotation yet">*</span>' : ''}</span>
+                                        <span class="font-body-sm text-[10px] text-secondary">${d.hint}</span>
+                                    </span>
+                                </label>
+                            `).join('')}
+                        </div>
+                        <p class="font-body-sm text-[10px] text-secondary">* Hits from these databases are shown but don't yet resolve to functional annotations.</p>
+                    </div>
+                </details>
+
                 <div id="discover-status" class="hidden font-body-sm text-secondary flex items-center gap-2">
                     <span id="discover-status-icon" class="animate-spin material-symbols-outlined text-[16px]">sync</span>
                     <span id="discover-status-text"></span>
@@ -78,9 +117,18 @@ export class DiscoverTab {
         this.element.querySelector('#discover-input').addEventListener('keydown', (e) => {
             if (e.key === 'Enter') this.handleRun();
         });
+        this.element.querySelectorAll('.discover-db-checkbox').forEach(cb => {
+            cb.addEventListener('change', () => {
+                if (cb.checked) this.selectedDatabases.add(cb.dataset.db);
+                else this.selectedDatabases.delete(cb.dataset.db);
+                this.updateDbSummary();
+            });
+        });
+        this.updateDbSummary();
 
         if (this.results) {
             this.element.querySelector('#discover-input').value = this.results.pdb_id;
+            this.syncDbCheckboxes(this.results.databases_searched);
             this.renderResults();
         }
         return div;
@@ -112,6 +160,35 @@ export class DiscoverTab {
         if (btn) btn.disabled = isRunning;
     }
 
+    updateDbSummary() {
+        const el = this.element.querySelector('#discover-db-summary');
+        if (!el) return;
+        const n = this.selectedDatabases.size;
+        const total = DATABASE_OPTIONS.length;
+        el.textContent = n === total ? 'all' : `${n} of ${total} selected`;
+    }
+
+    // Checks the boxes matching a previously-run job's actual database list
+    // (e.g. reopening a saved run from history) instead of leaving the
+    // picker on its default selection, which could silently misrepresent
+    // what that run actually searched. Unrecognized entries (e.g. the local
+    // backend's synthetic "local:{path}" pseudo-database) are ignored since
+    // there's no matching checkbox for them.
+    syncDbCheckboxes(databases) {
+        if (!this.element || !Array.isArray(databases)) return;
+        const recognized = databases.filter(db => DATABASE_OPTIONS.some(d => d.key === db));
+        // If nothing matches a real database key, the run likely used the
+        // self-hosted local backend (a synthetic "local:{path}" entry) -
+        // leave the picker's current selection alone rather than wiping it
+        // to zero, since it has no bearing on what a local-backend run did.
+        if (recognized.length === 0) return;
+        this.selectedDatabases = new Set(recognized);
+        this.element.querySelectorAll('.discover-db-checkbox').forEach(cb => {
+            cb.checked = this.selectedDatabases.has(cb.dataset.db);
+        });
+        this.updateDbSummary();
+    }
+
     // Foldseek's public API is rate-limited across ALL StructScope users (see
     // FoldseekClient's process-wide rate limiter), so under real load a job
     // can sit queued for a while before it actually starts - without a
@@ -131,6 +208,10 @@ export class DiscoverTab {
             this.setError('Enter a valid PDB ID, or AF-/SM-/ESM- accession.');
             return;
         }
+        if (this.selectedDatabases.size === 0) {
+            this.setError('Select at least one database to search.');
+            return;
+        }
 
         this.setError(null);
         this.setRunning(true);
@@ -138,7 +219,7 @@ export class DiscoverTab {
         this.setStatus(this.statusMessageForJob('queued'));
 
         try {
-            const submission = await submitDiscoveryJob(pdbId);
+            const submission = await submitDiscoveryJob(pdbId, Array.from(this.selectedDatabases));
             const job = await pollJobUntilDone(submission.job_id, {
                 onTick: (j) => this.setStatus(this.statusMessageForJob(j.status)),
             });
@@ -172,6 +253,7 @@ export class DiscoverTab {
         if (this.element) {
             const input = this.element.querySelector('#discover-input');
             if (input && results) input.value = results.pdb_id;
+            if (results) this.syncDbCheckboxes(results.databases_searched);
             this.setError(null);
             this.setStatus(null);
             this.renderResults();

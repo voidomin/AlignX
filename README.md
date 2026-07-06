@@ -2,7 +2,7 @@
 
 An automated, full-stack bioinformatics platform covering two workflows: **Compare**, multiple structural alignment of any protein family using Mustang (N-structure 3D viewer, four structure-source databases, phylogenetic analysis, structural clustering, batch comparison, ligand hunting, configurable PDF/HTML reports); and **Discover**, structure-to-function inference for a single unannotated structure via Foldseek structural-neighbor search plus InterPro/QuickGO annotation aggregation — useful for predicted structures (AlphaFold, ESM Atlas) that have no known function yet, since fold is conserved far longer than sequence.
 
-[![Version](https://img.shields.io/badge/version-3.1.0-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-3.2.0-orange.svg)](CHANGELOG.md)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -34,6 +34,7 @@ Each structure shows its source database and available metadata (method, resolut
 
 Have one structure and no idea what it does? The **Discover** tab searches it against Foldseek's structural databases (PDB, AlphaFold DB, MGnify/ESM Atlas) to find known proteins with a similar fold, then pulls functional annotations for the resolvable neighbors and aggregates them into a domain/GO-term consensus. Structure is conserved far longer than sequence, so this finds connections sequence search alone would miss — especially useful for metagenomic "dark matter" proteins from ESM Atlas.
 
+- **Selectable search databases**: defaults to PDB + AlphaFold DB, but a picker exposes all 9 Foldseek databases (SwissProt/Proteome AFDB subsets, MGnify/ESM Atlas, CATH, BFVD, GMGC, BFMD) — the ones that don't yet resolve to functional annotations are marked, so it's clear upfront when a database will only surface structural hits.
 - **Five annotation sources**: InterPro (domains/families), QuickGO (GO terms), STRING (protein-protein interaction partners), Reactome (pathway membership), and PDBe's SIFTS mapping (resolves PDB-entry hits to a UniProt accession, not just AlphaFold DB hits).
 - **Confidence-gated function hypothesis**: a neighbor's curated annotations only count toward the stated hypothesis if its own Foldseek match probability also clears a configurable threshold (`annotation.min_confident_probability`, default 0.5) — having *some* annotation data isn't enough on its own if the structural match itself was weak.
 - **Three detail levels** (Public / Student / Researcher) rendering the same underlying result at different depths, with explicit confidence framing throughout — this is a computational inference, not a confirmed experimental result.
