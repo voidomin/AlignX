@@ -24,6 +24,7 @@ from src.backend.annotation_aggregator import AnnotationAggregator
 from src.backend.coordinator import sanitize_for_json
 from src.utils.cache_manager import CacheManager
 from src.backend.database import HistoryDatabase
+from src.utils.run_id import generate_run_id
 
 logger = get_logger()
 
@@ -109,7 +110,7 @@ class DiscoveryCoordinator:
                     logger.warning(f"Annotation aggregation failed for {pdb_id}: {e}")
 
             now = datetime.now()
-            run_id = f"discover_{int(now.timestamp())}"
+            run_id = generate_run_id("discover", now)
             run_name = f"Discovery: {pdb_id.strip().upper()} ({now.strftime('%H:%M')})"
 
             results = {

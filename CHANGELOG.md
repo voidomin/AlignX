@@ -2,6 +2,18 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.11.0]
+
+First phase of `docs/ROADMAP_V4.md` — closes a real information-disclosure gap found while scoping the "shareable run links" feature, independent of whether that feature ships.
+
+### Fixed
+- **Guessable run IDs**: Compare/Discover run IDs were a bare `int(timestamp())` (`run_1783414603`) — one-second resolution, trivially enumerable. Read endpoints (`/api/report`, `/api/sequence`, `/api/notebook`, etc.) look a run up by ID alone with no ownership check, so anyone who could reach the server could script through nearby integers and pull other users' reports. Fixed by appending a 16-hex-char random suffix (`generate_run_id()`, `src/utils/run_id.py`) — also deduplicates what was near-identical logic previously copy-pasted between `coordinator.py` and `discovery_coordinator.py`.
+
+### Verified
+- `tests/test_run_id.py`: format, path-segment safety, no collisions across 20 calls at the identical second.
+- Full suite (227 tests), `ruff`/`black` clean.
+- Live through the real running server: a real 4RLT+3UG9 alignment produced `run_1783414603_2b797f99f0bee74f`, not the old guessable format.
+
 ## [3.10.0]
 
 A final documentation/consistency pass before calling the project production-ready - a fresh audit (not relying on earlier-session notes) plus a real Docker-container smoke test.

@@ -22,6 +22,7 @@ from src.backend.ramachandran_service import RamachandranService
 from src.backend.database import HistoryDatabase
 from src.backend.sequence_viewer import SequenceViewer
 from src.utils.cache_manager import CacheManager
+from src.utils.run_id import generate_run_id
 
 logger = get_logger()
 
@@ -113,7 +114,7 @@ class AnalysisCoordinator:
         try:
             if not output_dir:
                 now = datetime.now()
-                run_id = f"run_{int(now.timestamp())}"
+                run_id = generate_run_id("run", now)
                 run_name = (
                     f"Analysis of {len(pdb_ids)} structures ({now.strftime('%H:%M')})"
                 )
