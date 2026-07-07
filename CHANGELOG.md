@@ -2,6 +2,10 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.15.1]
+
+Closes the one gap 3.15.0 flagged as unfixable from here: `sonar.exclusions` (`static/**`, `.agents/**`, etc.) is now set directly in SonarCloud's project settings (Administration → General Settings → Analysis Scope → Source File Exclusions), confirmed live via `api/settings/values` returning the real value rather than empty. Automatic Analysis mode never reads `sonar-project.properties`, so this had to happen in the UI, not a commit - this entry exists just to mark the loop as closed. Next analysis (triggered by this push) should show `static/assets/*.js`'s ~325 noise issues and 100% of the previously-open Bugs disappear from "new code" findings entirely.
+
 ## [3.15.0]
 
 A SonarCloud pass, fetched directly from its public API (`sonarcloud.io/api/...` - no token needed since this project is public) rather than a pasted issue list. Found that 100% of currently-open Bugs and roughly half of all "new code" issues are in `static/assets/*.js` (the built bundle) and `.agents/**` - both already listed in `sonar-project.properties`, but that file isn't being read because analysis runs in SonarCloud's Automatic Analysis mode, which doesn't consult it. **Not fixed here** - closing that gap needs either a SonarCloud project-settings change or switching to CI-driven analysis, both of which need repo-admin access this session doesn't have. Everything below is what's real, outside that noise.
