@@ -2,6 +2,17 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.17.1]
+
+Resolves one of the two remaining SonarCloud Security Hotspots (`mustang_runner.py`'s `os.chmod` calls).
+
+### Fixed
+- **Compiled Mustang binary permissions tightened from `0o755` to `0o700`** in both `_locate_compiled_binary()` and `_verify_native_linux_binary()`. `0o755` was never actually exploitable (world-*readable*/executable, not world-*writable*), but there was also no reason to grant it: the same single non-root user that compiles and `chmod`s the binary (see the Dockerfile's `appuser`) is also the only one that ever executes it. Removed group/other access entirely rather than just asserting the previous value was safe.
+
+### Verified
+- 2 new regression tests asserting the exact permission value at both call sites (244 backend tests total).
+- Live: built and ran the actual Docker image with this change, confirmed the app still starts and detects Mustang correctly.
+
 ## [3.17.0]
 
 Second half of the SonarCloud Code Smell cleanup - the frontend/JS side of the "safe batch" (3.16.0 was backend/Python). Same scope rule: mechanical, low-risk only; `AnalyticsTab.js`'s and `LigandTab.js`'s Cognitive Complexity/nesting-depth findings are deferred.

@@ -135,9 +135,12 @@ class MustangRunner:
             self.wsl_binary = binary
         else:
             self.executable = str(binary.absolute())
-            # rwxr-xr-x - standard, minimal permission for a compiled
-            # executable (not 0o777/0o666 - reviewed, intentional).
-            os.chmod(self.executable, 0o755)
+            # rwx------: owner-only. The same process/user that just
+            # compiled and chmod'd this binary is also the only one that
+            # ever runs it (a single non-root user owns the whole
+            # container - see Dockerfile), so group/other access was never
+            # actually needed, not just "safe to grant" - removed entirely.
+            os.chmod(self.executable, 0o700)
         return True
 
     def _compile_from_source(self) -> bool:
@@ -249,9 +252,9 @@ class MustangRunner:
     def _verify_native_linux_binary(self, bin_path: Path) -> Tuple[bool, str]:
         """Verify if a binary can be run natively on Linux."""
         try:
-            # rwxr-xr-x - same minimal, reviewed permission as
-            # _locate_compiled_binary() above, not 0o777/0o666.
-            os.chmod(bin_path, 0o755)
+            # rwx------: owner-only - same reasoning as
+            # _locate_compiled_binary() above, no world/group access needed.
+            os.chmod(bin_path, 0o700)
             subprocess.run([str(bin_path), "--help"], capture_output=True, timeout=2)
             self.use_wsl = False
             self.mustang_path = bin_path

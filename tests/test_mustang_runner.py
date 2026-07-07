@@ -71,6 +71,44 @@ class TestMustangRunner:
         assert "fasta" in cmd
         assert input_files[0].name in cmd
 
+    @patch("src.backend.mustang_runner.os.chmod")
+    def test_locate_compiled_binary_sets_owner_only_permissions(
+        self, mock_chmod, mock_config, tmp_path
+    ):
+        """A SonarCloud-flagged security hotspot: the compiled binary must
+        only be accessible to the owner (0o700), not group/other - nothing
+        else on the (single-user) container ever needs to touch it."""
+        runner = MustangRunner(mock_config)
+        runner.is_windows = False
+
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "mustang-3.2.3").write_text("fake binary")
+
+        found = runner._locate_compiled_binary(tmp_path)
+
+        assert found is True
+        mock_chmod.assert_called_once()
+        assert mock_chmod.call_args[0][1] == 0o700
+
+    @patch("src.backend.mustang_runner.subprocess.run")
+    @patch("src.backend.mustang_runner.os.chmod")
+    def test_verify_native_linux_binary_sets_owner_only_permissions(
+        self, mock_chmod, mock_run, mock_config, tmp_path
+    ):
+        """Same reasoning as test_locate_compiled_binary_sets_owner_only_permissions
+        - this is the sibling code path used when a binary from a fresh
+        source compile is being verified directly, rather than located
+        under bin/."""
+        runner = MustangRunner(mock_config)
+        bin_path = tmp_path / "mustang-3.2.3"
+        bin_path.write_text("fake binary")
+
+        found, msg = runner._verify_native_linux_binary(bin_path)
+
+        assert found is True
+        mock_chmod.assert_called_once_with(bin_path, 0o700)
+
 
 class TestMustangRunnerValidation:
     """Tests for input validation and error handling."""
