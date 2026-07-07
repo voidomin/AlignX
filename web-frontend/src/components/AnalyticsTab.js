@@ -6,15 +6,13 @@ const SUB_TABS = [
 ];
 
 export class AnalyticsTab {
-    constructor() {
-        this.element = null;
-        this.currentRunId = null;
-        this.heatmapFig = null;
-        this.treeFig = null;
-        this.ramachandranStats = null;
-        this.rmsfValues = [];
-        this.activeSubTab = 'quality';
-    }
+    element = null;
+    currentRunId = null;
+    heatmapFig = null;
+    treeFig = null;
+    ramachandranStats = null;
+    rmsfValues = [];
+    activeSubTab = 'quality';
 
     render() {
         const div = document.createElement('div');
@@ -94,7 +92,7 @@ export class AnalyticsTab {
 
     setupSubTabs() {
         this.element.querySelectorAll('.analytics-subtab-btn').forEach(btn => {
-            btn.addEventListener('click', () => this.switchSubTab(btn.getAttribute('data-subtab')));
+            btn.addEventListener('click', () => this.switchSubTab(btn.dataset.subtab));
         });
         this.updateSubTabView();
     }
@@ -109,7 +107,7 @@ export class AnalyticsTab {
         const chartId = chartIdByPanel[key];
         if (chartId && typeof Plotly !== 'undefined') {
             const chartDiv = this.element.querySelector(`#${chartId}`);
-            if (chartDiv && chartDiv.data) {
+            if (chartDiv?.data) {
                 Plotly.Plots.resize(chartDiv);
             }
         }
@@ -117,11 +115,11 @@ export class AnalyticsTab {
 
     updateSubTabView() {
         this.element.querySelectorAll('.analytics-subtab-btn').forEach(btn => {
-            const isActive = btn.getAttribute('data-subtab') === this.activeSubTab;
+            const isActive = btn.dataset.subtab === this.activeSubTab;
             btn.className = `analytics-subtab-btn flex-1 py-1.5 rounded-md font-label-md text-label-md transition-colors ${isActive ? 'bg-accent-muted text-accent' : 'text-secondary hover:text-primary'}`;
         });
         this.element.querySelectorAll('[data-panel]').forEach(panel => {
-            panel.classList.toggle('hidden', panel.getAttribute('data-panel') !== this.activeSubTab);
+            panel.classList.toggle('hidden', panel.dataset.panel !== this.activeSubTab);
         });
     }
 
@@ -143,11 +141,11 @@ export class AnalyticsTab {
         const listCard = this.element.querySelector('#ramachandran-outliers-list-card');
         const listContainer = this.element.querySelector('#ramachandran-outliers-list');
 
-        if (this.ramachandranStats && this.ramachandranStats.favored_percent != null) {
+        if (this.ramachandranStats?.favored_percent != null) {
             score.innerText = `${this.ramachandranStats.favored_percent.toFixed(1)}%`;
             outliers.innerText = this.ramachandranStats.outlier_count;
 
-            if (this.ramachandranStats.outlier_count > 0 && this.ramachandranStats.outliers_list && this.ramachandranStats.outliers_list.length > 0) {
+            if (this.ramachandranStats.outlier_count > 0 && this.ramachandranStats.outliers_list?.length > 0) {
                 listCard.classList.remove('hidden');
                 listContainer.innerHTML = "";
                 this.ramachandranStats.outliers_list.forEach(item => {
@@ -167,7 +165,7 @@ export class AnalyticsTab {
 
         // 2. Render Plotly RMSF Line Chart
         const rmsfDiv = this.element.querySelector('#rmsf-plotly-chart');
-        if (this.rmsfValues && this.rmsfValues.length > 0) {
+        if (this.rmsfValues?.length > 0) {
             rmsfDiv.innerHTML = "";
 
             // X-axis: 1-indexed positions
@@ -218,7 +216,7 @@ export class AnalyticsTab {
 
         // 3. Render Plotly Heatmap
         const heatmapDiv = this.element.querySelector('#rmsd-plotly-heatmap');
-        if (this.heatmapFig && this.heatmapFig.data) {
+        if (this.heatmapFig?.data) {
             heatmapDiv.innerHTML = "";
 
             const layout = {
@@ -242,7 +240,7 @@ export class AnalyticsTab {
 
         // 4. Render Plotly Dendrogram
         const treeDiv = this.element.querySelector('#phylo-plotly-tree');
-        if (this.treeFig && this.treeFig.data) {
+        if (this.treeFig?.data) {
             treeDiv.innerHTML = "";
 
             const layout = {

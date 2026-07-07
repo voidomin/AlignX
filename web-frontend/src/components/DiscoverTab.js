@@ -40,13 +40,11 @@ const DATABASE_OPTIONS = [
 // at whichever detail level the user picks. Self-contained, unlike
 // OverviewTab's Compare mode - it doesn't touch selectedPDBs/currentRunId.
 export class DiscoverTab {
-    constructor() {
-        this.element = null;
-        this.isRunning = false;
-        this.detailLevel = 'student';
-        this.results = null;
-        this.selectedDatabases = new Set(DATABASE_OPTIONS.filter(d => d.default).map(d => d.key));
-    }
+    element = null;
+    isRunning = false;
+    detailLevel = 'student';
+    results = null;
+    selectedDatabases = new Set(DATABASE_OPTIONS.filter(d => d.default).map(d => d.key));
 
     render() {
         const div = document.createElement('div');
@@ -389,18 +387,19 @@ export class DiscoverTab {
     renderStudentView(ann) {
         const topDomain = ann.high_confidence_top_domains[0];
         const topGo = ann.high_confidence_top_go_terms[0];
-        const consensusParagraph = topDomain
-            ? `<p>The most common protein family among these neighbors is <strong>${topDomain.name}</strong>
+        let consensusParagraph = '';
+        if (topDomain) {
+            consensusParagraph = `<p>The most common protein family among these neighbors is <strong>${topDomain.name}</strong>
                (seen in ${topDomain.neighbor_count} of ${ann.high_confidence_annotated_count} confidently-matched neighbors).
                Because structural fold is conserved much longer than sequence identity over evolution, a strong
                structural match to a known family is meaningful evidence for shared function - even in cases
-               where sequence similarity alone wouldn't have found the connection.</p>`
-            : topGo
-              ? `<p>No single protein family dominates, but a common thread across these neighbors is
+               where sequence similarity alone wouldn't have found the connection.</p>`;
+        } else if (topGo) {
+            consensusParagraph = `<p>No single protein family dominates, but a common thread across these neighbors is
                  <strong>${topGo.name}</strong> (seen in ${topGo.neighbor_count} of ${ann.high_confidence_annotated_count}
                  confidently-matched neighbors) - a shared Gene Ontology annotation that's meaningful evidence for function
-                 even without a matching domain family.</p>`
-              : '';
+                 even without a matching domain family.</p>`;
+        }
         return `
             <div class="flex flex-col gap-4">
                 <div class="p-4 rounded-md bg-surface-raised border border-border-subtle font-body-md leading-relaxed flex flex-col gap-3">
@@ -488,7 +487,7 @@ export class DiscoverTab {
 
     renderHitTable(hits) {
         const rows = [...hits]
-            .sort((a, b) => (parseFloat(a.eval) || 1e9) - (parseFloat(b.eval) || 1e9))
+            .sort((a, b) => (Number.parseFloat(a.eval) || 1e9) - (Number.parseFloat(b.eval) || 1e9))
             .slice(0, 20);
         return `
             <div class="flex flex-col gap-2">

@@ -60,7 +60,7 @@ describe('SequenceTab', () => {
         const wrapper = tab.element.querySelector('#sequence-alignment-grid-wrapper');
         expect(wrapper.textContent).toContain('4RLT_A');
         expect(wrapper.textContent).toContain('Consensus');
-        expect(wrapper.querySelectorAll('table tbody tr').length).toBe(3); // 2 sequences + consensus row
+        expect(wrapper.querySelectorAll('table tbody tr')).toHaveLength(3); // 2 sequences + consensus row
     });
 
     it('shows an error message when sequence parsing fails', async () => {
@@ -95,7 +95,7 @@ describe('SequenceTab', () => {
         tab.updateResults('run_123', { rmsd: 1.0 });
 
         const checkboxes = tab.element.querySelectorAll('.report-section-checkbox');
-        expect(checkboxes.length).toBe(5);
+        expect(checkboxes).toHaveLength(5);
         expect(Array.from(checkboxes).every(cb => cb.checked)).toBe(true);
 
         const reportLink = tab.element.querySelector('#download-report-link');

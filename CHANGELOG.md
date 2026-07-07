@@ -2,6 +2,25 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.17.0]
+
+Second half of the SonarCloud Code Smell cleanup - the frontend/JS side of the "safe batch" (3.16.0 was backend/Python). Same scope rule: mechanical, low-risk only; `AnalyticsTab.js`'s and `LigandTab.js`'s Cognitive Complexity/nesting-depth findings are deferred.
+
+### Fixed
+- **Optional chaining**: ~20 `x && x.y` guards across `AnalyticsTab.js`, `ClustersTab.js`, `DashboardTab.js`, `HistoryPanel.js`, `OverviewTab.js`, `TopBar.js`, `Viewer3D.js`, `main.js` rewritten as `x?.y`.
+- **Empty/unused-binding `catch` blocks**: `catch(e) {}` / `catch(e) { /* never reads e */ }` → `catch {}` (or `catch { ... }` with a comment) in `DashboardTab.js`, `HistoryPanel.js`, `main.js` - these were always intentional silent fallbacks, just written in a way Sonar flags as "handle it or don't catch it."
+- **Class field declarations**: constructors that only assigned static initial values (`this.x = null`, etc., no constructor params) rewritten as class fields - `AnalyticsTab.js`, `ClustersTab.js`, `ComparisonTab.js`, `DiscoverTab.js`, `SequenceTab.js`, `Viewer3D.js`.
+- **`.dataset` over `getAttribute('data-*')`**: `AnalyticsTab.js`, `TopBar.js`.
+- **`Number.parseFloat`/`parseInt`/`isNaN`** over the bare globals: `ClustersTab.js`, `DiscoverTab.js`, `LigandTab.js`, `SequenceTab.js`, `HistoryPanel.js`.
+- **`String.fromCodePoint()`** over `String.fromCharCode()`: `Viewer3D.js`.
+- **`String#replaceAll()`** over `.replace()` with a global regex: `escapeHtml.js`.
+- **Nested ternary** in `DiscoverTab.js`'s consensus-paragraph logic extracted into an if/else chain.
+- **Generic `.length`/`toBe(N)` assertions → `toHaveLength(N)`**: 11 instances across `ComparisonTab.test.js`, `HistoryPanel.test.js`, `LigandTab.test.js`, `OverviewTab.test.js`, `SequenceTab.test.js`.
+
+### Verified
+- Full suite (122 frontend tests) + production build, both clean.
+- Live smoke test through the real running server: batch-added structures (exercises the optional-chain/Number.parseFloat code paths just changed), ran a real 4-structure alignment, and visited every touched tab (Analytics, Clusters, Ligands, Dashboard, History, Discover) - zero console errors.
+
 ## [3.16.0]
 
 First half of a SonarCloud Code Smell (Maintainability) cleanup pass - the "safe batch" (mechanical, low-risk fixes only; the 9 Cognitive Complexity refactors and the ~65-instance FastAPI `Annotated`/response-docs convention migration in `api.py` are deliberately deferred to a separate pass). Backend/Python half only - frontend JS smells are next.

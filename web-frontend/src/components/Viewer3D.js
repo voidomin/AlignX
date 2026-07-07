@@ -11,18 +11,16 @@ function colorForIndex(i) {
 }
 
 export class Viewer3D {
-    constructor() {
-        this.element = null;
-        this.viewer = null;
-        this.currentRunId = null;
-        this.isSurfaceVisible = false;
-        // One entry per aligned input structure, in submission order.
-        // mustangChain is always chr(65+i) — the sequential chain letter
-        // Mustang assigns in alignment.pdb regardless of the structure's
-        // original source chain. sourceChain is only for HUD display text.
-        this.structures = [];
-        this.rmsdDf = null;
-    }
+    element = null;
+    viewer = null;
+    currentRunId = null;
+    isSurfaceVisible = false;
+    // One entry per aligned input structure, in submission order.
+    // mustangChain is always chr(65+i) — the sequential chain letter
+    // Mustang assigns in alignment.pdb regardless of the structure's
+    // original source chain. sourceChain is only for HUD display text.
+    structures = [];
+    rmsdDf = null;
 
     render() {
         const div = document.createElement('div');
@@ -109,8 +107,8 @@ export class Viewer3D {
     _buildStructures(pdbIds, chainSelections) {
         return pdbIds.map((pdbId, i) => ({
             pdbId,
-            mustangChain: String.fromCharCode(65 + i),
-            sourceChain: (chainSelections && chainSelections[pdbId]) || '?',
+            mustangChain: String.fromCodePoint(65 + i),
+            sourceChain: chainSelections?.[pdbId] || '?',
             color: colorForIndex(i)
         }));
     }
@@ -162,7 +160,7 @@ export class Viewer3D {
     }
 
     _pairwiseRmsdRows() {
-        if (!this.rmsdDf || !this.rmsdDf.index || !this.rmsdDf.data) return [];
+        if (!this.rmsdDf?.index || !this.rmsdDf?.data) return [];
         const { index, data } = this.rmsdDf;
         const rows = [];
         for (let i = 0; i < index.length; i++) {

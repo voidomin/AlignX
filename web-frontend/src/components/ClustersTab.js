@@ -1,13 +1,11 @@
 import { fetchClusters } from '../api';
 
 export class ClustersTab {
-    constructor() {
-        this.rmsdDf = null;
-        this.pdbMetadata = {};
-        this.threshold = 3.0;
-        this.element = null;
-        this.debounceTimer = null;
-    }
+    rmsdDf = null;
+    pdbMetadata = {};
+    threshold = 3.0;
+    element = null;
+    debounceTimer = null;
 
     render() {
         const div = document.createElement('div');
@@ -48,7 +46,7 @@ export class ClustersTab {
     setupEventListeners() {
         const slider = this.element.querySelector('#cluster-threshold-slider');
         slider.addEventListener('input', (e) => {
-            this.threshold = parseFloat(e.target.value);
+            this.threshold = Number.parseFloat(e.target.value);
             this.element.querySelector('#cluster-threshold-value').innerText = `${this.threshold.toFixed(2)} Å`;
 
             clearTimeout(this.debounceTimer);
@@ -102,7 +100,7 @@ export class ClustersTab {
 
         container.innerHTML = clusters.map(cluster => {
             const memberRows = cluster.members.map(pid => {
-                const title = (this.pdbMetadata[pid] && this.pdbMetadata[pid].title) || "Unknown Title";
+                const title = this.pdbMetadata[pid]?.title || "Unknown Title";
                 return `
                     <div class="flex items-center justify-between py-2 border-b border-border-subtle last:border-b-0">
                         <span class="font-mono text-body-sm text-primary">${pid}</span>

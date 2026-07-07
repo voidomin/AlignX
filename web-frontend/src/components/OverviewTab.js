@@ -194,8 +194,8 @@ export class OverviewTab {
             let addedCount = 0;
             if (toAdd.length > 0) {
                 const result = await this.onAddManyPDBs(toAdd);
-                addedCount = (result && result.added) ? result.added.length : toAdd.length;
-                overCap = (result && result.overCap) || 0;
+                addedCount = result?.added ? result.added.length : toAdd.length;
+                overCap = result?.overCap || 0;
             }
 
             const parts = [];
@@ -216,7 +216,7 @@ export class OverviewTab {
         uploadBtn.addEventListener('click', () => uploadInput.click());
 
         uploadInput.addEventListener('change', async () => {
-            const file = uploadInput.files && uploadInput.files[0];
+            const file = uploadInput.files?.[0];
             uploadInput.value = ""; // allow re-selecting the same file later
             if (!file) return;
 
@@ -247,7 +247,7 @@ export class OverviewTab {
         // Guard against submitting an alignment while a just-added structure's
         // chain selection hasn't resolved yet, which would silently persist
         // an incomplete chain_selection for that run.
-        const runBtn = this.element && this.element.querySelector('#overview-run-btn');
+        const runBtn = this.element?.querySelector('#overview-run-btn');
         if (runBtn) runBtn.disabled = isLoading;
     }
 
@@ -284,7 +284,7 @@ export class OverviewTab {
             div.className = "flex flex-col gap-1.5 p-3 rounded-md bg-surface-raised border border-border-subtle";
 
             let chainsOptionsHTML = "";
-            if (meta && meta.chains) {
+            if (meta?.chains) {
                 meta.chains.forEach(c => {
                     const selectedAttr = (this.chainSelections[pid] === c.id) ? "selected" : "";
                     chainsOptionsHTML += `<option value="${c.id}" ${selectedAttr}>Chain ${c.id} (${c.residue_count} residues)</option>`;
@@ -293,11 +293,11 @@ export class OverviewTab {
                 chainsOptionsHTML = `<option value="A">Chain A</option>`;
             }
 
-            const sourceLabel = SOURCE_LABELS[meta && meta.source] || 'PDB';
+            const sourceLabel = SOURCE_LABELS[meta?.source] || 'PDB';
             const metaParts = meta
                 ? [meta.method, meta.resolution, meta.organism].filter(v => v && v !== 'N/A')
                 : [];
-            if (meta && meta.source === 'upload' && meta.original_filename) {
+            if (meta?.source === 'upload' && meta.original_filename) {
                 metaParts.push(escapeHtml(meta.original_filename));
             }
 

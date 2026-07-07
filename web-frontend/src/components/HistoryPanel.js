@@ -75,7 +75,7 @@ export class HistoryPanel {
             let pids = [];
             try {
                 pids = typeof run.pdb_ids === 'string' ? JSON.parse(run.pdb_ids) : run.pdb_ids;
-            } catch(e) {
+            } catch {
                 pids = [run.pdb_ids];
             }
 
@@ -83,12 +83,14 @@ export class HistoryPanel {
             let displayTime = run.timestamp;
             try {
                 const dt = new Date(run.timestamp);
-                if (!isNaN(dt.getTime())) {
+                if (!Number.isNaN(dt.getTime())) {
                     displayTime = dt.toLocaleString();
                 }
-            } catch(e){}
+            } catch {
+                // Malformed timestamp - keep the raw value already assigned above.
+            }
 
-            const runType = (run.metadata && run.metadata.run_type) || 'compare';
+            const runType = run.metadata?.run_type || 'compare';
             const runTypeLabel = runType === 'discover' ? 'Discover' : 'Compare';
 
             // Static shell only (no interpolated values) - every dynamic

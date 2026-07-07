@@ -9,11 +9,9 @@ const REPORT_SECTIONS = [
 ];
 
 export class SequenceTab {
-    constructor() {
-        this.currentRunId = null;
-        this.element = null;
-        this.stats = { rmsd: null, aligned_length: null, seq_identity: null, seq_similarity: null };
-    }
+    currentRunId = null;
+    element = null;
+    stats = { rmsd: null, aligned_length: null, seq_identity: null, seq_similarity: null };
 
     render() {
         const div = document.createElement('div');
@@ -126,10 +124,10 @@ export class SequenceTab {
     refreshStats() {
         if (!this.element) return;
         
-        const rmsdText = this.stats.rmsd != null ? `${parseFloat(this.stats.rmsd).toFixed(2)} Å` : '--';
+        const rmsdText = this.stats.rmsd != null ? `${Number.parseFloat(this.stats.rmsd).toFixed(2)} Å` : '--';
         const lengthText = this.stats.aligned_length != null ? this.stats.aligned_length : '--';
-        const identityText = this.stats.seq_identity != null ? `${parseFloat(this.stats.seq_identity).toFixed(1)}%` : '--';
-        const similarityText = this.stats.seq_similarity != null ? `${parseFloat(this.stats.seq_similarity).toFixed(1)}%` : '--';
+        const identityText = this.stats.seq_identity != null ? `${Number.parseFloat(this.stats.seq_identity).toFixed(1)}%` : '--';
+        const similarityText = this.stats.seq_similarity != null ? `${Number.parseFloat(this.stats.seq_similarity).toFixed(1)}%` : '--';
 
         this.element.querySelector('#stat-rmsd').innerText = rmsdText;
         this.element.querySelector('#stat-length').innerText = lengthText;

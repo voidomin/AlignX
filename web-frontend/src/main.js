@@ -361,12 +361,14 @@ class App {
         let metadata = {};
         try {
             metadata = typeof run.metadata === 'string' ? JSON.parse(run.metadata) : run.metadata;
-        } catch(e){}
+        } catch {
+            // Malformed metadata - fall through with the {} default above.
+        }
 
         // Discover runs have no result directory/RMSD matrix to reload -
         // the full result is stashed in metadata.results at save time, so
         // reopening one just means handing that back to DiscoverTab.
-        if (metadata && metadata.run_type === 'discover') {
+        if (metadata?.run_type === 'discover') {
             this.discoverTab.loadSavedResults(metadata.results);
             this.switchTab('discover');
             return;
@@ -379,7 +381,7 @@ class App {
         let pids = [];
         try {
             pids = typeof run.pdb_ids === 'string' ? JSON.parse(run.pdb_ids) : run.pdb_ids;
-        } catch(e) {
+        } catch {
             pids = [run.pdb_ids];
         }
 

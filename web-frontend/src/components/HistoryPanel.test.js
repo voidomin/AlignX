@@ -81,7 +81,7 @@ describe('HistoryPanel', () => {
         await Promise.resolve();
 
         expect(fetchHistory).toHaveBeenLastCalledWith(20, 2);
-        expect(panel.runsList.length).toBe(3);
+        expect(panel.runsList).toHaveLength(3);
         expect(panel.element.querySelector('#history-load-more-btn')).toBeNull();
     });
 

@@ -28,7 +28,7 @@ describe('LigandTab', () => {
         tab.render();
 
         const select = tab.element.querySelector('#ligand-select');
-        expect(select.options.length).toBe(1);
+        expect(select.options).toHaveLength(1);
         expect(select.options[0].textContent).toBe('No Ligands Loaded');
     });
 
@@ -43,7 +43,7 @@ describe('LigandTab', () => {
 
         const select = tab.element.querySelector('#ligand-select');
         // 1 "Select a Ligand" placeholder + 2 real ligands
-        expect(select.options.length).toBe(3);
+        expect(select.options).toHaveLength(3);
         expect(select.options[1].value).toBe('RET_A_296');
         expect(select.options[2].value).toBe('ZN_A_301');
     });
@@ -74,7 +74,7 @@ describe('LigandTab', () => {
         expect(tab.element.querySelector('#interaction-count').innerText).toBe('1 Found');
         expect(tab.element.querySelector('#ligand-volume-badge').classList.contains('hidden')).toBe(false);
         const rows = tab.element.querySelectorAll('#interactions-table-body tr');
-        expect(rows.length).toBe(1);
+        expect(rows).toHaveLength(1);
         expect(rows[0].textContent).toContain('TYR');
     });
 
@@ -129,7 +129,7 @@ describe('LigandTab', () => {
         tab.render();
 
         const select = tab.element.querySelector('#ligand-structure-select');
-        expect(select.options.length).toBe(3);
+        expect(select.options).toHaveLength(3);
         expect(Array.from(select.options).map(o => o.value)).toEqual(['0', '1', '2']);
         expect(select.options[1].textContent).toBe('3UG9');
     });

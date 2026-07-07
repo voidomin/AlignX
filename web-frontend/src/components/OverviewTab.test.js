@@ -94,16 +94,16 @@ describe('OverviewTab', () => {
 
         expect(tab.element.querySelector('#pdb-count-badge').innerText).toBe('2 Proteins');
         const rows = tab.element.querySelectorAll('#pdb-list-container > div');
-        expect(rows.length).toBe(2);
+        expect(rows).toHaveLength(2);
 
         const select4RLT = rows[0].querySelector('select');
-        expect(select4RLT.querySelectorAll('option').length).toBe(2);
+        expect(select4RLT.querySelectorAll('option')).toHaveLength(2);
         expect(select4RLT.querySelector('option[value="B"]').selected).toBe(true);
         expect(select4RLT.querySelector('option[value="A"]').textContent).toBe('Chain A (100 residues)');
 
         // 3UG9 has no metadata -> falls back to a single Chain A option
         const select3UG9 = rows[1].querySelector('select');
-        expect(select3UG9.querySelectorAll('option').length).toBe(1);
+        expect(select3UG9.querySelectorAll('option')).toHaveLength(1);
     });
 
     it('shows a source badge and metadata line for each structure once metadata loads', () => {

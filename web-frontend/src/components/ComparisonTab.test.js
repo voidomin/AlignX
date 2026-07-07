@@ -55,7 +55,7 @@ describe('ComparisonTab', () => {
 
         const select = tab.element.querySelector('#comparison-target-select');
         expect(select).not.toBeNull();
-        expect(select.querySelectorAll('option').length).toBe(2);
+        expect(select.querySelectorAll('option')).toHaveLength(2);
         expect(tab.targetRunId).toBe('run_a');
     });
 

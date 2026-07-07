@@ -1,12 +1,10 @@
 import { fetchComparisonRuns, fetchComparison } from '../api';
 
 export class ComparisonTab {
-    constructor() {
-        this.currentRunId = null;
-        this.pastRuns = [];
-        this.targetRunId = null;
-        this.element = null;
-    }
+    currentRunId = null;
+    pastRuns = [];
+    targetRunId = null;
+    element = null;
 
     render() {
         const div = document.createElement('div');

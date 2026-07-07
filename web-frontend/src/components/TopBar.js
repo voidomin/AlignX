@@ -59,7 +59,7 @@ export class TopBar {
     setupEventListeners() {
         this.element.querySelectorAll('.tab-trigger').forEach(btn => {
             btn.addEventListener('click', () => {
-                const tab = btn.getAttribute('data-tab');
+                const tab = btn.dataset.tab;
                 this.switchTab(tab);
                 this.onTabChange(tab);
             });
@@ -91,7 +91,7 @@ export class TopBar {
 
     updateTabStyles() {
         this.element.querySelectorAll('.tab-trigger').forEach(btn => {
-            const isActive = btn.getAttribute('data-tab') === this.activeTab;
+            const isActive = btn.dataset.tab === this.activeTab;
             btn.className = `tab-trigger px-4 py-2 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors ${isActive ? 'bg-accent-muted text-accent' : 'text-secondary hover:text-primary'}`;
         });
     }
@@ -110,7 +110,7 @@ export class TopBar {
                 const healthEl = this.element.querySelector('#topbar-health-status');
                 if (healthEl && health) {
                     if (health.mustang_installed) {
-                        const mode = health.mustang_message && health.mustang_message.toLowerCase().includes("wsl") ? "WSL" : "Native";
+                        const mode = health.mustang_message?.toLowerCase().includes("wsl") ? "WSL" : "Native";
                         healthEl.innerText = `Mustang: Ready (${mode})`;
                         healthEl.className = "text-success truncate max-w-[200px]";
                     } else {

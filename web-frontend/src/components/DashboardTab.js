@@ -109,11 +109,11 @@ export class DashboardTab {
                 let pids = [];
                 try {
                     pids = typeof run.pdb_ids === 'string' ? JSON.parse(run.pdb_ids) : run.pdb_ids;
-                } catch (e) {
+                } catch {
                     pids = [run.pdb_ids];
                 }
 
-                const runType = (run.metadata && run.metadata.run_type) || 'compare';
+                const runType = run.metadata?.run_type || 'compare';
                 const runTypeLabel = runType === 'discover' ? 'Discover' : 'Compare';
 
                 const row = document.createElement('div');

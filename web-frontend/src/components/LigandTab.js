@@ -82,7 +82,7 @@ export class LigandTab {
 
         const structureSelect = this.element.querySelector('#ligand-structure-select');
         structureSelect.addEventListener('change', async (e) => {
-            await this.switchStructure(parseInt(e.target.value, 10));
+            await this.switchStructure(Number.parseInt(e.target.value, 10));
         });
     }
 
