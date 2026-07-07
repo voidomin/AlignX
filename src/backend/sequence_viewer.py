@@ -131,7 +131,7 @@ class SequenceViewer:
         cons_html = ""
         for score in conservation:
             symbol = "&nbsp;"
-            if score == 1.0:
+            if score >= 1.0:
                 symbol = "*"
             elif score > 0.7:
                 symbol = ":"

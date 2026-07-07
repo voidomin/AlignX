@@ -23,7 +23,7 @@ def test_get_aggregate_stats_sums_proteins_across_runs(db):
 
     assert stats["total_runs"] == 2
     assert stats["total_proteins_analyzed"] == 5
-    assert stats["cache_size_mb"] == 0.0
+    assert stats["cache_size_mb"] == pytest.approx(0.0)
 
 
 def test_get_aggregate_stats_empty_db_returns_zeros(db):

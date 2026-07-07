@@ -1,9 +1,12 @@
+import asyncio
+import threading
+import time
 from unittest.mock import patch, AsyncMock, MagicMock, ANY
 
 import httpx
 import pytest
 
-from src.backend.annotation_aggregator import AnnotationAggregator
+from src.backend.annotation_aggregator import AnnotationAggregator, _RateLimiter
 
 
 @pytest.fixture(autouse=True)
@@ -18,6 +21,74 @@ def fast_string_rate_limiter():
     AnnotationAggregator._string_rate_limiter._last_request_at = 0.0
     yield
     AnnotationAggregator._string_rate_limiter._min_interval = original
+
+
+class TestRateLimiterConcurrency:
+    """_RateLimiter.wait() only ever holds its threading.Lock for the
+    synchronous slot-reservation math, never across the actual await - see
+    the class docstring for why. These are the two scenarios that would
+    break if that invariant regressed: concurrent callers on the SAME
+    event loop (aggregate_for_hits() gathers multiple neighbors'
+    annotation fetches together, each independently calling
+    fetch_string_partners -> wait()) and concurrent callers from
+    DIFFERENT threads/event loops (concurrent Discover jobs)."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_waiters_on_same_event_loop_all_complete(self):
+        """The scenario that would deadlock if wait() held the lock across
+        an await: sleeping while holding self._lock, with a sibling
+        gathered coroutine then trying a synchronous (blocking) acquire of
+        that same lock on the same thread, freezes the event loop that
+        would otherwise have advanced the first caller's timer."""
+        limiter = _RateLimiter(min_interval_seconds=0.1)
+
+        results = await asyncio.wait_for(
+            asyncio.gather(*(limiter.wait() for _ in range(5))), timeout=5
+        )
+        assert results == [None] * 5
+
+    def test_concurrent_waiters_from_different_threads_all_complete(self):
+        """Mirrors FoldseekClient's cross-thread regression test - a plain
+        threading.Lock must keep working correctly when wait() is called
+        from several independent asyncio.run() event loops at once."""
+        limiter = _RateLimiter(min_interval_seconds=0.1)
+        completed = []
+        errors = []
+
+        def run_in_thread(name):
+            async def go():
+                await limiter.wait()
+
+            try:
+                asyncio.run(go())
+                completed.append(name)
+            except Exception as e:
+                errors.append((name, e))
+
+        threads = [
+            threading.Thread(target=run_in_thread, args=(f"job-{i}",)) for i in range(5)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5)
+
+        assert not any(t.is_alive() for t in threads), "a waiter thread hung"
+        assert errors == []
+        assert len(completed) == 5
+
+    @pytest.mark.asyncio
+    async def test_successive_waits_are_staggered_by_at_least_min_interval(self):
+        limiter = _RateLimiter(min_interval_seconds=0.05)
+        start = time.monotonic()
+        await limiter.wait()
+        await limiter.wait()
+        await limiter.wait()
+        # Checks the limiter's own reserved slot, not wall-clock time
+        # elapsed around the awaits - the latter is flaky under OS
+        # scheduler jitter (asyncio.sleep() waking a few ms late/early),
+        # while the reservation itself is pure deterministic arithmetic.
+        assert limiter._last_request_at >= start + 2 * limiter._min_interval
 
 
 class TestExtractUniprotAccession:
@@ -1071,7 +1142,7 @@ class TestAggregateForHits:
 
         assert result["annotated_neighbor_count"] == 2  # both got InterPro data
         assert result["high_confidence_annotated_count"] == 1  # only the prob=0.95 one
-        assert result["min_confident_probability"] == 0.5
+        assert result["min_confident_probability"] == pytest.approx(0.5)
         assert len(result["top_domains"]) == 1
         assert result["top_domains"][0]["neighbor_count"] == 2  # unfiltered: both count
         assert len(result["high_confidence_top_domains"]) == 1

@@ -14,6 +14,13 @@ from src.utils.cache_manager import CacheManager
 logger = get_logger()
 
 
+def _write_bytes(path: Path, content: bytes) -> None:
+    """Plain synchronous write - only ever called via asyncio.to_thread()
+    from async code, never awaited directly."""
+    with open(path, "wb") as f:
+        f.write(content)
+
+
 class PDBManager:
     """Manages PDB file downloads, validation, and preprocessing."""
 
@@ -289,8 +296,11 @@ class PDBManager:
             file_size = len(response.content)
             file_size_mb = file_size / (1024 * 1024)
 
-            with open(output_file, "wb") as f:
-                f.write(response.content)
+            # Synchronous file I/O blocks the whole event loop for its
+            # duration - to_thread offloads it to a worker thread, same
+            # pattern already used for other blocking work in this
+            # codebase (e.g. api.py's Mustang/Foldseek pipeline calls).
+            await asyncio.to_thread(_write_bytes, output_file, response.content)
 
             if manage_client:
                 await client.aclose()

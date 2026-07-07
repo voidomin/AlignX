@@ -2,6 +2,18 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.8.0]
+
+SonarQube Cloud's Quality Gate failed on "Reliability Rating on New Code" (20 flagged issues). All fixed for real, not suppressed.
+
+### Fixed
+- **A genuine deadlock risk, not just a lint nitpick**: both rate limiters (`AnnotationAggregator`'s STRING limiter, `FoldseekClient`'s) called `time.sleep()` while holding a `threading.Lock` inside an `async def`. `aggregate_for_hits()` runs multiple neighbors' annotation fetches concurrently via `asyncio.gather()` on the *same* event loop - naively swapping in `await asyncio.sleep()` without moving it outside the lock would have introduced a real, reproducible deadlock the moment 2+ neighbors needed the STRING limiter in the same job (a sibling gathered coroutine's synchronous, blocking lock-acquire freezes the very event loop that would've advanced the first caller's sleep timer). Redesigned both: the lock now only ever guards the synchronous slot-reservation math; the actual delay is `await`ed outside it. Still correctly serializes successive callers by at least `min_interval`, verified under both same-event-loop concurrency (`asyncio.gather`) and cross-thread concurrency (mirroring the existing `FoldseekClient` regression test).
+- **Two `asyncio.create_task()` calls with no stored reference** (`/api/jobs/align`, `/api/jobs/discover` submission) - the event loop only holds a *weak* reference to a bare `create_task()` result, so with nothing else keeping it alive, a submitted job could in principle be garbage-collected mid-execution (a real, documented asyncio footgun, not a style preference). Added a small `_spawn_background_task()` helper that keeps a strong reference in a module-level set until the task completes.
+- **Synchronous `open()`/`write()` inside an async function** (`PDBManager`'s download-save path) - blocked the whole event loop for the disk write. Moved to `asyncio.to_thread()`, matching the pattern already used elsewhere in this codebase for blocking work (Mustang/Foldseek subprocess calls).
+- **9 floating-point `==` comparisons** across `sequence_viewer.py` (the one in real production code - conservation-score fully-conserved check, changed to `>=`) and 8 test assertions (changed to `pytest.approx()`).
+- **CI/tooling gaps that let all of the above land unreviewed**: added `pyproject.toml`/`sonar-project.properties` excluding build artifacts (`static/`, `web-frontend/dist/`) and vendored third-party code (`.agents/skills/`) from static analysis - SonarQube was flagging a minified JS bundle that isn't source and gets overwritten on every build anyway.
+- `web-frontend/src/style.css`: `@import "tailwindcss"` now precedes `@config` (CSS spec requires `@import` to be the first rule in a stylesheet) - confirmed via a byte-identical rebuild that Tailwind's Vite plugin doesn't actually require the reverse order that an earlier migration assumed.
+
 ## [3.7.0]
 
 ### Fixed

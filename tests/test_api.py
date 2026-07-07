@@ -296,7 +296,7 @@ def test_sequence_endpoint():
         data = response.json()
         assert data["run_id"] == "run_123"
         assert "4RLT_A" in data["sequences"]
-        assert data["identity"] == 66.67
+        assert data["identity"] == pytest.approx(66.67)
         assert len(data["conservation"]) == 6
 
 
@@ -328,8 +328,8 @@ def test_comparison_endpoint_uses_upper_triangle_mean():
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["current_mean_rmsd"] == 10.0
-        assert data["target_mean_rmsd"] == 10.0
+        assert data["current_mean_rmsd"] == pytest.approx(10.0)
+        assert data["target_mean_rmsd"] == pytest.approx(10.0)
 
 
 def test_path_traversal_is_rejected():
@@ -468,7 +468,7 @@ def test_report_endpoint_reconstructs_types_from_sanitized_metadata(tmp_path):
         assert isinstance(results_arg["heatmap_path"], Path)
         assert isinstance(results_arg["tree_path"], Path)
         assert isinstance(results_arg["rmsd_df"], pd.DataFrame)
-        assert results_arg["rmsd_df"].loc["4RLT", "3UG9"] == 6.7
+        assert results_arg["rmsd_df"].loc["4RLT", "3UG9"] == pytest.approx(6.7)
 
 
 def test_report_endpoint_sections_param_bypasses_cache(tmp_path):
@@ -511,7 +511,7 @@ def test_stats_endpoint():
         data = response.json()
         assert data["total_runs"] == 12
         assert data["total_proteins_analyzed"] == 30
-        assert data["cache_size_mb"] == 4.5
+        assert data["cache_size_mb"] == pytest.approx(4.5)
 
 
 def test_notebook_endpoint(tmp_path):
