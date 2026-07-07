@@ -1,5 +1,13 @@
 const API_BASE = "http://127.0.0.1:8000";
-const API_KEY = import.meta.env.VITE_ALIGNX_API_KEY || null;
+// Not const: a shared run link (getShareLink()) carries its own api_key as a
+// URL param when ALIGNX_API_KEY is set, since the recipient's build has no
+// way to know the deployment's key at build time - main.js calls
+// setApiKeyOverride() on load if it finds one in the URL.
+let API_KEY = import.meta.env.VITE_ALIGNX_API_KEY || null;
+
+export function setApiKeyOverride(key) {
+    API_KEY = key;
+}
 
 function authHeaders(extra = {}) {
     return API_KEY ? { ...extra, 'X-API-Key': API_KEY } : extra;
@@ -181,6 +189,24 @@ export async function triggerClearMemory() {
     const res = await fetch(`${API_BASE}/api/memory/clear`, { method: 'POST', headers: authHeaders() });
     if (!res.ok) throw new Error("Clear memory execution failed");
     return res.json();
+}
+
+export async function fetchRun(runId) {
+    const res = await fetch(`${API_BASE}/api/runs/${encodeURIComponent(runId)}`, { headers: authHeaders() });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Run fetch failed");
+    }
+    return res.json();
+}
+
+export function getShareLink(runId) {
+    // A shared link points at this same SPA's own origin with a query
+    // param main.js checks on load - it's world-readable by design (see
+    // docs/ROADMAP_V4.md Phase 4/1), not gated by session_id. withApiKey()
+    // carries the API key through when one is set, matching every other
+    // shareable download link (getAlignmentPdbUrl, getAlignmentFastaUrl, etc).
+    return withApiKey(`${window.location.origin}/?shared_run=${encodeURIComponent(runId)}`);
 }
 
 export async function fetchHistory(limit = 20, offset = 0) {

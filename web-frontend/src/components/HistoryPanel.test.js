@@ -1,11 +1,12 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { HistoryPanel } from './HistoryPanel.js';
 
 vi.mock('../api.js', () => ({
     fetchHistory: vi.fn(),
+    getShareLink: vi.fn((runId) => `http://localhost/?shared_run=${runId}`),
 }));
 
-import { fetchHistory } from '../api.js';
+import { fetchHistory, getShareLink } from '../api.js';
 
 function makeRun(id) {
     return { id, timestamp: '2026-01-01', pdb_ids: ['4RLT', '3UG9'], status: 'success' };
@@ -14,6 +15,10 @@ function makeRun(id) {
 describe('HistoryPanel', () => {
     afterEach(() => {
         vi.clearAllMocks();
+    });
+
+    beforeEach(() => {
+        Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
     });
 
     it('shows an empty state when there are no runs', async () => {
@@ -119,5 +124,35 @@ describe('HistoryPanel', () => {
         expect(container.querySelector('script')).toBeNull();
         expect(container.textContent).toContain('<img src=x onerror=alert(1)>');
         expect(container.textContent).toContain('<script>alert(2)</script>');
+    });
+
+    it('copies the share link and does not trigger onReloadRun when "Share" is clicked', async () => {
+        const onReloadRun = vi.fn();
+        fetchHistory.mockResolvedValue({ runs: [makeRun('run_1')], total: 1 });
+
+        const panel = new HistoryPanel({ onReloadRun, onClose: vi.fn() });
+        panel.render();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        panel.element.querySelector('.share-run-btn').click();
+
+        expect(getShareLink).toHaveBeenCalledWith('run_1');
+        expect(navigator.clipboard.writeText).toHaveBeenCalledWith('http://localhost/?shared_run=run_1');
+        expect(onReloadRun).not.toHaveBeenCalled();
+    });
+
+    it('shows "Copied!" feedback on the Share button after clicking', async () => {
+        fetchHistory.mockResolvedValue({ runs: [makeRun('run_1')], total: 1 });
+
+        const panel = new HistoryPanel({ onReloadRun: vi.fn(), onClose: vi.fn() });
+        panel.render();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        const shareBtn = panel.element.querySelector('.share-run-btn');
+        shareBtn.click();
+
+        expect(shareBtn.innerText).toBe('Copied!');
     });
 });

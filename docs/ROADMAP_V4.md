@@ -160,20 +160,47 @@ can hand back out, without touching the core Mustang/RMSD pipeline underneath. A
       (2 fetched + the upload) that actually succeeded end-to-end — real RMSD values,
       3D superposition, sequence view, and all export formats generated — proving the
       cache-hit fallback actually works, not just that the upload endpoint responds.
-- [ ] **Phase 4 — Shareable run links**: read-only run view + share-link action, built on
-      top of Phase 1's hardened IDs. Resolve the world-readable-vs-explicit-toggle open
-      question below before shipping the UI for this (the backend read path already works
-      either way).
+- [x] **Phase 4 — Shareable run links**: world-readable by link (decided, not an explicit
+      opt-in toggle - see Open Questions below, now resolved). Built on Phase 1's
+      hardened IDs. Done: `GET /api/runs/{run_id}` returns a single run's raw record
+      by ID (no ownership check, matching every other run_id-keyed read endpoint) -
+      the one missing piece needed since `/api/history` only returns unscoped
+      *paginated lists*, not a direct single-run lookup. `getShareLink()` builds a
+      `/?shared_run={id}` URL (carrying `api_key` too when one's configured, matching
+      every other shareable download link); `main.js` detects that param on load,
+      calls `setApiKeyOverride()` if a key was carried, and feeds the fetched run
+      straight into the **existing** `reloadPastRun()` History-reload path — no
+      parallel read-only UI needed, since that function already just loads a run's
+      data into the normal tabs by ID. A dismissable-free banner
+      ("Viewing a shared run — read-only") makes the context obvious. `HistoryPanel.js`
+      gained a "Share" button per run (copies the link, doesn't trigger the row's own
+      reload-on-click). 3 new backend tests + 7 new frontend tests. Live-verified
+      across two fully separate Playwright browser contexts (no shared state) - context
+      A ran a real alignment and copied its share link from the clipboard; context B
+      opened that link cold and correctly showed the same real RMSD/sequence/3D data
+      with the read-only banner, zero console errors in either context.
+      **Found but out of scope**: `/api/history` returned a 42MB response for just 20
+      runs after this session's heavy test-run accumulation (each run's cached
+      Plotly figures live in its `metadata` blob) - a real pagination/payload-size
+      issue worth a follow-up, not touched here since it's pre-existing and unrelated
+      to run_id/upload/sharing.
 
 ## 6. Open questions
 
-- Is a shared run world-readable to anyone with the link once IDs are unguessable
-  (simplest, matches today's de-facto `/results` behavior), or does sharing need an
-  explicit opt-in per run (safer default, more UI/state)? Affects Phase 4's scope, not
-  Phases 1-3.
 - Should uploaded structures be cached/deduplicated like fetched ones are
   (`pdb_cache` table, `database.py:59`), or always treated as one-off/session-only since
-  there's no stable public ID to key a cache on?
-- Does batch input need a hard ceiling below `max_proteins` (e.g. warn at 10, hard-stop
-  at 20) to keep a single paste from immediately maxing out an alignment, or is the
-  existing cap sufficient on its own?
+  there's no stable public ID to key a cache on? Still open - not needed for Phase 3
+  to work correctly, just a possible future efficiency win.
+- **`/api/history`'s payload size** (found while building Phase 4, see above) - worth
+  a real fix (paginate the heavy per-run figure data separately from the lightweight
+  list view, or lazy-load it) before this app sees real multi-session usage.
+
+**Resolved:**
+- ~~Is a shared run world-readable to anyone with the link, or does sharing need an
+  explicit opt-in per run?~~ → World-readable, decided going into Phase 4. Phase 1's
+  hardened run IDs (64 bits of randomness) make guessing impractical; an opt-in toggle
+  would have been the first granular access-control feature in the app, disproportionate
+  scope for what was asked.
+- ~~Does batch input need a hard ceiling below `max_proteins`?~~ → Yes - Phase 2 shipped
+  `App.MAX_PROTEINS` enforcement in `addManyPDBs()`, closing a gap where the config
+  field existed but was never actually enforced anywhere.

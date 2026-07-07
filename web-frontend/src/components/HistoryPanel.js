@@ -1,4 +1,4 @@
-import { fetchHistory } from '../api';
+import { fetchHistory, getShareLink } from '../api';
 import { escapeHtml } from '../escapeHtml';
 
 const PAGE_SIZE = 20;
@@ -103,11 +103,21 @@ export class HistoryPanel {
                 <div class="flex items-center gap-4">
                     <span class="text-[10px] font-medium capitalize text-success">${escapeHtml(run.status || "success")}</span>
                     <span class="font-label-sm text-[10px] text-secondary">${escapeHtml(displayTime)}</span>
+                    <button class="share-run-btn font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Share</button>
                 </div>
             `;
 
             div.addEventListener('click', () => {
                 this.onReloadRun(run);
+            });
+
+            const shareBtn = div.querySelector('.share-run-btn');
+            shareBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                navigator.clipboard.writeText(getShareLink(run.id));
+                const original = shareBtn.innerText;
+                shareBtn.innerText = 'Copied!';
+                setTimeout(() => { shareBtn.innerText = original; }, 1500);
             });
 
             container.appendChild(div);

@@ -10,7 +10,7 @@ import { ComparisonTab } from './components/ComparisonTab';
 import { HistoryPanel } from './components/HistoryPanel';
 import { DashboardTab } from './components/DashboardTab';
 import { DiscoverTab } from './components/DiscoverTab';
-import { fetchChains, runAlignment, pollJobUntilDone, fetchLigands, getAlignmentReportUrl, isValidPdbId, uploadStructure as apiUploadStructure } from './api';
+import { fetchChains, runAlignment, pollJobUntilDone, fetchLigands, getAlignmentReportUrl, isValidPdbId, uploadStructure as apiUploadStructure, fetchRun, setApiKeyOverride } from './api';
 
 class App {
     static MAX_PROTEINS = 20; // matches config.yaml's core.max_proteins default
@@ -29,6 +29,16 @@ class App {
         this.treeFig = null;
         this.ramachandranStats = null;
         this.rmsdDf = null;
+
+        // A shared run link (see api.js's getShareLink()) is world-readable
+        // by design - detect it before anything fetches, both so
+        // setApiKeyOverride() runs first and so render() can show a banner.
+        const urlParams = new URLSearchParams(window.location.search);
+        this.sharedRunId = urlParams.get('shared_run');
+        this.isSharedView = Boolean(this.sharedRunId);
+        if (this.isSharedView && urlParams.get('api_key')) {
+            setApiKeyOverride(urlParams.get('api_key'));
+        }
 
         // Instantiate components
         this.topBar = new TopBar({
@@ -95,6 +105,14 @@ class App {
         // 1. Sticky top bar (brand + tabs + workspace actions + system status)
         container.appendChild(this.topBar.render());
 
+        if (this.isSharedView) {
+            const banner = document.createElement('div');
+            banner.id = "shared-view-banner";
+            banner.className = "bg-accent/10 border-b border-accent/30 text-center py-2 font-body-sm text-body-sm text-primary";
+            banner.innerText = "Viewing a shared run — read-only.";
+            container.appendChild(banner);
+        }
+
         // 2. Two-column shell: tab content (left) + persistent 3D viewer (right).
         // Plain flexbox (not CSS grid) — this is the same box-model the app already
         // used reliably for the 3Dmol canvas before this redesign, just mirrored.
@@ -121,8 +139,25 @@ class App {
         // Render initial tab content
         this.updateTabContentPane();
 
-        // Load initial chains metadata
-        this.loadChainsMetadata();
+        if (this.isSharedView) {
+            // The default demo structures (4RLT/3UG9) are about to be
+            // replaced entirely by the shared run's own data - no point
+            // fetching metadata for them first.
+            this.loadSharedRun();
+        } else {
+            this.loadChainsMetadata();
+        }
+    }
+
+    async loadSharedRun() {
+        try {
+            const run = await fetchRun(this.sharedRunId);
+            await this.reloadPastRun(run);
+        } catch (err) {
+            console.error("Failed to load shared run:", err);
+            const banner = document.getElementById('shared-view-banner');
+            if (banner) banner.innerText = `Couldn't load this shared run: ${err.message}`;
+        }
     }
 
     updateTabContentPane() {

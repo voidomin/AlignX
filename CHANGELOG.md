@@ -2,6 +2,22 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.14.0]
+
+`docs/ROADMAP_V4.md` Phase 4 — shareable run links. This completes the v4 roadmap (Phases 1-4 all shipped).
+
+### Added
+- **`GET /api/runs/{run_id}`**: fetch a single run's raw record by ID, with no ownership check (matching every other run_id-keyed read endpoint) — the missing piece since `/api/history` only returns unscoped paginated lists, not a direct single-run lookup.
+- **Shareable run links**: `getShareLink()` builds a `/?shared_run={id}` URL (carrying `api_key` too when one's configured); `main.js` detects it on load and feeds the fetched run into the existing `reloadPastRun()` path, with a "Viewing a shared run — read-only" banner. `HistoryPanel.js` gained a "Share" button per run that copies the link.
+- Decided (not an accident): shared links are **world-readable by anyone who has them**, not gated by an explicit per-run opt-in — Phase 1's hardened run IDs make guessing impractical, and an opt-in toggle would have been the app's first granular access-control feature, disproportionate to what was asked.
+
+### Verified
+- 3 new backend tests + 7 new frontend tests. Full suite: 239 backend + 122 frontend.
+- Live across two fully separate Playwright browser contexts: one ran a real alignment and copied its share link from the clipboard; a second, completely fresh context opened that link cold and correctly showed the same real RMSD/sequence/3D data with the read-only banner — zero console errors in either context.
+
+### Found (not fixed, out of scope for this change)
+- `/api/history` returned a **42MB response for 20 runs** after this session's heavy test-run accumulation — each run's cached Plotly figures live directly in its `metadata` blob. Worth a real fix (paginate list metadata separately from heavy per-run figure data) before real multi-session usage; not touched here since it's unrelated to run IDs, uploads, or sharing.
+
 ## [3.13.0]
 
 `docs/ROADMAP_V4.md` Phase 3 — custom structure upload.

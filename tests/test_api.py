@@ -124,6 +124,43 @@ def test_history_endpoint_pagination_params():
         mock_db.get_all_runs.assert_called_with(limit=5, offset=10, session_id=None)
 
 
+def test_get_run_by_id_returns_the_raw_record():
+    """Backs shareable run links - fetches one run by ID directly, with no
+    session_id/ownership check (matching every other run_id-keyed read
+    endpoint's existing behavior)."""
+    with patch("src.backend.api.history_db") as mock_db:
+        mock_db.get_run.return_value = {
+            "id": "run_1234567890_abcdef0123456789",
+            "name": "Test Run",
+            "pdb_ids": ["1L2Y", "4RLT"],
+            "session_id": "someone_elses_session",
+            "metadata": {},
+        }
+        response = client.get("/api/runs/run_1234567890_abcdef0123456789")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == "run_1234567890_abcdef0123456789"
+        mock_db.get_run.assert_called_with("run_1234567890_abcdef0123456789")
+
+
+def test_get_run_by_id_404s_for_unknown_run():
+    with patch("src.backend.api.history_db") as mock_db:
+        mock_db.get_run.return_value = None
+        response = client.get("/api/runs/run_does_not_exist")
+        assert response.status_code == 404
+
+
+def test_get_run_by_id_rejects_path_traversal():
+    # A run_id containing "/" doesn't match the {run_id} path segment at
+    # all (FastAPI's router 404s before this endpoint ever runs) - a
+    # same-segment invalid value exercises _safe_segment() itself instead.
+    response = client.get("/api/runs/..%2F..%2Fetc")
+    assert response.status_code == 404
+
+    response = client.get("/api/runs/run%20with%20spaces")
+    assert response.status_code == 400
+
+
 def test_chains_endpoint():
     """Verify that PDB structure chain downloads and analyses execute successfully."""
     with patch(

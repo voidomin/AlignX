@@ -958,6 +958,26 @@ def get_history(
     }
 
 
+@app.get("/api/runs/{run_id}")
+def get_run_by_id(run_id: str):
+    """
+    Fetch a single run's raw history record by ID, regardless of which
+    session created it - this is what backs shareable run links. Every
+    read endpoint keyed on run_id already has no ownership check (see
+    get_pdf_report, get_sequence, etc.), so this doesn't loosen access;
+    it just gives the frontend a way to look up one run directly instead
+    of scanning the unscoped /api/history list for it.
+    """
+    _safe_segment(run_id, "run_id")
+
+    run = history_db.get_run(run_id)
+    if not run:
+        raise HTTPException(
+            status_code=404, detail=f"Run {run_id} not found in history database."
+        )
+    return sanitize_for_json(run)
+
+
 @app.get("/api/stats")
 def get_aggregate_stats(session_id: Optional[str] = Query(None)):
     """

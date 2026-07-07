@@ -46,6 +46,7 @@ for how to actually use each one.
 | 19 | Standalone HTML lab notebook export | Both | [§4.2](#42-html-notebook) |
 | 20 | Discover HTML report / raw JSON export | SPA | [§4.3](#43-discover-export) |
 | 21 | Run history with reload | Both | [§5.1](#51-run-history) |
+| 21a | Shareable run links | SPA | [§5.1](#51-run-history) |
 | 22 | Multi-user session isolation | Both | [§5.2](#52-session-isolation) |
 | 23 | API key access control | SPA | [§6.1](#61-api-key-access-control) |
 | 24 | Per-client job rate limiting | SPA | [§6.2](#62-rate-limiting) |
@@ -247,6 +248,13 @@ JSON — the same export parity Compare mode has always had.
 Every completed run (Compare or Discover) is saved and browsable from the History
 tab. Reopening a past run restores its full state — 3D view, stats, every tab —
 exactly as it was when the run finished.
+
+*(SPA only)* Click **Share** on any run to copy a link to it. Anyone who opens that
+link — no account, no session, nothing else required — sees exactly that run's
+results in a read-only view with a clear banner. This is intentionally
+world-readable by anyone who has the link (not gated by an extra "make shareable"
+step): a run's ID is long and random enough that it can't practically be guessed,
+so having the link *is* the access control.
 
 ### 5.2 Session Isolation
 

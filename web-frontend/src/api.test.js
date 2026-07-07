@@ -165,6 +165,41 @@ describe('api.js (no API key configured)', () => {
         const [url] = global.fetch.mock.calls[0];
         expect(url).toContain('/api/stats');
     });
+
+    it('fetchRun fetches a single run by ID from /api/runs/{id}', async () => {
+        mockFetchOnce({ id: 'run_123', pdb_ids: ['4RLT'] });
+        const { fetchRun } = await import('./api.js');
+
+        const result = await fetchRun('run_123');
+        expect(result.id).toBe('run_123');
+        const [url] = global.fetch.mock.calls[0];
+        expect(url).toContain('/api/runs/run_123');
+    });
+
+    it('fetchRun throws the backend detail message on a 404', async () => {
+        mockFetchOnce({ detail: 'Run run_999 not found in history database.' }, false, 404);
+        const { fetchRun } = await import('./api.js');
+
+        await expect(fetchRun('run_999')).rejects.toThrow('not found in history database');
+    });
+
+    it('getShareLink points at this origin with a shared_run param, no api_key when none is configured', async () => {
+        const { getShareLink } = await import('./api.js');
+        const link = getShareLink('run_123');
+        expect(link).toContain('shared_run=run_123');
+        expect(link).not.toContain('api_key=');
+    });
+
+    it('setApiKeyOverride makes subsequent calls attach the header even with no build-time key', async () => {
+        const { fetchHistory, setApiKeyOverride } = await import('./api.js');
+        setApiKeyOverride('shared-link-key');
+
+        mockFetchOnce({ runs: [] });
+        await fetchHistory();
+
+        const [, options] = global.fetch.mock.calls[0];
+        expect(options.headers['X-API-Key']).toBe('shared-link-key');
+    });
 });
 
 describe('api.js (API key configured)', () => {
@@ -200,5 +235,12 @@ describe('api.js (API key configured)', () => {
         const { getAlignmentPdbUrl, getAlignmentFastaUrl } = await import('./api.js');
         expect(getAlignmentPdbUrl('run_1')).toContain('api_key=secret-key');
         expect(getAlignmentFastaUrl('run_1')).toContain('api_key=secret-key');
+    });
+
+    it('getShareLink carries the api_key so a recipient without a build-time key can still authenticate', async () => {
+        const { getShareLink } = await import('./api.js');
+        const link = getShareLink('run_1');
+        expect(link).toContain('shared_run=run_1');
+        expect(link).toContain('api_key=secret-key');
     });
 });

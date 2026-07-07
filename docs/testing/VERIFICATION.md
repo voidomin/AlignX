@@ -106,7 +106,7 @@ Run the Vitest suite covering `api.js` and the JS components (auth headers, job 
 cd web-frontend
 npm test
 ```
-*Expected Output:* all test files pass (currently 115 tests across the suite, covering `api.js` and every tab/panel component, including `DiscoverTab.js`).
+*Expected Output:* all test files pass (currently 122 tests across the suite, covering `api.js` and every tab/panel component, including `DiscoverTab.js`).
 
 ---
 
