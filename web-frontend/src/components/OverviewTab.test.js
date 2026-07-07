@@ -7,6 +7,7 @@ function makeTab(overrides = {}) {
         chainSelections: {},
         pdbMetadata: {},
         onAddPDB: vi.fn(),
+        onAddManyPDBs: vi.fn().mockResolvedValue({ added: [], overCap: 0 }),
         onRemovePDB: vi.fn(),
         onChainSelection: vi.fn(),
         onRunAlignment: vi.fn(),
@@ -205,5 +206,69 @@ describe('OverviewTab', () => {
 
         tab.element.querySelector('#overview-run-btn').click();
         expect(onRunAlignment).toHaveBeenCalled();
+    });
+
+    describe('batch add', () => {
+        it('is hidden until the "Paste multiple IDs" toggle is clicked', () => {
+            const tab = makeTab();
+            tab.render();
+
+            expect(tab.element.querySelector('#batch-add-container').classList.contains('hidden')).toBe(true);
+            tab.element.querySelector('#toggle-batch-add-btn').click();
+            expect(tab.element.querySelector('#batch-add-container').classList.contains('hidden')).toBe(false);
+        });
+
+        it('parses a comma/newline/space-separated paste and calls onAddManyPDBs with valid, deduplicated, uppercased IDs', async () => {
+            const onAddManyPDBs = vi.fn().mockResolvedValue({ added: ['4RLT', '3UG9', 'AF-P69905-F1'], overCap: 0 });
+            const tab = makeTab({ onAddManyPDBs });
+            tab.render();
+
+            tab.element.querySelector('#batch-pdb-input').value = '4rlt, 3ug9\n4RLT af-p69905-f1';
+            tab.element.querySelector('#batch-add-btn').click();
+
+            expect(onAddManyPDBs).toHaveBeenCalledWith(['4RLT', '3UG9', 'AF-P69905-F1']);
+        });
+
+        it('reports invalid tokens and in-paste duplicates without calling onAddManyPDBs for them', async () => {
+            const onAddManyPDBs = vi.fn().mockResolvedValue({ added: ['3UG9'], overCap: 0 });
+            const tab = makeTab({ selectedPDBs: ['4RLT'], onAddManyPDBs });
+            tab.render();
+
+            tab.element.querySelector('#batch-pdb-input').value = '4RLT, 3ug9, notanid';
+            tab.element.querySelector('#batch-add-btn').click();
+            await onAddManyPDBs.mock.results[0].value;
+
+            expect(onAddManyPDBs).toHaveBeenCalledWith(['3UG9']);
+            const feedback = tab.element.querySelector('#batch-add-feedback').innerText;
+            expect(feedback).toContain('Added 1');
+            expect(feedback).toContain('Skipped 1 already in the workspace');
+            expect(feedback).toContain("Couldn't recognize: NOTANID");
+        });
+
+        it('surfaces the workspace-limit count when the batch is capped', async () => {
+            const onAddManyPDBs = vi.fn().mockResolvedValue({ added: ['4RLT'], overCap: 1 });
+            const tab = makeTab({ onAddManyPDBs });
+            tab.render();
+
+            tab.element.querySelector('#batch-pdb-input').value = '4RLT, 3UG9';
+            tab.element.querySelector('#batch-add-btn').click();
+            await onAddManyPDBs.mock.results[0].value;
+
+            expect(tab.element.querySelector('#batch-add-feedback').innerText)
+                .toContain('Skipped 1 — workspace limit is 20 structures.');
+        });
+
+        it('clears the textarea only when something was actually added', async () => {
+            const onAddManyPDBs = vi.fn();
+            const tab = makeTab({ selectedPDBs: [], onAddManyPDBs });
+            tab.render();
+
+            const input = tab.element.querySelector('#batch-pdb-input');
+            input.value = 'notanid';
+            tab.element.querySelector('#batch-add-btn').click();
+
+            expect(onAddManyPDBs).not.toHaveBeenCalled();
+            expect(input.value).toBe('notanid');
+        });
     });
 });

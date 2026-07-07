@@ -129,9 +129,17 @@ can hand back out, without touching the core Mustang/RMSD pipeline underneath. A
       running server: a real 4RLT+3UG9 alignment produced
       `run_1783414603_2b797f99f0bee74f`, not the old guessable
       `run_1783414603`. Full suite (227 tests) + ruff/black clean.
-- [ ] **Phase 2 — Batch ID input**: frontend-only, lowest effort, no backend changes
-      needed since `/api/chains` already accepts a list. Ship the paste-a-list UI with
-      clear partial-failure reporting.
+- [x] **Phase 2 — Batch ID input**: shipped frontend-only, no backend changes needed —
+      `/api/chains` already accepted a list. Done: a "Paste multiple IDs" toggle in
+      `OverviewTab.js` reveals a textarea; `App.addManyPDBs()` (`main.js`) enforces the
+      same 20-structure cap `config.yaml`'s `core.max_proteins` defines (previously
+      unenforced anywhere — a batch paste is the first path that can realistically hit
+      it in one action). Partial-failure feedback distinguishes invalid tokens,
+      in-workspace duplicates, and over-cap skips. 5 new frontend tests; live-verified
+      via Playwright against the real running server (screenshot: pasted
+      `1CRN, 2LYZ\nnotanid, 4RLT` against a workspace that already had 4RLT/3UG9 →
+      correctly added 1CRN+2LYZ, skipped the 4RLT duplicate, flagged NOTANID, real
+      chain metadata resolved for all 4, zero console errors).
 - [ ] **Phase 3 — Custom structure upload**: `POST /api/upload`, synthetic-ID plumbing
       through `PDBManager`, content validation, frontend upload control.
 - [ ] **Phase 4 — Shareable run links**: read-only run view + share-link action, built on

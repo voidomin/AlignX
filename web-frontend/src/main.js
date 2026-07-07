@@ -13,6 +13,8 @@ import { DiscoverTab } from './components/DiscoverTab';
 import { fetchChains, runAlignment, pollJobUntilDone, fetchLigands, getAlignmentReportUrl, isValidPdbId } from './api';
 
 class App {
+    static MAX_PROTEINS = 20; // matches config.yaml's core.max_proteins default
+
     constructor() {
         this.selectedPDBs = ["4RLT", "3UG9"];
         this.chainSelections = { "4RLT": "A", "3UG9": "A" };
@@ -42,6 +44,7 @@ class App {
             chainSelections: this.chainSelections,
             pdbMetadata: this.pdbMetadata,
             onAddPDB: (pdbId) => this.addPDB(pdbId),
+            onAddManyPDBs: (pdbIds) => this.addManyPDBs(pdbIds),
             onRemovePDB: (pdbId) => this.removePDB(pdbId),
             onChainSelection: (pdbId, chainId) => {
                 this.chainSelections[pdbId] = chainId;
@@ -190,10 +193,25 @@ class App {
         pdbId = pdbId.toUpperCase().trim();
         if (!isValidPdbId(pdbId)) return;
         if (this.selectedPDBs.includes(pdbId)) return;
-        
+
         this.selectedPDBs.push(pdbId);
         this.overviewTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
         await this.loadChainsMetadata();
+    }
+
+    // Same cap config.yaml's core.max_proteins enforces server-side - a batch
+    // paste is the one path that can realistically blow past it in one go,
+    // where one-at-a-time adding never practically did.
+    async addManyPDBs(pdbIds) {
+        const room = App.MAX_PROTEINS - this.selectedPDBs.length;
+        const accepted = pdbIds.slice(0, Math.max(room, 0));
+        const overCap = pdbIds.length - accepted.length;
+
+        this.selectedPDBs.push(...accepted);
+        this.overviewTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
+        if (accepted.length > 0) await this.loadChainsMetadata();
+
+        return { added: accepted, overCap };
     }
 
     removePDB(pdbId) {

@@ -2,6 +2,18 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.12.0]
+
+`docs/ROADMAP_V4.md` Phase 2 — batch structure input.
+
+### Added
+- **Paste multiple IDs**: `OverviewTab.js` gained a "Paste multiple IDs" toggle revealing a textarea that accepts a comma/space/newline-separated list of PDB IDs or accessions, parsed and added in one action instead of one at a time. Backend needed no changes — `/api/chains` already accepted a list.
+- **`core.max_proteins` is now actually enforced**: the config field existed (default 20) but was never read anywhere in the backend or frontend. `App.addManyPDBs()` now caps a batch add at the same limit, since pasting a large list is the first realistic way to blow past it in one action.
+
+### Verified
+- 5 new frontend tests (toggle visibility, parsing/dedup, invalid-token reporting, cap enforcement, textarea-clear behavior). Full suite: 227 backend + 110 frontend.
+- Live through the real running server via Playwright: pasted a mixed batch (2 new valid IDs, 1 duplicate, 1 invalid token) into a workspace that already had 2 structures — correct partial-failure feedback, real chain metadata resolved for all 4 resulting structures, zero browser console errors.
+
 ## [3.11.0]
 
 First phase of `docs/ROADMAP_V4.md` — closes a real information-disclosure gap found while scoping the "shareable run links" feature, independent of whether that feature ships.

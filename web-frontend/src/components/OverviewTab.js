@@ -13,12 +13,14 @@ export class OverviewTab {
         this.chainSelections = props.chainSelections || {};
         this.pdbMetadata = props.pdbMetadata || {};
         this.onAddPDB = props.onAddPDB;
+        this.onAddManyPDBs = props.onAddManyPDBs;
         this.onRemovePDB = props.onRemovePDB;
         this.onChainSelection = props.onChainSelection;
         this.onRunAlignment = props.onRunAlignment;
         this.element = null;
         this.isLoadingChains = false;
         this.suggestTimeout = null;
+        this.batchInputVisible = false;
     }
 
     render() {
@@ -42,6 +44,16 @@ export class OverviewTab {
                         <button id="add-pdb-btn" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Add</button>
                     </div>
                     <div id="add-pdb-suggestions" class="flex gap-2"></div>
+
+                    <button id="toggle-batch-add-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Paste multiple IDs</button>
+
+                    <div id="batch-add-container" class="flex flex-col gap-2 ${this.batchInputVisible ? '' : 'hidden'}">
+                        <textarea id="batch-pdb-input" rows="3" placeholder="Paste PDB IDs or accessions, separated by commas, spaces, or new lines (e.g. 4RLT, 3UG9, AF-P69905-F1)" class="w-full bg-surface-raised border border-border rounded-md px-3 py-2 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase"></textarea>
+                        <div class="flex items-center gap-3">
+                            <button id="batch-add-btn" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Add All</button>
+                            <span id="batch-add-feedback" class="font-body-sm text-[11px] text-secondary"></span>
+                        </div>
+                    </div>
 
                     <div id="pdb-list-container" class="flex flex-col gap-2 mt-1">
                         <!-- Dynamic list of PDBs with chain dropdowns -->
@@ -133,6 +145,59 @@ export class OverviewTab {
 
         runBtn.addEventListener('click', () => {
             this.onRunAlignment();
+        });
+
+        const toggleBatchBtn = this.element.querySelector('#toggle-batch-add-btn');
+        const batchContainer = this.element.querySelector('#batch-add-container');
+        const batchInput = this.element.querySelector('#batch-pdb-input');
+        const batchAddBtn = this.element.querySelector('#batch-add-btn');
+        const batchFeedback = this.element.querySelector('#batch-add-feedback');
+
+        toggleBatchBtn.addEventListener('click', () => {
+            this.batchInputVisible = !this.batchInputVisible;
+            batchContainer.classList.toggle('hidden', !this.batchInputVisible);
+            if (this.batchInputVisible) batchInput.focus();
+        });
+
+        batchAddBtn.addEventListener('click', async () => {
+            const raw = batchInput.value;
+            const tokens = raw.split(/[\s,]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
+
+            const toAdd = [];
+            const invalid = [];
+            let duplicates = 0;
+            const seen = new Set(this.selectedPDBs);
+
+            tokens.forEach(token => {
+                if (!isValidPdbId(token)) {
+                    invalid.push(token);
+                    return;
+                }
+                if (seen.has(token)) {
+                    duplicates += 1;
+                    return;
+                }
+                seen.add(token);
+                toAdd.push(token);
+            });
+
+            let overCap = 0;
+            let addedCount = 0;
+            if (toAdd.length > 0) {
+                const result = await this.onAddManyPDBs(toAdd);
+                addedCount = (result && result.added) ? result.added.length : toAdd.length;
+                overCap = (result && result.overCap) || 0;
+            }
+
+            const parts = [];
+            if (addedCount > 0) parts.push(`Added ${addedCount}.`);
+            if (duplicates > 0) parts.push(`Skipped ${duplicates} already in the workspace.`);
+            if (invalid.length > 0) parts.push(`Couldn't recognize: ${invalid.join(', ')}.`);
+            if (overCap > 0) parts.push(`Skipped ${overCap} — workspace limit is 20 structures.`);
+            if (parts.length === 0) parts.push('Nothing to add — paste at least one ID.');
+            batchFeedback.innerText = parts.join(' ');
+
+            if (addedCount > 0) batchInput.value = "";
         });
     }
 
