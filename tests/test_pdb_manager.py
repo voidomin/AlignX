@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import patch, AsyncMock
 import pytest
 from src.backend.pdb_manager import PDBManager
@@ -12,6 +13,27 @@ class TestPDBManager:
         manager = PDBManager(mock_config)
         assert manager.pdb_source == mock_config["pdb"]["source_url"]
         assert manager.timeout == 5
+
+    @patch("src.backend.pdb_manager.Path.mkdir")
+    def test_initialization_accepts_safe_session_id(self, _, mock_config):
+        manager = PDBManager(mock_config, session_id="abc-123_XYZ")
+        assert manager.session_id == "abc-123_XYZ"
+        assert manager.raw_dir == Path("data/raw/abc-123_XYZ")
+
+    @pytest.mark.parametrize(
+        "bad_session_id",
+        ["../../etc", "a/b", "a\\b", "..", "session id with spaces"],
+    )
+    def test_initialization_rejects_path_traversal_session_id(
+        self, mock_config, bad_session_id
+    ):
+        """FastAPI's own endpoints already validate session_id (an
+        attacker-controlled query param) before constructing a
+        coordinator/PDBManager - this is a second, independent check so a
+        future caller that skips that validation can't construct a path
+        outside data/raw or data/cleaned."""
+        with pytest.raises(ValueError, match="Invalid session_id"):
+            PDBManager(mock_config, session_id=bad_session_id)
 
     def test_pdb_id_validation(self):
         """Test PDB ID validation logic."""

@@ -92,4 +92,32 @@ describe('HistoryPanel', () => {
         panel.element.querySelector('#history-runs-list > div').click();
         expect(onReloadRun).toHaveBeenCalledWith(expect.objectContaining({ id: 'run_1' }));
     });
+
+    it('escapes HTML in a run id / pdb_id instead of injecting it into the DOM', async () => {
+        // pdb_ids trace back to user input at job-submission time - this
+        // must not assume that upstream validation always holds by the
+        // time a run reaches history.
+        fetchHistory.mockResolvedValue({
+            runs: [
+                {
+                    id: '<img src=x onerror=alert(1)>',
+                    timestamp: '2026-01-01',
+                    pdb_ids: ['<script>alert(2)</script>'],
+                    status: 'success',
+                },
+            ],
+            total: 1,
+        });
+
+        const panel = new HistoryPanel({ onReloadRun: vi.fn(), onClose: vi.fn() });
+        panel.render();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        const container = panel.element.querySelector('#history-runs-list');
+        expect(container.querySelector('img')).toBeNull();
+        expect(container.querySelector('script')).toBeNull();
+        expect(container.textContent).toContain('<img src=x onerror=alert(1)>');
+        expect(container.textContent).toContain('<script>alert(2)</script>');
+    });
 });

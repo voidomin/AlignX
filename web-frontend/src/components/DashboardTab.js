@@ -1,4 +1,5 @@
 import { fetchStats, fetchHistory } from '../api';
+import { escapeHtml } from '../escapeHtml';
 
 const RECENT_RUNS_LIMIT = 5;
 
@@ -120,13 +121,13 @@ export class DashboardTab {
                 row.className = "flex justify-between items-center py-3 border-b border-border-subtle hover:bg-surface-raised transition-colors cursor-pointer group px-2 -mx-2 rounded-md";
                 row.innerHTML = `
                     <div class="flex items-center gap-4">
-                        <span class="px-1.5 py-0.5 rounded-md bg-surface border border-border-subtle font-mono text-[10px] text-secondary uppercase">${runTypeLabel}</span>
-                        <span class="font-body-sm font-bold text-primary group-hover:text-accent font-mono">${run.id}</span>
+                        <span class="px-1.5 py-0.5 rounded-md bg-surface border border-border-subtle font-mono text-[10px] text-secondary uppercase">${escapeHtml(runTypeLabel)}</span>
+                        <span class="font-body-sm font-bold text-primary group-hover:text-accent font-mono">${escapeHtml(run.id)}</span>
                         <div class="flex gap-1">
-                            ${pids.map(pid => `<span class="px-1.5 py-0.5 rounded-md bg-surface-raised border border-border-subtle font-mono text-[10px] text-secondary">${pid}</span>`).join("")}
+                            ${pids.map(pid => `<span class="px-1.5 py-0.5 rounded-md bg-surface-raised border border-border-subtle font-mono text-[10px] text-secondary">${escapeHtml(pid)}</span>`).join("")}
                         </div>
                     </div>
-                    <span class="font-label-sm text-[10px] text-secondary">${run.timestamp}</span>
+                    <span class="font-label-sm text-[10px] text-secondary">${escapeHtml(run.timestamp)}</span>
                 `;
                 row.addEventListener('click', () => this.onReloadRun(run));
                 recentContainer.appendChild(row);

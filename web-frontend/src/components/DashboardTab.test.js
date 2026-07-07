@@ -91,4 +91,30 @@ describe('DashboardTab', () => {
         expect(tab.element.querySelector('#dashboard-recent-runs').textContent)
             .toContain('Failed to retrieve recent activity.');
     });
+
+    it('escapes HTML in a run id / pdb_id instead of injecting it into the DOM', async () => {
+        // pdb_ids trace back to user input at job-submission time - this
+        // must not assume that upstream validation always holds by the
+        // time a run reaches history.
+        fetchStats.mockResolvedValue({ total_runs: 1, total_proteins_analyzed: 1, cache_size_mb: 0 });
+        fetchHistory.mockResolvedValue({
+            runs: [
+                {
+                    id: '<img src=x onerror=alert(1)>',
+                    timestamp: '2026-01-01',
+                    pdb_ids: ['<script>alert(2)</script>'],
+                },
+            ],
+        });
+
+        const tab = new DashboardTab({ onReloadRun: vi.fn(), onQuickStart: vi.fn() });
+        tab.render();
+        await tab.loadDashboardData();
+
+        const container = tab.element.querySelector('#dashboard-recent-runs');
+        expect(container.querySelector('img')).toBeNull();
+        expect(container.querySelector('script')).toBeNull();
+        expect(container.textContent).toContain('<img src=x onerror=alert(1)>');
+        expect(container.textContent).toContain('<script>alert(2)</script>');
+    });
 });
