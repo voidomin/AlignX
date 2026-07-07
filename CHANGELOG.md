@@ -2,6 +2,13 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.15.2]
+
+Follow-up after the `sonar.exclusions` fix actually took effect (see 3.15.1): with `static/**`/`.agents/**` noise gone, `new_reliability_rating` immediately passed. `new_security_rating` was still failing on one real CRITICAL finding underneath the noise.
+
+### Fixed
+- `mustang_runner.py`'s verified TLS context (added in 3.15.0) didn't explicitly pin a minimum TLS version - added `context.minimum_version = ssl.TLSVersion.TLSv1_2` rather than relying only on `create_default_context()`'s own defaults.
+
 ## [3.15.1]
 
 Closes the one gap 3.15.0 flagged as unfixable from here: `sonar.exclusions` (`static/**`, `.agents/**`, etc.) is now set directly in SonarCloud's project settings (Administration → General Settings → Analysis Scope → Source File Exclusions), confirmed live via `api/settings/values` returning the real value rather than empty. Automatic Analysis mode never reads `sonar-project.properties`, so this had to happen in the UI, not a commit - this entry exists just to mark the loop as closed. Next analysis (triggered by this push) should show `static/assets/*.js`'s ~325 noise issues and 100% of the previously-open Bugs disappear from "new code" findings entirely.

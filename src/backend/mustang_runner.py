@@ -72,6 +72,9 @@ class MustangRunner:
             # stale/incomplete - explicitly using certifi's bundle fixes
             # that without disabling verification altogether.
             context = ssl.create_default_context(cafile=certifi.where())
+            # Explicit minimum, not just relying on create_default_context()'s
+            # own (version-dependent) defaults.
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
             logger.info(f"Downloading from {MUSTANG_URL}...")
 
             with urllib.request.urlopen(
