@@ -2,6 +2,17 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.9.0]
+
+SonarQube Cloud's Quality Gate also failed on "Security Rating on New Code" (4 Blocker-severity vulnerabilities). Fixed for real.
+
+### Fixed
+- **Path traversal in `PDBManager`**: `session_id` (an attacker-controlled query param at the API layer) was concatenated directly into a filesystem path with no validation of its own. Every current caller already validates it upstream before construction, so this wasn't reachable through a live code path today - but `PDBManager` itself had zero defense, making it one forgotten upstream check away from writing files outside `data/raw`/`data/cleaned`. Added an independent `^[A-Za-z0-9_-]+$` check directly in `__init__` (raises `ValueError`), so the class no longer silently depends on every future caller remembering to pre-validate.
+- **Reflected/stored XSS in `DashboardTab.js` and `HistoryPanel.js`**: both interpolated `run.id`, `pdb_ids`, `run.status`, and timestamps directly into an `innerHTML` template with no escaping. `pdb_ids` traces back to user input at job-submission time - relying on upstream validation always holding is the same class of assumption as the path traversal above. Added a small `escapeHtml()` utility (`web-frontend/src/escapeHtml.js`) and applied it to every interpolated value in both components' run-list rendering.
+
+### Verified
+- 223 backend + 105 frontend tests pass, including new regression tests: `PDBManager` rejects `../../etc`, `a/b`, `..`, and similar payloads with a clean `ValueError`; both `DashboardTab`/`HistoryPanel` render a `<script>`/`<img onerror>` payload as literal escaped text with no `<script>`/`<img>` element actually created in the DOM.
+
 ## [3.8.0]
 
 SonarQube Cloud's Quality Gate failed on "Reliability Rating on New Code" (20 flagged issues). All fixed for real, not suppressed.

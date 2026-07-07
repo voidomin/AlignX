@@ -1,4 +1,5 @@
 import { fetchHistory } from '../api';
+import { escapeHtml } from '../escapeHtml';
 
 const PAGE_SIZE = 20;
 
@@ -93,15 +94,15 @@ export class HistoryPanel {
 
             div.innerHTML = `
                 <div class="flex items-center gap-4">
-                    <span class="px-1.5 py-0.5 rounded-md bg-surface border border-border-subtle font-mono text-[10px] text-secondary uppercase">${runTypeLabel}</span>
-                    <span class="font-body-sm font-bold text-primary group-hover:text-accent font-mono">${run.id}</span>
+                    <span class="px-1.5 py-0.5 rounded-md bg-surface border border-border-subtle font-mono text-[10px] text-secondary uppercase">${escapeHtml(runTypeLabel)}</span>
+                    <span class="font-body-sm font-bold text-primary group-hover:text-accent font-mono">${escapeHtml(run.id)}</span>
                     <div class="flex gap-1">
-                        ${pids.map(pid => `<span class="px-1.5 py-0.5 rounded-md bg-surface-raised border border-border-subtle font-mono text-[10px] text-secondary">${pid}</span>`).join("")}
+                        ${pids.map(pid => `<span class="px-1.5 py-0.5 rounded-md bg-surface-raised border border-border-subtle font-mono text-[10px] text-secondary">${escapeHtml(pid)}</span>`).join("")}
                     </div>
                 </div>
                 <div class="flex items-center gap-4">
-                    <span class="text-[10px] font-medium capitalize text-success">${run.status || "success"}</span>
-                    <span class="font-label-sm text-[10px] text-secondary">${displayTime}</span>
+                    <span class="text-[10px] font-medium capitalize text-success">${escapeHtml(run.status || "success")}</span>
+                    <span class="font-label-sm text-[10px] text-secondary">${escapeHtml(displayTime)}</span>
                 </div>
             `;
 

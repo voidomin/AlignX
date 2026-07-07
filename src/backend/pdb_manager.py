@@ -13,6 +13,15 @@ from src.utils.cache_manager import CacheManager
 
 logger = get_logger()
 
+# Only alnum/underscore/hyphen - blocks path traversal ("..", "/", "\\") if
+# session_id is ever concatenated into a filesystem path. FastAPI's own
+# endpoints already validate session_id (see api.py's _safe_segment())
+# before it reaches here, via every current call path - this is a second,
+# independent check so PDBManager doesn't quietly depend on every future
+# caller remembering to pre-validate a value that's attacker-controlled at
+# the API layer (it's a query parameter).
+_SAFE_SESSION_ID = re.compile(r"^[A-Za-z0-9_-]+$")
+
 
 def _write_bytes(path: Path, content: bytes) -> None:
     """Plain synchronous write - only ever called via asyncio.to_thread()
@@ -37,7 +46,14 @@ class PDBManager:
             config: Configuration dictionary
             cache_manager: Optional CacheManager instance
             session_id: Optional session ID for per-user file isolation
+
+        Raises:
+            ValueError: if session_id is provided but isn't a safe path
+                segment (see _SAFE_SESSION_ID above).
         """
+        if session_id is not None and not _SAFE_SESSION_ID.match(session_id):
+            raise ValueError(f"Invalid session_id: {session_id!r}")
+
         self.config = config
         self.cache_manager = cache_manager
         self.session_id = session_id
