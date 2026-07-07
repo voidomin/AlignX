@@ -371,6 +371,25 @@ def sanitize_for_json(val: Any) -> Any:
     return val
 
 
+# asyncio.create_task() returns a Task the event loop only holds a WEAK
+# reference to - with nothing else keeping it alive, it can be garbage
+# collected mid-execution (a real, documented asyncio footgun: "Save a
+# reference to the result of this function, to avoid a task disappearing
+# mid-execution" - https://docs.python.org/3/library/asyncio-task.html).
+# Both job-submission endpoints fire their execution coroutine and
+# immediately discard create_task()'s return value, so every job launched
+# this way runs that risk. This module-level set holds a strong reference
+# until the task finishes, then the done-callback removes it.
+_background_tasks: set = set()
+
+
+def _spawn_background_task(coro) -> asyncio.Task:
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
+
+
 # In-memory job registry for the async alignment pipeline. Alignment runs can take
 # minutes (Mustang + phylogenetics + rendering), so they're executed on a background
 # thread and polled via job_id rather than blocking the HTTP request.
@@ -460,7 +479,7 @@ async def submit_alignment_job(
     job_id = uuid.uuid4().hex
     alignment_jobs[job_id] = {"status": "queued", "created_at": time.time()}
 
-    asyncio.create_task(
+    _spawn_background_task(
         _execute_alignment_job(
             job_id,
             pdb_ids=pdb_ids,
@@ -573,7 +592,7 @@ async def submit_discovery_job(
     job_id = uuid.uuid4().hex
     discovery_jobs[job_id] = {"status": "queued", "created_at": time.time()}
 
-    asyncio.create_task(
+    _spawn_background_task(
         _execute_discovery_job(
             job_id,
             pdb_id=pdb_id,

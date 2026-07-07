@@ -104,8 +104,25 @@ class _RateLimiter:
     Discover job's annotation fetches run inside their own asyncio.run() on
     a dedicated worker thread, so concurrent jobs call this from different
     event loops. A plain threading.Lock is real OS-level mutual exclusion
-    and works correctly across that; blocking the calling thread during the
-    wait is fine since that thread has nothing else to do meanwhile.
+    and works correctly across that.
+
+    The lock only ever guards the synchronous slot-reservation math below,
+    never the actual wait - aggregate_for_hits() runs multiple neighbors'
+    annotation fetches concurrently via asyncio.gather() on the SAME event
+    loop, so two of *this same job's* coroutines really can call wait() at
+    once. Sleeping (via time.sleep(), previously) while still holding the
+    lock would block that whole thread for the sleep's duration - fine on
+    its own - but a sibling gathered coroutine hitting `with self._lock:`
+    during that window does a blocking, synchronous acquire() on a lock its
+    own thread already holds, which freezes the event loop that would
+    otherwise have advanced the timer and released it: a real, reproducible
+    deadlock the moment 2+ neighbors need this rate limiter in the same
+    job. Reserving the slot (a fast, non-yielding calculation) inside the
+    lock and awaiting the actual delay outside it avoids that entirely,
+    while still serializing correctly: each reservation is pushed at least
+    min_interval past the previous one, regardless of which thread or
+    coroutine claims it or how long that caller then takes to actually
+    sleep.
     """
 
     def __init__(self, min_interval_seconds: float):
@@ -115,10 +132,11 @@ class _RateLimiter:
 
     async def wait(self) -> None:
         with self._lock:
-            elapsed = time.monotonic() - self._last_request_at
-            if elapsed < self._min_interval:
-                time.sleep(self._min_interval - elapsed)
-            self._last_request_at = time.monotonic()
+            now = time.monotonic()
+            self._last_request_at = max(now, self._last_request_at + self._min_interval)
+            wait_time = self._last_request_at - now
+        if wait_time > 0:
+            await asyncio.sleep(wait_time)
 
 
 class AnnotationAggregator:

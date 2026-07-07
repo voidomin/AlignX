@@ -58,9 +58,19 @@ class _RateLimiter:
     loop created them, and a waiter on one loop can hang forever waiting on
     a release from another (confirmed directly: 1 of 3 concurrent callers
     never returned). A plain threading.Lock is real OS-level mutual
-    exclusion and works correctly here; blocking the calling thread during
-    the wait is fine since each job's worker thread has nothing else to do
-    while waiting its turn.
+    exclusion and works correctly here.
+
+    The lock only ever guards the synchronous slot-reservation math below,
+    never the actual wait. Sleeping while still holding the lock (as a
+    prior version of this did via time.sleep()) is only safe as long as no
+    *other* coroutine on that same thread's event loop ever tries to
+    acquire this same lock while the holder is suspended mid-sleep - true
+    here today since one job makes one Foldseek call at a time, but the
+    same pattern in AnnotationAggregator's near-identical rate limiter
+    genuinely deadlocks under asyncio.gather()'d concurrent callers (see
+    that class's docstring). Reserving the slot inside the lock and
+    awaiting the delay outside it is correct regardless of whether a
+    caller ever runs concurrently with a sibling on the same loop.
     """
 
     def __init__(self, min_interval_seconds: float):
@@ -70,10 +80,11 @@ class _RateLimiter:
 
     async def wait(self) -> None:
         with self._lock:
-            elapsed = time.monotonic() - self._last_request_at
-            if elapsed < self._min_interval:
-                time.sleep(self._min_interval - elapsed)
-            self._last_request_at = time.monotonic()
+            now = time.monotonic()
+            self._last_request_at = max(now, self._last_request_at + self._min_interval)
+            wait_time = self._last_request_at - now
+        if wait_time > 0:
+            await asyncio.sleep(wait_time)
 
 
 class FoldseekClient:

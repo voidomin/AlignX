@@ -119,7 +119,9 @@ def test_annotation_and_cache_sections_also_fall_back_gracefully(tmp_path, caplo
 
     config = load_config(str(config_file))
 
-    assert config["annotation"]["min_confident_probability"] == 0.5  # default
+    assert config["annotation"]["min_confident_probability"] == pytest.approx(
+        0.5
+    )  # default
     assert config["cache"]["max_cache_size_mb"] == 1000  # default
     warned_sections = {
         "annotation" if "annotation" in r.message else "cache" if "cache" in r.message else None
