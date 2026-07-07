@@ -159,9 +159,7 @@ class AnnotationAggregator:
             "min_confident_probability", 0.5
         )
 
-    async def _get_or_fetch(
-        self, cache_key: str, service: str, fetch_fn
-    ) -> Any:
+    async def _get_or_fetch(self, cache_key: str, service: str, fetch_fn) -> Any:
         """Checks the persistent annotation cache before calling fetch_fn
         (an async no-arg callable), and stores whatever it returns. A cache
         read/write failure is not fatal - it just means this call behaves
@@ -180,7 +178,9 @@ class AnnotationAggregator:
 
         if self.cache_db:
             try:
-                self.cache_db.set_annotation_cache(cache_key, service, json.dumps(result))
+                self.cache_db.set_annotation_cache(
+                    cache_key, service, json.dumps(result)
+                )
             except Exception as e:
                 logger.warning(f"Annotation cache write failed for {cache_key}: {e}")
 
@@ -296,9 +296,13 @@ class AnnotationAggregator:
         embedded = self.extract_embedded_uniprot_accession(target)
         if embedded:
             return embedded
-        pdb_chain = self.extract_pdb_chain(target) or self.extract_cath_pdb_chain(target)
+        pdb_chain = self.extract_pdb_chain(target) or self.extract_cath_pdb_chain(
+            target
+        )
         if pdb_chain:
-            return await self.resolve_pdb_uniprot_accession(*pdb_chain, client, pdb_cache)
+            return await self.resolve_pdb_uniprot_accession(
+                *pdb_chain, client, pdb_cache
+            )
         return None
 
     async def fetch_interpro_entries(
@@ -312,7 +316,9 @@ class AnnotationAggregator:
             url = f"{INTERPRO_BASE_URL}/entry/interpro/protein/uniprot/{accession}"
             try:
                 response = await client.get(
-                    url, params={"page_size": 50}, headers={"Accept": "application/json"}
+                    url,
+                    params={"page_size": 50},
+                    headers={"Accept": "application/json"},
                 )
                 if response.status_code != 200:
                     return []
@@ -581,11 +587,13 @@ class AnnotationAggregator:
             # Foldseek's own hit payload already carries a taxId for AFDB
             # matches, so STRING gets it for free - no extra species lookup.
             taxon_id = hit.get("taxId")
-            domains, quickgo_terms, string_partners, reactome_pathways = await asyncio.gather(
-                self.fetch_interpro_entries(accession, client),
-                self.fetch_quickgo_annotations(accession, client),
-                self.fetch_string_partners(accession, taxon_id, client),
-                self.fetch_reactome_pathways(accession, client),
+            domains, quickgo_terms, string_partners, reactome_pathways = (
+                await asyncio.gather(
+                    self.fetch_interpro_entries(accession, client),
+                    self.fetch_quickgo_annotations(accession, client),
+                    self.fetch_string_partners(accession, taxon_id, client),
+                    self.fetch_reactome_pathways(accession, client),
+                )
             )
             neighbor["domains"] = domains
             neighbor["go_terms"] = quickgo_terms
@@ -716,7 +724,10 @@ class AnnotationAggregator:
                     neighbor_go_ids.add(g["id"])
                     go_meta.setdefault(
                         g["id"],
-                        {"name": resolved_names.get(g["id"]), "aspect": g.get("aspect")},
+                        {
+                            "name": resolved_names.get(g["id"]),
+                            "aspect": g.get("aspect"),
+                        },
                     )
 
             for key in neighbor_domain_keys:
@@ -772,9 +783,7 @@ class AnnotationAggregator:
         # returned data from those where the accession resolved but lookups
         # came back empty (e.g. an unreviewed UniProt entry with no curated
         # annotations yet).
-        annotated_count = sum(
-            1 for n in per_neighbor if n["domains"] or n["go_terms"]
-        )
+        annotated_count = sum(1 for n in per_neighbor if n["domains"] or n["go_terms"])
         # A neighbor only counts here if it's BOTH annotated AND its own
         # Foldseek match probability clears min_confident_probability -
         # having curated annotations isn't enough on its own if the

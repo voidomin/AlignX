@@ -2,6 +2,12 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.7.0]
+
+### Fixed
+- **CI's `black --check .` and `ruff check .` gates were both silently broken.** `black`/`ruff` were pinned as open-ended lower bounds (`black>=23.9.0`, `ruff>=0.1.0`), so CI always installs whatever's newest at run time - and black in particular deliberately changes its "stable" formatting style over time, so the codebase had drifted out of sync with the installed version (~19 real project files needed reformatting, none of it a logic change). Separately, neither tool excluded `.agents/skills/` (vendored third-party skill scripts, not this project's code), so both gates were also failing on 2 lint issues that were never ours to fix. Reformatted the 19 real files with the currently-pinned `black`, excluded `.agents` from both tools (new `pyproject.toml` for black, extended `ruff.toml`'s existing exclude list), and pinned both `black`/`ruff` to exact versions in `requirements.txt` so this can't silently drift again.
+- Verified every CI job green locally end-to-end: `ruff check .`, `black --check .`, `pip-audit`, `pytest` (214 tests), `npm audit --audit-level=high`, `npm test` (99 tests), `npm run build`, and a full `docker build` + `/health` smoke test.
+
 ## [3.6.0]
 
 ### Fixed

@@ -276,7 +276,9 @@ async def analyze_chains(
     chain_info = {}
     for pid, (success, msg, path) in download_results.items():
         if path:
-            info = await asyncio.to_thread(coordinator.pdb_manager.analyze_structure, path)
+            info = await asyncio.to_thread(
+                coordinator.pdb_manager.analyze_structure, path
+            )
             info["source"] = PDBManager.detect_source(pid)
             chain_info[pid] = info
 
@@ -335,7 +337,9 @@ def sanitize_for_json(val: Any) -> Any:
             raw = base64.b64decode(val["bdata"])
             arr = np.frombuffer(raw, dtype=val["dtype"])
             if "shape" in val:
-                shape = tuple(int(s) for s in str(val["shape"]).replace(" ", "").split(","))
+                shape = tuple(
+                    int(s) for s in str(val["shape"]).replace(" ", "").split(",")
+                )
                 arr = arr.reshape(shape)
             return sanitize_for_json(arr)
         except Exception:
@@ -1003,7 +1007,9 @@ def get_pdf_report(
         # Reuse an existing generated report only for the default (all
         # sections) request — a cached full report must not be served back
         # for a caller that explicitly asked for a subset of sections.
-        existing_pdfs = list(res_dir.glob("mustang_report_*.pdf")) if not section_list else []
+        existing_pdfs = (
+            list(res_dir.glob("mustang_report_*.pdf")) if not section_list else []
+        )
         if existing_pdfs:
             report_path = existing_pdfs[0]
         else:
@@ -1072,7 +1078,8 @@ def get_lab_notebook(run_id: str = Query(...), session_id: Optional[str] = Query
 
         if not notebook_path.exists():
             raise HTTPException(
-                status_code=500, detail="Lab notebook file was not created successfully."
+                status_code=500,
+                detail="Lab notebook file was not created successfully.",
             )
 
         return FileResponse(

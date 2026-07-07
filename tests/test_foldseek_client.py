@@ -131,7 +131,9 @@ class TestFoldseekClient:
     async def test_fetch_results_returns_json(self, mock_get):
         mock_response = AsyncMock()
         mock_response.raise_for_status = MagicMock()
-        mock_response.json = MagicMock(return_value={"alignments": [{"target": "1ABC"}]})
+        mock_response.json = MagicMock(
+            return_value={"alignments": [{"target": "1ABC"}]}
+        )
         mock_get.return_value = mock_response
 
         client = FoldseekClient()

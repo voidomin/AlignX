@@ -821,7 +821,9 @@ class PDBManager:
                 method = "Homology model"
                 resolution = "N/A"
                 try:
-                    sm_url = f"https://swissmodel.expasy.org/repository/uniprot/{up_id}.json"
+                    sm_url = (
+                        f"https://swissmodel.expasy.org/repository/uniprot/{up_id}.json"
+                    )
                     sm_resp = await client.get(sm_url, timeout=10)
                     if sm_resp.status_code == 200:
                         sm_data = sm_resp.json()

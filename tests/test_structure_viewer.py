@@ -118,7 +118,13 @@ def test_render_ligand_view_auto_rotation_stops_itself(tmp_path, dummy_pdb_conte
     ligand_data = {
         "ligand": "RET_A_296",
         "interactions": [
-            {"residue": "ALA", "chain": "A", "resi": 12, "distance": 3.4, "type": "Hydrophobic"},
+            {
+                "residue": "ALA",
+                "chain": "A",
+                "resi": 12,
+                "distance": 3.4,
+                "type": "Hydrophobic",
+            },
         ],
     }
 

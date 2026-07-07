@@ -79,7 +79,10 @@ def test_run_discovery_pipeline_returns_parsed_hits(mock_config, tmp_path):
             "results": [
                 {
                     "alignments": [
-                        [{"target": "1ABC", "prob": 1.0}, {"target": "2XYZ", "prob": 0.9}]
+                        [
+                            {"target": "1ABC", "prob": 1.0},
+                            {"target": "2XYZ", "prob": 0.9},
+                        ]
                     ]
                 }
             ]
@@ -188,7 +191,9 @@ def test_run_discovery_pipeline_survives_annotation_failure(mock_config, tmp_pat
         assert results["annotations"] is None
 
 
-def test_run_discovery_pipeline_uses_local_backend_when_configured(mock_config, tmp_path):
+def test_run_discovery_pipeline_uses_local_backend_when_configured(
+    mock_config, tmp_path
+):
     structure_path = tmp_path / "4rlt.pdb"
     structure_path.write_text("ATOM")
     config = {
@@ -223,7 +228,9 @@ def test_run_discovery_pipeline_uses_local_backend_when_configured(mock_config, 
         mock_api_search.assert_not_called()
 
 
-def test_run_discovery_pipeline_local_backend_requires_database_dir(mock_config, tmp_path):
+def test_run_discovery_pipeline_local_backend_requires_database_dir(
+    mock_config, tmp_path
+):
     structure_path = tmp_path / "4rlt.pdb"
     structure_path.write_text("ATOM")
     config = {**mock_config, "foldseek": {"backend": "local", "local": {}}}
@@ -242,7 +249,9 @@ def test_run_discovery_pipeline_local_backend_requires_database_dir(mock_config,
         assert results is None
 
 
-def test_run_discovery_pipeline_reports_local_backend_search_failure(mock_config, tmp_path):
+def test_run_discovery_pipeline_reports_local_backend_search_failure(
+    mock_config, tmp_path
+):
     structure_path = tmp_path / "4rlt.pdb"
     structure_path.write_text("ATOM")
     config = {

@@ -132,9 +132,7 @@ class FoldseekRunner:
         wsl_str = self._convert_to_wsl_path(path)
         wsl_path = shutil.which("wsl") or WSL_EXE
         try:
-            res = subprocess.run(
-                [wsl_path, wsl_str], capture_output=True, timeout=5
-            )
+            res = subprocess.run([wsl_path, wsl_str], capture_output=True, timeout=5)
             if res.returncode != 127:
                 self.use_wsl = True
                 self.executable = wsl_str

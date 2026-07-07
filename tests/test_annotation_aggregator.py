@@ -73,26 +73,40 @@ class TestExtractEmbeddedUniprotAccession:
 
     def test_extracts_from_bfvd_target(self):
         target = "A0A7U0G8Z5_unrelaxed_rank_001_alphafold2_ptm_model_2_seed_000"
-        assert AnnotationAggregator.extract_embedded_uniprot_accession(target) == "A0A7U0G8Z5"
+        assert (
+            AnnotationAggregator.extract_embedded_uniprot_accession(target)
+            == "A0A7U0G8Z5"
+        )
 
     def test_extracts_from_bfmd_levylab_target(self):
         target = "LevyLab_Q8U2A3_V1_4_relaxed_B"
-        assert AnnotationAggregator.extract_embedded_uniprot_accession(target) == "Q8U2A3"
+        assert (
+            AnnotationAggregator.extract_embedded_uniprot_accession(target) == "Q8U2A3"
+        )
 
     def test_extracts_first_accession_from_bfmd_variant_pair_target(self):
         target = "ProtVar_P08559_Q9Y6H1_B"
-        assert AnnotationAggregator.extract_embedded_uniprot_accession(target) == "P08559"
+        assert (
+            AnnotationAggregator.extract_embedded_uniprot_accession(target) == "P08559"
+        )
 
     def test_extracts_short_form_accession(self):
         target = "R4T7Q6_unrelaxed_rank_001_alphafold2_ptm_model_2_seed_000"
-        assert AnnotationAggregator.extract_embedded_uniprot_accession(target) == "R4T7Q6"
+        assert (
+            AnnotationAggregator.extract_embedded_uniprot_accession(target) == "R4T7Q6"
+        )
 
     def test_returns_none_for_gmgc_target(self):
         target = "GMGC10.211_012_347.UNKNOWN_trun_1.pdb"
         assert AnnotationAggregator.extract_embedded_uniprot_accession(target) is None
 
     def test_returns_none_for_mgnify_esm_atlas_target(self):
-        assert AnnotationAggregator.extract_embedded_uniprot_accession("MGYP001043648370.pdb.gz") is None
+        assert (
+            AnnotationAggregator.extract_embedded_uniprot_accession(
+                "MGYP001043648370.pdb.gz"
+            )
+            is None
+        )
 
     def test_returns_none_for_uniparc_id(self):
         # UPI-prefixed UniParc IDs aren't UniProt accessions - a real hit
@@ -108,25 +122,36 @@ class TestExtractGmgcGeneId:
 
     def test_extracts_gene_id_with_unknown_name(self):
         target = "GMGC10.211_012_347.UNKNOWN_trun_1.pdb"
-        assert AnnotationAggregator.extract_gmgc_gene_id(target) == "GMGC10.211_012_347.UNKNOWN"
+        assert (
+            AnnotationAggregator.extract_gmgc_gene_id(target)
+            == "GMGC10.211_012_347.UNKNOWN"
+        )
 
     def test_extracts_gene_id_with_named_annotation(self):
         target = "GMGC10.040_893_565.PILY1_trun_2.pdb"
-        assert AnnotationAggregator.extract_gmgc_gene_id(target) == "GMGC10.040_893_565.PILY1"
+        assert (
+            AnnotationAggregator.extract_gmgc_gene_id(target)
+            == "GMGC10.040_893_565.PILY1"
+        )
 
     def test_handles_underscore_in_gene_name(self):
         # GMGC's own docs show names like "SCLAV_5304" that themselves
         # contain an underscore - must not be confused with the "_trun_N"
         # suffix and truncated early.
         target = "GMGC10.054_598_380.SCLAV_5304_trun_0.pdb"
-        assert AnnotationAggregator.extract_gmgc_gene_id(target) == "GMGC10.054_598_380.SCLAV_5304"
+        assert (
+            AnnotationAggregator.extract_gmgc_gene_id(target)
+            == "GMGC10.054_598_380.SCLAV_5304"
+        )
 
     def test_returns_none_for_non_gmgc_target(self):
         target = "AF-P01541-F1-model_v6 Denclatoxin-B"
         assert AnnotationAggregator.extract_gmgc_gene_id(target) is None
 
     def test_returns_none_for_mgnify_esm_atlas_target(self):
-        assert AnnotationAggregator.extract_gmgc_gene_id("MGYP001043648370.pdb.gz") is None
+        assert (
+            AnnotationAggregator.extract_gmgc_gene_id("MGYP001043648370.pdb.gz") is None
+        )
 
     def test_returns_none_for_empty_target(self):
         assert AnnotationAggregator.extract_gmgc_gene_id("") is None
@@ -241,7 +266,11 @@ class TestFetchInterproEntries:
         assert len(entries) == 1
         assert entries[0]["name"] == "Thionin"
         assert entries[0]["go_terms"] == [
-            {"id": "GO:0006952", "name": "defense response", "aspect": "biological_process"}
+            {
+                "id": "GO:0006952",
+                "name": "defense response",
+                "aspect": "biological_process",
+            }
         ]
 
     @pytest.mark.asyncio
@@ -255,7 +284,9 @@ class TestFetchInterproEntries:
 
     @pytest.mark.asyncio
     @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
-    async def test_second_call_for_same_accession_uses_cache_not_network(self, mock_get):
+    async def test_second_call_for_same_accession_uses_cache_not_network(
+        self, mock_get
+    ):
         """End-to-end proof that a real fetch method (not just the isolated
         _get_or_fetch wrapper) actually skips the network on a cache hit."""
         mock_get.return_value = _mock_response(
@@ -389,7 +420,11 @@ class TestFetchGmgcFeatures:
             json_data={
                 "features": {
                     "pfam": [
-                        {"domain": "Pfam:Neisseria_PilC", "evalue": 6.6e-49, "bitscore": 165.1},
+                        {
+                            "domain": "Pfam:Neisseria_PilC",
+                            "evalue": 6.6e-49,
+                            "bitscore": 165.1,
+                        },
                     ],
                     "eggnog": {"predicted_protein_name": "pilY1"},
                 }
@@ -397,10 +432,17 @@ class TestFetchGmgcFeatures:
         )
         aggregator = AnnotationAggregator()
         async with httpx.AsyncClient() as client:
-            domains = await aggregator.fetch_gmgc_features("GMGC10.040_893_565.PILY1", client)
+            domains = await aggregator.fetch_gmgc_features(
+                "GMGC10.040_893_565.PILY1", client
+            )
 
         assert domains == [
-            {"accession": "Neisseria_PilC", "name": "Neisseria_PilC", "type": "pfam", "go_terms": []},
+            {
+                "accession": "Neisseria_PilC",
+                "name": "Neisseria_PilC",
+                "type": "pfam",
+                "go_terms": [],
+            },
         ]
 
     @pytest.mark.asyncio
@@ -411,7 +453,9 @@ class TestFetchGmgcFeatures:
         )
         aggregator = AnnotationAggregator()
         async with httpx.AsyncClient() as client:
-            domains = await aggregator.fetch_gmgc_features("GMGC10.211_012_347.UNKNOWN", client)
+            domains = await aggregator.fetch_gmgc_features(
+                "GMGC10.211_012_347.UNKNOWN", client
+            )
         assert domains == []
 
     @pytest.mark.asyncio
@@ -420,7 +464,9 @@ class TestFetchGmgcFeatures:
         mock_get.return_value = _mock_response(status_code=404)
         aggregator = AnnotationAggregator()
         async with httpx.AsyncClient() as client:
-            domains = await aggregator.fetch_gmgc_features("GMGC10.nonexistent.X", client)
+            domains = await aggregator.fetch_gmgc_features(
+                "GMGC10.nonexistent.X", client
+            )
         assert domains == []
 
 
@@ -443,7 +489,9 @@ class TestResolvePdbUniprotAccession:
         )
         aggregator = AnnotationAggregator()
         async with httpx.AsyncClient() as client:
-            accession = await aggregator.resolve_pdb_uniprot_accession("1CRN", "A", client)
+            accession = await aggregator.resolve_pdb_uniprot_accession(
+                "1CRN", "A", client
+            )
         assert accession == "P01542"
 
     @pytest.mark.asyncio
@@ -460,7 +508,9 @@ class TestResolvePdbUniprotAccession:
         )
         aggregator = AnnotationAggregator()
         async with httpx.AsyncClient() as client:
-            accession = await aggregator.resolve_pdb_uniprot_accession("1ABC", "A", client)
+            accession = await aggregator.resolve_pdb_uniprot_accession(
+                "1ABC", "A", client
+            )
         assert accession is None
 
     @pytest.mark.asyncio
@@ -469,7 +519,9 @@ class TestResolvePdbUniprotAccession:
         mock_get.return_value = _mock_response(status_code=404)
         aggregator = AnnotationAggregator()
         async with httpx.AsyncClient() as client:
-            accession = await aggregator.resolve_pdb_uniprot_accession("ZZZZ", "A", client)
+            accession = await aggregator.resolve_pdb_uniprot_accession(
+                "ZZZZ", "A", client
+            )
         assert accession is None
 
     @pytest.mark.asyncio
@@ -490,8 +542,12 @@ class TestResolvePdbUniprotAccession:
         aggregator = AnnotationAggregator()
         cache = {}
         async with httpx.AsyncClient() as client:
-            first = await aggregator.resolve_pdb_uniprot_accession("1CRN", "A", client, cache)
-            second = await aggregator.resolve_pdb_uniprot_accession("1CRN", "A", client, cache)
+            first = await aggregator.resolve_pdb_uniprot_accession(
+                "1CRN", "A", client, cache
+            )
+            second = await aggregator.resolve_pdb_uniprot_accession(
+                "1CRN", "A", client, cache
+            )
 
         assert first == "P01542"
         assert second == "P01542"
@@ -555,7 +611,9 @@ class TestResolveAccession:
         with patch.object(
             aggregator, "resolve_pdb_uniprot_accession", new_callable=AsyncMock
         ) as mock_sifts:
-            hit = {"target": "A0A7U0G8Z5_unrelaxed_rank_001_alphafold2_ptm_model_2_seed_000"}
+            hit = {
+                "target": "A0A7U0G8Z5_unrelaxed_rank_001_alphafold2_ptm_model_2_seed_000"
+            }
             async with httpx.AsyncClient() as client:
                 accession = await aggregator.resolve_accession(hit, client)
             assert accession == "A0A7U0G8Z5"
@@ -607,14 +665,32 @@ class TestResolveGoTermNames:
 class TestAggregateForHits:
 
     @pytest.mark.asyncio
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_pdb_uniprot_accession")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries")
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.resolve_pdb_uniprot_accession"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries"
+    )
     async def test_aggregates_domains_and_go_terms_across_neighbors(
-        self, mock_interpro, mock_quickgo, mock_string, mock_reactome, mock_pdb_sifts, mock_resolve
+        self,
+        mock_interpro,
+        mock_quickgo,
+        mock_string,
+        mock_reactome,
+        mock_pdb_sifts,
+        mock_resolve,
     ):
         def interpro_side_effect(accession, client):
             if accession == "P01541":
@@ -678,11 +754,21 @@ class TestAggregateForHits:
         assert result["top_go_terms"][0]["neighbor_count"] == 1
 
     @pytest.mark.asyncio
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries")
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries"
+    )
     async def test_reports_string_and_reactome_coverage_separately_from_annotated_count(
         self, mock_interpro, mock_quickgo, mock_string, mock_reactome, mock_resolve
     ):
@@ -693,10 +779,17 @@ class TestAggregateForHits:
         mock_interpro.return_value = []
         mock_quickgo.return_value = []
         mock_string.return_value = [{"partner_name": "SFN", "score": 0.999}]
-        mock_reactome.return_value = [{"id": "R-HSA-111448", "name": "Activation of NOXA"}]
+        mock_reactome.return_value = [
+            {"id": "R-HSA-111448", "name": "Activation of NOXA"}
+        ]
         mock_resolve.return_value = {}
 
-        hits = [{"target": "AF-P04637-F1-model_v6 Cellular tumor antigen p53", "eval": 1e-10}]
+        hits = [
+            {
+                "target": "AF-P04637-F1-model_v6 Cellular tumor antigen p53",
+                "eval": 1e-10,
+            }
+        ]
 
         aggregator = AnnotationAggregator()
         result = await aggregator.aggregate_for_hits(hits, top_n_neighbors=10)
@@ -712,14 +805,30 @@ class TestAggregateForHits:
         ]
 
     @pytest.mark.asyncio
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names")
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names"
+    )
     @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_gmgc_features")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries")
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries"
+    )
     async def test_gmgc_hit_with_no_uniprot_accession_still_gets_annotated(
-        self, mock_interpro, mock_quickgo, mock_string, mock_reactome, mock_gmgc, mock_resolve
+        self,
+        mock_interpro,
+        mock_quickgo,
+        mock_string,
+        mock_reactome,
+        mock_gmgc,
+        mock_resolve,
     ):
         """A gmgcl_id hit has no UniProt accession at all - unlike every
         other resolvable database - so it must never reach the UniProt-based
@@ -729,11 +838,22 @@ class TestAggregateForHits:
         mock_string.return_value = []
         mock_reactome.return_value = []
         mock_gmgc.return_value = [
-            {"accession": "Neisseria_PilC", "name": "Neisseria_PilC", "type": "pfam", "go_terms": []}
+            {
+                "accession": "Neisseria_PilC",
+                "name": "Neisseria_PilC",
+                "type": "pfam",
+                "go_terms": [],
+            }
         ]
         mock_resolve.return_value = {}
 
-        hits = [{"target": "GMGC10.040_893_565.PILY1_trun_2.pdb", "eval": 1e-49, "prob": 0.9}]
+        hits = [
+            {
+                "target": "GMGC10.040_893_565.PILY1_trun_2.pdb",
+                "eval": 1e-49,
+                "prob": 0.9,
+            }
+        ]
 
         aggregator = AnnotationAggregator()
         result = await aggregator.aggregate_for_hits(hits, top_n_neighbors=10)
@@ -747,14 +867,32 @@ class TestAggregateForHits:
         assert result["top_domains"][0]["type"] == "pfam"
 
     @pytest.mark.asyncio
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_pdb_uniprot_accession")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries")
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.resolve_pdb_uniprot_accession"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries"
+    )
     async def test_unresolvable_hits_cannot_crowd_out_resolvable_ones(
-        self, mock_interpro, mock_quickgo, mock_string, mock_reactome, mock_pdb_sifts, mock_resolve
+        self,
+        mock_interpro,
+        mock_quickgo,
+        mock_string,
+        mock_reactome,
+        mock_pdb_sifts,
+        mock_resolve,
     ):
         """Regression test for a real gap found live-testing 1CRN: a wall of
         near-identical PDB100 hits (re-solved structures of the exact same
@@ -764,7 +902,14 @@ class TestAggregateForHits:
         resolvable hits first fixes this. (PDB hits are mocked as having no
         SIFTS mapping here, to isolate this from the separate PDB-resolution
         feature and its own tests.)"""
-        mock_interpro.return_value = [{"accession": "IPR001010", "name": "Thionin", "type": "family", "go_terms": []}]
+        mock_interpro.return_value = [
+            {
+                "accession": "IPR001010",
+                "name": "Thionin",
+                "type": "family",
+                "go_terms": [],
+            }
+        ]
         mock_quickgo.return_value = []
         mock_string.return_value = []
         mock_reactome.return_value = []
@@ -790,11 +935,21 @@ class TestAggregateForHits:
         assert result["top_domains"][0]["name"] == "Thionin"
 
     @pytest.mark.asyncio
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries")
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries"
+    )
     async def test_respects_top_n_neighbors_limit(
         self, mock_interpro, mock_quickgo, mock_string, mock_reactome, mock_resolve
     ):
@@ -805,7 +960,8 @@ class TestAggregateForHits:
         mock_resolve.return_value = {}
 
         hits = [
-            {"target": f"AF-P0000{i}-F1-model_v6 X", "eval": i * 0.001} for i in range(5)
+            {"target": f"AF-P0000{i}-F1-model_v6 X", "eval": i * 0.001}
+            for i in range(5)
         ]
 
         aggregator = AnnotationAggregator()
@@ -815,11 +971,21 @@ class TestAggregateForHits:
         assert mock_interpro.call_count == 2
 
     @pytest.mark.asyncio
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries")
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries"
+    )
     async def test_only_fully_annotates_the_kept_neighbors_not_the_whole_candidate_pool(
         self, mock_interpro, mock_quickgo, mock_string, mock_reactome, mock_resolve
     ):
@@ -838,7 +1004,8 @@ class TestAggregateForHits:
         # default 2x oversample, the candidate pool is 4, but only the top 2
         # resolved hits should get the full 4-API annotation treatment.
         hits = [
-            {"target": f"AF-P0000{i}-F1-model_v6 X", "eval": i * 0.001} for i in range(10)
+            {"target": f"AF-P0000{i}-F1-model_v6 X", "eval": i * 0.001}
+            for i in range(10)
         ]
 
         aggregator = AnnotationAggregator()
@@ -850,11 +1017,21 @@ class TestAggregateForHits:
         assert mock_interpro.call_count == 2  # annotation only fetched for the 2 kept
 
     @pytest.mark.asyncio
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries")
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries"
+    )
     async def test_confidence_gate_excludes_low_probability_matches_from_hypothesis(
         self, mock_interpro, mock_quickgo, mock_string, mock_reactome, mock_resolve
     ):
@@ -864,7 +1041,12 @@ class TestAggregateForHits:
         the high_confidence_top_* lists) if its own Foldseek prob also
         clears min_confident_probability."""
         mock_interpro.return_value = [
-            {"accession": "IPR001010", "name": "Thionin", "type": "family", "go_terms": []}
+            {
+                "accession": "IPR001010",
+                "name": "Thionin",
+                "type": "family",
+                "go_terms": [],
+            }
         ]
         mock_quickgo.return_value = []
         mock_string.return_value = []
@@ -872,8 +1054,16 @@ class TestAggregateForHits:
         mock_resolve.return_value = {}
 
         hits = [
-            {"target": "AF-P01541-F1-model_v6 High confidence", "eval": 1e-10, "prob": 0.95},
-            {"target": "AF-Q43226-F1-model_v6 Low confidence", "eval": 0.01, "prob": 0.2},
+            {
+                "target": "AF-P01541-F1-model_v6 High confidence",
+                "eval": 1e-10,
+                "prob": 0.95,
+            },
+            {
+                "target": "AF-Q43226-F1-model_v6 Low confidence",
+                "eval": 0.01,
+                "prob": 0.2,
+            },
         ]
 
         aggregator = AnnotationAggregator()
@@ -885,19 +1075,36 @@ class TestAggregateForHits:
         assert len(result["top_domains"]) == 1
         assert result["top_domains"][0]["neighbor_count"] == 2  # unfiltered: both count
         assert len(result["high_confidence_top_domains"]) == 1
-        assert result["high_confidence_top_domains"][0]["neighbor_count"] == 1  # filtered: only 1
+        assert (
+            result["high_confidence_top_domains"][0]["neighbor_count"] == 1
+        )  # filtered: only 1
 
     @pytest.mark.asyncio
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries")
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries"
+    )
     async def test_confidence_gate_respects_custom_threshold_from_config(
         self, mock_interpro, mock_quickgo, mock_string, mock_reactome, mock_resolve
     ):
         mock_interpro.return_value = [
-            {"accession": "IPR001010", "name": "Thionin", "type": "family", "go_terms": []}
+            {
+                "accession": "IPR001010",
+                "name": "Thionin",
+                "type": "family",
+                "go_terms": [],
+            }
         ]
         mock_quickgo.return_value = []
         mock_string.return_value = []
@@ -909,28 +1116,47 @@ class TestAggregateForHits:
         strict_aggregator = AnnotationAggregator(
             config={"annotation": {"min_confident_probability": 0.9}}
         )
-        strict_result = await strict_aggregator.aggregate_for_hits(hits, top_n_neighbors=10)
+        strict_result = await strict_aggregator.aggregate_for_hits(
+            hits, top_n_neighbors=10
+        )
         assert strict_result["high_confidence_annotated_count"] == 0
 
         lenient_aggregator = AnnotationAggregator(
             config={"annotation": {"min_confident_probability": 0.5}}
         )
-        lenient_result = await lenient_aggregator.aggregate_for_hits(hits, top_n_neighbors=10)
+        lenient_result = await lenient_aggregator.aggregate_for_hits(
+            hits, top_n_neighbors=10
+        )
         assert lenient_result["high_confidence_annotated_count"] == 1
 
     @pytest.mark.asyncio
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations")
-    @patch("src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries")
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.resolve_go_term_names"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_reactome_pathways"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_string_partners"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_quickgo_annotations"
+    )
+    @patch(
+        "src.backend.annotation_aggregator.AnnotationAggregator.fetch_interpro_entries"
+    )
     async def test_confidence_gate_treats_missing_prob_as_unconfident(
         self, mock_interpro, mock_quickgo, mock_string, mock_reactome, mock_resolve
     ):
         """A hit with no prob field at all (e.g. a malformed/non-standard
         Foldseek response) must not silently count as confident."""
         mock_interpro.return_value = [
-            {"accession": "IPR001010", "name": "Thionin", "type": "family", "go_terms": []}
+            {
+                "accession": "IPR001010",
+                "name": "Thionin",
+                "type": "family",
+                "go_terms": [],
+            }
         ]
         mock_quickgo.return_value = []
         mock_string.return_value = []

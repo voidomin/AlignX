@@ -67,7 +67,9 @@ class TestPDBManager:
 
     @pytest.mark.asyncio
     @patch("src.backend.pdb_manager.httpx.AsyncClient.get")
-    async def test_download_swissmodel_success(self, mock_get, mock_config, temp_workspace):
+    async def test_download_swissmodel_success(
+        self, mock_get, mock_config, temp_workspace
+    ):
         """SWISS-MODEL downloads must hit the UniProt-keyed repository URL
         and save real PDB bytes directly (no .cif conversion, unlike AlphaFold)."""
         mock_response = AsyncMock()
@@ -84,11 +86,15 @@ class TestPDBManager:
         assert path.name == "sm-p69905.pdb"
         assert path.read_bytes() == b"ATOM SWISSMODEL"
         called_url = mock_get.call_args[0][0]
-        assert called_url == "https://swissmodel.expasy.org/repository/uniprot/P69905.pdb"
+        assert (
+            called_url == "https://swissmodel.expasy.org/repository/uniprot/P69905.pdb"
+        )
 
     @pytest.mark.asyncio
     @patch("src.backend.pdb_manager.httpx.AsyncClient.get")
-    async def test_download_esmfold_success(self, mock_get, mock_config, temp_workspace):
+    async def test_download_esmfold_success(
+        self, mock_get, mock_config, temp_workspace
+    ):
         """ESM Atlas downloads must hit the MGYP-keyed fetchPredictedStructure
         URL and save real PDB bytes directly."""
         mock_response = AsyncMock()
@@ -105,11 +111,16 @@ class TestPDBManager:
         assert path.name == "esm-mgyp002537940442.pdb"
         assert path.read_bytes() == b"ATOM ESMFOLD"
         called_url = mock_get.call_args[0][0]
-        assert called_url == "https://api.esmatlas.com/fetchPredictedStructure/MGYP002537940442"
+        assert (
+            called_url
+            == "https://api.esmatlas.com/fetchPredictedStructure/MGYP002537940442"
+        )
 
     @pytest.mark.asyncio
     @patch("src.backend.pdb_manager.httpx.AsyncClient.get")
-    async def test_download_swissmodel_not_found(self, mock_get, mock_config, temp_workspace):
+    async def test_download_swissmodel_not_found(
+        self, mock_get, mock_config, temp_workspace
+    ):
         """A 404 from SWISS-MODEL must be reported as a clean failure, not a crash."""
         mock_response = AsyncMock()
         mock_response.status_code = 404
@@ -153,7 +164,9 @@ class TestPDBManager:
         assert cleaned_path.exists()
         assert cleaned_path.parent == temp_workspace["cleaned"]
 
-    def test_clean_pdb_prunes_low_plddt_for_alphafold_0_to_100_scale(self, mock_config, temp_workspace):
+    def test_clean_pdb_prunes_low_plddt_for_alphafold_0_to_100_scale(
+        self, mock_config, temp_workspace
+    ):
         """AlphaFold structures encode per-residue pLDDT in the B-factor
         column on a 0-100 scale, so low-confidence residues (<50) should be
         pruned during cleaning."""
@@ -177,7 +190,9 @@ class TestPDBManager:
         assert "ALA" in cleaned_content
         assert "GLY" not in cleaned_content  # pLDDT 20 < 50, pruned
 
-    def test_clean_pdb_detects_0_to_1_plddt_scale_for_esmfold(self, mock_config, temp_workspace):
+    def test_clean_pdb_detects_0_to_1_plddt_scale_for_esmfold(
+        self, mock_config, temp_workspace
+    ):
         """Regression test: ESM Atlas structures write per-residue confidence
         as a 0-1 fraction, not AlphaFold's 0-100 scale (e.g. a real ESMFold
         structure's max B-factor was 0.96). Naively comparing that against

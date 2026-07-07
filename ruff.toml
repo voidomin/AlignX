@@ -1,4 +1,4 @@
-exclude = [".venv", "web-frontend", "static", "data", "results"]
+exclude = [".venv", "web-frontend", "static", "data", "results", ".agents"]
 
 [lint]
 # E402: several modules intentionally set sys.path / matplotlib backend before

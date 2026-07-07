@@ -110,7 +110,9 @@ class DiscoveryReportExporter:
             html = template.render(**context)
 
             tmp_dir = Path(tempfile.mkdtemp(prefix="discover_report_"))
-            output_path = tmp_dir / f"discover_report_{results.get('pdb_id', 'run')}.html"
+            output_path = (
+                tmp_dir / f"discover_report_{results.get('pdb_id', 'run')}.html"
+            )
             with open(output_path, "w", encoding="utf-8") as f:
                 f.write(html)
             return output_path

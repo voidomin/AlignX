@@ -106,9 +106,7 @@ class FoldseekConfig(BaseModel):
     timeout: int = Field(30, ge=1)
     poll_interval_seconds: int = Field(10, ge=1)
     max_poll_attempts: int = Field(60, ge=1)
-    default_databases: List[str] = Field(
-        default_factory=lambda: ["pdb100", "afdb50"]
-    )
+    default_databases: List[str] = Field(default_factory=lambda: ["pdb100", "afdb50"])
     local: FoldseekLocalConfig = Field(default_factory=FoldseekLocalConfig)
 
     @field_validator("backend")

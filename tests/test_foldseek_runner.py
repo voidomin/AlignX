@@ -17,7 +17,10 @@ def _mock_completed(returncode=0, stdout="", stderr=""):
 class TestCheckInstallation:
 
     def test_uses_configured_native_binary_path(self, mock_config):
-        config = {**mock_config, "foldseek": {"local": {"binary_path": "/usr/bin/foldseek"}}}
+        config = {
+            **mock_config,
+            "foldseek": {"local": {"binary_path": "/usr/bin/foldseek"}},
+        }
         runner = FoldseekRunner(config)
         runner.is_windows = False
         runner.is_linux = True
@@ -36,7 +39,8 @@ class TestCheckInstallation:
         runner.is_windows = False
 
         with patch(
-            "src.backend.foldseek_runner.shutil.which", return_value="/usr/local/bin/foldseek"
+            "src.backend.foldseek_runner.shutil.which",
+            return_value="/usr/local/bin/foldseek",
         ), patch("src.backend.foldseek_runner.subprocess.run") as mock_run:
             mock_run.return_value = _mock_completed()
             success, msg = runner.check_installation()
@@ -49,9 +53,9 @@ class TestCheckInstallation:
         runner = FoldseekRunner(config)
         runner.is_windows = True
 
-        with patch("src.backend.foldseek_runner.shutil.which", return_value=None), patch(
-            "src.backend.foldseek_runner.subprocess.run"
-        ) as mock_run:
+        with patch(
+            "src.backend.foldseek_runner.shutil.which", return_value=None
+        ), patch("src.backend.foldseek_runner.subprocess.run") as mock_run:
             mock_run.return_value = _mock_completed(
                 returncode=0, stdout="/root/foldseek-local/foldseek/bin/foldseek\n"
             )
@@ -73,7 +77,10 @@ class TestCheckInstallation:
         assert "not found" in msg.lower()
 
     def test_caches_installation_check_across_instances(self, mock_config):
-        config = {**mock_config, "foldseek": {"local": {"binary_path": "/usr/bin/foldseek"}}}
+        config = {
+            **mock_config,
+            "foldseek": {"local": {"binary_path": "/usr/bin/foldseek"}},
+        }
 
         with patch("src.backend.foldseek_runner.subprocess.run") as mock_run:
             mock_run.return_value = _mock_completed()

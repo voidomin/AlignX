@@ -43,9 +43,7 @@ class TestApiKeyAuth:
 
     def test_results_passes_through_with_valid_query_param(self):
         with patch.object(api_module, "_ALIGNX_API_KEY", "secret-key"):
-            response = client.get(
-                "/results/some_run/alignment.pdb?api_key=secret-key"
-            )
+            response = client.get("/results/some_run/alignment.pdb?api_key=secret-key")
         assert response.status_code == 404
 
     def test_results_open_when_no_api_key_configured(self):
@@ -241,8 +239,20 @@ def test_interactions_endpoint_adds_aligned_resi_when_run_id_given():
         mock_analyzer.calculate_interactions.return_value = {
             "ligand": "RET_A_296",
             "interactions": [
-                {"resn": "TYR", "chain": "A", "resi": 191, "distance": 3.2, "type": "H-Bond"},
-                {"resn": "LYS", "chain": "A", "resi": 999, "distance": 4.1, "type": "Polar"},
+                {
+                    "resn": "TYR",
+                    "chain": "A",
+                    "resi": 191,
+                    "distance": 3.2,
+                    "type": "H-Bond",
+                },
+                {
+                    "resn": "LYS",
+                    "chain": "A",
+                    "resi": 999,
+                    "distance": 4.1,
+                    "type": "Polar",
+                },
             ],
         }
         mock_db.get_run.return_value = {
@@ -547,7 +557,9 @@ def _discover_run(run_id="discover_123", results_overrides=None):
         "source": "pdb",
         "databases_searched": ["pdb100"],
         "hit_count": 1,
-        "hits": [{"target": "AF-P01541-F1-model_v6", "prob": 1.0, "eval": 1e-5, "seqId": 50}],
+        "hits": [
+            {"target": "AF-P01541-F1-model_v6", "prob": 1.0, "eval": 1e-5, "seqId": 50}
+        ],
         "annotations": {
             "neighbors_considered": 1,
             "total_hit_count": 1,
@@ -730,7 +742,9 @@ async def test_discover_job_execution_completes_and_is_pollable():
                 "hits": [{"target": "1ABC", "prob": 0.99}],
             },
         )
-        await api_module._execute_discovery_job(job_id, pdb_id="4RLT", databases=None, session_id=None)
+        await api_module._execute_discovery_job(
+            job_id, pdb_id="4RLT", databases=None, session_id=None
+        )
 
     poll = client.get(f"/api/jobs/{job_id}")
     assert poll.json()["status"] == "completed"
@@ -750,7 +764,9 @@ async def test_discover_job_execution_surfaces_pipeline_failure():
         "src.backend.discovery_coordinator.DiscoveryCoordinator.run_discovery_pipeline"
     ) as mock_run:
         mock_run.return_value = (False, "Foldseek search failed: timed out", None)
-        await api_module._execute_discovery_job(job_id, pdb_id="4RLT", databases=None, session_id=None)
+        await api_module._execute_discovery_job(
+            job_id, pdb_id="4RLT", databases=None, session_id=None
+        )
 
     poll = client.get(f"/api/jobs/{job_id}")
     assert poll.json()["status"] == "failed"

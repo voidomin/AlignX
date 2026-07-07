@@ -35,7 +35,9 @@ class TestMustangRunner:
         assert found is False
 
     @patch("shutil.which")
-    def test_check_installation_is_cached_across_instances(self, mock_which, mock_config):
+    def test_check_installation_is_cached_across_instances(
+        self, mock_which, mock_config
+    ):
         """check_installation() shells out (directly, or via a slow WSL
         subprocess) - a fresh MustangRunner is created per API request, so
         this must only actually run once per process, not once per request."""

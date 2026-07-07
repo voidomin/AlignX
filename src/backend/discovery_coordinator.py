@@ -80,7 +80,9 @@ class DiscoveryCoordinator:
                 success, msg, hits = self._search_local(structure_path)
                 if not success:
                     return False, msg, None
-                databases = [f"local:{self.config['foldseek']['local']['database_dir']}"]
+                databases = [
+                    f"local:{self.config['foldseek']['local']['database_dir']}"
+                ]
             else:
                 try:
                     raw_result = asyncio.run(
@@ -97,9 +99,7 @@ class DiscoveryCoordinator:
             annotations = None
             if hits:
                 try:
-                    top_n = self.config.get("annotation", {}).get(
-                        "top_n_neighbors", 10
-                    )
+                    top_n = self.config.get("annotation", {}).get("top_n_neighbors", 10)
                     annotations = asyncio.run(
                         self.annotation_aggregator.aggregate_for_hits(
                             hits, top_n_neighbors=top_n
@@ -156,8 +156,8 @@ class DiscoveryCoordinator:
         FoldseekRunner's module docstring for what "local" does and doesn't
         cover (proven against a small test database; provisioning a
         production-scale database is a separate deployment step)."""
-        database_dir = self.config.get("foldseek", {}).get("local", {}).get(
-            "database_dir"
+        database_dir = (
+            self.config.get("foldseek", {}).get("local", {}).get("database_dir")
         )
         if not database_dir:
             return (

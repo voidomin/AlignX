@@ -8,8 +8,18 @@ def _make_results(**overrides):
         "databases_searched": ["pdb100", "afdb50"],
         "hit_count": 2,
         "hits": [
-            {"target": "AF-P01541-F1-model_v6 Denclatoxin-B", "prob": 1.0, "eval": 2.168e-05, "seqId": 50},
-            {"target": "AF-Q43226-F1-model_v6 Thionin class 1", "prob": 1.0, "eval": 0.00164, "seqId": 46.6},
+            {
+                "target": "AF-P01541-F1-model_v6 Denclatoxin-B",
+                "prob": 1.0,
+                "eval": 2.168e-05,
+                "seqId": 50,
+            },
+            {
+                "target": "AF-Q43226-F1-model_v6 Thionin class 1",
+                "prob": 1.0,
+                "eval": 0.00164,
+                "seqId": 46.6,
+            },
         ],
         "annotations": {
             "neighbors_considered": 2,
@@ -24,7 +34,12 @@ def _make_results(**overrides):
                 {"name": "Thionin", "type": "family", "neighbor_count": 2},
             ],
             "top_go_terms": [
-                {"id": "GO:0006952", "name": "defense response", "aspect": "biological_process", "neighbor_count": 2},
+                {
+                    "id": "GO:0006952",
+                    "name": "defense response",
+                    "aspect": "biological_process",
+                    "neighbor_count": 2,
+                },
             ],
             "per_neighbor": [
                 {

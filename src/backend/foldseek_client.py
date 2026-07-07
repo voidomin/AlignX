@@ -86,8 +86,12 @@ class FoldseekClient:
         foldseek_cfg = config.get("foldseek", {})
         self.base_url = foldseek_cfg.get("base_url", FOLDSEEK_BASE_URL)
         self.timeout = foldseek_cfg.get("timeout", timeout)
-        self.poll_interval = foldseek_cfg.get("poll_interval_seconds", POLL_INTERVAL_SECONDS)
-        self.max_poll_attempts = foldseek_cfg.get("max_poll_attempts", MAX_POLL_ATTEMPTS)
+        self.poll_interval = foldseek_cfg.get(
+            "poll_interval_seconds", POLL_INTERVAL_SECONDS
+        )
+        self.max_poll_attempts = foldseek_cfg.get(
+            "max_poll_attempts", MAX_POLL_ATTEMPTS
+        )
 
     @staticmethod
     def validate_databases(databases: List[str]) -> List[str]:
@@ -127,7 +131,9 @@ class FoldseekClient:
             ticket_id = payload.get("id")
             if not ticket_id:
                 raise FoldseekError(f"Foldseek did not return a ticket ID: {payload}")
-            logger.info(f"Foldseek ticket submitted: {ticket_id} (databases={databases})")
+            logger.info(
+                f"Foldseek ticket submitted: {ticket_id} (databases={databases})"
+            )
             return ticket_id
         except httpx.HTTPError as e:
             raise FoldseekError(f"Foldseek submission failed: {e}") from e
@@ -153,7 +159,9 @@ class FoldseekClient:
                 if status == "COMPLETE":
                     return
                 if status == "ERROR":
-                    raise FoldseekError(f"Foldseek job {ticket_id} failed on the server")
+                    raise FoldseekError(
+                        f"Foldseek job {ticket_id} failed on the server"
+                    )
 
                 await asyncio.sleep(self.poll_interval)
 
@@ -191,7 +199,9 @@ class FoldseekClient:
     ) -> Dict[str, Any]:
         """End-to-end: submit a structure, wait for completion, return raw hits."""
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            ticket_id = await self.submit_search(structure_path, databases, client=client)
+            ticket_id = await self.submit_search(
+                structure_path, databases, client=client
+            )
             await self.poll_until_complete(ticket_id, client=client)
             return await self.fetch_results(ticket_id, client=client)
 
