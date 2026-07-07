@@ -305,7 +305,7 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
         )
 
         # Find 100% conserved columns (using conservation from sequence_viewer)
-        conserved_cols = [i for i, val in enumerate(conservation) if val == 1.0]
+        conserved_cols = [i for i, val in enumerate(conservation) if val >= 1.0]
 
         if conserved_cols:
             n_total = len(conservation)

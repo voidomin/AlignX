@@ -112,7 +112,7 @@ class SequenceViewer:
                 # Coloring logic
                 if char == "-":
                     bg_color = self.colors["gap"]
-                elif score == 1.0:  # Identical column
+                elif score >= 1.0:  # Identical column
                     bg_color = self.colors["identity"]
                 elif score > 0.7:  # High similarity
                     bg_color = self.colors["high_similarity"]
