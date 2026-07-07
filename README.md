@@ -146,6 +146,7 @@ Full step-by-step verification protocol (setup checks, scientific metrics, API s
 
 | Doc | Covers |
 |---|---|
+| [docs/FEATURES.md](docs/FEATURES.md) | Full feature reference — what StructScope does, how to use each capability, SPA vs. Streamlit availability |
 | [docs/setup/WINDOWS_SETUP.md](docs/setup/WINDOWS_SETUP.md) | Installing Mustang, Phylip, PyMOL on Windows (WSL or Bio3D) |
 | [docs/deployment/DEPLOYMENT.md](docs/deployment/DEPLOYMENT.md) | Docker deployment (SPA + FastAPI) + Streamlit Cloud/Hugging Face deployment |
 | [docs/testing/VERIFICATION.md](docs/testing/VERIFICATION.md) | Full verification protocol: setup checks, pytest, Vitest, API smoke tests, UI flow |
