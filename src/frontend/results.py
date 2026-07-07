@@ -1,4 +1,4 @@
-﻿import streamlit as st
+import streamlit as st
 from typing import Optional, Dict, Any, List
 from src.frontend.tabs import (
     rmsd,
