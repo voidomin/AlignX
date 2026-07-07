@@ -146,7 +146,7 @@ class DiscoveryCoordinator:
             return True, "Discovery completed successfully", results
 
         except Exception as e:
-            logger.error(f"Discovery pipeline error: {e}", exc_info=True)
+            logger.exception("Discovery pipeline error")
             return False, str(e), None
 
     def _search_local(

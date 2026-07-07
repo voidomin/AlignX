@@ -90,8 +90,8 @@ class SystemManager:
                             shutil.rmtree(run_dir)
                             deleted.append(f"{session_dir.name}/{run_dir.name}")
                             logger.info(f"Cleaned up old run directory: {run_dir.name}")
-                        except Exception as e:
-                            logger.error(f"Failed to delete {run_dir.name}: {e}")
+                        except Exception:
+                            logger.exception(f"Failed to delete {run_dir.name}")
 
             # Optional: if session dir is now empty, delete it
             if not list(session_dir.iterdir()):
@@ -118,6 +118,6 @@ class SystemManager:
             total_proteins = sum(len(run.get("pdb_ids", [])) for run in runs)
 
             return {"total_runs": total_runs, "total_proteins": total_proteins}
-        except Exception as e:
-            logger.error(f"Failed to get aggregate stats: {e}")
+        except Exception:
+            logger.exception("Failed to get aggregate stats")
             return {"total_runs": 0, "total_proteins": 0}

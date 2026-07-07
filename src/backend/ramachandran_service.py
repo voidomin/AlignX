@@ -61,8 +61,8 @@ class RamachandranService:
                         results[chain.id] = pd.DataFrame(angles)
 
             return results
-        except Exception as e:
-            logger.error(f"Failed to calculate torsion angles for {pdb_file}: {e}")
+        except Exception:
+            logger.exception(f"Failed to calculate torsion angles for {pdb_file}")
             return {}
 
     def _classify_region(self, phi: Optional[float], psi: Optional[float]) -> str:

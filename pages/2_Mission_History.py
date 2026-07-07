@@ -86,7 +86,7 @@ def render_history_page():
             # Find run details
             run_details = next((r for r in runs if r["id"] == selected_run_id), None)
 
-            c1, c2, c3 = st.columns(3)
+            c1, c2, _ = st.columns(3)
             with c1:
                 st.metric("Proteins", len(run_details["pdb_ids"]))
             with c2:

@@ -27,7 +27,7 @@ class TestCheckInstallation:
 
         with patch("src.backend.foldseek_runner.subprocess.run") as mock_run:
             mock_run.return_value = _mock_completed()
-            success, msg = runner.check_installation()
+            success, _ = runner.check_installation()
 
         assert success is True
         assert runner.executable == "/usr/bin/foldseek"
@@ -43,7 +43,7 @@ class TestCheckInstallation:
             return_value="/usr/local/bin/foldseek",
         ), patch("src.backend.foldseek_runner.subprocess.run") as mock_run:
             mock_run.return_value = _mock_completed()
-            success, msg = runner.check_installation()
+            success, _ = runner.check_installation()
 
         assert success is True
         assert runner.executable == "/usr/local/bin/foldseek"
@@ -59,7 +59,7 @@ class TestCheckInstallation:
             mock_run.return_value = _mock_completed(
                 returncode=0, stdout="/root/foldseek-local/foldseek/bin/foldseek\n"
             )
-            success, msg = runner.check_installation()
+            success, _ = runner.check_installation()
 
         assert success is True
         assert runner.use_wsl is True
@@ -98,7 +98,7 @@ class TestSearchAgainstDirectory:
         runner.is_windows = False
 
         with patch("src.backend.foldseek_runner.shutil.which", return_value=None):
-            success, msg, hits = runner.search_against_directory(
+            success, _, hits = runner.search_against_directory(
                 tmp_path / "query.pdb", tmp_path / "db", tmp_path / "tmp"
             )
 
@@ -126,7 +126,7 @@ class TestSearchAgainstDirectory:
             return _mock_completed()
 
         with patch("src.backend.foldseek_runner.subprocess.run", side_effect=fake_run):
-            success, msg, hits = runner.search_against_directory(
+            success, _, hits = runner.search_against_directory(
                 tmp_path / "query.pdb", tmp_path / "db", tmp_path / "tmp"
             )
 
@@ -180,7 +180,7 @@ class TestSearchAgainstDirectory:
             return _mock_completed()
 
         with patch("src.backend.foldseek_runner.subprocess.run", side_effect=fake_run):
-            success, msg, hits = runner.search_against_directory(
+            success, _, hits = runner.search_against_directory(
                 tmp_path / "query.pdb", tmp_path / "db", tmp_path / "tmp"
             )
 

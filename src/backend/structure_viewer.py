@@ -8,6 +8,8 @@ from src.utils.logger import get_logger
 
 logger = get_logger()
 
+DEFAULT_STYLE_MODE = "Neon Pro"
+
 
 def render_3d_structure(
     pdb_file: Path,
@@ -18,7 +20,7 @@ def render_3d_structure(
     highlight_residues=None,
     visible_chains=None,
     color_by_plddt: bool = False,
-    style_mode: str = "Neon Pro",
+    style_mode: str = DEFAULT_STYLE_MODE,
     residue_colors=None,
 ) -> Optional[str]:
     """
@@ -246,8 +248,8 @@ def render_3d_structure(
 
         return html
 
-    except Exception as e:
-        logger.error(f"Failed to generate 3D viewer: {str(e)}")
+    except Exception:
+        logger.exception("Failed to generate 3D viewer")
         return None
 
 
@@ -378,8 +380,8 @@ def render_ligand_view(
         </html>
         """
         return html
-    except Exception as e:
-        logger.error(f"Failed to render ligand view: {e}")
+    except Exception:
+        logger.exception("Failed to render ligand view")
         return None
 
 
@@ -392,7 +394,7 @@ def show_structure_in_streamlit(
     highlight_residues=None,
     visible_chains=None,
     color_by_plddt: bool = False,
-    style_mode: str = "Neon Pro",
+    style_mode: str = DEFAULT_STYLE_MODE,
     residue_colors=None,
 ):
     """
@@ -434,7 +436,7 @@ def render_synced_grid(
     pdb_file: Path,
     members: list,
     highlight_residues=None,
-    style_mode: str = "Neon Pro",
+    style_mode: str = DEFAULT_STYLE_MODE,
     residue_colors=None,
     height: int = 250,
 ) -> Optional[str]:
@@ -455,7 +457,7 @@ def render_synced_grid(
         viewers_js = []
         html_items = []
 
-        neonColors = [
+        neon_colors = [
             "#FF00FF",
             "#00FFFF",
             "#00FF00",
@@ -470,7 +472,7 @@ def render_synced_grid(
             "#1E90FF",
         ]
 
-        spectralColors = [
+        spectral_colors = [
             "#e6194B",
             "#3cb44b",
             "#ffe119",
@@ -503,9 +505,9 @@ def render_synced_grid(
             this_res_colors = residue_colors.get(chain_id, {}) if residue_colors else {}
 
             color = (
-                spectralColors[idx % len(spectralColors)]
+                spectral_colors[idx % len(spectral_colors)]
                 if style_mode == "Scientific Spectral"
-                else neonColors[idx % len(neonColors)]
+                else neon_colors[idx % len(neon_colors)]
             )
 
             viewer_init = f"""
@@ -686,8 +688,8 @@ def render_synced_grid(
         </html>
         """
         return html
-    except Exception as e:
-        logger.error(f"Failed to generate synced grid 3D viewer: {str(e)}")
+    except Exception:
+        logger.exception("Failed to generate synced grid 3D viewer")
         return None
 
 
@@ -695,7 +697,7 @@ def show_synced_grid_in_streamlit(
     pdb_file: Path,
     members: list,
     highlight_residues=None,
-    style_mode: str = "Neon Pro",
+    style_mode: str = DEFAULT_STYLE_MODE,
     residue_colors=None,
     height: int = 250,
 ):

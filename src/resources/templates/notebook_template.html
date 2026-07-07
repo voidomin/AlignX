@@ -30,10 +30,10 @@
 
     <!-- 3Dmol JS: Embedded or CDN Fallback. The library source is held as
     inert text (type="text/plain", never parsed/executed by the browser as
-    a script) so an accidental "</script>" substring inside the minified
-    source can't prematurely close this tag - it's then run by creating a
-    real <script> element from that text, which is how browsers actually
-    execute injected script content (no eval() needed). -->
+    a script) so an accidental closing-script-tag substring inside the
+    minified source can't prematurely end this element - it's then run by
+    creating a real script element from that text, which is how browsers
+    actually execute injected script content (no eval() needed). -->
     {% if dmol_js %}
     <script id="embedded-3dmol" type="text/plain">{{ dmol_js | safe }}</script>
     <script>

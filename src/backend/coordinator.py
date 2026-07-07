@@ -271,7 +271,7 @@ class AnalysisCoordinator:
             return True, "Analysis completed successfully", results
 
         except Exception as e:
-            logger.error(f"Pipeline error: {e}", exc_info=True)
+            logger.exception("Pipeline error")
             return False, str(e), None
 
     def process_result_directory(
@@ -338,7 +338,7 @@ class AnalysisCoordinator:
                         sequences
                     )
                     # Add aligned_length and seq_similarity
-                    stats["aligned_length"] = len(list(sequences.values())[0])
+                    stats["aligned_length"] = len(next(iter(sequences.values())))
                     similar_cols = sum(1 for c in conservation if c > 0.5)
                     stats["seq_similarity"] = (similar_cols / len(conservation)) * 100
 
@@ -381,6 +381,6 @@ class AnalysisCoordinator:
                 "torsion_data": torsion_data,
                 "ramachandran_stats": ramachandran_stats,
             }
-        except Exception as e:
-            logger.error(f"Data processing failed: {e}")
+        except Exception:
+            logger.exception("Data processing failed")
             return None

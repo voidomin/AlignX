@@ -54,7 +54,7 @@ def calculate_rmsd_from_superposition(
                     matrix[i, j] = matrix[j, i] = rmsd
         return pd.DataFrame(matrix)
     except Exception as e:
-        logger.error(f"Manual RMSD calc failed: {e}")
+        logger.exception("Manual RMSD calc failed")
         return None
 
 
@@ -123,8 +123,8 @@ def parse_mustang_log_for_rmsd(log_file: Path) -> Optional[pd.DataFrame]:
 
         return None
 
-    except Exception as e:
-        logger.error(f"Failed to parse Mustang log: {e}")
+    except Exception:
+        logger.exception("Failed to parse Mustang log")
         return None
 
 
@@ -220,8 +220,8 @@ def parse_rms_rot_file(
         df = pd.DataFrame(matrix, index=pdb_ids, columns=pdb_ids)
         return df
 
-    except Exception as e:
-        logger.error(f"Failed to parse .rms_rot file: {e}")
+    except Exception:
+        logger.exception("Failed to parse .rms_rot file")
         return None
 
 
@@ -333,11 +333,8 @@ def calculate_structure_rmsd(
         df = pd.DataFrame(matrix, index=names, columns=names)
         return df
 
-    except Exception as e:
-        logger.error(f"PyRMSD Error: {e}")
-        import traceback
-
-        logger.error(traceback.format_exc())
+    except Exception:
+        logger.exception("PyRMSD Error")
         return None
 
 
@@ -481,6 +478,6 @@ def calculate_alignment_quality_metrics(
 
         return results
 
-    except Exception as e:
-        logger.error(f"Failed to calculate quality metrics: {e}")
+    except Exception:
+        logger.exception("Failed to calculate quality metrics")
         return None

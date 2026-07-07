@@ -80,8 +80,8 @@ class HistoryDatabase:
                 except sqlite3.OperationalError:
                     pass  # Column already exists
                 conn.commit()
-        except Exception as e:
-            logger.error(f"Failed to initialize database: {e}")
+        except Exception:
+            logger.exception("Failed to initialize database")
 
     def save_run(
         self,
@@ -138,8 +138,8 @@ class HistoryDatabase:
                 f"(session: {sanitize_for_log(session_id)})"
             )
             return True
-        except Exception as e:
-            logger.error(f"Failed to save run {sanitize_for_log(run_id)}: {e}")
+        except Exception:
+            logger.exception(f"Failed to save run {sanitize_for_log(run_id)}")
             return False
 
     def get_all_runs(
@@ -187,8 +187,8 @@ class HistoryDatabase:
                     )
                     runs.append(run)
                 return runs
-        except Exception as e:
-            logger.error(f"Failed to retrieve runs: {e}")
+        except Exception:
+            logger.exception("Failed to retrieve runs")
             return []
 
     def count_runs(self, session_id: str = None) -> int:
@@ -207,8 +207,8 @@ class HistoryDatabase:
                 else:
                     cursor.execute("SELECT COUNT(*) FROM runs")
                 return cursor.fetchone()[0]
-        except Exception as e:
-            logger.error(f"Failed to count runs: {e}")
+        except Exception:
+            logger.exception("Failed to count runs")
             return 0
 
     def get_aggregate_stats(self, session_id: str = None) -> Dict[str, Any]:
@@ -244,8 +244,8 @@ class HistoryDatabase:
                     )
                     return run
                 return None
-        except Exception as e:
-            logger.error(f"Failed to retrieve run {sanitize_for_log(run_id)}: {e}")
+        except Exception:
+            logger.exception(f"Failed to retrieve run {sanitize_for_log(run_id)}")
             return None
 
     def delete_run(self, run_id: str) -> bool:
@@ -256,8 +256,8 @@ class HistoryDatabase:
                 cursor.execute("DELETE FROM runs WHERE id = ?", (run_id,))
                 conn.commit()
             return True
-        except Exception as e:
-            logger.error(f"Failed to delete run {sanitize_for_log(run_id)}: {e}")
+        except Exception:
+            logger.exception(f"Failed to delete run {sanitize_for_log(run_id)}")
             return False
 
     def get_latest_run(self, session_id: str = None) -> Optional[Dict[str, Any]]:
@@ -292,8 +292,8 @@ class HistoryDatabase:
                     )
                     return run
                 return None
-        except Exception as e:
-            logger.error(f"Failed to retrieve latest run: {e}")
+        except Exception:
+            logger.exception("Failed to retrieve latest run")
             return None
 
     def clear_all_runs(self) -> bool:
@@ -304,8 +304,8 @@ class HistoryDatabase:
                 cursor.execute("DELETE FROM runs")
                 conn.commit()
             return True
-        except Exception as e:
-            logger.error(f"Failed to clear all runs: {e}")
+        except Exception:
+            logger.exception("Failed to clear all runs")
             return False
 
     # -------------------------------------------------------------------------
@@ -327,8 +327,8 @@ class HistoryDatabase:
                 )
                 conn.commit()
             return True
-        except Exception as e:
-            logger.error(f"Failed to register cache item {item_id}: {e}")
+        except Exception:
+            logger.exception(f"Failed to register cache item {item_id}")
             return False
 
     def update_cache_access(self, item_id: str) -> bool:
@@ -343,8 +343,8 @@ class HistoryDatabase:
                 )
                 conn.commit()
             return True
-        except Exception as e:
-            logger.error(f"Failed to update cache access for {item_id}: {e}")
+        except Exception:
+            logger.exception(f"Failed to update cache access for {item_id}")
             return False
 
     def get_oldest_cache_items(self) -> List[Dict[str, Any]]:
@@ -356,8 +356,8 @@ class HistoryDatabase:
                 cursor.execute("SELECT * FROM pdb_cache ORDER BY last_accessed ASC")
                 rows = cursor.fetchall()
                 return [dict(row) for row in rows]
-        except Exception as e:
-            logger.error(f"Failed to retrieve oldest cache items: {e}")
+        except Exception:
+            logger.exception("Failed to retrieve oldest cache items")
             return []
 
     def remove_cache_item(self, item_id: str) -> bool:
@@ -368,8 +368,8 @@ class HistoryDatabase:
                 cursor.execute("DELETE FROM pdb_cache WHERE id = ?", (item_id,))
                 conn.commit()
             return True
-        except Exception as e:
-            logger.error(f"Failed to remove cache item {item_id}: {e}")
+        except Exception:
+            logger.exception(f"Failed to remove cache item {item_id}")
             return False
 
     def get_total_cache_size(self) -> int:
@@ -380,8 +380,8 @@ class HistoryDatabase:
                 cursor.execute("SELECT SUM(size_bytes) FROM pdb_cache")
                 result = cursor.fetchone()
                 return result[0] if result and result[0] else 0
-        except Exception as e:
-            logger.error(f"Failed to get total cache size: {e}")
+        except Exception:
+            logger.exception("Failed to get total cache size")
             return 0
 
     def get_annotation_cache(
@@ -414,8 +414,8 @@ class HistoryDatabase:
                 if age_days > max_age_days:
                     return None
                 return payload
-        except Exception as e:
-            logger.error(f"Failed to read annotation cache for {cache_key}: {e}")
+        except Exception:
+            logger.exception(f"Failed to read annotation cache for {cache_key}")
             return None
 
     def set_annotation_cache(self, cache_key: str, service: str, payload: str) -> bool:
@@ -435,6 +435,6 @@ class HistoryDatabase:
                 )
                 conn.commit()
             return True
-        except Exception as e:
-            logger.error(f"Failed to write annotation cache for {cache_key}: {e}")
+        except Exception:
+            logger.exception(f"Failed to write annotation cache for {cache_key}")
             return False

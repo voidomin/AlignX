@@ -69,8 +69,8 @@ class LigandAnalyzer:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", PDBConstructionWarning)
                 structure = parser.get_structure("struct", str(pdb_file))
-        except Exception as e:
-            logger.error(f"Failed to parse {pdb_file}: {e}")
+        except Exception:
+            logger.exception(f"Failed to parse {pdb_file}")
             return []
 
         ligands = []
@@ -244,7 +244,7 @@ class LigandAnalyzer:
                 warnings.simplefilter("ignore", PDBConstructionWarning)
                 structure = parser.get_structure("struct", str(pdb_file))
         except Exception as e:
-            logger.error(f"SASA: Failed to parse {pdb_file}: {e}")
+            logger.exception(f"SASA: Failed to parse {pdb_file}")
             return {"error": str(e)}
 
         # Compute SASA using ShrakeRupley

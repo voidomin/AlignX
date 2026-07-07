@@ -34,10 +34,11 @@ REACTOME_BASE_URL = "https://reactome.org/ContentService"
 SIFTS_BASE_URL = "https://www.ebi.ac.uk/pdbe/api/mappings/uniprot"
 GMGC_BASE_URL = "https://gmgc.embl.de/api/v1.0"
 STRING_CALLER_IDENTITY = "structscope"
+_JSON_ACCEPT_HEADERS = {"Accept": "application/json"}
 
 # Foldseek's AlphaFold DB hits are named "AF-{UniProt}-F{fragment}[-v{n}] ...",
 # which embeds a UniProt accession directly - free to extract, no lookup.
-_AFDB_TARGET_PATTERN = re.compile(r"^AF-([A-Za-z0-9]+)-F\d+", re.IGNORECASE)
+_AFDB_TARGET_PATTERN = re.compile(r"^AF-([A-Z0-9]+)-F\d+", re.IGNORECASE)
 
 # pdb100 hits are named "{pdbid}-assembly{n}.cif.gz_{chain} {title}", e.g.
 # "1ab1-assembly1.cif.gz_A SI FORM CRAMBIN" or, for a specific biological
@@ -53,7 +54,7 @@ _PDB_TARGET_PATTERN = re.compile(r"^([0-9A-Za-z]{4})-assembly\d+\.cif\.gz_(\S+)"
 # "1cbnA00" -> PDB "1CBN", chain "A". This is directly a (pdb_id, chain)
 # pair, same as pdb100's, so it resolves through the same SIFTS lookup -
 # see resolve_accession(). Confirmed live against 1CRN's cath50 hits.
-_CATH_DOMAIN_PATTERN = re.compile(r"^([0-9][A-Za-z0-9]{3})([A-Za-z0-9])\d{2}$")
+_CATH_DOMAIN_PATTERN = re.compile(r"^(\d[A-Za-z0-9]{3})([A-Za-z0-9])\d{2}$")
 
 # BFVD and bfmd hits embed a UniProt accession as one underscore/dot/hyphen-
 # delimited token in their target string - e.g. BFVD's
@@ -67,7 +68,7 @@ _CATH_DOMAIN_PATTERN = re.compile(r"^([0-9][A-Za-z0-9]{3})([A-Za-z0-9])\d{2}$")
 # it's specifically metagenomic "dark matter" sequences (see
 # docs/ROADMAP_V3.md).
 _UNIPROT_ACCESSION_RE = re.compile(
-    r"^([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})$"
+    r"^([OPQ]\d[A-Z0-9]{3}\d|[A-NR-Z]\d([A-Z][A-Z0-9]{2}\d){1,2})$"
 )
 
 # gmgcl_id hits are named "GMGC10.{9-digit cluster id}.{eggnog-mapper name
@@ -277,7 +278,7 @@ class AnnotationAggregator:
             try:
                 response = await client.get(
                     f"{SIFTS_BASE_URL}/{pdb_id.lower()}",
-                    headers={"Accept": "application/json"},
+                    headers=_JSON_ACCEPT_HEADERS,
                 )
                 if response.status_code == 200:
                     entry = response.json().get(pdb_id.lower(), {})
@@ -336,7 +337,7 @@ class AnnotationAggregator:
                 response = await client.get(
                     url,
                     params={"page_size": 50},
-                    headers={"Accept": "application/json"},
+                    headers=_JSON_ACCEPT_HEADERS,
                 )
                 if response.status_code != 200:
                     return []
@@ -377,7 +378,7 @@ class AnnotationAggregator:
                 response = await client.get(
                     url,
                     params={"geneProductId": f"UniProtKB:{accession}", "limit": 100},
-                    headers={"Accept": "application/json"},
+                    headers=_JSON_ACCEPT_HEADERS,
                 )
                 if response.status_code != 200:
                     return []
@@ -428,7 +429,7 @@ class AnnotationAggregator:
                         "limit": limit,
                         "caller_identity": STRING_CALLER_IDENTITY,
                     },
-                    headers={"Accept": "application/json"},
+                    headers=_JSON_ACCEPT_HEADERS,
                 )
                 if response.status_code != 200:
                     return []
@@ -462,7 +463,7 @@ class AnnotationAggregator:
         async def _fetch() -> List[Dict[str, Any]]:
             url = f"{REACTOME_BASE_URL}/data/mapping/UniProt/{accession}/pathways"
             try:
-                response = await client.get(url, headers={"Accept": "application/json"})
+                response = await client.get(url, headers=_JSON_ACCEPT_HEADERS)
                 if response.status_code != 200:
                     return []
                 return [
@@ -490,7 +491,7 @@ class AnnotationAggregator:
         async def _fetch() -> List[Dict[str, Any]]:
             url = f"{GMGC_BASE_URL}/unigene/{gene_id}/features"
             try:
-                response = await client.get(url, headers={"Accept": "application/json"})
+                response = await client.get(url, headers=_JSON_ACCEPT_HEADERS)
                 if response.status_code != 200:
                     return []
                 pfam_hits = (response.json().get("features") or {}).get("pfam") or []
@@ -521,7 +522,7 @@ class AnnotationAggregator:
         are essentially static, so each ID is cached individually - a
         request for 50 IDs where 45 are already cached only needs to fetch
         the remaining 5 from QuickGO."""
-        unique_ids = sorted(set(gid for gid in go_ids if gid))
+        unique_ids = sorted({gid for gid in go_ids if gid})
         names: Dict[str, str] = {}
 
         uncached_ids = []
@@ -543,7 +544,7 @@ class AnnotationAggregator:
             chunk = uncached_ids[i : i + chunk_size]
             url = f"{QUICKGO_BASE_URL}/ontology/go/terms/{','.join(chunk)}"
             try:
-                response = await client.get(url, headers={"Accept": "application/json"})
+                response = await client.get(url, headers=_JSON_ACCEPT_HEADERS)
                 if response.status_code == 200:
                     for term in response.json().get("results", []):
                         if term.get("id") and term.get("name"):

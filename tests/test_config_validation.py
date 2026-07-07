@@ -155,8 +155,9 @@ def test_core_section_still_hard_fails_on_invalid_values(tmp_path):
     with open(config_file, "w") as f:
         yaml.dump(invalid_config, f)
 
+    config_path = str(config_file)
     with pytest.raises(SystemExit):
-        load_config(str(config_file))
+        load_config(config_path)
 
 
 def test_invalid_config_type(tmp_path):
@@ -179,8 +180,9 @@ def test_invalid_config_type(tmp_path):
     with open(config_file, "w") as f:
         yaml.dump(invalid_config, f)
 
+    config_path = str(config_file)
     with pytest.raises(SystemExit):
-        load_config(str(config_file))
+        load_config(config_path)
 
 
 def test_missing_required_field(tmp_path):
@@ -203,8 +205,9 @@ def test_missing_required_field(tmp_path):
     with open(config_file, "w") as f:
         yaml.dump(incomplete_config, f)
 
+    config_path = str(config_file)
     with pytest.raises(SystemExit):
-        load_config(str(config_file))
+        load_config(config_path)
 
 
 if __name__ == "__main__":

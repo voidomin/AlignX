@@ -170,9 +170,6 @@ class NotebookExporter:
 
             return output_path
 
-        except Exception as e:
-            import traceback
-
-            logger.error(f"Error generating notebook: {str(e)}")
-            logger.error(traceback.format_exc())
+        except Exception:
+            logger.exception("Error generating notebook")
             return None

@@ -790,7 +790,7 @@ class TestAggregateForHits:
                 ]
             return []
 
-        async def quickgo_side_effect(accession, client):
+        def quickgo_side_effect(accession, client):
             return []
 
         mock_interpro.side_effect = interpro_side_effect

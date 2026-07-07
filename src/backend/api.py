@@ -1118,7 +1118,7 @@ def get_pdf_report(
         import logging
 
         logger = logging.getLogger("uvicorn")
-        logger.error(f"Failed to generate report PDF: {e}")
+        logger.exception("Failed to generate report PDF")
         raise HTTPException(
             status_code=500, detail=f"Failed to generate report PDF: {str(e)}"
         )
@@ -1180,7 +1180,7 @@ def get_lab_notebook(run_id: str = Query(...), session_id: Optional[str] = Query
         import logging
 
         logger = logging.getLogger("uvicorn")
-        logger.error(f"Failed to generate lab notebook: {e}")
+        logger.exception("Failed to generate lab notebook")
         raise HTTPException(
             status_code=500, detail=f"Failed to generate lab notebook: {str(e)}"
         )
@@ -1236,7 +1236,7 @@ def get_discovery_report(run_id: str = Query(...)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to generate discovery report: {e}")
+        logger.exception("Failed to generate discovery report")
         raise HTTPException(
             status_code=500, detail=f"Failed to generate discovery report: {str(e)}"
         )

@@ -138,7 +138,7 @@ def render_settings_page():
 
     # --- Actions ---
     st.divider()
-    col_save, col_defaults, col_reset = st.columns([1, 1, 4])
+    col_save, col_defaults, _ = st.columns([1, 1, 4])
 
     with col_save:
         if st.button("💾 Save Changes", type="primary", use_container_width=True):

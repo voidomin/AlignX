@@ -55,7 +55,7 @@
 
 set -euo pipefail
 
-if [ $# -lt 2 ]; then
+if [[ $# -lt 2 ]]; then
     echo "Usage: $0 <database-name> <output-dir> [tmp-dir]" >&2
     echo "Run 'foldseek databases' with no arguments for the full list of database names." >&2
     exit 1

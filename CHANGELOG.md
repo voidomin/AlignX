@@ -2,6 +2,26 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.16.0]
+
+First half of a SonarCloud Code Smell (Maintainability) cleanup pass - the "safe batch" (mechanical, low-risk fixes only; the 9 Cognitive Complexity refactors and the ~65-instance FastAPI `Annotated`/response-docs convention migration in `api.py` are deliberately deferred to a separate pass). Backend/Python half only - frontend JS smells are next.
+
+### Fixed
+- **`logger.error(f"...: {e}")` → `logger.exception(...)`** across ~20 backend files (62 call sites) - `logging.exception()` automatically includes the full traceback, which the old pattern only sometimes did via a separate, easily-forgotten `traceback.format_exc()` call (removed two now-redundant duplicates of that in `notebook_exporter.py`/`rmsd_calculator.py`). Cleaned up the resulting unused `as e` bindings via `ruff --fix`.
+- **Regex character classes**: `[0-9]` → `\d` (11 instances across `annotation_aggregator.py`, `pdb_manager.py`, `api.js`); a genuine duplicate in `_AFDB_TARGET_PATTERN`'s character class, since `re.IGNORECASE` already made the explicit `a-z` half of `[A-Za-z0-9]` redundant.
+- **Duplicated string literals → constants**: `"application/json"` (7x, `annotation_aggregator.py`) and `"Neon Pro"` (4x, `structure_viewer.py`).
+- Unused local variables (`c3`, `col_reset`, many `msg`s in test files) renamed to `_`.
+- `scripts/provision_foldseek_db.sh`: `[` → `[[` for its conditional test.
+- Two "commented out code" findings turned out to be false positives (a trailing comment with arithmetic in it, and a comment mentioning `<script>` tags) - reworded rather than "fixed" to stop tripping the heuristic. `tests/test_pdb_manager.py` had two genuinely commented-out lines removed for real.
+- `coordinator.py`: `list(sequences.values())[0]` → `next(iter(...))` (avoids materializing the list just to take the first item). `annotation_aggregator.py`: `set(gen_expr)` → set comprehension.
+- `structure_viewer.py`: renamed camelCase Python locals (`neonColors`/`spectralColors`) to snake_case in `render_synced_grid` - left the same-named JS variables inside `render_3d_structure`'s embedded `<script>` template untouched (those are real JavaScript, not Python, and were never flagged).
+- Two `sidebar.py`/`sequence.py` "unnecessary `list()`" findings turned out to need opposite fixes: `sidebar.py`'s loop deletes from the dict it's iterating (so the defensive copy is required, kept with an explanatory comment); `sequence.py`'s loop only reassigns existing keys (so the copy was genuinely unneeded, removed).
+- `test_config_validation.py`: 3 `pytest.raises` blocks had `load_config(str(config_file))` inside the block - `str(config_file)` itself counts as a second "possibly throwing" call to Sonar's analysis. Moved the conversion outside the block.
+- `test_annotation_aggregator.py`: removed a stray `async` from a mock side effect with no `await` in it.
+
+### Verified
+Full suite (242 backend tests) + `ruff`/`black` clean after every batch, not just at the end.
+
 ## [3.15.2]
 
 Follow-up after the `sonar.exclusions` fix actually took effect (see 3.15.1): with `static/**`/`.agents/**` noise gone, `new_reliability_rating` immediately passed. `new_security_rating` was still failing on one real CRITICAL finding underneath the noise.

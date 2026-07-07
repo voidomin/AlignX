@@ -102,7 +102,7 @@ class TestPDBManager:
         manager = PDBManager(mock_config)
         manager.raw_dir = temp_workspace["raw"]
 
-        success, msg, path = await manager.download_pdb("SM-P69905")
+        success, _, path = await manager.download_pdb("SM-P69905")
 
         assert success is True
         assert path.name == "sm-p69905.pdb"
@@ -127,7 +127,7 @@ class TestPDBManager:
         manager = PDBManager(mock_config)
         manager.raw_dir = temp_workspace["raw"]
 
-        success, msg, path = await manager.download_pdb("ESM-MGYP002537940442")
+        success, _, path = await manager.download_pdb("ESM-MGYP002537940442")
 
         assert success is True
         assert path.name == "esm-mgyp002537940442.pdb"
@@ -205,7 +205,7 @@ class TestPDBManager:
         raw_file = temp_workspace["raw"] / "af-p12345-f1.pdb"
         raw_file.write_text(content)
 
-        success, msg, cleaned_path = manager.clean_pdb(raw_file)
+        success, _, cleaned_path = manager.clean_pdb(raw_file)
 
         assert success is True
         cleaned_content = cleaned_path.read_text()
@@ -234,12 +234,16 @@ class TestPDBManager:
         raw_file = temp_workspace["raw"] / "esm-mgyp002537940442.pdb"
         raw_file.write_text(content)
 
-        success, msg, cleaned_path = manager.clean_pdb(raw_file)
+        success, _, cleaned_path = manager.clean_pdb(raw_file)
 
         assert success is True
         cleaned_content = cleaned_path.read_text()
-        assert "ALA" in cleaned_content  # 0.90 * 100 = 90 >= 50, kept
-        assert "GLY" not in cleaned_content  # 0.20 * 100 = 20 < 50, pruned
+        assert (
+            "ALA" in cleaned_content
+        )  # pLDDT 0.90 scaled to 90, above the 50 threshold, kept
+        assert (
+            "GLY" not in cleaned_content
+        )  # pLDDT 0.20 scaled to 20, below the threshold, pruned
 
     def test_clean_specific_chain(self, mock_config, temp_workspace):
         """Test cleaning a specific chain from a multi-chain PDB."""
@@ -325,7 +329,7 @@ class TestPDBManager:
         manager = PDBManager(mock_config)
         manager.raw_dir = temp_workspace["raw"]
 
-        success, msg, path = manager.save_uploaded_bytes(
+        success, _, path = manager.save_uploaded_bytes(
             "my_structure.pdb", dummy_pdb_content.encode(), "UPLOAD-ABCD1234"
         )
 
@@ -385,7 +389,7 @@ class TestPDBManager:
             mock_model = [object()]  # one "chain"
             mock_get_structure.return_value = [mock_model]
 
-            success, msg, path = manager.save_uploaded_bytes(
+            success, _, path = manager.save_uploaded_bytes(
                 "my_model.cif", b"data_test\n...", "UPLOAD-CIFTEST"
             )
 
@@ -408,7 +412,7 @@ class TestPDBManager:
 
         import asyncio
 
-        success, msg, path = asyncio.run(manager.download_pdb("UPLOAD-REALCIF"))
+        success, _, path = asyncio.run(manager.download_pdb("UPLOAD-REALCIF"))
 
         assert success is True
         assert path == cif_file

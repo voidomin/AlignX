@@ -23,10 +23,10 @@ function withApiKey(url) {
 // (e.g. "1L2Y"), AlphaFold model IDs (e.g. "AF-P12345-F1", optionally
 // versioned "-V2"), SWISS-MODEL IDs (e.g. "SM-P69905"), or ESM Metagenomic
 // Atlas IDs (e.g. "ESM-MGYP002537940442").
-const PDB_ID_PATTERN = /^[0-9][A-Z0-9]{3}$/;
-const ALPHAFOLD_ID_PATTERN = /^AF-[A-Z0-9]+-F[0-9]+(-V[0-9]+)?$/;
+const PDB_ID_PATTERN = /^\d[A-Z0-9]{3}$/;
+const ALPHAFOLD_ID_PATTERN = /^AF-[A-Z0-9]+-F\d+(-V\d+)?$/;
 const SWISSMODEL_ID_PATTERN = /^SM-[A-Z0-9]+$/;
-const ESMFOLD_ID_PATTERN = /^ESM-MGYP[0-9]+$/;
+const ESMFOLD_ID_PATTERN = /^ESM-MGYP\d+$/;
 
 export function isValidPdbId(id) {
     const normalized = (id || "").trim().toUpperCase();

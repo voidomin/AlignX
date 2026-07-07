@@ -116,8 +116,8 @@ class DiscoveryReportExporter:
             with open(output_path, "w", encoding="utf-8") as f:
                 f.write(html)
             return output_path
-        except Exception as e:
-            logger.error(f"Failed to generate discovery report: {e}")
+        except Exception:
+            logger.exception("Failed to generate discovery report")
             raise
 
     @staticmethod

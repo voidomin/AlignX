@@ -54,9 +54,9 @@ class ResultManager:
                 # Assuming the first column is the index (protein names)
                 df = pd.read_csv(rmsd_path, index_col=0)
                 return df
-            except Exception as e:
-                logger.error(
-                    f"Failed to load RMSD matrix for {sanitize_for_log(run_id)}: {e}"
+            except Exception:
+                logger.exception(
+                    f"Failed to load RMSD matrix for {sanitize_for_log(run_id)}"
                 )
 
         return None

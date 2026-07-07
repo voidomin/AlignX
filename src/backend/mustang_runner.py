@@ -84,8 +84,8 @@ class MustangRunner:
 
             logger.info(f"Successfully downloaded {MUSTANG_TARBALL}")
             return True
-        except Exception as e:
-            logger.error(f"Failed to download {MUSTANG_TARBALL}: {e}")
+        except Exception:
+            logger.exception(f"Failed to download {MUSTANG_TARBALL}")
             return False
 
     def _prepare_compilation_dir(
@@ -116,8 +116,8 @@ class MustangRunner:
         try:
             subprocess.run(cmd, cwd=str(src_dir.absolute()), check=True, timeout=300)
             return True
-        except Exception as e:
-            logger.error(f"Compilation command failed: {e}")
+        except Exception:
+            logger.exception("Compilation command failed")
             return False
 
     def _locate_compiled_binary(self, src_dir: Path) -> bool:
@@ -165,8 +165,8 @@ class MustangRunner:
 
             logger.error("Compilation finished but binary not found")
             return False
-        except Exception as e:
-            logger.error(f"Compilation process error: {e}")
+        except Exception:
+            logger.exception("Compilation process error")
             return False
 
     def _check_native_installation(self) -> Tuple[bool, str]:
@@ -456,7 +456,7 @@ class MustangRunner:
             return self._finalize_alignment_output(output_dir, process.returncode)
 
         except Exception as e:
-            logger.error(f"Mustang execution error: {e}")
+            logger.exception("Mustang execution error")
             return False, f"Mustang error: {e}", None
 
     def _stream_process_output(self, process, timeout) -> Tuple[str, str]:

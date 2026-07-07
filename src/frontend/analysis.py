@@ -339,7 +339,7 @@ def run_analysis() -> None:
         stage_banner.empty()
         timer_display.empty()
         st.error(_friendly_error(str(e)))
-        logger.error(f"Execution Error: {str(e)}", exc_info=True)
+        logger.exception("Execution Error")
 
 
 def render_dashboard() -> None:

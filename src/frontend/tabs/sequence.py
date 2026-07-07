@@ -343,8 +343,10 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
                 with col2_btn:
                     if st.button("🗑️ Clear All Selections", use_container_width=True):
                         st.session_state.residue_selections.clear()
-                        # Clear text input widget states
-                        for k in list(st.session_state.keys()):
+                        # Clear text input widget states (reassigns existing
+                        # keys only, never inserts/deletes, so no defensive
+                        # copy is needed here unlike sidebar.py's soft reset).
+                        for k in st.session_state.keys():
                             if k.startswith("text_input_"):
                                 st.session_state[k] = ""
                         # Also clear 3D viewer highlights if active

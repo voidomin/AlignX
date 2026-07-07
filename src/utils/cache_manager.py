@@ -88,8 +88,8 @@ class CacheManager:
 
                 if total_size <= limit_bytes:
                     break
-            except Exception as e:
-                logger.error(f"Failed to evict {item_id}: {e}")
+            except Exception:
+                logger.exception(f"Failed to evict {item_id}")
 
         logger.info(
             f"Cache cleanup complete. Current size: {total_size / (1024*1024):.2f} MB"

@@ -89,7 +89,7 @@ def test_run_discovery_pipeline_returns_parsed_hits(mock_config, tmp_path):
         }
 
         coordinator = DiscoveryCoordinator(mock_config)
-        success, msg, results = coordinator.run_discovery_pipeline(
+        success, _, results = coordinator.run_discovery_pipeline(
             "AF-P69905-F1", databases=["afdb50"]
         )
 
@@ -218,7 +218,7 @@ def test_run_discovery_pipeline_uses_local_backend_when_configured(
         )
 
         coordinator = DiscoveryCoordinator(config)
-        success, msg, results = coordinator.run_discovery_pipeline("4RLT")
+        success, _, results = coordinator.run_discovery_pipeline("4RLT")
 
         assert success is True
         assert results["hit_count"] == 1

@@ -100,16 +100,16 @@ class PDBManager:
         """
         pdb_id = pdb_id.strip().upper()
         # Standard PDB ID
-        if re.match(r"^[0-9][A-Z0-9]{3}$", pdb_id):
+        if re.match(r"^\d[A-Z0-9]{3}$", pdb_id):
             return True
         # AlphaFold ID (Supports AF-UniProt-F[Fragment] and optional -v[Version])
-        if re.match(r"^AF-[A-Z0-9]+-F[0-9]+(-V[0-9]+)?$", pdb_id):
+        if re.match(r"^AF-[A-Z0-9]+-F\d+(-V\d+)?$", pdb_id):
             return True
         # SWISS-MODEL ID (SM-UniProt)
         if re.match(r"^SM-[A-Z0-9]+$", pdb_id):
             return True
         # ESM Metagenomic Atlas ID (ESM-MGYPxxxxxxxxxx)
-        if re.match(r"^ESM-MGYP[0-9]+$", pdb_id):
+        if re.match(r"^ESM-MGYP\d+$", pdb_id):
             return True
         return False
 
@@ -139,7 +139,7 @@ class PDBManager:
             logger.info(f"Saved uploaded file: {output_file}")
             return True, "Saved uploaded file", output_file
         except Exception as e:
-            logger.error(f"Failed to save upload: {e}")
+            logger.exception("Failed to save upload")
             return False, str(e), None
 
     def save_uploaded_bytes(
@@ -292,7 +292,7 @@ class PDBManager:
                 logger.error(f"Timeout while downloading {pdb_id}")
                 return False, "Download failed: Connection timeout", None
             except Exception as e:
-                logger.error(f"AlphaFold download crash: {e}")
+                logger.exception("AlphaFold download crash")
                 return False, f"Error: {str(e)}", None
         elif source == "swissmodel":
             # SWISS-MODEL Repository (homology models, keyed by UniProt ID)
@@ -389,7 +389,7 @@ class PDBManager:
             return True, f"Downloaded ({file_size_mb:.2f} MB)", output_file
 
         except Exception as e:
-            logger.error(f"Failed to save {pdb_id}: {str(e)}")
+            logger.exception(f"Failed to save {pdb_id}")
             return False, f"Save failed: {str(e)}", None
 
     async def batch_download(
@@ -619,7 +619,7 @@ class PDBManager:
             return True, "Cleaning and sanitization successful", output_file
 
         except Exception as e:
-            logger.error(f"Failed to clean {pdb_file.name}: {str(e)}")
+            logger.exception(f"Failed to clean {pdb_file.name}")
             return False, f"Cleaning failed: {str(e)}", None
 
     def build_residue_renumber_map(
@@ -643,8 +643,8 @@ class PDBManager:
         """
         try:
             structure = self._get_structure(pdb_file)
-        except Exception as e:
-            logger.error(f"Failed to parse {pdb_file.name} for renumbering: {e}")
+        except Exception:
+            logger.exception(f"Failed to parse {pdb_file.name} for renumbering")
             return {}
 
         is_plddt_model = pdb_file.name.lower().startswith(("af-", "esm-"))
@@ -722,7 +722,7 @@ class PDBManager:
                     try:
                         results[pdb_file.name] = future.result()
                     except Exception as e:
-                        logger.error(f"Error cleaning {pdb_file.name}: {str(e)}")
+                        logger.exception(f"Error cleaning {pdb_file.name}")
                         results[pdb_file.name] = (False, f"Error: {str(e)}", None)
                     pbar.update(1)
 
@@ -970,8 +970,8 @@ class PDBManager:
 
             return final_results
 
-        except Exception as e:
-            logger.error(f"Metadata fetch critical failure: {str(e)}")
+        except Exception:
+            logger.exception("Metadata fetch critical failure")
             # Fallback for all IDs to prevent UI crash
             return {
                 pid: {
