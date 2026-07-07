@@ -1,10 +1,12 @@
 import { fetchSuggestions, isValidPdbId } from '../api';
+import { escapeHtml } from '../escapeHtml';
 
 const SOURCE_LABELS = {
     pdb: 'PDB',
     alphafold: 'AlphaFold',
     swissmodel: 'SWISS-MODEL',
     esmfold: 'ESMFold',
+    upload: 'Uploaded',
 };
 
 export class OverviewTab {
@@ -14,11 +16,13 @@ export class OverviewTab {
         this.pdbMetadata = props.pdbMetadata || {};
         this.onAddPDB = props.onAddPDB;
         this.onAddManyPDBs = props.onAddManyPDBs;
+        this.onUploadStructure = props.onUploadStructure;
         this.onRemovePDB = props.onRemovePDB;
         this.onChainSelection = props.onChainSelection;
         this.onRunAlignment = props.onRunAlignment;
         this.element = null;
         this.isLoadingChains = false;
+        this.isUploading = false;
         this.suggestTimeout = null;
         this.batchInputVisible = false;
     }
@@ -45,7 +49,12 @@ export class OverviewTab {
                     </div>
                     <div id="add-pdb-suggestions" class="flex gap-2"></div>
 
-                    <button id="toggle-batch-add-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Paste multiple IDs</button>
+                    <div class="flex items-center gap-4">
+                        <button id="toggle-batch-add-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Paste multiple IDs</button>
+                        <button id="upload-structure-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Upload a structure file</button>
+                        <input id="upload-structure-input" type="file" accept=".pdb,.ent,.cif" class="hidden"/>
+                    </div>
+                    <span id="upload-structure-feedback" class="font-body-sm text-[11px] text-secondary"></span>
 
                     <div id="batch-add-container" class="flex flex-col gap-2 ${this.batchInputVisible ? '' : 'hidden'}">
                         <textarea id="batch-pdb-input" rows="3" placeholder="Paste PDB IDs or accessions, separated by commas, spaces, or new lines (e.g. 4RLT, 3UG9, AF-P69905-F1)" class="w-full bg-surface-raised border border-border rounded-md px-3 py-2 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase"></textarea>
@@ -199,6 +208,29 @@ export class OverviewTab {
 
             if (addedCount > 0) batchInput.value = "";
         });
+
+        const uploadBtn = this.element.querySelector('#upload-structure-btn');
+        const uploadInput = this.element.querySelector('#upload-structure-input');
+        const uploadFeedback = this.element.querySelector('#upload-structure-feedback');
+
+        uploadBtn.addEventListener('click', () => uploadInput.click());
+
+        uploadInput.addEventListener('change', async () => {
+            const file = uploadInput.files && uploadInput.files[0];
+            uploadInput.value = ""; // allow re-selecting the same file later
+            if (!file) return;
+
+            this.isUploading = true;
+            uploadFeedback.innerText = `Uploading ${file.name}...`;
+            try {
+                await this.onUploadStructure(file);
+                uploadFeedback.innerText = `Added ${file.name}.`;
+            } catch (err) {
+                uploadFeedback.innerText = err.message || `Upload of ${file.name} failed.`;
+            } finally {
+                this.isUploading = false;
+            }
+        });
     }
 
     updateState(selectedPDBs, chainSelections, pdbMetadata) {
@@ -265,6 +297,9 @@ export class OverviewTab {
             const metaParts = meta
                 ? [meta.method, meta.resolution, meta.organism].filter(v => v && v !== 'N/A')
                 : [];
+            if (meta && meta.source === 'upload' && meta.original_filename) {
+                metaParts.push(escapeHtml(meta.original_filename));
+            }
 
             div.innerHTML = `
                 <div class="flex items-center justify-between">

@@ -59,6 +59,24 @@ export async function fetchChains(pdbIds) {
     return res.json();
 }
 
+export async function uploadStructure(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    // No Content-Type header here - the browser sets its own multipart
+    // boundary on FormData bodies; overriding it would break the upload.
+    const res = await fetch(`${API_BASE}/api/upload`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: formData
+    });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Upload failed");
+    }
+    return res.json();
+}
+
 export async function runAlignment(pdbIds, chainSelections, removeWater, removeHeteroatoms) {
     const res = await fetch(`${API_BASE}/api/jobs/align`, {
         method: 'POST',

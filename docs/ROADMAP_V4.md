@@ -140,8 +140,26 @@ can hand back out, without touching the core Mustang/RMSD pipeline underneath. A
       `1CRN, 2LYZ\nnotanid, 4RLT` against a workspace that already had 4RLT/3UG9 →
       correctly added 1CRN+2LYZ, skipped the 4RLT duplicate, flagged NOTANID, real
       chain metadata resolved for all 4, zero console errors).
-- [ ] **Phase 3 — Custom structure upload**: `POST /api/upload`, synthetic-ID plumbing
-      through `PDBManager`, content validation, frontend upload control.
+- [x] **Phase 3 — Custom structure upload**: `POST /api/upload` (multipart), returning
+      the same `{"chains": {...}}` shape `/api/chains` does so the frontend merges it
+      identically. Done: `PDBManager.save_uploaded_bytes()` enforces
+      `pdb.max_file_size_mb` and actually validates the content parses as a real
+      structure with ≥1 chain via `_get_structure()` (deletes the file and fails
+      clearly otherwise) — a `.pdb`-named text file that isn't a structure fails here,
+      not later inside Mustang. The saved extension matches the upload's real format
+      (`.cif` preserved, not forced to `.pdb`), and `download_pdb()`'s cache-hit check
+      now looks for either extension so a later alignment run finds the already-saved
+      upload instead of trying to fetch a remote source it never came from. Synthetic
+      IDs are `UPLOAD-{random 8-hex}` (random, not derived from the filename, so two
+      uploads can't collide or be guessed). `OverviewTab.js` gained an "Upload a
+      structure file" control next to the paste-multiple-IDs one; uploaded structures
+      get an "Uploaded" source badge and show the original filename (HTML-escaped).
+      9 new backend tests + 6 new frontend tests. Live-verified through the real
+      running server: uploaded a genuine small PDB file (1CRN), watched it get an
+      `UPLOAD-` ID and "Uploaded" badge, then **ran a real 3-structure alignment**
+      (2 fetched + the upload) that actually succeeded end-to-end — real RMSD values,
+      3D superposition, sequence view, and all export formats generated — proving the
+      cache-hit fallback actually works, not just that the upload endpoint responds.
 - [ ] **Phase 4 — Shareable run links**: read-only run view + share-link action, built on
       top of Phase 1's hardened IDs. Resolve the world-readable-vs-explicit-toggle open
       question below before shipping the UI for this (the backend read path already works

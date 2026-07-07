@@ -8,6 +8,7 @@ function makeTab(overrides = {}) {
         pdbMetadata: {},
         onAddPDB: vi.fn(),
         onAddManyPDBs: vi.fn().mockResolvedValue({ added: [], overCap: 0 }),
+        onUploadStructure: vi.fn().mockResolvedValue(undefined),
         onRemovePDB: vi.fn(),
         onChainSelection: vi.fn(),
         onRunAlignment: vi.fn(),
@@ -269,6 +270,83 @@ describe('OverviewTab', () => {
 
             expect(onAddManyPDBs).not.toHaveBeenCalled();
             expect(input.value).toBe('notanid');
+        });
+    });
+
+    describe('upload structure', () => {
+        function selectFile(tab, file) {
+            const input = tab.element.querySelector('#upload-structure-input');
+            Object.defineProperty(input, 'files', { value: [file], configurable: true });
+            input.dispatchEvent(new Event('change'));
+            return input;
+        }
+
+        it('clicking "Upload a structure file" opens the hidden file picker', () => {
+            const tab = makeTab();
+            tab.render();
+
+            const input = tab.element.querySelector('#upload-structure-input');
+            const clickSpy = vi.spyOn(input, 'click');
+            tab.element.querySelector('#upload-structure-btn').click();
+
+            expect(clickSpy).toHaveBeenCalled();
+        });
+
+        it('calls onUploadStructure with the selected file and reports success', async () => {
+            const onUploadStructure = vi.fn().mockResolvedValue(undefined);
+            const tab = makeTab({ onUploadStructure });
+            tab.render();
+
+            const file = new File(['ATOM ...'], 'my_structure.pdb', { type: 'chemical/x-pdb' });
+            selectFile(tab, file);
+            await onUploadStructure.mock.results[0].value;
+
+            expect(onUploadStructure).toHaveBeenCalledWith(file);
+            expect(tab.element.querySelector('#upload-structure-feedback').innerText)
+                .toBe('Added my_structure.pdb.');
+        });
+
+        it('reports the error message when the upload fails', async () => {
+            const onUploadStructure = vi.fn().mockRejectedValue(new Error("Couldn't parse 'bad.pdb' as a structure"));
+            const tab = makeTab({ onUploadStructure });
+            tab.render();
+
+            const file = new File(['not a structure'], 'bad.pdb', { type: 'chemical/x-pdb' });
+            selectFile(tab, file);
+            await onUploadStructure.mock.results[0].value.catch(() => {});
+
+            expect(tab.element.querySelector('#upload-structure-feedback').innerText)
+                .toBe("Couldn't parse 'bad.pdb' as a structure");
+        });
+
+        it('resets the file input value so the same file can be re-selected', () => {
+            const tab = makeTab();
+            tab.render();
+
+            const file = new File(['ATOM ...'], 'my_structure.pdb', { type: 'chemical/x-pdb' });
+            const input = selectFile(tab, file);
+
+            expect(input.value).toBe('');
+        });
+
+        it('shows an "Uploaded" source badge and the original filename, HTML-escaped', () => {
+            const tab = makeTab({
+                selectedPDBs: ['UPLOAD-ABCD1234'],
+                pdbMetadata: {
+                    'UPLOAD-ABCD1234': {
+                        chains: [{ id: 'A', residue_count: 50 }],
+                        source: 'upload',
+                        original_filename: '<script>alert(1)</script>.pdb',
+                    },
+                },
+            });
+            tab.render();
+
+            const row = tab.element.querySelector('#pdb-list-container > div');
+            expect(row.querySelector('.source-badge').textContent).toBe('Uploaded');
+            expect(row.querySelector('script')).toBeNull();
+            expect(row.querySelector('.pdb-meta-line').textContent)
+                .toContain('<script>alert(1)</script>.pdb');
         });
     });
 });

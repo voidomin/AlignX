@@ -2,6 +2,20 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.13.0]
+
+`docs/ROADMAP_V4.md` Phase 3 — custom structure upload.
+
+### Added
+- **`POST /api/upload`**: upload a `.pdb`/`.ent`/`.cif` file directly instead of only fetching one of the four public databases by ID — closes a real capability gap where Streamlit already had `PDBManager.save_uploaded_file()` but the SPA had no way to reach it. Returns the same `{"chains": {...}}` shape `/api/chains` does.
+- **Real content validation**: `PDBManager.save_uploaded_bytes()` actually parses the upload with Bio.PDB and requires at least one chain before accepting it, deleting the file and returning a clear error otherwise — a `.pdb`-named file that isn't a real structure fails here, not later inside Mustang. Also enforces `pdb.max_file_size_mb`, previously only checked for downloads.
+- **Uploads survive into a real alignment run**: the saved file keeps its real extension (`.cif` preserved, not forced to `.pdb`), and `download_pdb()`'s cache-hit check now looks for either extension — so a later `/api/jobs/align` run finds the already-saved upload instead of trying to fetch a remote source it never came from.
+- `OverviewTab.js` gained an "Upload a structure file" control; uploaded structures get an "Uploaded" source badge and show the original filename.
+
+### Verified
+- 9 new backend tests (content validation, oversized rejection, extension preservation, cache-hit fallback, endpoint auth/validation) + 6 new frontend tests. Full suite: 236 backend + 115 frontend.
+- Live through the real running server: uploaded a genuine small PDB file (1CRN), then ran a real 3-structure alignment (2 fetched + the upload) that completed successfully end-to-end — real RMSD, 3D superposition, sequence view, all export formats generated.
+
 ## [3.12.0]
 
 `docs/ROADMAP_V4.md` Phase 2 — batch structure input.

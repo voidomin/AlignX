@@ -142,6 +142,56 @@ class PDBManager:
             logger.error(f"Failed to save upload: {e}")
             return False, str(e), None
 
+    def save_uploaded_bytes(
+        self, original_filename: str, content: bytes, structure_id: str
+    ) -> Tuple[bool, str, Optional[Path]]:
+        """
+        Save and validate an SPA-uploaded structure (see POST /api/upload).
+
+        Unlike save_uploaded_file() (Streamlit's UploadedFile-shaped input),
+        this takes plain bytes and a pre-generated synthetic ID
+        ("UPLOAD-{random}"), and actually validates the content parses as a
+        real structure with at least one chain - a .pdb-named text file that
+        isn't a structure should fail clearly here, not reach Mustang later
+        and produce a confusing downstream error.
+
+        The saved filename's extension is picked from original_filename (not
+        forced to .pdb) so mmCIF uploads still get parsed with MMCIFParser -
+        see _get_structure(). download_pdb()'s cache-hit check knows to look
+        for either extension for IDs it doesn't recognize a source for.
+        """
+        size_mb = len(content) / (1024 * 1024)
+        if size_mb > self.max_size_mb:
+            return (
+                False,
+                f"File too large ({size_mb:.1f} MB, limit is {self.max_size_mb} MB)",
+                None,
+            )
+
+        ext = ".cif" if original_filename.lower().endswith(".cif") else ".pdb"
+        output_file = self.raw_dir / f"{structure_id.lower()}{ext}"
+
+        try:
+            _write_bytes(output_file, content)
+        except OSError as e:
+            return False, f"Failed to save upload: {e}", None
+
+        try:
+            structure = self._get_structure(output_file)
+            chain_count = sum(1 for model in structure for _chain in model)
+            if chain_count == 0:
+                raise ValueError("no chains found")
+        except Exception as e:
+            output_file.unlink(missing_ok=True)
+            return (
+                False,
+                f"Couldn't parse '{original_filename}' as a structure: {e}",
+                None,
+            )
+
+        logger.info(f"Saved and validated uploaded structure: {output_file}")
+        return True, "ok", output_file
+
     async def download_pdb(
         self,
         pdb_id: str,
@@ -160,6 +210,17 @@ class PDBManager:
         # Use lower-case filenames internally to avoid WSL case-sensitivity issues
         safe_id = pdb_id.lower()
         output_file = self.raw_dir / f"{safe_id}{ext}"
+
+        if not output_file.exists():
+            # detect_source() doesn't recognize an uploaded ID's "UPLOAD-"
+            # prefix, so ext defaults to .pdb above - but save_uploaded_bytes()
+            # saves with whichever extension actually matches the upload's
+            # real format. Check for that before assuming this ID needs to
+            # be fetched from a remote source it was never downloaded from.
+            alt_ext = ".pdb" if ext == ".cif" else ".cif"
+            alt_file = self.raw_dir / f"{safe_id}{alt_ext}"
+            if alt_file.exists():
+                output_file = alt_file
 
         if output_file.exists() and not force:
             file_size_mb = output_file.stat().st_size / (1024 * 1024)

@@ -24,6 +24,8 @@ for how to actually use each one.
 | # | Feature | Interface | Section |
 |---|---|---|---|
 | 1 | Multi-source structure input (PDB, AlphaFold, SWISS-MODEL, ESM Atlas) | SPA | [§1](#1-structure-input) |
+| 1a | Paste multiple structure IDs at once | SPA | [§1.1](#11-batch-id-input) |
+| 1b | Upload your own .pdb/.ent/.cif file | SPA | [§1.2](#12-custom-structure-upload) |
 | 2 | N-structure alignment (2 or more at once) | Both | [§2.1](#21-n-structure-alignment) |
 | 3 | Interactive 3D viewer with per-structure coloring | Both | [§2.2](#22-3d-structure-viewer) |
 | 4 | Residue highlighting in the 3D viewer | Both | [§2.2](#22-3d-structure-viewer) |
@@ -69,6 +71,25 @@ pick which chain to use if it has more than one — StructScope lists every chai
 with its residue count so you're not guessing.
 
 *(SPA only for now — Streamlit currently only accepts plain RCSB PDB IDs.)*
+
+### 1.1 Batch ID Input
+
+Instead of adding structures one at a time, click "Paste multiple IDs" to reveal a
+text box — paste a comma-, space-, or newline-separated list (mixing sources freely,
+e.g. `4RLT, 3UG9, AF-P69905-F1`) and click **Add All**. You'll get a clear summary of
+what was added, what was already in the workspace, and what wasn't recognized, so a
+typo in a 20-ID paste doesn't silently vanish. Capped at 20 structures per workspace.
+
+### 1.2 Custom Structure Upload
+
+Click "Upload a structure file" to add your own `.pdb`, `.ent`, or `.cif` file instead
+of fetching one of the four public databases by ID — useful for an unpublished
+structure, your own AlphaFold output, or anything without a public accession.
+StructScope actually validates the file parses as a real structure before accepting
+it, so a bad upload fails clearly with a reason instead of producing a confusing error
+later. Uploaded structures show an "Uploaded" badge and their original filename, and
+work in every downstream feature (alignment, clustering, ligand hunting, export)
+exactly like a fetched structure would.
 
 ---
 

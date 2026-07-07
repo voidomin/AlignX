@@ -191,6 +191,67 @@ def test_chains_endpoint_tags_source_for_alphafold_id():
         assert data["method"] == "Predicted (AF2)"
 
 
+def test_upload_endpoint_returns_chain_info_for_a_valid_structure():
+    with patch(
+        "src.backend.coordinator.PDBManager.save_uploaded_bytes"
+    ) as mock_save, patch(
+        "src.backend.coordinator.PDBManager.analyze_structure"
+    ) as mock_analyze:
+        mock_save.return_value = (True, "ok", Path("dummy_path.pdb"))
+        mock_analyze.return_value = {"chains": [{"id": "A", "residue_count": 100}]}
+
+        response = client.post(
+            "/api/upload",
+            files={"file": ("my_structure.pdb", b"ATOM ...", "chemical/x-pdb")},
+        )
+
+        assert response.status_code == 200
+        chains = response.json()["chains"]
+        assert len(chains) == 1
+        structure_id = next(iter(chains))
+        assert structure_id.startswith("UPLOAD-")
+        assert chains[structure_id]["source"] == "upload"
+        assert chains[structure_id]["original_filename"] == "my_structure.pdb"
+        assert chains[structure_id]["chains"][0]["id"] == "A"
+
+
+def test_upload_endpoint_rejects_disallowed_file_extension():
+    response = client.post(
+        "/api/upload",
+        files={"file": ("notes.txt", b"hello", "text/plain")},
+    )
+    assert response.status_code == 400
+
+
+def test_upload_endpoint_returns_400_when_content_validation_fails():
+    """save_uploaded_bytes() rejects content that doesn't parse as a real
+    structure - the endpoint must surface that as a 400 with the reason,
+    not a generic 500."""
+    with patch("src.backend.coordinator.PDBManager.save_uploaded_bytes") as mock_save:
+        mock_save.return_value = (
+            False,
+            "Couldn't parse 'fake.pdb' as a structure: no chains found",
+            None,
+        )
+
+        response = client.post(
+            "/api/upload",
+            files={"file": ("fake.pdb", b"not a structure", "chemical/x-pdb")},
+        )
+
+        assert response.status_code == 400
+        assert "Couldn't parse" in response.json()["detail"]
+
+
+def test_upload_endpoint_rejects_path_traversal_session_id():
+    response = client.post(
+        "/api/upload",
+        params={"session_id": "../../etc"},
+        files={"file": ("s.pdb", b"ATOM ...", "chemical/x-pdb")},
+    )
+    assert response.status_code == 400
+
+
 def test_memory_endpoints():
     """Verify that memory retrieval and clear endpoints return correct structures."""
     response = client.get("/api/memory")

@@ -318,3 +318,97 @@ class TestPDBManager:
 
         # Only ALA (0.90 * 100 = 90 >= 50) survives; GLY (20) is pruned.
         assert mapping == {1: 1}
+
+    def test_save_uploaded_bytes_saves_and_validates_a_real_structure(
+        self, mock_config, temp_workspace, dummy_pdb_content
+    ):
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+
+        success, msg, path = manager.save_uploaded_bytes(
+            "my_structure.pdb", dummy_pdb_content.encode(), "UPLOAD-ABCD1234"
+        )
+
+        assert success is True
+        assert path == temp_workspace["raw"] / "upload-abcd1234.pdb"
+        assert path.exists()
+        assert path.read_bytes() == dummy_pdb_content.encode()
+
+    def test_save_uploaded_bytes_rejects_content_that_isnt_a_real_structure(
+        self, mock_config, temp_workspace
+    ):
+        """A .pdb-named file with no actual structure content must fail
+        clearly here, not silently reach Mustang later."""
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+
+        success, msg, path = manager.save_uploaded_bytes(
+            "not_a_structure.pdb",
+            b"this is just a text file, not a PDB",
+            "UPLOAD-BADCONTENT",
+        )
+
+        assert success is False
+        assert "parse" in msg.lower()
+        assert path is None
+        # The invalid file must not be left behind for a later
+        # download_pdb() cache-hit check to mistake for a real structure.
+        assert not (temp_workspace["raw"] / "upload-badcontent.pdb").exists()
+
+    def test_save_uploaded_bytes_rejects_oversized_content(
+        self, mock_config, temp_workspace, dummy_pdb_content
+    ):
+        """mock_config sets pdb.max_file_size_mb to 10."""
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+
+        oversized = b"x" * (11 * 1024 * 1024)
+        success, msg, path = manager.save_uploaded_bytes(
+            "huge.pdb", oversized, "UPLOAD-TOOBIG"
+        )
+
+        assert success is False
+        assert "too large" in msg.lower()
+        assert path is None
+        assert not (temp_workspace["raw"] / "upload-toobig.pdb").exists()
+
+    def test_save_uploaded_bytes_preserves_cif_extension(
+        self, mock_config, temp_workspace
+    ):
+        """A .cif upload must be saved with a .cif extension (not forced to
+        .pdb) so _get_structure() picks MMCIFParser, not PDBParser, when
+        it's later analyzed/downloaded-as-cached."""
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+
+        with patch.object(manager, "_get_structure") as mock_get_structure:
+            mock_model = [object()]  # one "chain"
+            mock_get_structure.return_value = [mock_model]
+
+            success, msg, path = manager.save_uploaded_bytes(
+                "my_model.cif", b"data_test\n...", "UPLOAD-CIFTEST"
+            )
+
+        assert success is True
+        assert path == temp_workspace["raw"] / "upload-ciftest.cif"
+        assert path.exists()
+
+    def test_download_pdb_finds_an_uploaded_file_under_its_real_extension(
+        self, mock_config, temp_workspace
+    ):
+        """detect_source() doesn't recognize "UPLOAD-" IDs, so download_pdb()
+        defaults to a .pdb extension guess - but an uploaded structure may
+        actually be a .cif. It must find the real file instead of trying to
+        (and failing to) fetch a remote source that was never the origin."""
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+
+        cif_file = temp_workspace["raw"] / "upload-realcif.cif"
+        cif_file.write_text("data_test\n...")
+
+        import asyncio
+
+        success, msg, path = asyncio.run(manager.download_pdb("UPLOAD-REALCIF"))
+
+        assert success is True
+        assert path == cif_file

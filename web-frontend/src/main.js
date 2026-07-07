@@ -10,7 +10,7 @@ import { ComparisonTab } from './components/ComparisonTab';
 import { HistoryPanel } from './components/HistoryPanel';
 import { DashboardTab } from './components/DashboardTab';
 import { DiscoverTab } from './components/DiscoverTab';
-import { fetchChains, runAlignment, pollJobUntilDone, fetchLigands, getAlignmentReportUrl, isValidPdbId } from './api';
+import { fetchChains, runAlignment, pollJobUntilDone, fetchLigands, getAlignmentReportUrl, isValidPdbId, uploadStructure as apiUploadStructure } from './api';
 
 class App {
     static MAX_PROTEINS = 20; // matches config.yaml's core.max_proteins default
@@ -45,6 +45,7 @@ class App {
             pdbMetadata: this.pdbMetadata,
             onAddPDB: (pdbId) => this.addPDB(pdbId),
             onAddManyPDBs: (pdbIds) => this.addManyPDBs(pdbIds),
+            onUploadStructure: (file) => this.uploadStructure(file),
             onRemovePDB: (pdbId) => this.removePDB(pdbId),
             onChainSelection: (pdbId, chainId) => {
                 this.chainSelections[pdbId] = chainId;
@@ -212,6 +213,26 @@ class App {
         if (accepted.length > 0) await this.loadChainsMetadata();
 
         return { added: accepted, overCap };
+    }
+
+    // The upload endpoint already returns full chain info for the one
+    // structure it saved, so unlike addPDB()/addManyPDBs() this doesn't need
+    // a follow-up loadChainsMetadata() round trip.
+    async uploadStructure(file) {
+        if (this.selectedPDBs.length >= App.MAX_PROTEINS) {
+            throw new Error(`Workspace limit is ${App.MAX_PROTEINS} structures.`);
+        }
+
+        const data = await apiUploadStructure(file);
+        const structureId = Object.keys(data.chains)[0];
+        const info = data.chains[structureId];
+
+        this.pdbMetadata[structureId] = info;
+        if (info.chains && info.chains.length > 0) {
+            this.chainSelections[structureId] = info.chains[0].id;
+        }
+        this.selectedPDBs.push(structureId);
+        this.overviewTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
     }
 
     removePDB(pdbId) {

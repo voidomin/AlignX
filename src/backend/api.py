@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import uuid
+import secrets
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -15,7 +16,7 @@ import json
 import re
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query, Body, Request
+from fastapi import FastAPI, HTTPException, Query, Body, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import JSONResponse
@@ -300,6 +301,50 @@ async def analyze_chains(
         logger.warning(f"Failed to fetch PDB title metadata: {e}")
 
     return {"chains": sanitize_for_json(chain_info)}
+
+
+@app.post("/api/upload")
+async def upload_structure(
+    file: UploadFile = File(...), session_id: Optional[str] = Query(None)
+):
+    """
+    Accept a user-uploaded .pdb/.ent/.cif structure file (rather than
+    fetching one of the four public databases by ID), validate it actually
+    parses as a structure, and return the same {"chains": {...}} shape
+    /api/chains does so the frontend can merge it in identically.
+    """
+    _safe_segment(session_id, "session_id")
+
+    if not file.filename or not file.filename.lower().endswith(
+        (".pdb", ".ent", ".cif")
+    ):
+        raise HTTPException(
+            status_code=400, detail="Only .pdb, .ent, or .cif files are accepted."
+        )
+
+    content = await file.read()
+    # Random, not derived from the filename - a stable ID keyed on user input
+    # would let two uploads collide (or let an ID be guessed/reused).
+    structure_id = f"UPLOAD-{secrets.token_hex(4).upper()}"
+
+    coordinator = AnalysisCoordinator(config, session_id=session_id)
+    # save_uploaded_bytes() does file I/O plus a real Bio.PDB parse to
+    # validate the content - both blocking, offloaded like analyze_structure
+    # below (see that call's comment for why this matters under uvicorn).
+    success, msg, path = await asyncio.to_thread(
+        coordinator.pdb_manager.save_uploaded_bytes,
+        file.filename,
+        content,
+        structure_id,
+    )
+    if not success:
+        raise HTTPException(status_code=400, detail=msg)
+
+    info = await asyncio.to_thread(coordinator.pdb_manager.analyze_structure, path)
+    info["source"] = "upload"
+    info["original_filename"] = file.filename
+
+    return {"chains": {structure_id: sanitize_for_json(info)}}
 
 
 def sanitize_for_json(val: Any) -> Any:
