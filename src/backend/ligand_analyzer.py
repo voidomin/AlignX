@@ -6,6 +6,8 @@ from typing import Dict, List, Any
 import numpy as np
 import pandas as pd
 
+from src.utils.logger import sanitize_for_log
+
 logger = logging.getLogger(__name__)
 
 
@@ -147,7 +149,7 @@ class LigandAnalyzer:
             l_resi = int(parts[-1])
             l_name = "_".join(parts[:-2])
         except (ValueError, IndexError):
-            logger.error(f"Invalid ligand ID format: {ligand_id}")
+            logger.error(f"Invalid ligand ID format: {sanitize_for_log(ligand_id)}")
             return {"error": "Invalid ID"}
 
         # Extract atoms for NeighborSearch

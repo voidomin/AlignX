@@ -1,5 +1,4 @@
 import { fetchStats, fetchHistory } from '../api';
-import { escapeHtml } from '../escapeHtml';
 
 const RECENT_RUNS_LIMIT = 5;
 
@@ -119,16 +118,31 @@ export class DashboardTab {
 
                 const row = document.createElement('div');
                 row.className = "flex justify-between items-center py-3 border-b border-border-subtle hover:bg-surface-raised transition-colors cursor-pointer group px-2 -mx-2 rounded-md";
+                // Static shell only (no interpolated values) - every actual
+                // dynamic value is assigned via textContent below, which
+                // can't be parsed as markup regardless of its content, so
+                // there's no injection sink here at all (stronger than
+                // escaping into an innerHTML template).
                 row.innerHTML = `
                     <div class="flex items-center gap-4">
-                        <span class="px-1.5 py-0.5 rounded-md bg-surface border border-border-subtle font-mono text-[10px] text-secondary uppercase">${escapeHtml(runTypeLabel)}</span>
-                        <span class="font-body-sm font-bold text-primary group-hover:text-accent font-mono">${escapeHtml(run.id)}</span>
-                        <div class="flex gap-1">
-                            ${pids.map(pid => `<span class="px-1.5 py-0.5 rounded-md bg-surface-raised border border-border-subtle font-mono text-[10px] text-secondary">${escapeHtml(pid)}</span>`).join("")}
-                        </div>
+                        <span class="px-1.5 py-0.5 rounded-md bg-surface border border-border-subtle font-mono text-[10px] text-secondary uppercase" data-field="type"></span>
+                        <span class="font-body-sm font-bold text-primary group-hover:text-accent font-mono" data-field="id"></span>
+                        <div class="flex gap-1" data-field="pids"></div>
                     </div>
-                    <span class="font-label-sm text-[10px] text-secondary">${escapeHtml(run.timestamp)}</span>
+                    <span class="font-label-sm text-[10px] text-secondary" data-field="timestamp"></span>
                 `;
+                row.querySelector('[data-field="type"]').textContent = runTypeLabel;
+                row.querySelector('[data-field="id"]').textContent = run.id;
+                row.querySelector('[data-field="timestamp"]').textContent = run.timestamp;
+
+                const pidsContainer = row.querySelector('[data-field="pids"]');
+                pids.forEach(pid => {
+                    const badge = document.createElement('span');
+                    badge.className = "px-1.5 py-0.5 rounded-md bg-surface-raised border border-border-subtle font-mono text-[10px] text-secondary";
+                    badge.textContent = pid;
+                    pidsContainer.appendChild(badge);
+                });
+
                 row.addEventListener('click', () => this.onReloadRun(run));
                 recentContainer.appendChild(row);
             });

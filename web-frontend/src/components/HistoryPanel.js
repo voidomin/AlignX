@@ -1,5 +1,4 @@
 import { fetchHistory, getShareLink } from '../api';
-import { escapeHtml } from '../escapeHtml';
 
 const PAGE_SIZE = 20;
 
@@ -92,20 +91,36 @@ export class HistoryPanel {
             const runType = (run.metadata && run.metadata.run_type) || 'compare';
             const runTypeLabel = runType === 'discover' ? 'Discover' : 'Compare';
 
+            // Static shell only (no interpolated values) - every dynamic
+            // value is assigned via textContent below, which can't be
+            // parsed as markup regardless of content, so there's no
+            // injection sink here at all (stronger than escaping into an
+            // innerHTML template).
             div.innerHTML = `
                 <div class="flex items-center gap-4">
-                    <span class="px-1.5 py-0.5 rounded-md bg-surface border border-border-subtle font-mono text-[10px] text-secondary uppercase">${escapeHtml(runTypeLabel)}</span>
-                    <span class="font-body-sm font-bold text-primary group-hover:text-accent font-mono">${escapeHtml(run.id)}</span>
-                    <div class="flex gap-1">
-                        ${pids.map(pid => `<span class="px-1.5 py-0.5 rounded-md bg-surface-raised border border-border-subtle font-mono text-[10px] text-secondary">${escapeHtml(pid)}</span>`).join("")}
-                    </div>
+                    <span class="px-1.5 py-0.5 rounded-md bg-surface border border-border-subtle font-mono text-[10px] text-secondary uppercase" data-field="type"></span>
+                    <span class="font-body-sm font-bold text-primary group-hover:text-accent font-mono" data-field="id"></span>
+                    <div class="flex gap-1" data-field="pids"></div>
                 </div>
                 <div class="flex items-center gap-4">
-                    <span class="text-[10px] font-medium capitalize text-success">${escapeHtml(run.status || "success")}</span>
-                    <span class="font-label-sm text-[10px] text-secondary">${escapeHtml(displayTime)}</span>
+                    <span class="text-[10px] font-medium capitalize text-success" data-field="status"></span>
+                    <span class="font-label-sm text-[10px] text-secondary" data-field="time"></span>
                     <button class="share-run-btn font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Share</button>
                 </div>
             `;
+
+            div.querySelector('[data-field="type"]').textContent = runTypeLabel;
+            div.querySelector('[data-field="id"]').textContent = run.id;
+            div.querySelector('[data-field="status"]').textContent = run.status || "success";
+            div.querySelector('[data-field="time"]').textContent = displayTime;
+
+            const pidsContainer = div.querySelector('[data-field="pids"]');
+            pids.forEach(pid => {
+                const badge = document.createElement('span');
+                badge.className = "px-1.5 py-0.5 rounded-md bg-surface-raised border border-border-subtle font-mono text-[10px] text-secondary";
+                badge.textContent = pid;
+                pidsContainer.appendChild(badge);
+            });
 
             div.addEventListener('click', () => {
                 this.onReloadRun(run);

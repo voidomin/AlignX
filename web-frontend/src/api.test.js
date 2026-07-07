@@ -138,7 +138,9 @@ describe('api.js (no API key configured)', () => {
     it('getAlignmentReportUrl appends a comma-joined sections param when a subset is given', async () => {
         const { getAlignmentReportUrl } = await import('./api.js');
         const url = getAlignmentReportUrl('run_1', ['summary', 'insights']);
-        expect(url).toContain('sections=summary,insights');
+        // URL-encoded (%2C, not a literal comma) - FastAPI decodes query
+        // params automatically, so sections.split(",") still sees "summary,insights".
+        expect(url).toContain('sections=summary%2Cinsights');
     });
 
     it('getLabNotebookUrl points at the notebook endpoint for the given run', async () => {

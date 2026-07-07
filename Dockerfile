@@ -36,8 +36,16 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy application code. Everything relevant to what's excluded from this
+# (.env, .git, credentials) is covered by .dockerignore, not this line.
 COPY . .
+
+# Run as a non-root user - the base python image defaults to root, which
+# this container has no actual need for (binds an unprivileged port, writes
+# only under /app).
+RUN useradd --create-home --shell /bin/bash appuser \
+    && chown -R appuser:appuser /app
+USER appuser
 
 # Expose FastAPI port
 EXPOSE 8000

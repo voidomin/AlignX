@@ -19,6 +19,9 @@ from src.backend.api import app
 
 
 def _client():
+    # "http://test" is httpx's own documented convention for ASGITransport -
+    # no real network connection is ever made (requests go straight into the
+    # app in-process), so there's no actual insecure transport here.
     return httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     )

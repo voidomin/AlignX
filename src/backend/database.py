@@ -5,6 +5,8 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 
+from src.utils.logger import sanitize_for_log
+
 logger = logging.getLogger(__name__)
 
 
@@ -131,10 +133,13 @@ class HistoryDatabase:
                 )
                 conn.commit()
 
-            logger.info(f"Saved run {run_id} to history (session: {session_id})")
+            logger.info(
+                f"Saved run {sanitize_for_log(run_id)} to history "
+                f"(session: {sanitize_for_log(session_id)})"
+            )
             return True
         except Exception as e:
-            logger.error(f"Failed to save run {run_id}: {e}")
+            logger.error(f"Failed to save run {sanitize_for_log(run_id)}: {e}")
             return False
 
     def get_all_runs(
@@ -240,7 +245,7 @@ class HistoryDatabase:
                     return run
                 return None
         except Exception as e:
-            logger.error(f"Failed to retrieve run {run_id}: {e}")
+            logger.error(f"Failed to retrieve run {sanitize_for_log(run_id)}: {e}")
             return None
 
     def delete_run(self, run_id: str) -> bool:
@@ -252,7 +257,7 @@ class HistoryDatabase:
                 conn.commit()
             return True
         except Exception as e:
-            logger.error(f"Failed to delete run {run_id}: {e}")
+            logger.error(f"Failed to delete run {sanitize_for_log(run_id)}: {e}")
             return False
 
     def get_latest_run(self, session_id: str = None) -> Optional[Dict[str, Any]]:

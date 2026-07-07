@@ -104,7 +104,7 @@ export async function runAlignment(pdbIds, chainSelections, removeWater, removeH
 }
 
 export async function fetchJobStatus(jobId) {
-    const res = await fetch(`${API_BASE}/api/jobs/${jobId}`, { headers: authHeaders() });
+    const res = await fetch(`${API_BASE}/api/jobs/${encodeURIComponent(jobId)}`, { headers: authHeaders() });
     if (!res.ok) {
         const errData = await res.json();
         throw new Error(errData.detail || "Job status fetch failed");
@@ -167,13 +167,13 @@ export async function fetchComparison(currentRunId, targetRunId) {
 }
 
 export async function fetchLigands(pdbId, runId) {
-    const res = await fetch(`${API_BASE}/api/ligands?pdb_id=${pdbId}&run_id=${runId}`, { headers: authHeaders() });
+    const res = await fetch(`${API_BASE}/api/ligands?pdb_id=${encodeURIComponent(pdbId)}&run_id=${encodeURIComponent(runId)}`, { headers: authHeaders() });
     if (!res.ok) throw new Error("Ligands fetch failed");
     return res.json();
 }
 
 export async function fetchInteractions(pdbId, ligandId, runId) {
-    const res = await fetch(`${API_BASE}/api/interactions?pdb_id=${pdbId}&ligand_id=${ligandId}&run_id=${runId}`, { headers: authHeaders() });
+    const res = await fetch(`${API_BASE}/api/interactions?pdb_id=${encodeURIComponent(pdbId)}&ligand_id=${encodeURIComponent(ligandId)}&run_id=${encodeURIComponent(runId)}`, { headers: authHeaders() });
     if (!res.ok) throw new Error("Interactions fetch failed");
     return res.json();
 }
@@ -222,37 +222,37 @@ export async function fetchStats() {
 }
 
 export async function fetchSequence(runId) {
-    const res = await fetch(`${API_BASE}/api/sequence?run_id=${runId}`, { headers: authHeaders() });
+    const res = await fetch(`${API_BASE}/api/sequence?run_id=${encodeURIComponent(runId)}`, { headers: authHeaders() });
     if (!res.ok) throw new Error("Sequence alignment fetch failed");
     return res.json();
 }
 
 export function getAlignmentPdbUrl(runId) {
-    return withApiKey(`${API_BASE}/results/${runId}/alignment.pdb`);
+    return withApiKey(`${API_BASE}/results/${encodeURIComponent(runId)}/alignment.pdb`);
 }
 
 export function getAlignmentFastaUrl(runId) {
-    return withApiKey(`${API_BASE}/results/${runId}/alignment.fasta`);
+    return withApiKey(`${API_BASE}/results/${encodeURIComponent(runId)}/alignment.fasta`);
 }
 
 // `sections` is optional - omit (or pass all 5 known sections) to get the
 // default full report; pass a subset array to generate a trimmed one.
 export function getAlignmentReportUrl(runId, sections) {
-    const base = `${API_BASE}/api/report?run_id=${runId}`;
+    const base = `${API_BASE}/api/report?run_id=${encodeURIComponent(runId)}`;
     const url = (sections && sections.length > 0)
-        ? `${base}&sections=${sections.join(',')}`
+        ? `${base}&sections=${encodeURIComponent(sections.join(','))}`
         : base;
     return withApiKey(url);
 }
 
 export function getLabNotebookUrl(runId) {
-    return withApiKey(`${API_BASE}/api/notebook?run_id=${runId}`);
+    return withApiKey(`${API_BASE}/api/notebook?run_id=${encodeURIComponent(runId)}`);
 }
 
 export function getDiscoveryReportUrl(runId) {
-    return withApiKey(`${API_BASE}/api/discover/report?run_id=${runId}`);
+    return withApiKey(`${API_BASE}/api/discover/report?run_id=${encodeURIComponent(runId)}`);
 }
 
 export function getDiscoveryExportUrl(runId) {
-    return withApiKey(`${API_BASE}/api/discover/export?run_id=${runId}`);
+    return withApiKey(`${API_BASE}/api/discover/export?run_id=${encodeURIComponent(runId)}`);
 }

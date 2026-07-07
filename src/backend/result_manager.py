@@ -5,7 +5,7 @@ Result management and indexing for batch comparisons.
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import pandas as pd
-from src.utils.logger import get_logger
+from src.utils.logger import get_logger, sanitize_for_log
 
 logger = get_logger()
 
@@ -55,7 +55,9 @@ class ResultManager:
                 df = pd.read_csv(rmsd_path, index_col=0)
                 return df
             except Exception as e:
-                logger.error(f"Failed to load RMSD matrix for {run_id}: {e}")
+                logger.error(
+                    f"Failed to load RMSD matrix for {sanitize_for_log(run_id)}: {e}"
+                )
 
         return None
 
@@ -78,7 +80,8 @@ class ResultManager:
 
         if rmsd1_aligned.empty:
             logger.warning(
-                f"Cannot compare runs {run_id_1} and {run_id_2}: No overlapping proteins."
+                f"Cannot compare runs {sanitize_for_log(run_id_1)} and "
+                f"{sanitize_for_log(run_id_2)}: No overlapping proteins."
             )
             return None
 

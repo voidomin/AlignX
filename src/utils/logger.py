@@ -72,3 +72,15 @@ def get_logger(name: str = "mustang_pipeline") -> logging.Logger:
         Logger instance
     """
     return logging.getLogger(name)
+
+
+def sanitize_for_log(value: object) -> str:
+    """
+    Strip CR/LF from a value before it's interpolated into a log message.
+
+    Several IDs logged on error paths (run_id, ligand_id, etc.) are
+    user-controlled at the API layer - without this, a value containing
+    newlines could forge fake log lines that look like separate,
+    legitimate entries.
+    """
+    return str(value).replace("\r", "").replace("\n", "")

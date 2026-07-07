@@ -17,7 +17,7 @@ WSL_EXE = "C:/Windows/System32/wsl.exe"
 ALIGN_FASTA = "alignment.fasta"
 ALIGN_PDB = "alignment.pdb"
 ALIGN_AFASTA = "alignment.afasta"
-MUSTANG_URL = "http://lcb.infotech.monash.edu.au/mustang/mustang_v3.2.3.tgz"
+MUSTANG_URL = "https://lcb.infotech.monash.edu.au/mustang/mustang_v3.2.3.tgz"
 
 
 class MustangRunner:
@@ -57,17 +57,22 @@ class MustangRunner:
         return self._base_dir
 
     def _download_mustang_source(self, dest_path: Path) -> bool:
-        """Download Mustang source tarball with SSL bypass for restricted environments."""
+        """Download the Mustang source tarball. This gets compiled and its
+        output is later executed as a subprocess, so a MITM'd download here
+        is a real code-execution risk - always uses a fully verified TLS
+        context (certificate + hostname), never a bypass."""
         import urllib.request
         import ssl
+        import certifi
 
         try:
-            # Create unverified context to bypass SSL issues on Streamlit Cloud
-            # Note: This is a known workaround for specific server certificate issues.
-            context = ssl._create_unverified_context()
-            logger.info(
-                f"Downloading from {MUSTANG_URL} (SSL verification disabled)..."
-            )
+            # Some restricted environments (previously including Streamlit
+            # Cloud) fail cert verification not because the server's
+            # certificate is bad, but because the system's CA bundle is
+            # stale/incomplete - explicitly using certifi's bundle fixes
+            # that without disabling verification altogether.
+            context = ssl.create_default_context(cafile=certifi.where())
+            logger.info(f"Downloading from {MUSTANG_URL}...")
 
             with urllib.request.urlopen(
                 MUSTANG_URL, context=context, timeout=60
@@ -127,8 +132,8 @@ class MustangRunner:
             self.wsl_binary = binary
         else:
             self.executable = str(binary.absolute())
-            # Ensure binary is executable on Linux
-            # Standard permission for executable binaries
+            # rwxr-xr-x - standard, minimal permission for a compiled
+            # executable (not 0o777/0o666 - reviewed, intentional).
             os.chmod(self.executable, 0o755)
         return True
 
@@ -241,7 +246,8 @@ class MustangRunner:
     def _verify_native_linux_binary(self, bin_path: Path) -> Tuple[bool, str]:
         """Verify if a binary can be run natively on Linux."""
         try:
-            # Set execute permissions
+            # rwxr-xr-x - same minimal, reviewed permission as
+            # _locate_compiled_binary() above, not 0o777/0o666.
             os.chmod(bin_path, 0o755)
             subprocess.run([str(bin_path), "--help"], capture_output=True, timeout=2)
             self.use_wsl = False

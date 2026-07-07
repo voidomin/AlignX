@@ -2,6 +2,25 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.15.0]
+
+A SonarCloud pass, fetched directly from its public API (`sonarcloud.io/api/...` - no token needed since this project is public) rather than a pasted issue list. Found that 100% of currently-open Bugs and roughly half of all "new code" issues are in `static/assets/*.js` (the built bundle) and `.agents/**` - both already listed in `sonar-project.properties`, but that file isn't being read because analysis runs in SonarCloud's Automatic Analysis mode, which doesn't consult it. **Not fixed here** - closing that gap needs either a SonarCloud project-settings change or switching to CI-driven analysis, both of which need repo-admin access this session doesn't have. Everything below is what's real, outside that noise.
+
+### Fixed
+- **`web-frontend/src/api.js`**: every URL-building function now `encodeURIComponent()`s its interpolated ID params (`jobId`, `pdbId`, `runId`, `ligandId`, etc.) - previously inconsistent, some already did, several didn't.
+- **Two BLOCKER-severity "arbitrary code execution" findings** (`DashboardTab.js`, `HistoryPanel.js`): both were already `escapeHtml()`-protected, but SonarCloud's static analyzer can't verify a custom sanitizer, so it still flags any `innerHTML` assignment with interpolated data as a sink. Refactored to a static-only HTML shell with all dynamic values assigned via `textContent` instead - stronger than escaping (no markup parsing happens on the dynamic values at all) and satisfies the rule for real instead of needing a suppression.
+- **`mustang_runner.py`'s source-tarball download disabled SSL certificate *and* hostname verification** entirely (a documented workaround for a past Streamlit Cloud issue) - this downloads code that gets compiled and executed as a subprocess, so an unverified connection is a real MITM-to-RCE path. Switched to a fully verified TLS context using `certifi`'s CA bundle explicitly, which fixes the likely actual root cause (a stale/incomplete system CA store) without disabling verification.
+- **`MUSTANG_URL` was plain `http://`** - switched to `https://` (confirmed the host serves it directly, no redirect needed).
+- **Log injection** (`database.py`, `ligand_analyzer.py`, `result_manager.py`): user-controlled `run_id`/`session_id`/`ligand_id` values were interpolated directly into log messages - a value containing newlines could forge fake log lines. Added `sanitize_for_log()` (`src/utils/logger.py`) and applied it at every site carrying one of these values, not just the ones SonarCloud happened to flag in the same files.
+- **Notebook export used `eval()`** to run the embedded 3Dmol.js library source. Not attacker-controlled (the source is a bundled local file, not user input), but replaced with the standard script-element-injection pattern anyway - same effect, no `eval()`, and it's what browsers actually expect for running injected script content.
+- **Bootstrap/jQuery CDN tags in the notebook template had no Subresource Integrity check** - added `integrity`/`crossorigin` attributes with SHA-384 hashes computed directly from the exact files those URLs serve (not guessed/copied from memory).
+- **Docker container ran as root** - added a non-root `appuser`, `chown`'d `/app` to it. Verified live: a real container built from this exact Dockerfile runs as `appuser` (not root) and still completes a real alignment job successfully (Mustang execution, file writes under `/app/data` and `/app/results` all still work).
+
+### Verified
+- 242 backend tests (3 new, covering `sanitize_for_log`) + 122 frontend tests, `ruff`/`black` clean.
+- Live: built and ran the actual Dockerfile, confirmed non-root (`whoami` → `appuser`), ran a real 2-structure alignment end-to-end inside it.
+- Live: downloaded a real generated notebook from that same container and opened it in a real browser - 3Dmol.js, jQuery, and Bootstrap all loaded correctly (confirming the SRI hashes are exactly right and the eval() replacement behaves identically), zero console errors.
+
 ## [3.14.0]
 
 `docs/ROADMAP_V4.md` Phase 4 — shareable run links. This completes the v4 roadmap (Phases 1-4 all shipped).
