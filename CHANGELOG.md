@@ -2,6 +2,20 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.10.0]
+
+A final documentation/consistency pass before calling the project production-ready - a fresh audit (not relying on earlier-session notes) plus a real Docker-container smoke test.
+
+### Fixed
+- **`FastAPI(version="1.0.0")` was hardcoded** and never updated since the API's very first commit - visible on `/docs` and `/openapi.json`, silently out of sync with every release since. Now reads `config.yaml`'s `app.version`, so it can't drift again.
+- **Stale test counts** in `README.md` (172/91) and `docs/testing/VERIFICATION.md` (210/99) - both predated the 3.8.0/3.9.0 test additions. Updated to the actual current 223/105.
+- **`docs/deployment/DEPLOYMENT.md`'s Streamlit Cloud instructions still said branch `main`** - stale since the 3.6.0 branch split, which made `streamlit-stable` the actual deploy target specifically so `main` could keep evolving without risk to the live app. Rewrote the whole section: deploy from `streamlit-stable`, and cherry-pick specific commits there rather than merging `main` wholesale, which is exactly the coupling the branch split exists to avoid.
+
+### Verified
+- Fresh full-suite run (223 backend + 105 frontend), `ruff`/`black`/`pip-audit`/`npm audit` all clean.
+- Built the actual production `Dockerfile` from scratch and ran it for real: `/health`, the SPA root, and a live `/api/chains` call against a real PDB ID (RCSB download + chain analysis) all worked inside the container. Separately verified the `/results` auth gate inside a fresh container with `ALIGNX_API_KEY` set - `401` with no key, `404` (past auth, file just doesn't exist) with the correct key.
+- Confirmed via `git log`/diff that the stale-but-abandoned `feat/v2.2-improvements` branch (kept during the earlier branch cleanup pending this check) has nothing left to recover - every fix and feature in its 2 commits (ReDoS-safe RMSD parsing, sequence identity calculation, `pdb_manager.py` null-safety, a Streamlit UI phase) has since been independently reimplemented on `main`, in more advanced form in every case.
+
 ## [3.9.0]
 
 SonarQube Cloud's Quality Gate also failed on "Security Rating on New Code" (4 Blocker-severity vulnerabilities). Fixed for real.

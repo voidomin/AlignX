@@ -83,22 +83,24 @@ Deploys `app.py` (the Streamlit interface). Does **not** deploy the Vite SPA or 
 
 ### Steps
 
-1. **Push your code to GitHub**:
+This repo already maintains two long-lived branches for exactly this reason: `main` is the active FastAPI/SPA/Discover development trunk, and `streamlit-stable` is frozen for whatever's actually live on Streamlit Cloud - so a push to `main` (however large) can never break the deployed Streamlit app. **Deploy from `streamlit-stable`, not `main`.**
+
+1. **If you're forking/setting this up fresh**, push both branches to your own GitHub remote:
     ```bash
-    git init
-    git add .
-    git commit -m "Initial commit"
-    git branch -M main
-    git remote add origin https://github.com/<your-username>/AlignX.git
     git push -u origin main
+    git push -u origin streamlit-stable
     ```
+    (If you already have this repo cloned with both branches, skip straight to step 2.)
 
 2. **Sign up/Login to Streamlit Cloud**: [share.streamlit.io](https://share.streamlit.io/), sign in with GitHub.
 
 3. **Deploy the App**:
-    - Click "New app" → select your repository → branch `main` → main file path `app.py` → **Deploy!**
+    - Click "New app" → select your repository → branch **`streamlit-stable`** → main file path `app.py` → **Deploy!**
+    - If you're re-pointing an *already-deployed* app rather than creating a new one, use the app's Settings panel instead (Settings → Branch → `streamlit-stable` → Save) - this triggers a reboot from the new branch.
 
 4. Streamlit installs from `requirements.txt`. `packages.txt` provides the system build tools needed to compile Mustang from the bundled source on first run.
+
+5. **When you actually want to ship a Streamlit-visible change** (a fix that touches `app.py`, `pages/`, `src/frontend/`, or backend files Streamlit shares - see `SECURITY.md`/`config_models.py`'s `_soften_optional_sections` for which those are): cherry-pick the specific commit onto `streamlit-stable` and push it there. Don't merge `main` wholesale - that reintroduces the exact coupling this branch split exists to avoid.
 
 ### ⚠️ Note on Persistent History
 

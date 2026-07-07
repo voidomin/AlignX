@@ -64,10 +64,13 @@ async def lifespan(app: FastAPI):
 
 
 # Initialize FastAPI App
+# version reads from config.yaml's app.version rather than a hardcoded
+# string, so /docs and /openapi.json can't silently drift out of sync with
+# the app's actual release version the way a hardcoded "1.0.0" did before.
 app = FastAPI(
     title="StructScope Web API",
     description="REST API backend for StructScope: protein structural alignment and structure-to-function discovery",
-    version="1.0.0",
+    version=config.get("app", {}).get("version", "0.0.0"),
     lifespan=lifespan,
 )
 
