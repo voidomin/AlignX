@@ -9,12 +9,12 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install --no-install-recommends -y \
     build-essential \
-    wget \
+    curl \
     make \
     tar \
-    curl \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Mustang from local source

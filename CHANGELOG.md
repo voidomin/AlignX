@@ -2,6 +2,21 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.30.0]
+
+First pass at the 47 open SonarCloud issues pulled from the public API (`api/issues/search?componentKeys=voidomin_AlignX&resolved=false`): 3 are the `S8544` hash-pinned-lockfile decision explicitly deferred in v3.24.0 (still deferred, no change here), 41 are Cognitive Complexity (`S3776`) refactors ranging from just-over-threshold to extreme (up to 179, mostly in the legacy Streamlit UI) - deliberately out of scope for this entry, tracked as a separate follow-up. This entry only covers the remaining 3 mechanical/safe ones.
+
+### Fixed
+- **`docker:S6500`**: `Dockerfile`'s `apt-get install` now passes `--no-install-recommends` - verified via a real `docker build` + `docker run` + `/health` check that no recommended-but-actually-needed package (e.g. TLS certs for the Mustang source download) was silently relied upon.
+- **`docker:S7018`**: alphabetized the same `apt-get install` package list (`build-essential, curl, make, tar, wget`).
+
+### Not fixed (false positive)
+- **`python:S7504`** (`src/frontend/sidebar.py:19`, "unnecessary `list()` call"): the existing code comment already explains why it's required - the loop body deletes from `st.session_state` during iteration, which raises `RuntimeError: dictionary changed size during iteration` without the defensive copy. Added a note pointing at the specific rule so a future cleanup pass doesn't "fix" this into a live bug.
+
+### Verified
+- Full `docker build` succeeded; container's `/health` endpoint responded `{"status":"healthy","mustang_installed":true,...}`.
+- Existing test suite unaffected (comment-only change to `sidebar.py`, Dockerfile-only change with no Python surface).
+
 ## [3.29.0]
 
 Third batch of the `new_coverage` push - `pdb_manager.py`, the next-highest genuinely-testable gap by uncovered-line count.

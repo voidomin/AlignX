@@ -15,7 +15,9 @@ def _do_soft_reset():
     # Clear ZIP buffers cached in session state to prevent memory leakage.
     # list(...) is required here, not redundant - the loop body deletes
     # from st.session_state, which would raise "dictionary changed size
-    # during iteration" without this defensive copy.
+    # during iteration" without this defensive copy. SonarQube's S7504
+    # flags this as an unnecessary list() call; it's a false positive that
+    # doesn't see the mutation inside the loop body below - do not "fix".
     for k in list(st.session_state.keys()):
         if k.startswith("zip_buffer_"):
             del st.session_state[k]
