@@ -10,7 +10,7 @@ import time
 import shutil
 import logging
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import streamlit as st
 import sqlite3
@@ -40,6 +40,99 @@ class SessionInitializer:
     """
 
     @staticmethod
+    def _ensure_default(key: str, factory) -> None:
+        if key not in st.session_state:
+            st.session_state[key] = factory()
+
+    @staticmethod
+    def _init_core_services(session_id: str) -> None:
+        SessionInitializer._ensure_default("history_db", HistoryDatabase)
+
+        if "cache_manager" not in st.session_state:
+            from src.utils.cache_manager import CacheManager
+
+            st.session_state.cache_manager = CacheManager(
+                st.session_state.config, st.session_state.history_db
+            )
+
+        SessionInitializer._ensure_default(
+            "pdb_manager",
+            lambda: PDBManager(
+                st.session_state.config,
+                st.session_state.cache_manager,
+                session_id=session_id,
+            ),
+        )
+        SessionInitializer._ensure_default(
+            "mustang_runner", lambda: MustangRunner(st.session_state.config)
+        )
+        SessionInitializer._ensure_default(
+            "rmsd_analyzer", lambda: RMSDAnalyzer(st.session_state.config)
+        )
+        SessionInitializer._ensure_default("sequence_viewer", SequenceViewer)
+        SessionInitializer._ensure_default(
+            "report_generator", lambda: ReportGenerator(Path("results") / "latest_run")
+        )
+        SessionInitializer._ensure_default("pdb_ids", list)
+        SessionInitializer._ensure_default("results", lambda: None)
+        SessionInitializer._ensure_default(
+            "ligand_analyzer", lambda: LigandAnalyzer(st.session_state.config)
+        )
+        SessionInitializer._ensure_default(
+            "coordinator",
+            lambda: AnalysisCoordinator(st.session_state.config, session_id=session_id),
+        )
+
+    @staticmethod
+    def _run_ttl_cleanup() -> None:
+        """Purges stale session directories (>24h) and their DB records."""
+        try:
+            # Open a temporary connection specifically for cleanup
+            with sqlite3.connect(st.session_state.history_db.db_path) as conn:
+                cleanup_stale_sessions(max_age_hours=24, db_conn=conn)
+        except Exception as e:
+            st.session_state.logger.warning(
+                f"Failed to run TTL cleanup with DB connection: {e}"
+            )
+            # Fallback to file-only cleanup if DB is locked
+            cleanup_stale_sessions(max_age_hours=24)
+
+    @staticmethod
+    def _init_startup_state() -> None:
+        """One-time-per-session background cleanup and initial HUD/UI
+        defaults - only ever reached once, from the caller's single
+        "auto_recovered" guard, but each field here keeps its own
+        independent guard rather than relying on that alone."""
+        if "system_manager" not in st.session_state:
+            st.session_state.system_manager = SystemManager(st.session_state.config)
+            # Perform automated startup cleanup (runs older than 7 days)
+            st.session_state.system_manager.cleanup_old_runs(days=7)
+            SessionInitializer._run_ttl_cleanup()
+
+        if "mustang_install_status" not in st.session_state:
+            mustang_ok, mustang_msg = (
+                st.session_state.mustang_runner.check_installation()
+            )
+            st.session_state.mustang_install_status = (mustang_ok, mustang_msg)
+
+        for key, value in {
+            "guided_mode": False,
+            "chain_selection_mode": "Auto (use first chain)",
+            "selected_chain": "A",
+            "manual_chain_selections": {},
+            "metadata_fetched": False,
+            "metadata": {},
+            "remove_water": True,
+            "remove_hetero": True,
+            "input_method_radio": "Manual Entry",
+            "show_metadata": False,
+            "first_visit": True,
+            "_confirm_reset": False,
+            "_confirm_deep_clean": False,
+        }.items():
+            SessionInitializer._ensure_default(key, lambda value=value: value)
+
+    @staticmethod
     def initialize():
         """
         Main entry point for session initialization.
@@ -53,118 +146,11 @@ class SessionInitializer:
         if "session_id" not in st.session_state:
             st.session_state.session_id = get_session_id()
 
-        session_id = st.session_state.session_id
-
-        if "history_db" not in st.session_state:
-            st.session_state.history_db = HistoryDatabase()
-
-        if "cache_manager" not in st.session_state:
-            from src.utils.cache_manager import CacheManager
-
-            st.session_state.cache_manager = CacheManager(
-                st.session_state.config, st.session_state.history_db
-            )
-
-        if "pdb_manager" not in st.session_state:
-            st.session_state.pdb_manager = PDBManager(
-                st.session_state.config,
-                st.session_state.cache_manager,
-                session_id=session_id,
-            )
-
-        if "mustang_runner" not in st.session_state:
-            st.session_state.mustang_runner = MustangRunner(st.session_state.config)
-
-        if "rmsd_analyzer" not in st.session_state:
-            st.session_state.rmsd_analyzer = RMSDAnalyzer(st.session_state.config)
-
-        if "sequence_viewer" not in st.session_state:
-            st.session_state.sequence_viewer = SequenceViewer()
-
-        if "report_generator" not in st.session_state:
-            st.session_state.report_generator = ReportGenerator(
-                Path("results") / "latest_run"
-            )
-
-        if "pdb_ids" not in st.session_state:
-            st.session_state.pdb_ids = []
-
-        if "results" not in st.session_state:
-            st.session_state.results = None
-
-        if "ligand_analyzer" not in st.session_state:
-            st.session_state.ligand_analyzer = LigandAnalyzer(st.session_state.config)
-
-        if "coordinator" not in st.session_state:
-            st.session_state.coordinator = AnalysisCoordinator(
-                st.session_state.config, session_id=session_id
-            )
+        SessionInitializer._init_core_services(st.session_state.session_id)
 
         if "auto_recovered" not in st.session_state:
             st.session_state.auto_recovered = False
-
-            if "system_manager" not in st.session_state:
-                st.session_state.system_manager = SystemManager(st.session_state.config)
-                # Perform automated startup cleanup (runs older than 7 days)
-                st.session_state.system_manager.cleanup_old_runs(days=7)
-
-                # TTL cleanup: purge stale session directories (>24h) and their DB records
-                try:
-                    # Open a temporary connection specifically for cleanup
-                    with sqlite3.connect(st.session_state.history_db.db_path) as conn:
-                        cleanup_stale_sessions(max_age_hours=24, db_conn=conn)
-                except Exception as e:
-                    st.session_state.logger.warning(
-                        f"Failed to run TTL cleanup with DB connection: {e}"
-                    )
-                    # Fallback to file-only cleanup if DB is locked
-                    cleanup_stale_sessions(max_age_hours=24)
-
-            # --- INITIAL HUD STATE ---
-            if "mustang_install_status" not in st.session_state:
-                mustang_ok, mustang_msg = (
-                    st.session_state.mustang_runner.check_installation()
-                )
-                st.session_state.mustang_install_status = (mustang_ok, mustang_msg)
-
-            if "guided_mode" not in st.session_state:
-                st.session_state.guided_mode = False
-
-            if "chain_selection_mode" not in st.session_state:
-                st.session_state.chain_selection_mode = "Auto (use first chain)"
-
-            if "selected_chain" not in st.session_state:
-                st.session_state.selected_chain = "A"
-
-            if "manual_chain_selections" not in st.session_state:
-                st.session_state.manual_chain_selections = {}
-
-            if "metadata_fetched" not in st.session_state:
-                st.session_state.metadata_fetched = False
-
-            if "metadata" not in st.session_state:
-                st.session_state.metadata = {}
-
-            if "remove_water" not in st.session_state:
-                st.session_state.remove_water = True
-
-            if "remove_hetero" not in st.session_state:
-                st.session_state.remove_hetero = True
-
-            if "input_method_radio" not in st.session_state:
-                st.session_state.input_method_radio = "Manual Entry"
-
-            if "show_metadata" not in st.session_state:
-                st.session_state.show_metadata = False
-
-            if "first_visit" not in st.session_state:
-                st.session_state.first_visit = True
-
-            if "_confirm_reset" not in st.session_state:
-                st.session_state._confirm_reset = False
-
-            if "_confirm_deep_clean" not in st.session_state:
-                st.session_state._confirm_deep_clean = False
+            SessionInitializer._init_startup_state()
 
 
 def get_session_id() -> str:
@@ -203,6 +189,56 @@ def get_session_paths(session_id: str) -> Dict[str, Path]:
     return paths
 
 
+def _collect_session_ids(session_roots: List[Path]) -> set:
+    """Every session subdirectory name (UUID-based) seen across all roots -
+    "run_*" dirs are the legacy non-session format and are skipped."""
+    seen_sessions = set()
+    for root in session_roots:
+        if not root.exists():
+            continue
+        for child in root.iterdir():
+            if child.is_dir() and not child.name.startswith("run_"):
+                seen_sessions.add(child.name)
+    return seen_sessions
+
+
+def _newest_session_mtime(
+    session_roots: List[Path], session_id: str
+) -> Tuple[float, List[Path]]:
+    """The most recent mtime across a session's directories (one per root
+    that has it), plus the list of dirs found - a session counts as active
+    as long as ANY of its directories was touched recently."""
+    session_dirs = []
+    newest_mtime = 0
+    for root in session_roots:
+        session_dir = root / session_id
+        if session_dir.exists():
+            session_dirs.append(session_dir)
+            newest_mtime = max(newest_mtime, session_dir.stat().st_mtime)
+    return newest_mtime, session_dirs
+
+
+def _purge_session_dirs(session_dirs: List[Path], age_seconds: float) -> None:
+    for d in session_dirs:
+        try:
+            shutil.rmtree(d)
+            logger.info(f"TTL cleanup: removed {d} (age: {age_seconds/3600:.1f}h)")
+        except Exception as e:
+            logger.warning(f"TTL cleanup failed for {d}: {e}")
+
+
+def _purge_session_db_records(db_conn, session_id: str) -> None:
+    if db_conn is None:
+        return
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute("DELETE FROM runs WHERE session_id = ?", (session_id,))
+        db_conn.commit()
+        logger.info(f"TTL cleanup: removed DB records for session {session_id}")
+    except Exception as e:
+        logger.warning(f"TTL DB cleanup failed for session {session_id}: {e}")
+
+
 def cleanup_stale_sessions(max_age_hours: int = 24, db_conn=None) -> List[str]:
     """
     Remove session directories older than max_age_hours and cleanup DB.
@@ -217,68 +253,20 @@ def cleanup_stale_sessions(max_age_hours: int = 24, db_conn=None) -> List[str]:
     Returns:
         List of purged session directory names.
     """
-    purged = []
     now = time.time()
     threshold_seconds = max_age_hours * 3600
+    session_roots = [Path("data/raw"), Path("data/cleaned"), Path("results")]
 
-    session_roots = [
-        Path("data/raw"),
-        Path("data/cleaned"),
-        Path("results"),
-    ]
-
-    # Collect all unique session IDs across all roots
-    seen_sessions = set()
-
-    for root in session_roots:
-        if not root.exists():
-            continue
-        for child in root.iterdir():
-            if child.is_dir() and not child.name.startswith("run_"):
-                # This looks like a session directory (UUID-based name)
-                # Skip non-session dirs like "run_*" (legacy format)
-                seen_sessions.add(child.name)
-
-    for session_id in seen_sessions:
-        # Check the newest mtime across all roots for this session
-        newest_mtime = 0
-        session_dirs = []
-
-        for root in session_roots:
-            session_dir = root / session_id
-            if session_dir.exists():
-                session_dirs.append(session_dir)
-                mtime = session_dir.stat().st_mtime
-                if mtime > newest_mtime:
-                    newest_mtime = mtime
-
+    purged = []
+    for session_id in _collect_session_ids(session_roots):
+        newest_mtime, session_dirs = _newest_session_mtime(session_roots, session_id)
         age_seconds = now - newest_mtime
-        if age_seconds > threshold_seconds and session_dirs:
-            for d in session_dirs:
-                try:
-                    shutil.rmtree(d)
-                    logger.info(
-                        f"TTL cleanup: removed {d} (age: {age_seconds/3600:.1f}h)"
-                    )
-                except Exception as e:
-                    logger.warning(f"TTL cleanup failed for {d}: {e}")
-            purged.append(session_id)
+        if age_seconds <= threshold_seconds or not session_dirs:
+            continue
 
-            # Cleanup DB records for this session
-            if db_conn is not None:
-                try:
-                    cursor = db_conn.cursor()
-                    cursor.execute(
-                        "DELETE FROM runs WHERE session_id = ?", (session_id,)
-                    )
-                    db_conn.commit()
-                    logger.info(
-                        f"TTL cleanup: removed DB records for session {session_id}"
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"TTL DB cleanup failed for session {session_id}: {e}"
-                    )
+        _purge_session_dirs(session_dirs, age_seconds)
+        purged.append(session_id)
+        _purge_session_db_records(db_conn, session_id)
 
     if purged:
         logger.info(f"TTL cleanup: purged {len(purged)} stale sessions")

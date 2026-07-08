@@ -2,6 +2,18 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.50.0]
+
+Fifth batch of the legacy Streamlit UI cleanup (2 of 14 findings: complexity 37, 47), both in `src/utils/session_manager.py`.
+
+### Fixed
+- **`SessionInitializer.initialize`** (47→within limit): the ~25 `if "x" not in st.session_state: ...` guards - the bulk nested two levels deep inside the `auto_recovered` gate - were split into `_init_core_services()` and `_init_startup_state()`, plus a generic `_ensure_default(key, factory)` helper for the simple constant-default fields. Every individual field keeps its own guard exactly as before (not collapsed into unconditional assignment) - only the nesting depth changed, not the semantics.
+- **`cleanup_stale_sessions`** (37→within limit): split into `_collect_session_ids`, `_newest_session_mtime`, `_purge_session_dirs`, and `_purge_session_db_records`.
+
+### Verified
+- Full suite: 568 tests passing, including the 6 existing `cleanup_stale_sessions` tests (purge/fresh-skip/legacy-skip/empty/DB-cleanup/DB-failure-doesn't-block-purge) and 2 `SessionInitializer.initialize` tests (all keys populated, idempotent across reruns) - both functions already had solid coverage from an earlier test-writing pass.
+- `black`/`ruff` clean.
+
 ## [3.49.0]
 
 Fourth batch of the legacy Streamlit UI cleanup (1 of 14 findings: complexity 29, `pages/2_Mission_History.py`).
