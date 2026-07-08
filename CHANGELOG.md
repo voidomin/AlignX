@@ -2,6 +2,20 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.35.0]
+
+Fourth batch of the backend `python:S3776` cleanup (3 more of the 41 open findings: complexity 26, 27, 28). 12 of 26 backend findings now resolved.
+
+### Fixed
+- **`notebook_exporter.py:37`** (`export`, 26→within limit): split into `_prepare_stats`, `_load_pdb_content`, `_load_dmol_js`, `_heatmap_div`, `_rmsf_div`, `_ligand_html`, `_processed_insights` - each independent piece of the notebook's data prep is now its own testable unit instead of one long function with 7 unrelated `if` blocks.
+- **`api.py:887`** (`get_interactions`, 27→within limit): its structure-file lookup (raw-download dir, then run-results-dir fallback, trying 3 filename casings in each) was byte-for-byte duplicated in `get_ligands` right above it. Extracted both into a shared `_find_structure_pdb_path()` - fixes the complexity finding and removes real duplication. The residue-renumbering block was separately extracted into `_add_aligned_resi()`.
+- **`rmsd_calculator.py:167`** (`parse_rms_rot_file`, 28→within limit): the nested `for i / for j` matrix-building loop with inner value-parsing try/except was split into `_parse_matrix_value()`, `_matrix_row()`, and `_extract_rms_rot_data_rows()`.
+
+### Verified
+- Full backend suite: 368 tests passing (1 unrelated flaky failure in `test_async_pdb.py::test_async_metadata` reproduced and cleared on immediate re-run, in a file untouched by this change).
+- Manually confirmed `_parse_matrix_value`/`_matrix_row` reproduce the original's exact padding/truncation/malformed-value behavior.
+- `black`/`ruff` clean on all three touched files.
+
 ## [3.34.0]
 
 Fourth batch of the `new_coverage` push - `notebook_exporter.py` and `report_generator.py`, the two largest remaining near-zero-coverage backend files (`phylo_tree.py`, the third file originally on this list, had already reached 88% via unrelated concurrent refactor work).

@@ -164,6 +164,35 @@ def parse_rmsd_matrix(output_dir: Path, pdb_ids: List[str]) -> Optional[pd.DataF
     return None
 
 
+def _parse_matrix_value(val: str) -> float:
+    if val == "---" or "---" in val:
+        return 0.0
+    try:
+        return float(val)
+    except ValueError:
+        return 0.0
+
+
+def _matrix_row(raw_row: List[str], n: int) -> List[float]:
+    """Parses up to `n` values from a raw row, padding with 0.0 if the row
+    (or the whole matrix, via the caller) came up short - a truncated
+    .rms_rot file shouldn't crash the whole parse."""
+    row = [_parse_matrix_value(v) for v in raw_row[:n]]
+    row += [0.0] * (n - len(row))
+    return row
+
+
+def _extract_rms_rot_data_rows(lines: List[str], matrix_start: int) -> List[List[str]]:
+    data_rows = []
+    for line in lines[matrix_start:]:
+        if "|" not in line:
+            continue
+        parts = line.split("|")[1].strip().split()
+        if parts:
+            data_rows.append(parts)
+    return data_rows
+
+
 def parse_rms_rot_file(
     rms_rot_file: Path, pdb_ids: List[str]
 ) -> Optional[pd.DataFrame]:
@@ -178,47 +207,22 @@ def parse_rms_rot_file(
             return None
 
         lines = content.splitlines()
-        matrix_start = None
-        for i, line in enumerate(lines):
-            if "RMSD matrix" in line:
-                matrix_start = i
-                break
-
+        matrix_start = next(
+            (i for i, line in enumerate(lines) if "RMSD matrix" in line), None
+        )
         if matrix_start is None:
             return None
 
-        data_rows = []
-        for line in lines[matrix_start:]:
-            if "|" in line:
-                parts = line.split("|")[1].strip().split()
-                if parts:
-                    data_rows.append(parts)
-
+        data_rows = _extract_rms_rot_data_rows(lines, matrix_start)
         if not data_rows:
             return None
 
         n = len(pdb_ids)
-        matrix = []
-        for i in range(min(len(data_rows), n)):
-            row = []
-            for j in range(min(len(data_rows[i]), n)):
-                val = data_rows[i][j]
-                if val == "---" or "---" in val:
-                    row.append(0.0)
-                else:
-                    try:
-                        row.append(float(val))
-                    except ValueError:
-                        row.append(0.0)
-            while len(row) < n:
-                row.append(0.0)
-            matrix.append(row[:n])
-
+        matrix = [_matrix_row(row, n) for row in data_rows[:n]]
         while len(matrix) < n:
             matrix.append([0.0] * n)
 
-        df = pd.DataFrame(matrix, index=pdb_ids, columns=pdb_ids)
-        return df
+        return pd.DataFrame(matrix, index=pdb_ids, columns=pdb_ids)
 
     except Exception:
         logger.exception("Failed to parse .rms_rot file")

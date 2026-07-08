@@ -842,31 +842,8 @@ def get_ligands(
     _safe_segment(pdb_id, "pdb_id")
     _safe_segment(run_id, "run_id")
     _safe_segment(session_id, "session_id")
-    raw_dir = project_root / "data" / "raw"
-    if session_id:
-        raw_dir = raw_dir / session_id
 
-    pdb_path = None
-    possible_names = [f"{pdb_id}.pdb", f"{pdb_id.lower()}.pdb", f"{pdb_id.upper()}.pdb"]
-
-    for name in possible_names:
-        p = raw_dir / name
-        if p.exists():
-            pdb_path = p
-            break
-
-    # Fallback to run results folder
-    if not pdb_path and run_id:
-        res_dir = project_root / "results"
-        if session_id:
-            res_dir = res_dir / session_id
-        res_dir = res_dir / run_id
-        for name in possible_names:
-            p = res_dir / name
-            if p.exists():
-                pdb_path = p
-                break
-
+    pdb_path = _find_structure_pdb_path(pdb_id, run_id, session_id)
     if not pdb_path:
         raise HTTPException(
             status_code=404,
@@ -875,6 +852,37 @@ def get_ligands(
 
     ligands = ligand_analyzer.get_ligands(pdb_path)
     return {"pdb_id": pdb_id, "ligands": sanitize_for_json(ligands)}
+
+
+def _find_structure_pdb_path(
+    pdb_id: str, run_id: Optional[str], session_id: Optional[str]
+) -> Optional[Path]:
+    """Locates a previously-downloaded structure's PDB file: first in the
+    session's raw-download folder, then (if a run_id is given) that run's
+    own results folder, trying the id's as-given/lowercase/uppercase
+    filename in each. Shared by /api/ligands and /api/interactions, which
+    both need a structure's PDB file by id rather than by run."""
+    possible_names = [f"{pdb_id}.pdb", f"{pdb_id.lower()}.pdb", f"{pdb_id.upper()}.pdb"]
+
+    raw_dir = project_root / "data" / "raw"
+    if session_id:
+        raw_dir = raw_dir / session_id
+    for name in possible_names:
+        p = raw_dir / name
+        if p.exists():
+            return p
+
+    if run_id:
+        res_dir = project_root / "results"
+        if session_id:
+            res_dir = res_dir / session_id
+        res_dir = res_dir / run_id
+        for name in possible_names:
+            p = res_dir / name
+            if p.exists():
+                return p
+
+    return None
 
 
 @app.get(
@@ -896,31 +904,8 @@ def get_interactions(
     _safe_segment(pdb_id, "pdb_id")
     _safe_segment(run_id, "run_id")
     _safe_segment(session_id, "session_id")
-    raw_dir = project_root / "data" / "raw"
-    if session_id:
-        raw_dir = raw_dir / session_id
 
-    pdb_path = None
-    possible_names = [f"{pdb_id}.pdb", f"{pdb_id.lower()}.pdb", f"{pdb_id.upper()}.pdb"]
-
-    for name in possible_names:
-        p = raw_dir / name
-        if p.exists():
-            pdb_path = p
-            break
-
-    # Fallback to run results folder
-    if not pdb_path and run_id:
-        res_dir = project_root / "results"
-        if session_id:
-            res_dir = res_dir / session_id
-        res_dir = res_dir / run_id
-        for name in possible_names:
-            p = res_dir / name
-            if p.exists():
-                pdb_path = p
-                break
-
+    pdb_path = _find_structure_pdb_path(pdb_id, run_id, session_id)
     if not pdb_path:
         raise HTTPException(
             status_code=404,
@@ -928,37 +913,48 @@ def get_interactions(
         )
 
     interactions = ligand_analyzer.calculate_interactions(pdb_path, ligand_id)
-
-    # Translate each contact's raw residue number into the number Mustang's
-    # aligned/cleaned structure uses, so the frontend 3D viewer (which only
-    # ever loads the aligned structure) can highlight the right residue
-    # instead of a nonexistent one. Only possible when we know which run
-    # (and therefore which chain + cleaning params) produced the alignment.
-    if run_id and isinstance(interactions, dict) and interactions.get("interactions"):
-        run = history_db.get_run(run_id)
-        if run:
-            metadata = run.get("metadata") or {}
-            chain_selection = metadata.get("chain_selection") or {}
-            clean_params = metadata.get("clean_params") or {}
-            selected_chain = chain_selection.get(pdb_id)
-            try:
-                pdb_manager = PDBManager(config)
-                renumber_map = pdb_manager.build_residue_renumber_map(
-                    pdb_path,
-                    chain=selected_chain,
-                    remove_heteroatoms=clean_params.get("remove_heteroatoms", True),
-                    remove_water=clean_params.get("remove_water", True),
-                )
-                for item in interactions["interactions"]:
-                    item["aligned_resi"] = renumber_map.get(item["resi"])
-            except Exception as e:
-                logger.warning(f"Failed to build residue renumber map: {e}")
+    _add_aligned_resi(interactions, pdb_id, pdb_path, run_id)
 
     return {
         "pdb_id": pdb_id,
         "ligand_id": ligand_id,
         "interactions": sanitize_for_json(interactions),
     }
+
+
+def _add_aligned_resi(
+    interactions: Any, pdb_id: str, pdb_path: Path, run_id: Optional[str]
+) -> None:
+    """Mutates `interactions["interactions"]` in place, adding an
+    "aligned_resi" to each contact - the residue number Mustang's
+    aligned/cleaned structure uses, so the frontend 3D viewer (which only
+    ever loads the aligned structure) can highlight the right residue
+    instead of a nonexistent one. Only possible when we know which run
+    (and therefore which chain + cleaning params) produced the alignment."""
+    if not (
+        run_id and isinstance(interactions, dict) and interactions.get("interactions")
+    ):
+        return
+
+    run = history_db.get_run(run_id)
+    if not run:
+        return
+
+    metadata = run.get("metadata") or {}
+    clean_params = metadata.get("clean_params") or {}
+    selected_chain = (metadata.get("chain_selection") or {}).get(pdb_id)
+    try:
+        pdb_manager = PDBManager(config)
+        renumber_map = pdb_manager.build_residue_renumber_map(
+            pdb_path,
+            chain=selected_chain,
+            remove_heteroatoms=clean_params.get("remove_heteroatoms", True),
+            remove_water=clean_params.get("remove_water", True),
+        )
+        for item in interactions["interactions"]:
+            item["aligned_resi"] = renumber_map.get(item["resi"])
+    except Exception as e:
+        logger.warning(f"Failed to build residue renumber map: {e}")
 
 
 @app.get("/api/memory")
