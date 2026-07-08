@@ -13,10 +13,32 @@ function authHeaders(extra = {}) {
     return API_KEY ? { ...extra, 'X-API-Key': API_KEY } : extra;
 }
 
+// Builds a request URL via the URL/URLSearchParams APIs rather than string
+// concatenation - path segments are validated (see assertSafeSegment/
+// assertValidPdbId below) before ever reaching this, and query values are
+// set through searchParams, which handles encoding itself. This is the
+// construction pattern static analysis (SonarCloud jssecurity:S8476,
+// "client-side requests should not be vulnerable to forging attacks")
+// actually recognizes as safe - unlike encodeURIComponent()-into-a-template-
+// literal, which only escapes characters without the analyzer being able to
+// verify the resulting value was ever checked against an expected shape.
+function buildUrl(path, queryParams) {
+    const url = new URL(path, API_BASE);
+    if (queryParams) {
+        for (const [key, value] of Object.entries(queryParams)) {
+            if (value !== undefined && value !== null) {
+                url.searchParams.set(key, value);
+            }
+        }
+    }
+    return url.toString();
+}
+
 function withApiKey(url) {
     if (!API_KEY) return url;
-    const sep = url.includes('?') ? '&' : '?';
-    return `${url}${sep}api_key=${encodeURIComponent(API_KEY)}`;
+    const withKey = new URL(url);
+    withKey.searchParams.set('api_key', API_KEY);
+    return withKey.toString();
 }
 
 // Mirrors PDBManager.validate_pdb_id on the backend: standard 4-char PDB IDs
@@ -42,11 +64,11 @@ export function isValidPdbId(id) {
 // ligand_id is ever legitimately in. This is a *validator*, not just a
 // sanitizer like encodeURIComponent() - it rejects an unexpected value
 // outright before it ever reaches a request URL, rather than just
-// escaping it so it doesn't break URL syntax. encodeURIComponent() alone
-// would still let a value like "../other-endpoint" or an attacker-crafted
-// string through (just percent-encoded), which is exactly the "tainted
-// data reaches a client-side request" pattern static analysis flags -
-// validating the shape first is what actually closes that.
+// escaping it so it doesn't break URL syntax. A value reaching here can
+// legitimately originate from a server response (e.g. a shared run's
+// stored pdb_ids, re-fetched later and fed back into another request) as
+// well as direct user input - either way, validating the shape is what
+// actually matters, not where the value came from.
 const SAFE_SEGMENT_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 function assertSafeSegment(value, fieldName) {
@@ -68,19 +90,19 @@ function assertValidPdbId(id, fieldName) {
 // (chain loads, alignment runs, dashboard stats) competing for the
 // browser's limited per-host connection pool.
 export async function fetchHealth() {
-    const res = await fetch(`${API_BASE}/health`, { priority: 'low' });
+    const res = await fetch(buildUrl('/health'), { priority: 'low' });
     if (!res.ok) throw new Error("Health check failed");
     return res.json();
 }
 
 export async function fetchSuggestions(q) {
-    const res = await fetch(`${API_BASE}/api/suggest?q=${encodeURIComponent(q)}`, { headers: authHeaders() });
+    const res = await fetch(buildUrl('/api/suggest', { q }), { headers: authHeaders() });
     if (!res.ok) throw new Error("Suggestions fetch failed");
     return res.json();
 }
 
 export async function fetchChains(pdbIds) {
-    const res = await fetch(`${API_BASE}/api/chains`, {
+    const res = await fetch(buildUrl('/api/chains'), {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ pdb_ids: pdbIds })
@@ -98,7 +120,7 @@ export async function uploadStructure(file) {
 
     // No Content-Type header here - the browser sets its own multipart
     // boundary on FormData bodies; overriding it would break the upload.
-    const res = await fetch(`${API_BASE}/api/upload`, {
+    const res = await fetch(buildUrl('/api/upload'), {
         method: 'POST',
         headers: authHeaders(),
         body: formData
@@ -111,7 +133,7 @@ export async function uploadStructure(file) {
 }
 
 export async function runAlignment(pdbIds, chainSelections, removeWater, removeHeteroatoms) {
-    const res = await fetch(`${API_BASE}/api/jobs/align`, {
+    const res = await fetch(buildUrl('/api/jobs/align'), {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
@@ -130,7 +152,7 @@ export async function runAlignment(pdbIds, chainSelections, removeWater, removeH
 
 export async function fetchJobStatus(jobId) {
     jobId = assertSafeSegment(jobId, 'jobId');
-    const res = await fetch(`${API_BASE}/api/jobs/${jobId}`, { headers: authHeaders() });
+    const res = await fetch(buildUrl(`/api/jobs/${jobId}`), { headers: authHeaders() });
     if (!res.ok) {
         const errData = await res.json();
         throw new Error(errData.detail || "Job status fetch failed");
@@ -152,7 +174,7 @@ export async function pollJobUntilDone(jobId, { intervalMs = 1500, onTick = null
 export async function submitDiscoveryJob(pdbId, databases) {
     const body = { pdb_id: pdbId };
     if (databases && databases.length > 0) body.databases = databases;
-    const res = await fetch(`${API_BASE}/api/jobs/discover`, {
+    const res = await fetch(buildUrl('/api/jobs/discover'), {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(body)
@@ -165,7 +187,7 @@ export async function submitDiscoveryJob(pdbId, databases) {
 }
 
 export async function fetchClusters(rmsdDf, threshold) {
-    const res = await fetch(`${API_BASE}/api/clusters`, {
+    const res = await fetch(buildUrl('/api/clusters'), {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ rmsd_df: rmsdDf, threshold })
@@ -179,7 +201,7 @@ export async function fetchClusters(rmsdDf, threshold) {
 
 export async function fetchComparisonRuns(excludeRunId) {
     excludeRunId = excludeRunId ? assertSafeSegment(excludeRunId, 'excludeRunId') : '';
-    const res = await fetch(`${API_BASE}/api/comparison/runs?exclude_run_id=${excludeRunId}`, { headers: authHeaders() });
+    const res = await fetch(buildUrl('/api/comparison/runs', { exclude_run_id: excludeRunId }), { headers: authHeaders() });
     if (!res.ok) throw new Error("Comparison runs fetch failed");
     return res.json();
 }
@@ -187,7 +209,10 @@ export async function fetchComparisonRuns(excludeRunId) {
 export async function fetchComparison(currentRunId, targetRunId) {
     currentRunId = assertSafeSegment(currentRunId, 'currentRunId');
     targetRunId = assertSafeSegment(targetRunId, 'targetRunId');
-    const res = await fetch(`${API_BASE}/api/comparison?current_run_id=${currentRunId}&target_run_id=${targetRunId}`, { headers: authHeaders() });
+    const res = await fetch(
+        buildUrl('/api/comparison', { current_run_id: currentRunId, target_run_id: targetRunId }),
+        { headers: authHeaders() }
+    );
     if (!res.ok) {
         const errData = await res.json();
         throw new Error(errData.detail || "Comparison fetch failed");
@@ -198,7 +223,7 @@ export async function fetchComparison(currentRunId, targetRunId) {
 export async function fetchLigands(pdbId, runId) {
     pdbId = assertValidPdbId(pdbId, 'pdbId');
     runId = assertSafeSegment(runId, 'runId');
-    const res = await fetch(`${API_BASE}/api/ligands?pdb_id=${pdbId}&run_id=${runId}`, { headers: authHeaders() });
+    const res = await fetch(buildUrl('/api/ligands', { pdb_id: pdbId, run_id: runId }), { headers: authHeaders() });
     if (!res.ok) throw new Error("Ligands fetch failed");
     return res.json();
 }
@@ -207,27 +232,30 @@ export async function fetchInteractions(pdbId, ligandId, runId) {
     pdbId = assertValidPdbId(pdbId, 'pdbId');
     ligandId = assertSafeSegment(ligandId, 'ligandId');
     runId = assertSafeSegment(runId, 'runId');
-    const res = await fetch(`${API_BASE}/api/interactions?pdb_id=${pdbId}&ligand_id=${ligandId}&run_id=${runId}`, { headers: authHeaders() });
+    const res = await fetch(
+        buildUrl('/api/interactions', { pdb_id: pdbId, ligand_id: ligandId, run_id: runId }),
+        { headers: authHeaders() }
+    );
     if (!res.ok) throw new Error("Interactions fetch failed");
     return res.json();
 }
 
 // See fetchHealth's note on priority: 'low' - same rationale.
 export async function fetchMemoryStats() {
-    const res = await fetch(`${API_BASE}/api/memory`, { headers: authHeaders(), priority: 'low' });
+    const res = await fetch(buildUrl('/api/memory'), { headers: authHeaders(), priority: 'low' });
     if (!res.ok) throw new Error("Memory stats fetch failed");
     return res.json();
 }
 
 export async function triggerClearMemory() {
-    const res = await fetch(`${API_BASE}/api/memory/clear`, { method: 'POST', headers: authHeaders() });
+    const res = await fetch(buildUrl('/api/memory/clear'), { method: 'POST', headers: authHeaders() });
     if (!res.ok) throw new Error("Clear memory execution failed");
     return res.json();
 }
 
 export async function fetchRun(runId) {
     runId = assertSafeSegment(runId, 'runId');
-    const res = await fetch(`${API_BASE}/api/runs/${runId}`, { headers: authHeaders() });
+    const res = await fetch(buildUrl(`/api/runs/${runId}`), { headers: authHeaders() });
     if (!res.ok) {
         const errData = await res.json();
         throw new Error(errData.detail || "Run fetch failed");
@@ -242,36 +270,38 @@ export function getShareLink(runId) {
     // carries the API key through when one is set, matching every other
     // shareable download link (getAlignmentPdbUrl, getAlignmentFastaUrl, etc).
     runId = assertSafeSegment(runId, 'runId');
-    return withApiKey(`${window.location.origin}/?shared_run=${runId}`);
+    const url = new URL(window.location.origin);
+    url.searchParams.set('shared_run', runId);
+    return withApiKey(url.toString());
 }
 
 export async function fetchHistory(limit = 20, offset = 0) {
-    const res = await fetch(`${API_BASE}/api/history?limit=${limit}&offset=${offset}`, { headers: authHeaders() });
+    const res = await fetch(buildUrl('/api/history', { limit, offset }), { headers: authHeaders() });
     if (!res.ok) throw new Error("History fetch failed");
     return res.json();
 }
 
 export async function fetchStats() {
-    const res = await fetch(`${API_BASE}/api/stats`, { headers: authHeaders() });
+    const res = await fetch(buildUrl('/api/stats'), { headers: authHeaders() });
     if (!res.ok) throw new Error("Stats fetch failed");
     return res.json();
 }
 
 export async function fetchSequence(runId) {
     runId = assertSafeSegment(runId, 'runId');
-    const res = await fetch(`${API_BASE}/api/sequence?run_id=${runId}`, { headers: authHeaders() });
+    const res = await fetch(buildUrl('/api/sequence', { run_id: runId }), { headers: authHeaders() });
     if (!res.ok) throw new Error("Sequence alignment fetch failed");
     return res.json();
 }
 
 export function getAlignmentPdbUrl(runId) {
     runId = assertSafeSegment(runId, 'runId');
-    return withApiKey(`${API_BASE}/results/${runId}/alignment.pdb`);
+    return withApiKey(buildUrl(`/results/${runId}/alignment.pdb`));
 }
 
 export function getAlignmentFastaUrl(runId) {
     runId = assertSafeSegment(runId, 'runId');
-    return withApiKey(`${API_BASE}/results/${runId}/alignment.fasta`);
+    return withApiKey(buildUrl(`/results/${runId}/alignment.fasta`));
 }
 
 // The fixed set of report sections the backend understands - not free text,
@@ -282,28 +312,29 @@ const VALID_REPORT_SECTIONS = new Set(['summary', 'insights', 'heatmap', 'tree',
 // default full report; pass a subset array to generate a trimmed one.
 export function getAlignmentReportUrl(runId, sections) {
     runId = assertSafeSegment(runId, 'runId');
-    const base = `${API_BASE}/api/report?run_id=${runId}`;
-    if (!sections || sections.length === 0) return withApiKey(base);
+    if (!sections || sections.length === 0) {
+        return withApiKey(buildUrl('/api/report', { run_id: runId }));
+    }
 
     sections.forEach(s => {
         if (!VALID_REPORT_SECTIONS.has(s)) {
             throw new Error(`Invalid report section: ${JSON.stringify(s)}`);
         }
     });
-    return withApiKey(`${base}&sections=${sections.join(',')}`);
+    return withApiKey(buildUrl('/api/report', { run_id: runId, sections: sections.join(',') }));
 }
 
 export function getLabNotebookUrl(runId) {
     runId = assertSafeSegment(runId, 'runId');
-    return withApiKey(`${API_BASE}/api/notebook?run_id=${runId}`);
+    return withApiKey(buildUrl('/api/notebook', { run_id: runId }));
 }
 
 export function getDiscoveryReportUrl(runId) {
     runId = assertSafeSegment(runId, 'runId');
-    return withApiKey(`${API_BASE}/api/discover/report?run_id=${runId}`);
+    return withApiKey(buildUrl('/api/discover/report', { run_id: runId }));
 }
 
 export function getDiscoveryExportUrl(runId) {
     runId = assertSafeSegment(runId, 'runId');
-    return withApiKey(`${API_BASE}/api/discover/export?run_id=${runId}`);
+    return withApiKey(buildUrl('/api/discover/export', { run_id: runId }));
 }

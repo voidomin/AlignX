@@ -2,6 +2,19 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.19.0]
+
+Pulled the actual data-flow trace SonarCloud recorded for the 2 remaining `api.js`/`Viewer3D.js` findings (`api/issues/search`'s `flows` field, not just the one-line message) instead of accepting them as false positives again. It showed something neither prior pass caught: the taint source is a **server response** (`fetchRun()`'s JSON), not just user-typed input - `run.pdb_ids` flows through `selectedPDBs[0]` into a later `fetchLigands()` call. The validators from 3.18.0/3.18.1 do correctly guard this, but SonarCloud's engine doesn't trust a custom function's `return id` as clearing taint, no matter how it's called - it wants the URL built through a recognized-safe construction API.
+
+### Fixed
+- **`web-frontend/src/api.js`** rewritten to build every request URL via the `URL`/`URLSearchParams` APIs (a `buildUrl(path, queryParams)` helper) instead of template-literal string concatenation - `URLSearchParams.set()` handles query encoding itself, and this is the specific construction pattern SonarSource's own compliant examples for this rule show. Validation (`assertSafeSegment`/`assertValidPdbId`) still runs first; this changes *how* the already-validated value reaches the URL, not whether it's checked.
+- **`withApiKey()`** similarly rewritten to append `api_key` via `URLSearchParams` rather than manual `?`/`&` string handling.
+
+### Verified
+- 142 frontend tests, full production build, both clean.
+- Live through the real running server: real alignment + every download link (PDB/FASTA/notebook/report), Ligands, History, share-link generation, and the `?shared_run=../../etc/passwd` attack scenario all behave identically to before the rewrite.
+- Live with a real `ALIGNX_API_KEY` set end-to-end: built the frontend with a matching `VITE_ALIGNX_API_KEY`, confirmed a real download link carries `api_key=...` and actually authenticates (200, not 401) against the live backend.
+
 ## [3.18.1]
 
 Follow-up to 3.18.0: the validators were added but never actually applied - every call site did `assertSafeSegment(runId, 'runId')` and discarded the return value instead of `runId = assertSafeSegment(runId, 'runId')`, so the original (still-tainted, from static analysis's point of view) variable was what actually reached the request URL. Confirmed this was the real cause, not just a theory: SonarCloud's open vulnerability count for this rule dropped from 7 to 3 after reassigning at every call site. Remaining 3: `tests/test_concurrency.py` (no possible code fix - the literal string "http://test" will always match this rule, and it's not a real connection), `Viewer3D.js:194` (downgraded from MAJOR to MINOR), and `api.js`'s `fetchLigands` (structurally identical to `fetchInteractions`, which did clear - looks like an analyzer quirk, not a real gap). Left as-is rather than chasing further.

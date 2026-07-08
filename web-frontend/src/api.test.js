@@ -138,10 +138,9 @@ describe('api.js (no API key configured)', () => {
     it('getAlignmentReportUrl appends a comma-joined sections param when a subset is given', async () => {
         const { getAlignmentReportUrl } = await import('./api.js');
         const url = getAlignmentReportUrl('run_1', ['summary', 'insights']);
-        // Each section name is validated against a fixed allowlist before
-        // being joined, so no percent-encoding is needed - unlike a raw
-        // user-controlled value, we know exactly what's in this string.
-        expect(url).toContain('sections=summary,insights');
+        // URLSearchParams percent-encodes the comma (%2C) - FastAPI decodes
+        // query params automatically, so sections.split(",") still works.
+        expect(url).toContain('sections=summary%2Cinsights');
     });
 
     it('getAlignmentReportUrl rejects a section name outside the known allowlist', async () => {
