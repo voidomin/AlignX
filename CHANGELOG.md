@@ -2,6 +2,18 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.55.0]
+
+Tenth batch of the `new_coverage` push - `pdb_manager.py`'s `fetch_metadata` pipeline (the v3.44.0 refactor's 8 new helper methods) had **zero automated test coverage** despite being a real, heavily-used code path spanning 4 live external APIs (RCSB GraphQL, UniProt, SWISS-MODEL's repository API, ESM Atlas's fixed fields) - the prior session verified it manually against the live APIs but never wrote pytest tests for it.
+
+### Added
+- **`tests/test_pdb_manager_fetch_metadata.py`** (new, 25 tests): `_classify_pdb_ids` (source routing, dedup, chain-variant-to-same-base-id mapping), `_parse_rcsb_entry` (full entry, all-fields-missing), `_esm_metadata`, `_remap_metadata_to_original_ids` (exact/uppercase-fallback/no-match), `_fetch_uniprot_name_organism` (recommendedName/submissionNames/gene-name fallback chain, non-200, exception), `_fetch_rcsb_metadata` (empty input short-circuit, non-200, real entry parsing), `_fetch_alphafold_metadata` (malformed-id skip), `_fetch_swissmodel_repository_info` (template+coverage formatting, no-models default, exception default), and `fetch_metadata` end-to-end (empty batch, a real mixed PDB/AlphaFold/SWISS-MODEL/ESM batch routed to all 4 sources, and the critical-failure fallback returning empty metadata for every id). File coverage: 66% → 90%.
+
+### Verified
+- Full backend suite: 615 tests passing, both locally and in a CI-matching Docker container.
+- `black`/`ruff` clean.
+- Confirmed via re-analysis (combined with the concurrent session's ongoing complexity-refactor + test work through v3.54.0): `new_coverage` 64.21% → 72.03%.
+
 ## [3.54.0]
 
 Eighth batch of the legacy Streamlit UI cleanup (1 of 14 findings: complexity 95, `ligand.py`'s `render_ligand_tab`).
