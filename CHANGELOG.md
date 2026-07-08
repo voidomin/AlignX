@@ -2,6 +2,16 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.20.2]
+
+Re-analysis after 3.20.1 surfaced a new Quality Gate failure: `python:S5332` ("Using HTTP protocol is insecure") flagging `tests/test_concurrency.py`'s `base_url="http://test"`. This is a *different* rule than the `jssecurity:S8476` finding on the same literal string resolved back in 3.19.0 - that one was JS-side CSRF/SSRF reasoning about `api.js`; this is Python-side, and unlike the earlier one, it turned out to have a real fix rather than being a genuine tool limitation.
+
+### Fixed
+- **`tests/test_concurrency.py`**: `base_url="http://test"` → `"https://test"`. `httpx.ASGITransport` never makes a real network connection - requests go straight into the app in-process - so the URL scheme is never actually dereferenced. Confirmed zero behavior change; this wasn't a "mark as safe" situation, the fix was simply free.
+
+### Verified
+- All 3 concurrency tests + full 245-test suite pass unchanged, ruff/black clean.
+
 ## [3.20.1]
 
 Finished the `logging.exception()` migration from earlier this session - querying SonarCloud's API directly (`rules=python:S8572`) turned up 10 remaining `logger.error(f"...: {e}")` sites across `phylo_tree.py` (3), `rmsd_analyzer.py` (5), `report_generator.py` (1), and `sequence_viewer.py` (1) that weren't in the original ~20-file sweep.
