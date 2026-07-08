@@ -358,6 +358,14 @@ class TestCalculateStructureRmsd:
         assert result is not None
         assert result.loc["structA", "structB"] == pytest.approx(1.0)
 
+    def test_returns_none_on_parse_failure(self, tmp_path):
+        fasta_file = tmp_path / "alignment.afasta"
+        fasta_file.write_text(">structA\nAAA\n>structB\nAAA\n")
+
+        result = calculate_structure_rmsd(tmp_path, fasta_file)
+
+        assert result is None
+
 
 class TestCalculateAlignmentQualityMetrics:
     def test_identical_structures_score_perfect_tm_and_gdt(self, tmp_path):
@@ -404,3 +412,51 @@ class TestCalculateAlignmentQualityMetrics:
         assert result["reference"]["tm_score"] == pytest.approx(
             result["close_copy"]["tm_score"]
         )
+
+    def test_falls_back_to_chains_when_pdb_uses_a_single_model(self, tmp_path):
+        pdb_file = tmp_path / "alignment.pdb"
+        fasta_file = tmp_path / "alignment.afasta"
+        lines = ["MODEL     1"]
+        for chain_id, coords in zip(
+            "AB",
+            (
+                [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]],
+                [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]],
+            ),
+        ):
+            for i, (x, y, z) in enumerate(coords, start=1):
+                lines.append(
+                    f"ATOM  {i:5d}  CA  ALA {chain_id}{i:4d}    {x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00           C"
+                )
+        lines.append("ENDMDL")
+        lines.append("END\n")
+        pdb_file.write_text("\n".join(lines))
+        fasta_file.write_text(">structA\nAA\n>structB\nAA\n")
+
+        result = calculate_alignment_quality_metrics(pdb_file, fasta_file)
+
+        assert result is not None
+        assert result["structA"]["tm_score"] == pytest.approx(1.0)
+
+    def test_no_common_columns_scores_zero_not_an_error(self, tmp_path):
+        # Fully complementary gaps: no alignment column has both structures'
+        # residues present, so there's nothing to compare - must degrade to
+        # a zero score rather than raising.
+        pdb_file = tmp_path / "alignment.pdb"
+        fasta_file = tmp_path / "alignment.afasta"
+        coords = [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]]
+        _write_multi_model_pdb(pdb_file, [coords, coords])
+        fasta_file.write_text(">structA\nAA--\n>structB\n--AA\n")
+
+        result = calculate_alignment_quality_metrics(pdb_file, fasta_file)
+
+        assert result is not None
+        assert result["structA"] == {"tm_score": 0.0, "gdt_ts": 0.0}
+
+    def test_returns_none_on_parse_failure(self, tmp_path):
+        fasta_file = tmp_path / "alignment.afasta"
+        fasta_file.write_text(">structA\nAAA\n>structB\nAAA\n")
+
+        result = calculate_alignment_quality_metrics(tmp_path, fasta_file)
+
+        assert result is None

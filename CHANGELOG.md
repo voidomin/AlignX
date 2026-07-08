@@ -2,6 +2,17 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.70.0]
+
+Eighteenth batch of the `new_coverage` push - `rmsd_calculator.py`'s remaining gaps in `calculate_structure_rmsd` and `calculate_alignment_quality_metrics`: parse-failure paths for both, the single-model-multiple-chains fallback for the quality-metrics function, and the no-common-aligned-columns case degrading to a zero score rather than an error.
+
+### Added
+- **`tests/test_rmsd_calculator.py`** (+5 tests): `calculate_structure_rmsd`'s and `calculate_alignment_quality_metrics`'s parse-failure paths (directory-as-file), the quality-metrics function's single-MODEL/multi-chain fallback, and its no-common-columns case (fully complementary gaps between two sequences) correctly returning `{"tm_score": 0.0, "gdt_ts": 0.0}` instead of raising. File coverage: 90% → 94%.
+
+### Verified
+- Full backend suite: 776 tests passing, both locally and in a CI-matching Docker container.
+- `black`/`ruff` clean.
+
 ## [3.69.0]
 
 Seventeenth batch of the `new_coverage` push - more of `pdb_manager.py`'s remaining gaps: `_CleanSelect`'s duck-typed Bio.PDB.Select methods (never directly unit tested, only indirectly via a real `PDBIO.save()` call that doesn't guarantee every branch fires), the AlphaFold/SWISS-MODEL/ESM Atlas fetch helpers' exception paths, `batch_download` (had zero direct tests despite being the parallel-download entry point coordinator.py calls), and `download_pdb`'s cache-registration and save-failure paths.
