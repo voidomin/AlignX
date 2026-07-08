@@ -18,7 +18,7 @@ Second batch of the `new_coverage` push (54.3% after the previous batch) also fi
 
 ### Verified
 - 340 backend tests total (up from 316), all passing in both the local Windows dev environment and a Docker container reproducing CI's exact Python 3.10/Linux setup - this was the deciding check that caught the 3 platform-dependent failures before they could reach CI a second time.
-- **Confirmed via re-analysis**: `new_coverage` rose 48.4% → 54.3%.
+- **Confirmed via re-analysis**: `new_coverage` rose 48.4% → 55.5%; open vulnerabilities dropped 7 → 4 (all 3 `pythonsecurity:S2083` findings resolved, back to just the pre-existing `S8544` set).
 
 ## [3.27.0]
 
