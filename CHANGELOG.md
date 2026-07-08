@@ -2,6 +2,20 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.54.0]
+
+Eighth batch of the legacy Streamlit UI cleanup (1 of 14 findings: complexity 95, `ligand.py`'s `render_ligand_tab`).
+
+### Fixed
+- **`render_ligand_tab`** (95→within limit): split along its 3 tabs (Single Ligand Analysis, Pocket Comparison, SASA) into ~15 focused functions, including `_find_structure_pdb_path()` (raw/result-dir/glob fallback, the same pattern as `api.py`'s backend equivalent) and `_get_dataframe_selection_indices()` (the deeply-nested Streamlit dataframe-selection-shape handling).
+
+### Added
+- **`tests/test_ligand_tab.py`** (new, 3 tests, `AppTest`): a real ligand-finding test using a hand-built fixture PDB with an actual HETATM ligand (reusing the same fixture-generation helper as `test_ligand_analyzer.py`), plus the missing-file and insufficient-history paths. Zero prior coverage.
+
+### Verified
+- Full suite: 604 tests passing.
+- `black`/`ruff` clean.
+
 ## [3.53.0]
 
 Seventh batch of the legacy Streamlit UI cleanup (1 of 14 findings: complexity 71, `sidebar.py`'s `render_sidebar`).
