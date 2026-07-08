@@ -1,6 +1,8 @@
+import base64
 import tempfile
 import time
 import asyncio
+import numpy as np
 import pytest
 import pandas as pd
 from fastapi.testclient import TestClient
@@ -11,6 +13,126 @@ import src.backend.api as api_module
 from src.backend.api import app
 
 client = TestClient(app)
+
+
+class TestSanitizeForJsonHelpers:
+    """api.py's own sanitize_for_json and its helper functions - a
+    separate implementation from coordinator.py's, handling Plotly's
+    binary-typed-array trace format and NaN/Infinity replacement, which
+    coordinator.py's version doesn't need to deal with."""
+
+    def test_coerce_numpy_scalar_converts_0d_scalar(self):
+        assert api_module._coerce_numpy_scalar(np.float64(1.5)) == pytest.approx(1.5)
+        assert isinstance(api_module._coerce_numpy_scalar(np.float64(1.5)), float)
+
+    def test_coerce_numpy_scalar_passes_through_ndarray(self):
+        arr = np.array([1, 2, 3])
+        assert api_module._coerce_numpy_scalar(arr) is arr
+
+    def test_coerce_numpy_scalar_passes_through_plain_value(self):
+        assert api_module._coerce_numpy_scalar("hello") == "hello"
+
+    def test_coerce_numpy_scalar_falls_back_on_item_failure(self):
+        class FakeScalar:
+            dtype = "fake"
+
+            def item(self):
+                raise ValueError("boom")
+
+        fake = FakeScalar()
+        assert api_module._coerce_numpy_scalar(fake) is fake
+
+    def test_is_plotly_bdata_detects_the_shape(self):
+        assert api_module._is_plotly_bdata({"dtype": "f8", "bdata": "abc="}) is True
+
+    def test_is_plotly_bdata_rejects_missing_keys(self):
+        assert api_module._is_plotly_bdata({"dtype": "f8"}) is False
+        assert api_module._is_plotly_bdata("not-a-dict") is False
+
+    def test_decode_plotly_bdata_flat_array(self):
+        raw = np.array([1.0, 2.0, 3.0], dtype="f8")
+        encoded = {"dtype": "f8", "bdata": base64.b64encode(raw.tobytes()).decode()}
+        assert api_module._decode_plotly_bdata(encoded) == [1.0, 2.0, 3.0]
+
+    def test_decode_plotly_bdata_2d_array_uses_shape(self):
+        raw = np.array([[1.0, 2.0], [3.0, 4.0]], dtype="f8")
+        encoded = {
+            "dtype": "f8",
+            "bdata": base64.b64encode(raw.tobytes()).decode(),
+            "shape": "2,2",
+        }
+        assert api_module._decode_plotly_bdata(encoded) == [[1.0, 2.0], [3.0, 4.0]]
+
+    def test_decode_plotly_bdata_falls_back_on_bad_data(self):
+        encoded = {"dtype": "f8", "bdata": "not-valid-base64!!!"}
+        result = api_module._decode_plotly_bdata(encoded)
+        assert result == {"dtype": "f8", "bdata": "not-valid-base64!!!"}
+
+    def test_is_intlike(self):
+        assert api_module._is_intlike(5) is True
+        assert api_module._is_intlike(np.int64(5)) is True
+        assert api_module._is_intlike(5.0) is False
+
+    def test_is_floatlike(self):
+        assert api_module._is_floatlike(5.0) is True
+        assert api_module._is_floatlike(np.float32(5.0)) is True
+        assert api_module._is_floatlike(5) is False
+
+    def test_coerce_float_replaces_nan_and_inf_with_none(self):
+        assert api_module._coerce_float(float("nan")) is None
+        assert api_module._coerce_float(float("inf")) is None
+        assert api_module._coerce_float(1.5) == pytest.approx(1.5)
+
+    def test_coerce_float_returns_none_on_conversion_failure(self):
+        assert api_module._coerce_float("not-a-number") is None
+
+    def test_coerce_via_to_dict_handles_dataframe(self):
+        df = pd.DataFrame({"a": [1, 2]}, index=["x", "y"])
+        result = api_module._coerce_via_to_dict(df)
+        assert result["columns"] == ["a"]
+
+    def test_coerce_via_to_dict_falls_back_to_str_on_failure(self):
+        class Broken:
+            def to_dict(self):
+                raise RuntimeError("boom")
+
+        result = api_module._coerce_via_to_dict(Broken())
+        assert isinstance(result, str)
+
+    def test_sanitize_for_json_replaces_nan_with_none(self):
+        assert api_module.sanitize_for_json(float("nan")) is None
+
+    def test_sanitize_for_json_handles_dict_list_tuple_set(self):
+        assert api_module.sanitize_for_json({"a": 1}) == {"a": 1}
+        assert api_module.sanitize_for_json([1, 2]) == [1, 2]
+        assert api_module.sanitize_for_json((1, 2)) == [1, 2]
+        assert api_module.sanitize_for_json({1, 2}) == sorted([1, 2])
+
+    def test_sanitize_for_json_handles_ndarray(self):
+        assert api_module.sanitize_for_json(np.array([1, 2, 3])) == [1, 2, 3]
+
+    def test_sanitize_for_json_handles_path(self):
+        assert api_module.sanitize_for_json(Path("a/b")) == str(Path("a/b"))
+
+    def test_sanitize_for_json_uses_to_plotly_json_when_available(self):
+        class FakeFigure:
+            def to_plotly_json(self):
+                return {"data": [], "layout": {}}
+
+        assert api_module.sanitize_for_json(FakeFigure()) == {
+            "data": [],
+            "layout": {},
+        }
+
+    def test_sanitize_for_json_uses_to_dict_when_no_to_plotly_json(self):
+        df = pd.DataFrame({"a": [1, 2]}, index=["x", "y"])
+        result = api_module.sanitize_for_json(df)
+        assert result["columns"] == ["a"]
+
+    def test_sanitize_for_json_decodes_plotly_bdata_recursively(self):
+        raw = np.array([1.0, 2.0], dtype="f8")
+        val = {"x": {"dtype": "f8", "bdata": base64.b64encode(raw.tobytes()).decode()}}
+        assert api_module.sanitize_for_json(val) == {"x": [1.0, 2.0]}
 
 
 class TestApiKeyAuth:

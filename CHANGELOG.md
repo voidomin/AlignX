@@ -2,6 +2,17 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.67.0]
+
+Sixteenth batch of the `new_coverage` push - `api.py`'s own `sanitize_for_json` implementation (separate from `coordinator.py`'s; handles Plotly's compact binary-typed-array trace format and NaN/Infinity replacement) and its 6 helper functions, none of which had any direct unit tests before despite backing every JSON response the API returns.
+
+### Added
+- **`tests/test_api.py`** (+22 tests): `_coerce_numpy_scalar` (0-d scalar conversion, ndarray passthrough, item()-failure fallback), `_is_plotly_bdata`/`_decode_plotly_bdata` (flat and 2D typed arrays via real base64-encoded numpy buffers, malformed-data fallback), `_is_intlike`/`_is_floatlike`, `_coerce_float` (NaN/Infinity → `None`, conversion-failure fallback), `_coerce_via_to_dict` (DataFrame vs. generic-object dispatch, failure-falls-back-to-str), and `sanitize_for_json` itself (dict/list/tuple/set, ndarray, Path, `to_plotly_json`/`to_dict` dispatch, and recursive Plotly-bdata decoding inside a nested dict). File coverage: 88% → 91%.
+
+### Verified
+- Full backend suite: 757 tests passing, both locally and in a CI-matching Docker container.
+- `black`/`ruff` clean.
+
 ## [3.66.0]
 
 Fifteenth batch of the `new_coverage` push, closing out the last few small-to-medium backend gaps: `foldseek_client.py`, `rmsd_analyzer.py` (most notably `calculate_residue_rmsf`'s full helper chain, which had **zero** automated coverage despite a prior manual-verification claim), and `cache_manager.py`.
