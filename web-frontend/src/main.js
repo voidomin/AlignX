@@ -358,6 +358,19 @@ class App {
     }
 
     async reloadPastRun(run) {
+        // The History/Dashboard lists serve a lightened run (GET /api/history
+        // strips metadata.results to keep list payloads small) - fetch the
+        // full record on demand the moment a user actually reloads one.
+        // Shared-run loads already pass a full record via fetchRun() in
+        // loadSharedRun(), so this is a no-op there.
+        if (!run?.metadata?.results) {
+            try {
+                run = await fetchRun(run.id);
+            } catch (err) {
+                console.error('Failed to fetch full run details:', err);
+            }
+        }
+
         let metadata = {};
         try {
             metadata = typeof run.metadata === 'string' ? JSON.parse(run.metadata) : run.metadata;

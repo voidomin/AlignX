@@ -2,6 +2,18 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.20.0]
+
+Fixed the real `/api/history` payload-bloat issue flagged as an open item in `docs/ROADMAP_V4.md`'s Phase 4 (found there: a 42MB response for just 20 runs, once each run's cached Plotly heatmap/tree figures and Discover hit/annotation payloads accumulate in its `metadata` blob). The History tab and Dashboard's recent-activity list never actually render that data - only `reloadPastRun()` needs it, and only once a specific run is clicked.
+
+### Fixed
+- **`src/backend/api.py`**: `GET /api/history` now strips `metadata.results` (the heavy blob) from every run in the page via a new `_lighten_run_for_list()` helper, keeping small fields like `run_type`/`chain_selection` intact. `GET /api/runs/{run_id}` is unchanged and still returns the full record.
+- **`web-frontend/src/main.js`**: `reloadPastRun()` now detects a lightened run (no `metadata.results`) and transparently fetches the full record via `fetchRun(run.id)` before proceeding - so clicking a run in the History tab or Dashboard's recent-activity list still reloads everything (3D view, stats, figures) exactly as before. The shared-run-link path already fetched a full record first, so this is a no-op there.
+
+### Verified
+- 245 backend tests (new: `test_history_endpoint_strips_heavy_results_metadata`) + 142 frontend tests, both clean.
+- Live through the real running server: ran a real alignment, confirmed `/api/history`'s response for that run shrank to ~1.8KB with `results` absent from `metadata` (only `chain_selection`/`clean_params` remained), confirmed `GET /api/runs/{id}` still returns the full record including `heatmap_fig`, then clicked the run in the live History tab and confirmed the 3D viewer canvas rendered correctly on reload with zero console errors.
+
 ## [3.19.0]
 
 Pulled the actual data-flow trace SonarCloud recorded for the 2 remaining `api.js`/`Viewer3D.js` findings (`api/issues/search`'s `flows` field, not just the one-line message) instead of accepting them as false positives again. It showed something neither prior pass caught: the taint source is a **server response** (`fetchRun()`'s JSON), not just user-typed input - `run.pdb_ids` flows through `selectedPDBs[0]` into a later `fetchLigands()` call. The validators from 3.18.0/3.18.1 do correctly guard this, but SonarCloud's engine doesn't trust a custom function's `return id` as clearing taint, no matter how it's called - it wants the URL built through a recognized-safe construction API.

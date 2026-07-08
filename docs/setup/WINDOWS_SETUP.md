@@ -216,7 +216,7 @@ pip install -r requirements.txt
 Run our setup checker:
 
 ```powershell
-.venv\Scripts\python check_setup.py
+.venv\Scripts\python scripts\check_setup.py
 ```
 
 Expected output:
@@ -273,11 +273,11 @@ If Mustang isn't found, the script prints a pointer back to this guide.
 After installation is complete:
 
 1. Run the setup checker above to confirm Mustang is detected.
-2. Run the automated test suite: `powershell -File run_tests.ps1` (see [../testing/VERIFICATION.md](../testing/VERIFICATION.md)).
+2. Run the automated test suite: `powershell -File scripts\run_tests.ps1` (see [../testing/VERIFICATION.md](../testing/VERIFICATION.md)).
 3. Start the app: `.venv\Scripts\streamlit run app.py` (Streamlit) or build + run the FastAPI/Vite stack — see [../../README.md](../../README.md) for both options.
 
 ---
 
 ## Need Help?
 
-If `check_setup.py` reports Mustang as not found, double check the `mustang.backend` and `mustang.executable_path` settings in `config.yaml`, and re-verify the WSL/Bio3D steps above.
+If `scripts\check_setup.py` reports Mustang as not found, double check the `mustang.backend` and `mustang.executable_path` settings in `config.yaml`, and re-verify the WSL/Bio3D steps above.

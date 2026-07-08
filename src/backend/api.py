@@ -932,6 +932,23 @@ def clear_memory():
         return {"ram_mb": 120.0, "status": "cleared", "message": str(e)}
 
 
+def _lighten_run_for_list(run: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    The History tab and Dashboard's recent-activity list only ever render a
+    run's id/name/timestamp/pdb_ids/status and metadata's run_type - never
+    the full per-run results blob (Plotly heatmap/tree figures, RMSD
+    matrices, Discover hit/annotation payloads) that reloadPastRun() only
+    needs once a user actually clicks into a specific run. Dropping that
+    blob here is what keeps a page of runs from ballooning into tens of MB;
+    the frontend re-fetches the full record via GET /api/runs/{id} on
+    click (see main.js's reloadPastRun).
+    """
+    metadata = run.get("metadata") or {}
+    lightened = dict(run)
+    lightened["metadata"] = {k: v for k, v in metadata.items() if k != "results"}
+    return lightened
+
+
 @app.get("/api/history")
 def get_history(
     session_id: Optional[str] = Query(None),
@@ -939,7 +956,10 @@ def get_history(
     offset: int = Query(0, ge=0),
 ):
     """
-    Fetch a page of runs recorded in the history SQLite database, newest first.
+    Fetch a page of runs recorded in the history SQLite database, newest
+    first. Each run's heavy metadata.results blob is stripped - see
+    _lighten_run_for_list() - fetch a single run's full record via
+    GET /api/runs/{run_id} when the full payload is actually needed.
     """
     try:
         runs = history_db.get_all_runs(
@@ -951,7 +971,7 @@ def get_history(
         total = history_db.count_runs()
 
     return {
-        "runs": sanitize_for_json(runs),
+        "runs": sanitize_for_json([_lighten_run_for_list(r) for r in runs]),
         "total": total,
         "limit": limit,
         "offset": offset,

@@ -60,6 +60,31 @@ commits.
   (`tests/test_concurrency.py`) - the limiter's check-then-append has no
   `await` in its critical section, so it can't lose count to interleaving
   even under genuine concurrency.
+- **TLS verification**: the Mustang source downloader
+  (`src/backend/mustang_runner.py`) previously bypassed certificate
+  verification entirely (`ssl._create_unverified_context()`); it now uses
+  `ssl.create_default_context()` with `certifi`'s CA bundle and an
+  explicit TLS 1.2 minimum, and fetches over `https://` instead of
+  `http://`.
+- **Client-side request forgery**: every ID (`run_id`, `job_id`, etc.)
+  the web SPA (`web-frontend/src/api.js`) accepts before building a
+  request URL is validated against an explicit allow-list pattern, and
+  the validator's return value - not the original, unchecked value - is
+  what's actually used. Request URLs are built with `URL`/
+  `URLSearchParams` rather than string concatenation, so a malformed or
+  attacker-supplied ID can't redirect a request to an unintended
+  endpoint (see `web-frontend/src/api.test.js` for the negative test
+  cases: `../admin`, `a/b`, embedded query strings, etc.).
+- **Log injection**: values that reach a log message are passed through
+  `src/utils/logger.py`'s `sanitize_for_log()`, which strips embedded
+  `\r`/`\n` so user-controlled input can't forge fake log lines.
+- **Docker runs as a non-root user**: the production image creates and
+  switches to an unprivileged `appuser` before serving traffic, instead
+  of running the FastAPI process as `root`.
+- **File permissions**: files the app creates for its own later use
+  (e.g. the compiled Mustang binary) are written owner-only (`0o700`),
+  not world-readable/executable - no other user or process in the
+  container needs access to them.
 
 ## Known Limitations (Not Bugs, But Worth Knowing)
 

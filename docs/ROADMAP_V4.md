@@ -191,11 +191,17 @@ can hand back out, without touching the core Mustang/RMSD pipeline underneath. A
   (`pdb_cache` table, `database.py:59`), or always treated as one-off/session-only since
   there's no stable public ID to key a cache on? Still open - not needed for Phase 3
   to work correctly, just a possible future efficiency win.
-- **`/api/history`'s payload size** (found while building Phase 4, see above) - worth
-  a real fix (paginate the heavy per-run figure data separately from the lightweight
-  list view, or lazy-load it) before this app sees real multi-session usage.
 
 **Resolved:**
+
+- ~~**`/api/history`'s payload size** (found while building Phase 4, above).~~ →
+  Fixed in v3.20.0: `GET /api/history` now strips each run's heavy
+  `metadata.results` blob (Plotly figures, Discover hit/annotation payloads) via
+  `_lighten_run_for_list()`, and `main.js`'s `reloadPastRun()` transparently
+  fetches the full record via `GET /api/runs/{id}` the moment a user actually
+  clicks into a run. Live-verified: a real run's `/api/history` entry shrank
+  from carrying the full results blob to ~1.8KB, with the History tab still
+  reloading the 3D view/figures correctly on click.
 - ~~Is a shared run world-readable to anyone with the link, or does sharing need an
   explicit opt-in per run?~~ → World-readable, decided going into Phase 4. Phase 1's
   hardened run IDs (64 bits of randomness) make guessing impractical; an opt-in toggle

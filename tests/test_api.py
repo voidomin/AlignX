@@ -124,6 +124,35 @@ def test_history_endpoint_pagination_params():
         mock_db.get_all_runs.assert_called_with(limit=5, offset=10, session_id=None)
 
 
+def test_history_endpoint_strips_heavy_results_metadata():
+    """/api/history backs the History/Dashboard list views, which never
+    render metadata.results (Plotly figures, RMSD matrices, Discover hit
+    payloads) - only GET /api/runs/{id} should hand that back, on demand,
+    once a specific run is actually reloaded. Regression test for the 42MB
+    response this endpoint used to produce once run history accumulated."""
+    with patch("src.backend.api.history_db") as mock_db:
+        mock_db.get_all_runs.return_value = [
+            {
+                "id": "run_123",
+                "name": "Test Run",
+                "pdb_ids": ["1L2Y", "4RLT"],
+                "timestamp": "2026-06-26",
+                "metadata": {
+                    "run_type": "discover",
+                    "chain_selection": {"1L2Y": "A"},
+                    "results": {"heatmap_fig": {"data": ["huge"] * 1000}},
+                },
+            }
+        ]
+        mock_db.count_runs.return_value = 1
+        response = client.get("/api/history")
+        assert response.status_code == 200
+        run = response.json()["runs"][0]
+        assert "results" not in run["metadata"]
+        assert run["metadata"]["run_type"] == "discover"
+        assert run["metadata"]["chain_selection"] == {"1L2Y": "A"}
+
+
 def test_get_run_by_id_returns_the_raw_record():
     """Backs shareable run links - fetches one run by ID directly, with no
     session_id/ownership check (matching every other run_id-keyed read

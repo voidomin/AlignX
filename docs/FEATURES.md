@@ -283,6 +283,8 @@ unlimited compute-heavy jobs and starve everyone else on a shared deployment.
 
 ## What's next
 
-This document covers what's shipped today. For features actively being planned
-(custom structure upload, batch ID input, shareable run links), see
-[docs/ROADMAP_V4.md](ROADMAP_V4.md).
+This document covers what's shipped today. v4 (custom structure upload, batch ID
+input, shareable run links) is complete — see [docs/ROADMAP_V4.md](ROADMAP_V4.md)
+for that history, including one real open item found along the way:
+`/api/history`'s response payload growing unbounded as run count/figure data
+accumulates, which is worth a real pagination fix before heavy multi-session use.
