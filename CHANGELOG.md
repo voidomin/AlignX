@@ -14,6 +14,7 @@ Pulled the actual data-flow trace SonarCloud recorded for the 2 remaining `api.j
 - 142 frontend tests, full production build, both clean.
 - Live through the real running server: real alignment + every download link (PDB/FASTA/notebook/report), Ligands, History, share-link generation, and the `?shared_run=../../etc/passwd` attack scenario all behave identically to before the rewrite.
 - Live with a real `ALIGNX_API_KEY` set end-to-end: built the frontend with a matching `VITE_ALIGNX_API_KEY`, confirmed a real download link carries `api_key=...` and actually authenticates (200, not 401) against the live backend.
+- **Confirmed via re-analysis**: this fully resolved both remaining findings (`api.js`, `Viewer3D.js`) - down from 3 open vulnerabilities on this rule to 1. The one left (`tests/test_concurrency.py`'s `"http://test"`) has no possible code fix; it's a literal string a pattern-based rule will always match, regardless of the fact that it's httpx's own documented convention for a transport that never makes a real connection.
 
 ## [3.18.1]
 
