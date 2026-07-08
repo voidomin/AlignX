@@ -129,7 +129,7 @@ export async function runAlignment(pdbIds, chainSelections, removeWater, removeH
 }
 
 export async function fetchJobStatus(jobId) {
-    assertSafeSegment(jobId, 'jobId');
+    jobId = assertSafeSegment(jobId, 'jobId');
     const res = await fetch(`${API_BASE}/api/jobs/${jobId}`, { headers: authHeaders() });
     if (!res.ok) {
         const errData = await res.json();
@@ -178,15 +178,15 @@ export async function fetchClusters(rmsdDf, threshold) {
 }
 
 export async function fetchComparisonRuns(excludeRunId) {
-    if (excludeRunId) assertSafeSegment(excludeRunId, 'excludeRunId');
-    const res = await fetch(`${API_BASE}/api/comparison/runs?exclude_run_id=${excludeRunId || ''}`, { headers: authHeaders() });
+    excludeRunId = excludeRunId ? assertSafeSegment(excludeRunId, 'excludeRunId') : '';
+    const res = await fetch(`${API_BASE}/api/comparison/runs?exclude_run_id=${excludeRunId}`, { headers: authHeaders() });
     if (!res.ok) throw new Error("Comparison runs fetch failed");
     return res.json();
 }
 
 export async function fetchComparison(currentRunId, targetRunId) {
-    assertSafeSegment(currentRunId, 'currentRunId');
-    assertSafeSegment(targetRunId, 'targetRunId');
+    currentRunId = assertSafeSegment(currentRunId, 'currentRunId');
+    targetRunId = assertSafeSegment(targetRunId, 'targetRunId');
     const res = await fetch(`${API_BASE}/api/comparison?current_run_id=${currentRunId}&target_run_id=${targetRunId}`, { headers: authHeaders() });
     if (!res.ok) {
         const errData = await res.json();
@@ -196,17 +196,17 @@ export async function fetchComparison(currentRunId, targetRunId) {
 }
 
 export async function fetchLigands(pdbId, runId) {
-    assertValidPdbId(pdbId, 'pdbId');
-    assertSafeSegment(runId, 'runId');
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    runId = assertSafeSegment(runId, 'runId');
     const res = await fetch(`${API_BASE}/api/ligands?pdb_id=${pdbId}&run_id=${runId}`, { headers: authHeaders() });
     if (!res.ok) throw new Error("Ligands fetch failed");
     return res.json();
 }
 
 export async function fetchInteractions(pdbId, ligandId, runId) {
-    assertValidPdbId(pdbId, 'pdbId');
-    assertSafeSegment(ligandId, 'ligandId');
-    assertSafeSegment(runId, 'runId');
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    ligandId = assertSafeSegment(ligandId, 'ligandId');
+    runId = assertSafeSegment(runId, 'runId');
     const res = await fetch(`${API_BASE}/api/interactions?pdb_id=${pdbId}&ligand_id=${ligandId}&run_id=${runId}`, { headers: authHeaders() });
     if (!res.ok) throw new Error("Interactions fetch failed");
     return res.json();
@@ -226,7 +226,7 @@ export async function triggerClearMemory() {
 }
 
 export async function fetchRun(runId) {
-    assertSafeSegment(runId, 'runId');
+    runId = assertSafeSegment(runId, 'runId');
     const res = await fetch(`${API_BASE}/api/runs/${runId}`, { headers: authHeaders() });
     if (!res.ok) {
         const errData = await res.json();
@@ -241,7 +241,7 @@ export function getShareLink(runId) {
     // docs/ROADMAP_V4.md Phase 4/1), not gated by session_id. withApiKey()
     // carries the API key through when one is set, matching every other
     // shareable download link (getAlignmentPdbUrl, getAlignmentFastaUrl, etc).
-    assertSafeSegment(runId, 'runId');
+    runId = assertSafeSegment(runId, 'runId');
     return withApiKey(`${window.location.origin}/?shared_run=${runId}`);
 }
 
@@ -258,19 +258,19 @@ export async function fetchStats() {
 }
 
 export async function fetchSequence(runId) {
-    assertSafeSegment(runId, 'runId');
+    runId = assertSafeSegment(runId, 'runId');
     const res = await fetch(`${API_BASE}/api/sequence?run_id=${runId}`, { headers: authHeaders() });
     if (!res.ok) throw new Error("Sequence alignment fetch failed");
     return res.json();
 }
 
 export function getAlignmentPdbUrl(runId) {
-    assertSafeSegment(runId, 'runId');
+    runId = assertSafeSegment(runId, 'runId');
     return withApiKey(`${API_BASE}/results/${runId}/alignment.pdb`);
 }
 
 export function getAlignmentFastaUrl(runId) {
-    assertSafeSegment(runId, 'runId');
+    runId = assertSafeSegment(runId, 'runId');
     return withApiKey(`${API_BASE}/results/${runId}/alignment.fasta`);
 }
 
@@ -281,7 +281,7 @@ const VALID_REPORT_SECTIONS = new Set(['summary', 'insights', 'heatmap', 'tree',
 // `sections` is optional - omit (or pass all 5 known sections) to get the
 // default full report; pass a subset array to generate a trimmed one.
 export function getAlignmentReportUrl(runId, sections) {
-    assertSafeSegment(runId, 'runId');
+    runId = assertSafeSegment(runId, 'runId');
     const base = `${API_BASE}/api/report?run_id=${runId}`;
     if (!sections || sections.length === 0) return withApiKey(base);
 
@@ -294,16 +294,16 @@ export function getAlignmentReportUrl(runId, sections) {
 }
 
 export function getLabNotebookUrl(runId) {
-    assertSafeSegment(runId, 'runId');
+    runId = assertSafeSegment(runId, 'runId');
     return withApiKey(`${API_BASE}/api/notebook?run_id=${runId}`);
 }
 
 export function getDiscoveryReportUrl(runId) {
-    assertSafeSegment(runId, 'runId');
+    runId = assertSafeSegment(runId, 'runId');
     return withApiKey(`${API_BASE}/api/discover/report?run_id=${runId}`);
 }
 
 export function getDiscoveryExportUrl(runId) {
-    assertSafeSegment(runId, 'runId');
+    runId = assertSafeSegment(runId, 'runId');
     return withApiKey(`${API_BASE}/api/discover/export?run_id=${runId}`);
 }
