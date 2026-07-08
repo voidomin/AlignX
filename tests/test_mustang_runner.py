@@ -198,14 +198,32 @@ class TestMustangRunnerValidation:
 
 
 class TestConvertToWslPath:
+    """_convert_to_wsl_path() calls .absolute() on the given Path and only
+    then inspects the resulting string for a "C:"-style drive prefix -
+    Path("C:/...") only resolves that way on an actual Windows machine
+    (a WindowsPath); on Linux, pathlib treats "C:" as a plain directory
+    name and prepends the real CWD instead. A fake object standing in for
+    the Path - controlling exactly what .absolute() returns - keeps these
+    tests meaningful on every platform CI might run on, matching how this
+    function is only ever invoked from Windows-specific code paths in
+    production regardless of which OS actually runs the test suite."""
+
     def test_converts_windows_drive_path_to_wsl_mount(self, mock_config):
         runner = MustangRunner(mock_config)
-        result = runner._convert_to_wsl_path(Path("C:/Users/test/mustang"))
+        fake_path = MagicMock()
+        fake_path.absolute.return_value = "C:\\Users\\test\\mustang"
+
+        result = runner._convert_to_wsl_path(fake_path)
+
         assert result == "/mnt/c/Users/test/mustang"
 
     def test_lowercases_the_drive_letter(self, mock_config):
         runner = MustangRunner(mock_config)
-        result = runner._convert_to_wsl_path(Path("D:/data/file.pdb"))
+        fake_path = MagicMock()
+        fake_path.absolute.return_value = "D:\\data\\file.pdb"
+
+        result = runner._convert_to_wsl_path(fake_path)
+
         assert result.startswith("/mnt/d/")
 
 
@@ -435,15 +453,26 @@ class TestUpdateExecutableFromCheck:
         assert runner.backend == "wsl"
         assert runner.executable == "mustang"
 
-    def test_wsl_backend_with_real_path_gets_converted(self, mock_config, tmp_path):
+    def test_wsl_backend_with_real_path_delegates_to_path_conversion(
+        self, mock_config, tmp_path
+    ):
+        # _convert_to_wsl_path()'s own correctness is covered by
+        # TestConvertToWslPath above - this test is only about
+        # _update_executable_from_check()'s own logic: does it call the
+        # converter (rather than using the path bare) whenever
+        # mustang_path isn't literally the string "mustang"?
         runner = MustangRunner(mock_config)
         runner.use_wsl = True
         runner.mustang_path = tmp_path / "mustang"
 
-        runner._update_executable_from_check()
+        with patch.object(
+            runner, "_convert_to_wsl_path", return_value="/mnt/c/converted/mustang"
+        ) as mock_convert:
+            runner._update_executable_from_check()
 
         assert runner.backend == "wsl"
-        assert runner.executable.startswith("/mnt/")
+        mock_convert.assert_called_once_with(runner.mustang_path)
+        assert runner.executable == "/mnt/c/converted/mustang"
 
 
 class TestDeepWslCheck:
