@@ -2,6 +2,22 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.42.0]
+
+Seventh batch of the `new_coverage` push - five backend files that had never been unit tested at all or only partially: `ligand_analyzer.py`, `result_manager.py`, `ramachandran_service.py`, `sequence_viewer.py`, and `insights.py`, plus filling the remaining gaps in the pre-existing `structure_viewer.py` suite.
+
+### Added
+- **`tests/test_ligand_analyzer.py`** (new, 16 tests): `get_ligands` (finds real ligands, ignores water/ions, missing-file and parse-failure paths), `calculate_interactions` (finds nearby residues via `NeighborSearch`, excludes far ones, invalid-ID-format and ligand-not-found error paths), `calculate_sasa`, `calculate_interaction_similarity`/`_jaccard_score` (empty input, identical/disjoint/partial-overlap fingerprints). File coverage: 14.7% → 100%.
+- **`tests/test_result_manager.py`** (new, 10 tests): `list_runs` (valid/missing-dir/missing-matrix filtering, session-id pass-through), `get_run_rmsd` (load, missing, read-failure), `calculate_difference` (overlapping proteins, missing run, no-overlap case). File coverage: 35.9% → 100%.
+- **`tests/test_ramachandran_service.py`** (new, 14 tests): `calculate_torsion_angles` against a real 3-residue synthetic backbone (terminal residues correctly missing one angle), `_torsion_row`, all `_classify_region` boundary cases (Alpha/Beta/L-Alpha/Allowed/Outlier/Terminal), `aggregate_metrics` (quality score math, outlier list capped at 10). File coverage: 54.8% → 100%.
+- **`tests/test_sequence_viewer.py`** (new, 23 tests): `parse_afasta` (multi-sequence, wrapped lines, blank-line skipping, missing/unreadable file), `calculate_conservation`, `_residue_cell_html`/`_consensus_symbol` color/symbol thresholds, `generate_html` smoke test, `calculate_identity` (gap-gap exclusion, zero-length-pair skip, multi-pair averaging). File coverage: 35.5% → 100%.
+- **`tests/test_insights.py`** (new, 21 tests): all 6 `_get_*_insights` sub-generators plus the lazy `analyzer` property and `generate_insights`'s aggregation/early-return paths. File coverage: 75.9% → 100%.
+- **`tests/test_structure_viewer.py`** (+11 tests, on top of an existing 5-test suite covering the auto-rotation-stops-itself behavior): backward-compat list-to-dict highlight conversion, missing-file exception paths for all three `render_*` functions, and the three `show_*_in_streamlit` Streamlit wrappers (`components.html`/`st.error` dispatch, `show_synced_grid_in_streamlit`'s row-count-based iframe height calculation). File coverage: 69.9% → 100%.
+
+### Verified
+- Full backend suite: 512 tests passing.
+- `black`/`ruff` clean on all touched/new test files.
+
 ## [3.41.0]
 
 Re-pulled the open SonarCloud issue list (26 remaining) and cleared the 3 quick/mechanical ones before returning to the bigger Cognitive Complexity items.
@@ -31,6 +47,7 @@ Sixth batch of the `new_coverage` push - `database.py`'s CRUD/cache-management s
 ### Verified
 - Full backend suite: 417 tests passing, both locally (Python 3.12/Windows) and inside a fresh `python:3.10-slim` Docker container matching CI's exact environment (no platform-dependent bugs found this round).
 - `black`/`ruff` clean on all three touched test files.
+- Confirmed via re-analysis: `new_coverage` 56.9% → 61.05%.
 
 ## [3.39.0]
 
