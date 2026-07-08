@@ -2,6 +2,20 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.49.0]
+
+Fourth batch of the legacy Streamlit UI cleanup (1 of 14 findings: complexity 29, `pages/2_Mission_History.py`).
+
+### Fixed
+- **`render_history_page`** (29→within limit): split into `_build_runs_dataframe`, `_get_selected_run_id`, `_render_selected_run_details`/`_render_selected_mission_actions`/`_render_delete_record_action`, `_render_past_runs_table`, `_render_clear_history_confirmation`/`_render_storage_management`, and `_render_quick_stats`.
+
+### Added
+- **`tests/test_mission_history.py`** (new, 2 tests, `AppTest.from_file` against the real page): empty-history state, and a populated history table (via monkeypatching `HistoryDatabase.get_all_runs` rather than hitting a real un-migrated SQLite file) - exercises the past-runs table, quick stats, and selection-handling path. Zero prior coverage.
+
+### Verified
+- Full suite: 568 tests passing.
+- `black`/`ruff` clean.
+
 ## [3.48.0]
 
 Third batch of the legacy Streamlit UI cleanup (2 of 14 findings: complexity 24, 27).
