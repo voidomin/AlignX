@@ -2,6 +2,16 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.29.0]
+
+Third batch of the `new_coverage` push - `pdb_manager.py`, the next-highest genuinely-testable gap by uncovered-line count.
+
+### Added
+- **`tests/test_pdb_manager.py`** (+22 tests): `download_pdb`'s full branch set (invalid ID format, cache-hit with no network call, standard PDB success/404, AlphaFold's multi-version fallback and all-versions-exhausted path, SWISS-MODEL and ESM Atlas success, and an unhandled-exception-becomes-a-clean-failure case), `save_uploaded_file` (the Streamlit-side upload path, distinct from the SPA's `save_uploaded_bytes`), and `batch_clean` (including a single-file failure not aborting the rest of the batch). File coverage: 52% → 64%.
+
+### Verified
+- 353 backend tests total (up from 340), all passing both locally and in a Docker container reproducing CI's Python 3.10/Linux environment before pushing - the same check that caught the previous batch's platform-dependent bugs, this time finding none.
+
 ## [3.28.0]
 
 Second batch of the `new_coverage` push (54.3% after the previous batch) also fixed 3 new `pythonsecurity:S2083` (path-injection) vulnerabilities that landed alongside the concurrent citation-export feature - `CitationExporter.export()` built a temp-file path from `run_id` with no validation of its own, relying entirely on `api.py` having already validated it before calling in. SonarCloud's analyzer can't see that cross-module guarantee, and more importantly, `citation_exporter.py` shouldn't have to rely on it either.

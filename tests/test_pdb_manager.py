@@ -1,5 +1,6 @@
+import asyncio
 from pathlib import Path
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, MagicMock
 import pytest
 from src.backend.pdb_manager import PDBManager
 
@@ -410,9 +411,218 @@ class TestPDBManager:
         cif_file = temp_workspace["raw"] / "upload-realcif.cif"
         cif_file.write_text("data_test\n...")
 
-        import asyncio
-
         success, _, path = asyncio.run(manager.download_pdb("UPLOAD-REALCIF"))
 
         assert success is True
         assert path == cif_file
+
+    def test_download_pdb_rejects_invalid_id_format(self, mock_config, temp_workspace):
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+
+        success, msg, path = asyncio.run(manager.download_pdb("not_a_valid_id!!"))
+
+        assert success is False
+        assert path is None
+
+    def test_download_pdb_uses_cached_local_file_without_a_network_call(
+        self, mock_config, temp_workspace
+    ):
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+        (temp_workspace["raw"] / "4rlt.pdb").write_text("ATOM")
+
+        with patch("httpx.AsyncClient.get") as mock_get:
+            success, msg, path = asyncio.run(manager.download_pdb("4RLT"))
+
+        assert success is True
+        assert "local file" in msg.lower()
+        mock_get.assert_not_called()
+
+    @patch("httpx.AsyncClient.get")
+    def test_download_pdb_standard_pdb_success(
+        self, mock_get, mock_config, temp_workspace
+    ):
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"ATOM real pdb content"
+        mock_get.return_value = mock_response
+
+        success, msg, path = asyncio.run(manager.download_pdb("4RLT"))
+
+        assert success is True
+        assert path.exists()
+        assert path.read_bytes() == b"ATOM real pdb content"
+
+    @patch("httpx.AsyncClient.get")
+    def test_download_pdb_standard_pdb_not_found(
+        self, mock_get, mock_config, temp_workspace
+    ):
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_get.return_value = mock_response
+
+        success, msg, path = asyncio.run(manager.download_pdb("9ZZZ"))
+
+        assert success is False
+        assert path is None
+
+    @patch("httpx.AsyncClient.get")
+    def test_download_pdb_alphafold_falls_back_across_versions(
+        self, mock_get, mock_config, temp_workspace
+    ):
+        """v6 (the default first attempt) 404s, v4 succeeds - must not give
+        up after the first version fails."""
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+
+        responses = []
+        for v in ["6"]:
+            r = MagicMock()
+            r.status_code = 404
+            responses.append(r)
+        success_response = MagicMock()
+        success_response.status_code = 200
+        success_response.content = b"cif data"
+        responses.append(success_response)
+        mock_get.side_effect = responses
+
+        success, msg, path = asyncio.run(manager.download_pdb("AF-P69905-F1"))
+
+        assert success is True
+        assert path.suffix == ".cif"
+
+    @patch("httpx.AsyncClient.get")
+    def test_download_pdb_alphafold_all_versions_fail(
+        self, mock_get, mock_config, temp_workspace
+    ):
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+
+        not_found = MagicMock()
+        not_found.status_code = 404
+        mock_get.return_value = not_found
+
+        success, msg, path = asyncio.run(manager.download_pdb("AF-P69905-F1"))
+
+        assert success is False
+        assert path is None
+        assert "AlphaFold" in msg
+
+    @patch("httpx.AsyncClient.get")
+    def test_download_pdb_swissmodel_success(
+        self, mock_get, mock_config, temp_workspace
+    ):
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"swiss model pdb"
+        mock_get.return_value = mock_response
+
+        success, msg, path = asyncio.run(manager.download_pdb("SM-P69905"))
+
+        assert success is True
+        assert path.exists()
+
+    @patch("httpx.AsyncClient.get")
+    def test_download_pdb_esmfold_success(self, mock_get, mock_config, temp_workspace):
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"esm predicted structure"
+        mock_get.return_value = mock_response
+
+        success, msg, path = asyncio.run(manager.download_pdb("ESM-MGYP002537940442"))
+
+        assert success is True
+        assert path.exists()
+
+    @patch("httpx.AsyncClient.get", side_effect=Exception("connection reset"))
+    def test_download_pdb_network_exception_reported_not_raised(
+        self, mock_get, mock_config, temp_workspace
+    ):
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+
+        success, msg, path = asyncio.run(manager.download_pdb("4RLT"))
+
+        assert success is False
+        assert path is None
+
+
+class TestSaveUploadedFile:
+    """save_uploaded_file() - the Streamlit UploadedFile-shaped counterpart
+    to save_uploaded_bytes() (the SPA/API upload path)."""
+
+    def test_saves_uploaded_file_content(self, mock_config, temp_workspace):
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+
+        fake_upload = MagicMock()
+        fake_upload.name = "my structure.pdb"
+        fake_upload.getbuffer.return_value = b"ATOM uploaded content"
+
+        success, msg, path = manager.save_uploaded_file(fake_upload)
+
+        assert success is True
+        assert path.name == "my_structure.pdb"
+        assert path.read_bytes() == b"ATOM uploaded content"
+
+    def test_reports_failure_without_raising(self, mock_config, temp_workspace):
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+
+        fake_upload = MagicMock()
+        fake_upload.name = "test.pdb"
+        fake_upload.getbuffer.side_effect = OSError("disk full")
+
+        success, msg, path = manager.save_uploaded_file(fake_upload)
+
+        assert success is False
+        assert path is None
+
+
+class TestBatchClean:
+    def test_cleans_multiple_files_and_reports_per_file_results(
+        self, mock_config, temp_workspace, dummy_pdb_content
+    ):
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+        manager.cleaned_dir = temp_workspace["cleaned"]
+
+        files = []
+        for name in ["a.pdb", "b.pdb"]:
+            f = temp_workspace["raw"] / name
+            f.write_text(dummy_pdb_content)
+            files.append(f)
+
+        results = manager.batch_clean(files)
+
+        assert set(results.keys()) == {"a.pdb", "b.pdb"}
+        assert all(r[0] is True for r in results.values())
+
+    def test_a_single_file_failure_does_not_abort_the_batch(
+        self, mock_config, temp_workspace, dummy_pdb_content
+    ):
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+        manager.cleaned_dir = temp_workspace["cleaned"]
+
+        good_file = temp_workspace["raw"] / "good.pdb"
+        good_file.write_text(dummy_pdb_content)
+        bad_file = temp_workspace["raw"] / "does_not_exist.pdb"
+
+        results = manager.batch_clean([good_file, bad_file])
+
+        assert results["good.pdb"][0] is True
+        assert results["does_not_exist.pdb"][0] is False
