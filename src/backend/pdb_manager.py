@@ -30,6 +30,83 @@ def _write_bytes(path: Path, content: bytes) -> None:
         f.write(content)
 
 
+# Common non-standard residues clean_pdb() maps to their standard equivalent.
+_RESIDUE_NAME_MAPPING = {
+    "HYP": "PRO",
+    "MSE": "MET",
+    "CSD": "ALA",
+    "CAS": "CYS",
+    "KCX": "LYS",
+    "LLP": "LYS",
+    "CME": "CYS",
+    "MLY": "LYS",
+}
+
+
+class _CleanSelect:
+    """clean_pdb()'s residue/atom filtering, as a real class taking its
+    parameters via __init__ instead of a nested class closing over the
+    method's locals - lets it (and clean_pdb() itself) be reasoned about
+    independently. Duck-types Bio.PDB.Select's accept_model/accept_chain/
+    accept_residue/accept_atom contract (PDBIO.save() just calls these,
+    with no isinstance check) rather than subclassing it, so this module
+    doesn't need a top-level Bio.PDB import."""
+
+    def __init__(
+        self,
+        is_plddt_model: bool,
+        plddt_scale: float,
+        remove_water: bool,
+        remove_heteroatoms: bool,
+    ):
+        self.is_plddt_model = is_plddt_model
+        self.plddt_scale = plddt_scale
+        self.remove_water = remove_water
+        self.remove_heteroatoms = remove_heteroatoms
+
+    @staticmethod
+    def accept_model(model) -> int:
+        return 1
+
+    @staticmethod
+    def accept_chain(chain) -> int:
+        return 1
+
+    def _below_plddt_threshold(self, residue) -> bool:
+        try:
+            # Bio.PDB residues don't have a single B-factor, we check the first atom (usually N or CA)
+            atoms = list(residue.get_atoms())
+            return bool(atoms) and (atoms[0].bfactor * self.plddt_scale) < 50
+        except (AttributeError, IndexError):
+            return False
+
+    def accept_residue(self, residue) -> int:
+        # Remove water
+        if self.remove_water and (residue.id[0] == "W" or residue.resname == "HOH"):
+            return 0
+
+        # pLDDT Pruning (Strip disordered regions < 50 if it's a predicted model)
+        if self.is_plddt_model and self._below_plddt_threshold(residue):
+            return 0
+
+        # Keep standard residues
+        if residue.id[0] == " ":
+            return 1
+
+        # For non-standard residues (HETATM), keep them if they have a CA atom
+        if residue.has_id("CA"):
+            return 1
+
+        return 0 if self.remove_heteroatoms else 1
+
+    @staticmethod
+    def accept_atom(atom) -> int:
+        # Exclude hydrogens (mustang often crashes on them)
+        if atom.element == "H" or atom.name.startswith("H"):
+            return 0
+        return 1
+
+
 class PDBManager:
     """Manages PDB file downloads, validation, and preprocessing."""
 
@@ -192,6 +269,133 @@ class PDBManager:
         logger.info(f"Saved and validated uploaded structure: {output_file}")
         return True, "ok", output_file
 
+    async def _fetch_alphafold_response(
+        self, pdb_id: str, client: httpx.AsyncClient, manage_client: bool
+    ) -> Tuple[bool, str, Optional[httpx.Response]]:
+        # AlphaFold DB URL support
+        parts = pdb_id.upper().split("-")
+        uniprot_id = parts[1]
+        fragment = parts[2] if len(parts) > 2 else "F1"
+
+        # Use v6 as new default standard, but allow explicit versioning
+        version_hint = "6"
+        has_explicit_version = False
+        if len(parts) > 3 and parts[3].startswith("V"):
+            version_hint = parts[3].replace("V", "")
+            has_explicit_version = True
+
+        # Versions to attempt if not found
+        versions_to_try = (
+            [version_hint] if has_explicit_version else ["6", "4", "5", "3", "2", "1"]
+        )
+
+        try:
+            success = False
+            last_response = None
+
+            for v in versions_to_try:
+                url = f"https://alphafold.ebi.ac.uk/files/AF-{uniprot_id}-{fragment}-model_v{v}.cif"
+                logger.info(f"Attempting AlphaFold download (v{v}): {url}")
+                response = await client.get(url, follow_redirects=True)
+
+                if response.status_code == 200:
+                    success = True
+                    last_response = response
+                    break
+                else:
+                    logger.debug(
+                        f"AlphaFold v{v} not found (Status {response.status_code})"
+                    )
+
+            if not success:
+                logger.error(f"All AlphaFold download attempts for {pdb_id} failed.")
+                if manage_client:
+                    await client.aclose()
+                return (
+                    False,
+                    f"Not found in AlphaFold DB (Tried versions {', '.join(versions_to_try)})",
+                    None,
+                )
+
+            return True, "ok", last_response
+
+        except httpx.TimeoutException:
+            logger.error(f"Timeout while downloading {pdb_id}")
+            return False, "Download failed: Connection timeout", None
+        except Exception as e:
+            logger.exception("AlphaFold download crash")
+            return False, f"Error: {str(e)}", None
+
+    async def _fetch_swissmodel_response(
+        self, pdb_id: str, client: httpx.AsyncClient, manage_client: bool
+    ) -> Tuple[bool, str, Optional[httpx.Response]]:
+        # SWISS-MODEL Repository (homology models, keyed by UniProt ID)
+        uniprot_id = pdb_id.upper().split("-", 1)[1]
+        url = f"https://swissmodel.expasy.org/repository/uniprot/{uniprot_id}.pdb"
+        try:
+            logger.info(f"Attempting SWISS-MODEL download: {url}")
+            response = await client.get(url, follow_redirects=True)
+            if response.status_code != 200:
+                logger.error(
+                    f"SWISS-MODEL download for {pdb_id} failed with status {response.status_code}"
+                )
+                if manage_client:
+                    await client.aclose()
+                return (
+                    False,
+                    f"Not found in SWISS-MODEL Repository (Status {response.status_code})",
+                    None,
+                )
+            return True, "ok", response
+        except Exception as e:
+            return False, f"SWISS-MODEL download failed: {e}", None
+
+    async def _fetch_esmfold_response(
+        self, pdb_id: str, client: httpx.AsyncClient, manage_client: bool
+    ) -> Tuple[bool, str, Optional[httpx.Response]]:
+        # ESM Metagenomic Atlas (predictions for MGnify metagenomic sequences)
+        mgyp_id = pdb_id.upper().split("-", 1)[1]
+        url = f"https://api.esmatlas.com/fetchPredictedStructure/{mgyp_id}"
+        try:
+            logger.info(f"Attempting ESM Atlas download: {url}")
+            response = await client.get(url, follow_redirects=True)
+            if response.status_code != 200:
+                logger.error(
+                    f"ESM Atlas download for {pdb_id} failed with status {response.status_code}"
+                )
+                if manage_client:
+                    await client.aclose()
+                return (
+                    False,
+                    f"Not found in ESM Metagenomic Atlas (Status {response.status_code})",
+                    None,
+                )
+            return True, "ok", response
+        except Exception as e:
+            return False, f"ESM Atlas download failed: {e}", None
+
+    async def _fetch_pdb_response(
+        self, pdb_id: str, client: httpx.AsyncClient, manage_client: bool
+    ) -> Tuple[bool, str, Optional[httpx.Response]]:
+        """`pdb_id` is expected already-uppercased by the caller - matches
+        the original branch's own `pdb_id = pdb_id.upper()`, which also
+        affected the outer function's later cache-registration/log-message
+        pdb_id, so that reassignment stays at the call site."""
+        url = f"{self.pdb_source}{pdb_id}.pdb"
+        try:
+            logger.info(f"Attempting PDB download from: {url}")
+            response = await client.get(url, follow_redirects=True)
+            if response.status_code != 200:
+                logger.error(
+                    f"Download for {pdb_id} failed with status code {response.status_code}"
+                )
+                if manage_client:
+                    await client.aclose()
+                return False, f"Download failed (Status {response.status_code})", None
+            return True, "ok", response
+        except Exception as e:
+            return False, f"PDB Download failed: {e}", None
+
     async def download_pdb(
         self,
         pdb_id: str,
@@ -231,141 +435,31 @@ class PDBManager:
         if not self.validate_pdb_id(pdb_id):
             return False, f"Invalid ID format: {pdb_id}", None
 
+        manage_client = client is None
+        if manage_client:
+            client = httpx.AsyncClient(timeout=self.timeout)
+
         if source == "alphafold":
-            # AlphaFold DB URL support
-            parts = pdb_id.upper().split("-")
-            uniprot_id = parts[1]
-            fragment = parts[2] if len(parts) > 2 else "F1"
-
-            # Use v6 as new default standard, but allow explicit versioning
-            version_hint = "6"
-            has_explicit_version = False
-            if len(parts) > 3 and parts[3].startswith("V"):
-                version_hint = parts[3].replace("V", "")
-                has_explicit_version = True
-
-            # Versions to attempt if not found
-            versions_to_try = (
-                [version_hint]
-                if has_explicit_version
-                else ["6", "4", "5", "3", "2", "1"]
+            success, msg, response = await self._fetch_alphafold_response(
+                pdb_id, client, manage_client
             )
-
-            try:
-                manage_client = client is None
-                if manage_client:
-                    client = httpx.AsyncClient(timeout=self.timeout)
-
-                success = False
-                last_response = None
-
-                for v in versions_to_try:
-                    url = f"https://alphafold.ebi.ac.uk/files/AF-{uniprot_id}-{fragment}-model_v{v}.cif"
-                    logger.info(f"Attempting AlphaFold download (v{v}): {url}")
-                    response = await client.get(url, follow_redirects=True)
-
-                    if response.status_code == 200:
-                        success = True
-                        last_response = response
-                        break
-                    else:
-                        logger.debug(
-                            f"AlphaFold v{v} not found (Status {response.status_code})"
-                        )
-
-                if not success:
-                    logger.error(
-                        f"All AlphaFold download attempts for {pdb_id} failed."
-                    )
-                    if manage_client:
-                        await client.aclose()
-                    return (
-                        False,
-                        f"Not found in AlphaFold DB (Tried versions {', '.join(versions_to_try)})",
-                        None,
-                    )
-
-                # Proceed with successful response
-                response = last_response
-
-            except httpx.TimeoutException:
-                logger.error(f"Timeout while downloading {pdb_id}")
-                return False, "Download failed: Connection timeout", None
-            except Exception as e:
-                logger.exception("AlphaFold download crash")
-                return False, f"Error: {str(e)}", None
         elif source == "swissmodel":
-            # SWISS-MODEL Repository (homology models, keyed by UniProt ID)
-            uniprot_id = pdb_id.upper().split("-", 1)[1]
-            url = f"https://swissmodel.expasy.org/repository/uniprot/{uniprot_id}.pdb"
-            try:
-                manage_client = client is None
-                if manage_client:
-                    client = httpx.AsyncClient(timeout=self.timeout)
-
-                logger.info(f"Attempting SWISS-MODEL download: {url}")
-                response = await client.get(url, follow_redirects=True)
-                if response.status_code != 200:
-                    logger.error(
-                        f"SWISS-MODEL download for {pdb_id} failed with status {response.status_code}"
-                    )
-                    if manage_client:
-                        await client.aclose()
-                    return (
-                        False,
-                        f"Not found in SWISS-MODEL Repository (Status {response.status_code})",
-                        None,
-                    )
-            except Exception as e:
-                return False, f"SWISS-MODEL download failed: {e}", None
+            success, msg, response = await self._fetch_swissmodel_response(
+                pdb_id, client, manage_client
+            )
         elif source == "esmfold":
-            # ESM Metagenomic Atlas (predictions for MGnify metagenomic sequences)
-            mgyp_id = pdb_id.upper().split("-", 1)[1]
-            url = f"https://api.esmatlas.com/fetchPredictedStructure/{mgyp_id}"
-            try:
-                manage_client = client is None
-                if manage_client:
-                    client = httpx.AsyncClient(timeout=self.timeout)
-
-                logger.info(f"Attempting ESM Atlas download: {url}")
-                response = await client.get(url, follow_redirects=True)
-                if response.status_code != 200:
-                    logger.error(
-                        f"ESM Atlas download for {pdb_id} failed with status {response.status_code}"
-                    )
-                    if manage_client:
-                        await client.aclose()
-                    return (
-                        False,
-                        f"Not found in ESM Metagenomic Atlas (Status {response.status_code})",
-                        None,
-                    )
-            except Exception as e:
-                return False, f"ESM Atlas download failed: {e}", None
+            success, msg, response = await self._fetch_esmfold_response(
+                pdb_id, client, manage_client
+            )
         else:
             # Standard PDB
             pdb_id = pdb_id.upper()
-            url = f"{self.pdb_source}{pdb_id}.pdb"
-            try:
-                manage_client = client is None
-                if manage_client:
-                    client = httpx.AsyncClient(timeout=self.timeout)
+            success, msg, response = await self._fetch_pdb_response(
+                pdb_id, client, manage_client
+            )
 
-                logger.info(f"Attempting PDB download from: {url}")
-                response = await client.get(url, follow_redirects=True)
-                if response.status_code != 200:
-                    logger.error(
-                        f"Download for {pdb_id} failed with status code {response.status_code}"
-                    )
-                    if manage_client:
-                        await client.aclose()
-                    return (
-                        False,
-                        f"Download failed (Status {response.status_code})",
-                        None,
-                    )
-            except Exception as e:
-                return False, f"PDB Download failed: {e}", None
+        if not success:
+            return False, msg, None
 
         # 3. SAVE FILE (Unified for PDB/AF)
         try:
@@ -443,6 +537,68 @@ class PDBManager:
             "num_models": len(structure),
         }
 
+    @staticmethod
+    def _detect_plddt_scale(structure, is_plddt_model: bool) -> float:
+        """AlphaFold writes pLDDT on a 0-100 scale, but ESM Atlas structures
+        write it as a 0-1 fraction instead. Detect which convention this
+        file actually uses (rather than assuming AlphaFold's) so the same
+        "< 50" threshold means the same thing either way - without this,
+        every residue of a 0-1-scale structure gets stripped (0.96 < 50 is
+        always true), leaving zero CA atoms and silently failing the whole
+        structure."""
+        if not is_plddt_model:
+            return 1.0
+        try:
+            max_bfactor = max(
+                (atom.bfactor for atom in structure.get_atoms()), default=0.0
+            )
+            return 100.0 if max_bfactor <= 1.5 else 1.0
+        except Exception:
+            return 1.0
+
+    @staticmethod
+    def _find_target_chain(model, chain: Optional[str]):
+        for ch in model:
+            if chain is None or ch.id == chain:
+                return ch
+        return None
+
+    @staticmethod
+    def _build_clean_residue(residue, clean_select: "_CleanSelect", res_count: int):
+        """A new sanitized Bio.PDB Residue (renumbered, standard ATOM
+        record, non-hydrogen atoms only, common non-standard residue names
+        mapped to their standard equivalent), or None if `clean_select`
+        rejected the residue entirely or every one of its atoms was a
+        hydrogen `accept_atom` stripped."""
+        from Bio import PDB
+
+        if not clean_select.accept_residue(residue):
+            return None
+
+        res_name = residue.resname.strip()
+        std_res_name = _RESIDUE_NAME_MAPPING.get(res_name, res_name)
+        new_res = PDB.Residue.Residue((" ", res_count, " "), std_res_name, " ")
+
+        atoms_added = 0
+        for atom in residue:
+            if not clean_select.accept_atom(atom):
+                continue
+            new_res.add(
+                PDB.Atom.Atom(
+                    atom.name,
+                    atom.coord,
+                    atom.occupancy,
+                    atom.bfactor,
+                    atom.altloc,
+                    atom.get_fullname(),  # Fix: fullname must be string
+                    atom.serial_number,
+                    element=atom.element,
+                )
+            )
+            atoms_added += 1
+
+        return new_res if atoms_added > 0 else None
+
     def clean_pdb(
         self,
         pdb_file: Path,
@@ -455,7 +611,7 @@ class PDBManager:
         """
         try:
             from Bio import PDB
-            from Bio.PDB import PDBIO, Select
+            from Bio.PDB import PDBIO
 
             structure = self._get_structure(pdb_file)
 
@@ -463,59 +619,10 @@ class PDBManager:
             # in the B-factor column; SWISS-MODEL homology models don't, so
             # they're excluded from this pruning heuristic.
             is_plddt_model = pdb_file.name.lower().startswith(("af-", "esm-"))
-
-            # AlphaFold writes pLDDT on a 0-100 scale, but ESM Atlas
-            # structures write it as a 0-1 fraction instead. Detect which
-            # convention this file actually uses (rather than assuming
-            # AlphaFold's) so the same "< 50" threshold means the same thing
-            # either way - without this, every residue of a 0-1-scale
-            # structure gets stripped (0.96 < 50 is always true), leaving
-            # zero CA atoms and silently failing the whole structure.
-            plddt_scale = 1.0
-            if is_plddt_model:
-                try:
-                    max_bfactor = max(
-                        (atom.bfactor for atom in structure.get_atoms()),
-                        default=0.0,
-                    )
-                    if max_bfactor <= 1.5:
-                        plddt_scale = 100.0
-                except Exception:
-                    pass
-
-            class CleanSelect(Select):
-                def accept_residue(self, residue):
-                    # Remove water
-                    if remove_water and (
-                        residue.id[0] == "W" or residue.resname == "HOH"
-                    ):
-                        return 0
-
-                    # pLDDT Pruning (Strip disordered regions < 50 if it's a predicted model)
-                    if is_plddt_model:
-                        try:
-                            # Bio.PDB residues don't have a single B-factor, we check the first atom (usually N or CA)
-                            atoms = list(residue.get_atoms())
-                            if atoms and (atoms[0].bfactor * plddt_scale) < 50:
-                                return 0
-                        except (AttributeError, IndexError):
-                            pass
-
-                    # Keep standard residues
-                    if residue.id[0] == " ":
-                        return 1
-
-                    # For non-standard residues (HETATM), keep them if they have a CA atom
-                    if residue.has_id("CA"):
-                        return 1
-
-                    return 0 if remove_heteroatoms else 1
-
-                def accept_atom(self, atom):
-                    # Exclude hydrogens (mustang often crashes on them)
-                    if atom.element == "H" or atom.name.startswith("H"):
-                        return 0
-                    return 1
+            plddt_scale = self._detect_plddt_scale(structure, is_plddt_model)
+            clean_select = _CleanSelect(
+                is_plddt_model, plddt_scale, remove_water, remove_heteroatoms
+            )
 
             # Extract model 0
             model = structure[0]
@@ -525,65 +632,17 @@ class PDBManager:
             new_model = PDB.Model.Model(0)
             new_structure.add(new_model)
 
-            # Find the chain
-            target_chain_obj = None
-            for ch in model:
-                if chain is None or ch.id == chain:
-                    target_chain_obj = ch
-                    break
-
+            target_chain_obj = self._find_target_chain(model, chain)
             if not target_chain_obj:
                 return False, f"Chain {chain} not found", None
 
             new_chain = PDB.Chain.Chain(target_chain_obj.id)
             new_model.add(new_chain)
 
-            # Mapping of common non-standard residues to standard ones
-            RESIDUE_MAPPING = {
-                "HYP": "PRO",
-                "MSE": "MET",
-                "CSD": "ALA",
-                "CAS": "CYS",
-                "KCX": "LYS",
-                "LLP": "LYS",
-                "CME": "CYS",
-                "MLY": "LYS",
-            }
-
-            clean_select = CleanSelect()
             res_count = 1
             for residue in target_chain_obj:
-                # Use our logic to accept residue
-                if not clean_select.accept_residue(residue):
-                    continue
-
-                # Standardize residue: remove HETATM prefix, map name, renumber
-                res_name = residue.resname.strip()
-                std_res_name = RESIDUE_MAPPING.get(res_name, res_name)
-
-                # Force to be standard ATOM record: id[0] = ' '
-                new_id = (" ", res_count, " ")
-                new_res = PDB.Residue.Residue(new_id, std_res_name, " ")
-
-                # Add atoms
-                atoms_added = 0
-                for atom in residue:
-                    if clean_select.accept_atom(atom):
-                        # Construct a fresh atom to ensure clean state
-                        new_atom = PDB.Atom.Atom(
-                            atom.name,
-                            atom.coord,
-                            atom.occupancy,
-                            atom.bfactor,
-                            atom.altloc,
-                            atom.get_fullname(),  # Fix: fullname must be string
-                            atom.serial_number,
-                            element=atom.element,
-                        )
-                        new_res.add(new_atom)
-                        atoms_added += 1
-
-                if atoms_added > 0:
+                new_res = self._build_clean_residue(residue, clean_select, res_count)
+                if new_res is not None:
                     new_chain.add(new_res)
                     res_count += 1
 

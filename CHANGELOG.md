@@ -2,6 +2,20 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.43.0]
+
+`pdb_manager.py` was explicitly deferred earlier as "a dedicated session" given it's the single most-used file in the app - this starts that session with its two highest-complexity findings.
+
+### Fixed
+- **`download_pdb`** (69→within limit): the 4 near-identical per-source branches (AlphaFold's multi-version fallback loop, SWISS-MODEL, ESM Atlas, standard PDB) were extracted into `_fetch_alphafold_response`/`_fetch_swissmodel_response`/`_fetch_esmfold_response`/`_fetch_pdb_response`. Preserved two subtle, easy-to-miss existing behaviors exactly rather than "fixing" them as a side effect: the HTTP client is only explicitly closed on a non-200 response, not on a timeout/exception (a pre-existing resource-leak-on-exception quirk, left as-is since fixing it wasn't asked for and isn't safe to bundle into a refactor); and only the standard-PDB branch's `pdb_id = pdb_id.upper()` reassignment affects the outer function's later cache-registration and log messages (moved to the call site, not into the extracted helper, to keep that scoping identical).
+- **`clean_pdb`** (38→within limit): the nested `CleanSelect` class (closing over the method's locals) became a real module-level `_CleanSelect` class taking its filter parameters via `__init__`, duck-typing `Bio.PDB.Select`'s 4-method contract instead of subclassing it (avoids a module-level Bio.PDB import). The pLDDT-scale detection and per-residue rebuild loop were extracted into `_detect_plddt_scale`/`_find_target_chain`/`_build_clean_residue`.
+
+### Verified
+- Full backend suite: 512 tests passing.
+- Given both functions sit on the critical path of every single Compare-mode run, went beyond unit tests: built a fresh Docker image and ran two real end-to-end `/api/jobs/align` runs through the actual HTTP API - 4HHB+2HHB (exercises the standard-PDB download branch) and 4HHB+AF-P69905-F1 (exercises both the AlphaFold download branch and `clean_pdb`'s pLDDT-pruning path) - both completed successfully with real RMSD/identity/heatmap/tree output.
+- Also ran a direct, non-Docker real-network test of `download_pdb` against both RCSB and the AlphaFold DB to confirm the extracted per-source fetchers still make the exact same live HTTP requests as before.
+- `black`/`ruff` clean.
+
 ## [3.42.0]
 
 Seventh batch of the `new_coverage` push - five backend files that had never been unit tested at all or only partially: `ligand_analyzer.py`, `result_manager.py`, `ramachandran_service.py`, `sequence_viewer.py`, and `insights.py`, plus filling the remaining gaps in the pre-existing `structure_viewer.py` suite.
