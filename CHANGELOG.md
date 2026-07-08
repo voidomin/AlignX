@@ -2,6 +2,16 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.37.0]
+
+Fifth batch of the `new_coverage` push - `session_manager.py`, which had never been unit tested at all (0%) despite being real, load-bearing code (`app.py`'s Streamlit entry point calls it directly).
+
+### Added
+- **`tests/test_session_manager.py`** (new, 12 tests): the 3 free functions (`get_session_id`, `get_session_paths`, `cleanup_stale_sessions` - including the TTL-purge threshold, the legacy `run_*`-prefix skip, DB-record cleanup, and a broken-DB-connection not blocking the filesystem cleanup) plus `SessionInitializer.initialize()` itself, exercised through Streamlit's `AppTest` harness (a real `session_state`, not a hand-rolled fake) rather than mocking every one of the ~10 backend classes it constructs - confirms all expected keys actually populate and that a second call is idempotent. File coverage: 0% → 96%.
+
+### Verified
+- 380 backend tests total (up from 368), all passing.
+
 ## [3.36.0]
 
 Fifth batch of the backend `python:S3776` cleanup (3 more of the 41 open findings: complexity 29, 30, 31). 15 of 26 backend findings now resolved. This batch includes `coordinator.py`'s `run_full_pipeline` - the core Compare-mode orchestration function - refactored with extra care given its centrality.
