@@ -1,3 +1,4 @@
+import subprocess
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 from src.backend.mustang_runner import MustangRunner
@@ -637,3 +638,247 @@ class TestStreamProcessOutput:
             except TimeoutError:
                 pass
         process.kill.assert_called_once()
+
+
+class TestDownloadMustangSource:
+    def test_success_writes_downloaded_bytes(self, mock_config, tmp_path):
+        runner = MustangRunner(mock_config)
+        dest = tmp_path / "mustang.tgz"
+        fake_response = MagicMock()
+        fake_response.__enter__.return_value = fake_response
+
+        with patch("urllib.request.urlopen", return_value=fake_response), patch(
+            "shutil.copyfileobj"
+        ) as mock_copy:
+            result = runner._download_mustang_source(dest)
+
+        assert result is True
+        mock_copy.assert_called_once()
+
+    def test_returns_false_on_download_failure(self, mock_config, tmp_path):
+        runner = MustangRunner(mock_config)
+        dest = tmp_path / "mustang.tgz"
+
+        with patch("urllib.request.urlopen", side_effect=OSError("network down")):
+            result = runner._download_mustang_source(dest)
+
+        assert result is False
+
+
+class TestPrepareCompilationDir:
+    def test_clears_existing_build_dir_and_extracts(self, mock_config, tmp_path):
+        runner = MustangRunner(mock_config)
+        build_dir = tmp_path / "build"
+        build_dir.mkdir()
+        (build_dir / "stale_file.txt").write_text("old")
+        bundled_tarball = tmp_path / "mustang.tgz"
+
+        def fake_unpack(archive_path, target_dir):
+            (target_dir / "mustang-3.2.3").mkdir(parents=True)
+
+        with patch("shutil.copy"), patch(
+            "shutil.unpack_archive", side_effect=fake_unpack
+        ):
+            result = runner._prepare_compilation_dir(build_dir, bundled_tarball)
+
+        assert result == build_dir / "mustang-3.2.3"
+
+    def test_proceeds_when_rmtree_fails(self, mock_config, tmp_path):
+        runner = MustangRunner(mock_config)
+        build_dir = tmp_path / "build"
+        build_dir.mkdir()
+        bundled_tarball = tmp_path / "mustang.tgz"
+
+        def fake_unpack(archive_path, target_dir):
+            (target_dir / "mustang-3.2.3").mkdir(parents=True)
+
+        with patch("shutil.rmtree", side_effect=PermissionError("locked")), patch(
+            "shutil.copy"
+        ), patch("shutil.unpack_archive", side_effect=fake_unpack):
+            result = runner._prepare_compilation_dir(build_dir, bundled_tarball)
+
+        assert result is not None
+
+    def test_returns_none_when_extraction_produces_no_directory(
+        self, mock_config, tmp_path
+    ):
+        runner = MustangRunner(mock_config)
+        build_dir = tmp_path / "build"
+        bundled_tarball = tmp_path / "mustang.tgz"
+
+        with patch("shutil.copy"), patch("shutil.unpack_archive"):
+            result = runner._prepare_compilation_dir(build_dir, bundled_tarball)
+
+        assert result is None
+
+
+class TestExecuteCompilation:
+    def test_native_make_success(self, mock_config, tmp_path):
+        runner = MustangRunner(mock_config)
+        runner.is_windows = False
+
+        with patch("subprocess.run") as mock_run:
+            result = runner._execute_compilation(tmp_path)
+
+        assert result is True
+        assert mock_run.call_args[0][0] == ["make"]
+
+    def test_wsl_make_used_when_windows_and_wsl_available(self, mock_config, tmp_path):
+        runner = MustangRunner(mock_config)
+        runner.is_windows = True
+
+        with patch("shutil.which", return_value="wsl"), patch(
+            "subprocess.run"
+        ) as mock_run:
+            result = runner._execute_compilation(tmp_path)
+
+        assert result is True
+        assert mock_run.call_args[0][0] == ["wsl", "make"]
+
+    def test_returns_false_on_compilation_failure(self, mock_config, tmp_path):
+        runner = MustangRunner(mock_config)
+        runner.is_windows = False
+
+        with patch(
+            "subprocess.run", side_effect=subprocess.CalledProcessError(1, "make")
+        ):
+            result = runner._execute_compilation(tmp_path)
+
+        assert result is False
+
+
+class TestLocateCompiledBinary:
+    def test_returns_false_when_bin_dir_missing(self, mock_config, tmp_path):
+        runner = MustangRunner(mock_config)
+        assert runner._locate_compiled_binary(tmp_path) is False
+
+    def test_returns_false_when_no_binaries_found(self, mock_config, tmp_path):
+        runner = MustangRunner(mock_config)
+        (tmp_path / "bin").mkdir()
+        assert runner._locate_compiled_binary(tmp_path) is False
+
+    def test_windows_sets_wsl_binary(self, mock_config, tmp_path):
+        runner = MustangRunner(mock_config)
+        runner.is_windows = True
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        binary = bin_dir / "mustang-3.2.3"
+        binary.write_text("binary")
+
+        result = runner._locate_compiled_binary(tmp_path)
+
+        assert result is True
+        assert runner.wsl_binary == binary
+
+    def test_non_windows_sets_executable_and_chmods(self, mock_config, tmp_path):
+        runner = MustangRunner(mock_config)
+        runner.is_windows = False
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        binary = bin_dir / "mustang-3.2.3"
+        binary.write_text("binary")
+
+        with patch("os.chmod") as mock_chmod:
+            result = runner._locate_compiled_binary(tmp_path)
+
+        assert result is True
+        assert runner.executable == str(binary.absolute())
+        mock_chmod.assert_called_once_with(runner.executable, 0o700)
+
+
+class TestCompileFromSource:
+    def test_downloads_when_tarball_missing_then_compiles(self, mock_config, tmp_path):
+        runner = MustangRunner(mock_config)
+        runner._base_dir = tmp_path
+
+        with patch.object(
+            runner, "_download_mustang_source", return_value=True
+        ) as mock_download, patch.object(
+            runner, "_prepare_compilation_dir", return_value=tmp_path / "src"
+        ), patch.object(
+            runner, "_execute_compilation", return_value=True
+        ), patch.object(
+            runner, "_locate_compiled_binary", return_value=True
+        ):
+            result = runner._compile_from_source()
+
+        assert result is True
+        mock_download.assert_called_once()
+
+    def test_skips_download_when_tarball_already_bundled(self, mock_config, tmp_path):
+        runner = MustangRunner(mock_config)
+        runner._base_dir = tmp_path
+        (tmp_path / "mustang.tgz").write_text("already here")
+
+        with patch.object(
+            runner, "_download_mustang_source"
+        ) as mock_download, patch.object(
+            runner, "_prepare_compilation_dir", return_value=tmp_path / "src"
+        ), patch.object(
+            runner, "_execute_compilation", return_value=True
+        ), patch.object(
+            runner, "_locate_compiled_binary", return_value=True
+        ):
+            result = runner._compile_from_source()
+
+        assert result is True
+        mock_download.assert_not_called()
+
+    def test_returns_false_when_download_fails(self, mock_config, tmp_path):
+        runner = MustangRunner(mock_config)
+        runner._base_dir = tmp_path
+
+        with patch.object(runner, "_download_mustang_source", return_value=False):
+            result = runner._compile_from_source()
+
+        assert result is False
+
+    def test_returns_false_when_extraction_fails(self, mock_config, tmp_path):
+        runner = MustangRunner(mock_config)
+        runner._base_dir = tmp_path
+        (tmp_path / "mustang.tgz").write_text("already here")
+
+        with patch.object(runner, "_prepare_compilation_dir", return_value=None):
+            result = runner._compile_from_source()
+
+        assert result is False
+
+    def test_returns_false_when_compilation_fails(self, mock_config, tmp_path):
+        runner = MustangRunner(mock_config)
+        runner._base_dir = tmp_path
+        (tmp_path / "mustang.tgz").write_text("already here")
+
+        with patch.object(
+            runner, "_prepare_compilation_dir", return_value=tmp_path / "src"
+        ), patch.object(runner, "_execute_compilation", return_value=False):
+            result = runner._compile_from_source()
+
+        assert result is False
+
+    def test_returns_false_when_binary_not_located(self, mock_config, tmp_path):
+        runner = MustangRunner(mock_config)
+        runner._base_dir = tmp_path
+        (tmp_path / "mustang.tgz").write_text("already here")
+
+        with patch.object(
+            runner, "_prepare_compilation_dir", return_value=tmp_path / "src"
+        ), patch.object(
+            runner, "_execute_compilation", return_value=True
+        ), patch.object(
+            runner, "_locate_compiled_binary", return_value=False
+        ):
+            result = runner._compile_from_source()
+
+        assert result is False
+
+    def test_returns_false_on_unexpected_exception(self, mock_config, tmp_path):
+        runner = MustangRunner(mock_config)
+        runner._base_dir = tmp_path
+        (tmp_path / "mustang.tgz").write_text("already here")
+
+        with patch.object(
+            runner, "_prepare_compilation_dir", side_effect=RuntimeError("boom")
+        ):
+            result = runner._compile_from_source()
+
+        assert result is False

@@ -2,6 +2,17 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.58.0]
+
+Eleventh batch of the `new_coverage` push - `mustang_runner.py`'s compile-from-source fallback path (`_download_mustang_source`, `_prepare_compilation_dir`, `_execute_compilation`, `_locate_compiled_binary`, `_compile_from_source`), which had never been exercised by a test despite being the real recovery path when no bundled Mustang binary is available.
+
+### Added
+- **`tests/test_mustang_runner.py`** (+21 tests): `_download_mustang_source` (success, exception path), `_prepare_compilation_dir` (clears a stale build dir, proceeds when `rmtree` fails, returns `None` when extraction produces no directory), `_execute_compilation` (native vs. WSL `make` command selection, failure path), `_locate_compiled_binary` (missing `bin/`, no binaries found, Windows sets `wsl_binary`, non-Windows sets `executable` + chmods), and `_compile_from_source`'s full orchestration (skips download when already bundled, and every failure branch - download, extraction, compilation, binary-not-found, unexpected exception). File coverage: 74% → 93%.
+
+### Verified
+- Full backend suite: 644 tests passing, both locally and in a CI-matching Docker container.
+- `black`/`ruff` clean.
+
 ## [3.57.0]
 
 Tenth and final batch of the legacy Streamlit UI cleanup (1 of 14 findings: complexity 179 - `sequence.py`'s `render_sequences_tab`, the largest single function in the entire codebase). **This closes out every one of the original 47 SonarCloud issues from this project's cleanup effort except the 3 deliberately-deferred `S8544` hash-pinning findings.**
