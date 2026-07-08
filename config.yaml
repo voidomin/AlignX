@@ -1,6 +1,6 @@
 app:
   name: StructScope
-  version: 3.60.0
+  version: 3.61.0
   max_proteins: 20
 core:
   max_proteins: 20

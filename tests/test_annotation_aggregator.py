@@ -355,6 +355,15 @@ class TestFetchInterproEntries:
 
     @pytest.mark.asyncio
     @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            entries = await aggregator.fetch_interpro_entries("P01541", client)
+        assert entries == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
     async def test_second_call_for_same_accession_uses_cache_not_network(
         self, mock_get
     ):
@@ -409,6 +418,24 @@ class TestFetchQuickgoAnnotations:
             }
         ]
 
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_on_non_200(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            terms = await aggregator.fetch_quickgo_annotations("NOPE", client)
+        assert terms == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            terms = await aggregator.fetch_quickgo_annotations("P01541", client)
+        assert terms == []
+
 
 class TestFetchStringPartners:
 
@@ -451,6 +478,37 @@ class TestFetchStringPartners:
             partners = await aggregator.fetch_string_partners("P01541", 3965, client)
         assert partners == []
 
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.post")
+    async def test_returns_empty_when_error_dict_returned(self, mock_post):
+        """STRING's error response is actually a bare dict (not
+        list-wrapped), unlike the successful-response list of partners -
+        this is the real shape the isinstance(payload, dict) check guards
+        against."""
+        aggregator = AnnotationAggregator()
+        mock_post.return_value = _mock_response(json_data={"Error": "unknown organism"})
+        async with httpx.AsyncClient() as client:
+            partners = await aggregator.fetch_string_partners("P01541", 3965, client)
+        assert partners == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.post")
+    async def test_returns_empty_on_non_200(self, mock_post):
+        aggregator = AnnotationAggregator()
+        mock_post.return_value = _mock_response(status_code=500)
+        async with httpx.AsyncClient() as client:
+            partners = await aggregator.fetch_string_partners("P04637", 9606, client)
+        assert partners == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.post")
+    async def test_returns_empty_on_http_error(self, mock_post):
+        aggregator = AnnotationAggregator()
+        mock_post.side_effect = httpx.ConnectError("no route")
+        async with httpx.AsyncClient() as client:
+            partners = await aggregator.fetch_string_partners("P04637", 9606, client)
+        assert partners == []
+
 
 class TestFetchReactomePathways:
 
@@ -479,6 +537,15 @@ class TestFetchReactomePathways:
         aggregator = AnnotationAggregator()
         async with httpx.AsyncClient() as client:
             pathways = await aggregator.fetch_reactome_pathways("NOPE", client)
+        assert pathways == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            pathways = await aggregator.fetch_reactome_pathways("P04637", client)
         assert pathways == []
 
 
@@ -540,6 +607,129 @@ class TestFetchGmgcFeatures:
             )
         assert domains == []
 
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            domains = await aggregator.fetch_gmgc_features(
+                "GMGC10.040_893_565.PILY1", client
+            )
+        assert domains == []
+
+
+class TestGoTermNameCaching:
+    def test_try_get_cached_go_name_returns_none_without_cache_db(self):
+        aggregator = AnnotationAggregator()
+        assert aggregator._try_get_cached_go_name("GO:0005515") is None
+
+    def test_try_get_cached_go_name_returns_cached_value(self):
+        cache_db = MagicMock()
+        cache_db.get_annotation_cache.return_value = '"protein binding"'
+        aggregator = AnnotationAggregator(cache_db=cache_db)
+
+        assert aggregator._try_get_cached_go_name("GO:0005515") == "protein binding"
+
+    def test_try_get_cached_go_name_returns_none_on_cache_miss(self):
+        cache_db = MagicMock()
+        cache_db.get_annotation_cache.return_value = None
+        aggregator = AnnotationAggregator(cache_db=cache_db)
+
+        assert aggregator._try_get_cached_go_name("GO:0005515") is None
+
+    def test_try_get_cached_go_name_swallows_cache_read_errors(self):
+        cache_db = MagicMock()
+        cache_db.get_annotation_cache.side_effect = Exception("db locked")
+        aggregator = AnnotationAggregator(cache_db=cache_db)
+
+        assert aggregator._try_get_cached_go_name("GO:0005515") is None
+
+    def test_try_cache_go_name_noop_without_cache_db(self):
+        aggregator = AnnotationAggregator()
+        # Should not raise even though there's nothing to write to.
+        aggregator._try_cache_go_name("GO:0005515", "protein binding")
+
+    def test_try_cache_go_name_writes_through_cache_db(self):
+        cache_db = MagicMock()
+        aggregator = AnnotationAggregator(cache_db=cache_db)
+
+        aggregator._try_cache_go_name("GO:0005515", "protein binding")
+
+        cache_db.set_annotation_cache.assert_called_once_with(
+            "goterm:GO:0005515", "goterm", '"protein binding"'
+        )
+
+    def test_try_cache_go_name_swallows_cache_write_errors(self):
+        cache_db = MagicMock()
+        cache_db.set_annotation_cache.side_effect = Exception("disk full")
+        aggregator = AnnotationAggregator(cache_db=cache_db)
+
+        # Should not raise.
+        aggregator._try_cache_go_name("GO:0005515", "protein binding")
+
+
+class TestFetchGoTermNamesChunk:
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_names_and_caches_them(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "results": [
+                    {"id": "GO:0005515", "name": "protein binding"},
+                    {"id": "GO:0006412", "name": "translation"},
+                ]
+            }
+        )
+        cache_db = MagicMock()
+        aggregator = AnnotationAggregator(cache_db=cache_db)
+
+        async with httpx.AsyncClient() as client:
+            names = await aggregator._fetch_go_term_names_chunk(
+                ["GO:0005515", "GO:0006412"], client
+            )
+
+        assert names == {
+            "GO:0005515": "protein binding",
+            "GO:0006412": "translation",
+        }
+        assert cache_db.set_annotation_cache.call_count == 2
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_on_non_200(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=500)
+        aggregator = AnnotationAggregator()
+
+        async with httpx.AsyncClient() as client:
+            names = await aggregator._fetch_go_term_names_chunk(["GO:0005515"], client)
+
+        assert names == {}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+
+        async with httpx.AsyncClient() as client:
+            names = await aggregator._fetch_go_term_names_chunk(["GO:0005515"], client)
+
+        assert names == {}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_skips_results_missing_id_or_name(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={"results": [{"id": "GO:0005515"}, {"name": "orphan name"}]}
+        )
+        aggregator = AnnotationAggregator()
+
+        async with httpx.AsyncClient() as client:
+            names = await aggregator._fetch_go_term_names_chunk(["GO:0005515"], client)
+
+        assert names == {}
+
 
 class TestResolvePdbUniprotAccession:
 
@@ -592,6 +782,17 @@ class TestResolvePdbUniprotAccession:
         async with httpx.AsyncClient() as client:
             accession = await aggregator.resolve_pdb_uniprot_accession(
                 "ZZZZ", "A", client
+            )
+        assert accession is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            accession = await aggregator.resolve_pdb_uniprot_accession(
+                "1CRN", "A", client
             )
         assert accession is None
 
@@ -731,6 +932,42 @@ class TestResolveGoTermNames:
         async with httpx.AsyncClient() as client:
             names = await aggregator.resolve_go_term_names([], client)
         assert names == {}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_uses_cached_name_without_fetching_that_id(self, mock_get):
+        cache_db = MagicMock()
+        cache_db.get_annotation_cache.side_effect = lambda key, *a, **k: (
+            '"cached name"' if "GO:0001" in key else None
+        )
+        mock_get.return_value = _mock_response(
+            json_data={"results": [{"id": "GO:0002", "name": "fetched name"}]}
+        )
+        aggregator = AnnotationAggregator(cache_db=cache_db)
+
+        async with httpx.AsyncClient() as client:
+            names = await aggregator.resolve_go_term_names(
+                ["GO:0001", "GO:0002"], client
+            )
+
+        assert names == {"GO:0001": "cached name", "GO:0002": "fetched name"}
+        # Only the uncached id should have been requested over the network.
+        requested_ids = mock_get.call_args[0][0]
+        assert "GO:0001" not in requested_ids
+        assert "GO:0002" in requested_ids
+
+
+class TestHitSortKey:
+    def test_prefers_eval_key(self):
+        assert AnnotationAggregator._hit_sort_key({"eval": "1e-10"}) == pytest.approx(
+            1e-10
+        )
+
+    def test_falls_back_to_default_on_unparseable_value(self):
+        assert AnnotationAggregator._hit_sort_key({"eval": "not-a-number"}) == 1e9
+
+    def test_falls_back_to_default_when_no_key_present(self):
+        assert AnnotationAggregator._hit_sort_key({}) == 1e9
 
 
 class TestAggregateForHits:

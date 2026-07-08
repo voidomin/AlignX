@@ -2,6 +2,17 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.61.0]
+
+Twelfth batch of the `new_coverage` push - `annotation_aggregator.py`'s remaining gaps, mostly the `httpx.HTTPError` exception-fallback branch that every one of its 7 external-API fetchers has (InterPro, QuickGO annotations/term-names, STRING, Reactome, GMGC, SIFTS) but only some had a test for, plus the GO-term-name persistent-cache read/write helpers and the cache-hit path through `resolve_go_term_names`.
+
+### Added
+- **`tests/test_annotation_aggregator.py`** (+24 tests): `httpx.HTTPError` fallback tests for `fetch_interpro_entries`, `fetch_quickgo_annotations`, `fetch_string_partners`, `fetch_reactome_pathways`, `fetch_gmgc_features`, and `resolve_pdb_uniprot_accession`; `fetch_string_partners`'s bare-dict error-response shape (distinct from the list-wrapped shape the existing test used, which didn't actually exercise that branch); `_try_get_cached_go_name`/`_try_cache_go_name` (present/absent cache_db, cache hit/miss, read/write failures swallowed); `_fetch_go_term_names_chunk` (success incl. caching side effect, non-200, exception, malformed-result skip); `resolve_go_term_names`'s cache-hit path (a cached id must not trigger a network request for that id); and `_hit_sort_key`'s unparseable/missing-value fallback. File coverage: 88% → 99%.
+
+### Verified
+- Full backend suite: 668 tests passing, both locally and in a CI-matching Docker container.
+- `black`/`ruff` clean.
+
 ## [3.60.0]
 
 One more unused-parameter regression caught proactively (ran `ruff check --select ARG` across every file touched today to sweep for more before the next SonarCloud scan finds them one at a time).
