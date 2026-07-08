@@ -2,6 +2,25 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.22.0]
+
+Mechanical safe-batch cleanup for the remaining ~52 low-severity SonarQube Code Smells (none gate-blocking), same low-risk pattern as the two earlier safe-batch passes this session.
+
+### Fixed
+- **Dict/set constructor calls replaced with literals**: `dict(k=v)` → `{"k": v}`, `set([...])` → `{...}` set comprehensions across `phylo_tree.py`, `rmsd_analyzer.py`, `comparison.py`, `phylo.py`, `ligand_analyzer.py`, `ligand.py`.
+- **Redundant/inefficient calls**: `sorted(list(x))` → `sorted(x)`, `list(x)[0]` → `next(iter(x))` (avoids materializing the whole iterable) in `sequence.py`, `rmsd_analyzer.py`, `analysis.py`; a for-loop calling `.add()` per item replaced with a single `.update()` call in `ligand_analyzer.py` and `sequence.py`.
+- **Naming convention**: `rmsd_calculator.py`'s `L_target`/`L_orig` renamed to `l_target`/`l_orig` (Python identifier convention - the `"L_orig"` dict *key* elsewhere in the same file is untouched, since string keys aren't identifiers).
+- **Structural**: merged a nested `if` into its enclosing `if` in `rmsd_calculator.py`; extracted a nested ternary into an explicit `if`/`elif`/`else` in `common.py`'s progress stepper; flattened one level of nested `forEach` into a plain `for` loop in `LigandTab.js` (was 5 levels deep); `escapeHtml.js`'s single-character regex replacements (`/&/g`, `/</g`, etc.) simplified to plain-string `replaceAll()` args, which do the same all-occurrences replacement without needing a `g`-flagged regex.
+- **Duplicated literal**: `sequence.py`'s `"All Proteins (Alignment Columns)"` (repeated 3x) extracted into a module-level constant.
+- **Two `# comment` false positives** re-triggering the "commented out code" heuristic on formula/shape notation (`rmsd_calculator.py`, `rmsd_analyzer.py`) and one in `notebook_template.html` (mentioning tag-like syntax) - reworded to prose, same pattern as this rule's earlier fixes this session.
+- **Unused local variables** (17 sites, mostly tuple-unpacked return values in tests) renamed to `_`: `ligand_analyzer.py`, `sequence_viewer.py`, `clusters.py`, `test_mustang_runner.py`, `test_pdb_manager.py`, `test_pipeline.py`.
+- **Explicitly NOT touched**: `sidebar.py`'s `list(st.session_state.keys())` (S7504) - already investigated earlier this session and confirmed genuinely necessary (the loop body deletes from the dict being iterated), not a false positive to "fix" again.
+
+### Verified
+- 245 backend + 142 frontend tests, ruff, and black all clean.
+- `phylo.py` (8 of the dict-literal fixes, the highest-complexity file touched) and `sequence.py` (`_parse_range_str`, `render_sequences_tab`) both exercised live through Streamlit's `AppTest` harness with realistic fake torsion/sequence data - zero exceptions.
+- The remaining touched files' specific changes (`ligand.py`'s set comprehension, `clusters.py`'s tuple-unpack, `comparison.py`'s labels dict, `common.py`'s stepper logic, `rmsd_calculator.py`'s renamed TM-score/GDT-TS parameters) verified via direct, isolated equivalence checks against the original logic - exhaustive input sweeps where applicable (the stepper's if/elif/else vs. the original nested ternary, checked across all step/current_step combinations 0-5).
+
 ## [3.21.0]
 
 Mechanical FastAPI documentation cleanup in `src/backend/api.py` - the two largest remaining SonarQube Code Smell rules (70 issues combined, neither gate-blocking since both predate the "new code" baseline): `python:S8410` ("use Annotated for dependency injection", 40 instances) and `python:S8415` ("document this HTTPException in responses", 30 instances).

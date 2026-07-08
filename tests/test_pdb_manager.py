@@ -80,7 +80,7 @@ class TestPDBManager:
         # Override directories to use temp path
         manager.raw_dir = temp_workspace["raw"]
 
-        success, msg, path = await manager.download_pdb("1A0J")
+        success, _, path = await manager.download_pdb("1A0J")
 
         assert success is True
         assert path.exists()
@@ -180,7 +180,7 @@ class TestPDBManager:
         raw_file = temp_workspace["raw"] / "1test.pdb"
         raw_file.write_text(dummy_pdb_content)
 
-        success, msg, cleaned_path = manager.clean_pdb(raw_file)
+        success, _, cleaned_path = manager.clean_pdb(raw_file)
 
         assert success is True
         assert cleaned_path.exists()
@@ -264,7 +264,7 @@ class TestPDBManager:
         raw_file.write_text(multi_content)
 
         # Clean only chain B
-        success, msg, cleaned_path = manager.clean_pdb(raw_file, chain="B")
+        success, _, cleaned_path = manager.clean_pdb(raw_file, chain="B")
 
         assert success is True
         content = cleaned_path.read_text()

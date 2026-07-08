@@ -173,7 +173,7 @@ class PhyloTreeGenerator:
                 template="plotly_dark",
                 paper_bgcolor="rgba(0,0,0,0)",
                 plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(family="Inter, sans-serif", size=12, color="white"),
+                font={"family": "Inter, sans-serif", "size": 12, "color": "white"},
                 xaxis_title="RMSD Distance (Å)",
             )
 

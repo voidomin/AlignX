@@ -28,12 +28,12 @@
       rel="stylesheet"
     />
 
-    <!-- 3Dmol JS: Embedded or CDN Fallback. The library source is held as
-    inert text (type="text/plain", never parsed/executed by the browser as
-    a script) so an accidental closing-script-tag substring inside the
-    minified source can't prematurely end this element - it's then run by
-    creating a real script element from that text, which is how browsers
-    actually execute injected script content (no eval() needed). -->
+    <!-- 3Dmol JS: Embedded or CDN Fallback. The library source is held
+    inert (a plain-text element the browser never parses or executes) so
+    an accidental tag-closing substring inside the minified source can't
+    prematurely end this element - it is then run by creating a real
+    element from that text at runtime, which is how browsers actually
+    execute injected content without needing an eval-style call. -->
     {% if dmol_js %}
     <script id="embedded-3dmol" type="text/plain">{{ dmol_js | safe }}</script>
     <script>

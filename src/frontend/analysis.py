@@ -230,7 +230,7 @@ def load_run_from_history(run_id: str, is_auto: bool = False) -> None:
         st.session_state.manual_pdb_input = "\n".join(run["pdb_ids"])
     elif input_method == "Load Example":
         st.session_state.example_select = meta.get(
-            "example_name", list(EXAMPLES.keys())[0]
+            "example_name", next(iter(EXAMPLES.keys()))
         )
 
     # Load results via Coordinator

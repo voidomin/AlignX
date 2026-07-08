@@ -80,7 +80,7 @@ class SequenceViewer:
             # Here we count unique residues ignoring gaps? No, gaps matter in alignment.
 
             # Simple approach: Fraction of most common residue
-            unique, counts = np.unique(residues, return_counts=True)
+            _, counts = np.unique(residues, return_counts=True)
             max_count = np.max(counts)
             score = max_count / len(seq_list)
 

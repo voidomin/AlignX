@@ -342,18 +342,18 @@ def calculate_structure_rmsd(
 
 
 def calculate_tm_score(
-    coords1: np.ndarray, coords2: np.ndarray, L_target: int
+    coords1: np.ndarray, coords2: np.ndarray, l_target: int
 ) -> float:
     """
     Calculate TM-score between two set of CA coordinates.
-    Formula: TM = (1/L_target) * sum(1 / (1 + (d_i/d0)^2))
+    Formula: TM = (1/l_target) * sum(1 / (1 + (d_i/d0)^2))
     """
-    if len(coords1) == 0 or L_target == 0:
+    if len(coords1) == 0 or l_target == 0:
         return 0.0
 
     # Standard TM-score normalization factor
-    if L_target > 15:
-        d0 = 1.24 * (L_target - 15) ** (1 / 3) - 1.8
+    if l_target > 15:
+        d0 = 1.24 * (l_target - 15) ** (1 / 3) - 1.8
     else:
         d0 = 0.5
 
@@ -361,24 +361,24 @@ def calculate_tm_score(
     distances_sq = np.sum((coords1 - coords2) ** 2, axis=1)
 
     score = np.sum(1.0 / (1.0 + distances_sq / d0_sq))
-    return score / L_target
+    return score / l_target
 
 
-def calculate_gdt_ts(coords1: np.ndarray, coords2: np.ndarray, L_target: int) -> float:
+def calculate_gdt_ts(coords1: np.ndarray, coords2: np.ndarray, l_target: int) -> float:
     """
     Calculate Global Distance Test - Total Score (GDT-TS).
     Formula: (P1 + P2 + P4 + P8) / 4
     where Px is the percentage of residues with distance < x Angstroms.
     """
-    if len(coords1) == 0 or L_target == 0:
+    if len(coords1) == 0 or l_target == 0:
         return 0.0
 
     distances = np.sqrt(np.sum((coords1 - coords2) ** 2, axis=1))
 
-    p1 = np.sum(distances < 1.0) / L_target
-    p2 = np.sum(distances < 2.0) / L_target
-    p4 = np.sum(distances < 4.0) / L_target
-    p8 = np.sum(distances < 8.0) / L_target
+    p1 = np.sum(distances < 1.0) / l_target
+    p2 = np.sum(distances < 2.0) / l_target
+    p4 = np.sum(distances < 4.0) / l_target
+    p8 = np.sum(distances < 8.0) / l_target
 
     return (p1 + p2 + p4 + p8) / 4.0
 
@@ -419,22 +419,21 @@ def calculate_alignment_quality_metrics(
 
         for _, (record, entity) in enumerate(zip(alignment, entities, strict=False)):
             # Original length (excluding gaps)
-            L_orig = len(str(record.seq).replace("-", ""))
+            l_orig = len(str(record.seq).replace("-", ""))
 
             # Map aligned columns to actual CA atoms
             cas = [atom.coord for atom in entity.get_atoms() if atom.name == "CA"]
 
-            # aligned_coords[col] = coord or None
+            # Each entry of aligned_coords holds either a coordinate or None
             aligned_coords = [None] * seq_len
             res_idx = 0
             for col, char in enumerate(record.seq):
-                if char != "-":
-                    if res_idx < len(cas):
-                        aligned_coords[col] = cas[res_idx]
-                        res_idx += 1
+                if char != "-" and res_idx < len(cas):
+                    aligned_coords[col] = cas[res_idx]
+                    res_idx += 1
 
             structure_data.append(
-                {"id": record.id, "aligned_coords": aligned_coords, "L_orig": L_orig}
+                {"id": record.id, "aligned_coords": aligned_coords, "L_orig": l_orig}
             )
 
         results = {}

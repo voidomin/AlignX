@@ -140,11 +140,12 @@ def render_progress_stepper(current_step: int) -> None:
     stepper_html = '<div class="stepper-container fade-in">\n'
     for i, label in enumerate(steps):
         idx = i + 1
-        status_class = (
-            "complete"
-            if idx < current_step
-            else "active" if idx == current_step else ""
-        )
+        if idx < current_step:
+            status_class = "complete"
+        elif idx == current_step:
+            status_class = "active"
+        else:
+            status_class = ""
         bubble_content = "✓" if idx < current_step else str(idx)
 
         stepper_html += f'<div class="step-item {status_class}">\n'

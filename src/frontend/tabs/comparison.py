@@ -94,7 +94,7 @@ def render_comparison_tab(current_results: dict):
 
             fig = px.imshow(
                 diff_df,
-                labels=dict(x="Protein", y="Protein", color="Diff (Å)"),
+                labels={"x": "Protein", "y": "Protein", "color": "Diff (Å)"},
                 color_continuous_scale=cmap,
                 aspect="auto",
                 title=f"RMSD Delta (Inner Join): {current_id[:12]}... (Current) vs {target_id[:12]}... (Target)",

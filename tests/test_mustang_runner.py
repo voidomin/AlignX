@@ -30,7 +30,7 @@ class TestMustangRunner:
         mock_run.side_effect = Exception("Not found")
 
         runner = MustangRunner(mock_config)
-        found, msg = runner._check_mustang()
+        found, _ = runner._check_mustang()
 
         assert found is False
 
@@ -64,7 +64,7 @@ class TestMustangRunner:
         input_files = [Path("a.pdb"), Path("b.pdb")]
         output_dir = Path("results")
 
-        cmd, cwd = runner._construct_command(input_files, output_dir)
+        cmd, _ = runner._construct_command(input_files, output_dir)
 
         assert cmd[0] == "mustang"
         assert "-F" in cmd
@@ -104,7 +104,7 @@ class TestMustangRunner:
         bin_path = tmp_path / "mustang-3.2.3"
         bin_path.write_text("fake binary")
 
-        found, msg = runner._verify_native_linux_binary(bin_path)
+        found, _ = runner._verify_native_linux_binary(bin_path)
 
         assert found is True
         mock_chmod.assert_called_once_with(bin_path, 0o700)
@@ -121,7 +121,7 @@ class TestMustangRunnerValidation:
             "ATOM      1  CA  ALA A   1       0.0   0.0   0.0  1.00  0.00\n"
         )
 
-        success, msg, result_dir = runner.run_alignment([single_file], tmp_path / "out")
+        success, msg, _ = runner.run_alignment([single_file], tmp_path / "out")
         assert success is False
         assert "at least 2" in msg.lower()
 
@@ -129,7 +129,7 @@ class TestMustangRunnerValidation:
         """Alignment should fail with empty input list."""
         runner = MustangRunner(mock_config)
 
-        success, msg, result_dir = runner.run_alignment([], tmp_path / "out")
+        success, _, _ = runner.run_alignment([], tmp_path / "out")
         assert success is False
 
     @patch("subprocess.Popen")
@@ -155,7 +155,7 @@ class TestMustangRunnerValidation:
         mock_process.returncode = 139
         mock_popen.return_value = mock_process
 
-        success, msg, result_dir = runner.run_alignment(
+        success, msg, _ = runner.run_alignment(
             [out_dir / "a.pdb", out_dir / "b.pdb"], out_dir
         )
 
@@ -189,7 +189,7 @@ class TestMustangRunnerValidation:
         )
         (out_dir / "alignment.afasta").write_text(">a\nACDEF\n>b\nACDEF\n")
 
-        success, msg, result_dir = runner.run_alignment(
+        success, _, _ = runner.run_alignment(
             [out_dir / "a.pdb", out_dir / "b.pdb"], out_dir
         )
 

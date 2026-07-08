@@ -27,12 +27,12 @@ class TestPipelineIntegration:
             mock_dl.return_value = (True, "Downloaded", dummy_file)
 
             # 1. Download (Mocked)
-            success, msg, raw_path = await manager.download_pdb("1DUM")
+            success, _, raw_path = await manager.download_pdb("1DUM")
             assert success is True
             assert raw_path.exists()
 
             # 2. Clean
-            success, msg, cleaned_path = manager.clean_pdb(raw_path)
+            success, _, cleaned_path = manager.clean_pdb(raw_path)
             assert success is True
             assert cleaned_path.exists()
             assert cleaned_path.parent == temp_workspace["cleaned"]
@@ -55,7 +55,7 @@ class TestPipelineIntegration:
         output_dir = temp_workspace["results"]
 
         # Check command construction
-        cmd, cwd = runner._construct_command(files, output_dir)
+        cmd, _ = runner._construct_command(files, output_dir)
 
         assert len(cmd) > 5
         assert files[0].name in cmd

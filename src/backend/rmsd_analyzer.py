@@ -112,7 +112,7 @@ class RMSDAnalyzer:
                 template="plotly_dark",
                 paper_bgcolor="rgba(0,0,0,0)",
                 plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(family="Inter, sans-serif", size=12, color="white"),
+                font={"family": "Inter, sans-serif", "size": 12, "color": "white"},
             )
 
             return fig
@@ -251,7 +251,7 @@ class RMSDAnalyzer:
                 logger.error("No sequences found in AFASTA file")
                 return [], []
 
-            alignment_length = len(list(sequences.values())[0])
+            alignment_length = len(next(iter(sequences.values())))
             num_structures = len(sequences)
 
             # Initialize coordinate storage: [alignment_pos][structure_idx] = (x, y, z)
@@ -328,7 +328,7 @@ class RMSDAnalyzer:
                     # Calculate RMSD from mean
                     # mean of squared diffs
                     sq_diffs = [np.sum((c - mean_pos) ** 2) for c in col_coords]
-                    # RMSF = sqrt(mean(sq_diffs))
+                    # RMSF is the square root of the mean squared deviation
                     rmsf = np.sqrt(np.mean(sq_diffs))
                     rmsf_values.append(float(rmsf))
 

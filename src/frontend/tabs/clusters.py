@@ -21,7 +21,7 @@ def render_clusters_tab(results: Dict[str, Any]) -> None:
         return
 
     # User Interactive Threshold
-    col1, col2 = st.columns([1, 2])
+    col1, _ = st.columns([1, 2])
     with col1:
         threshold = st.slider(
             "RMSD Threshold (Å)",

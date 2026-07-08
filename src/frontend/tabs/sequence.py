@@ -3,6 +3,8 @@ import pandas as pd
 from typing import List, Dict, Any
 from src.frontend.tabs.common import render_learning_card
 
+_ALL_PROTEINS_LABEL = "All Proteins (Alignment Columns)"
+
 
 def _parse_range_str(range_str: str, max_val: int) -> List[int]:
     """
@@ -31,8 +33,7 @@ def _parse_range_str(range_str: str, max_val: int) -> List[int]:
                 start = max(1, int(start_str))
                 end = min(max_val, int(end_str))
                 if start <= end:
-                    for i in range(start, end + 1):
-                        result.add(i)
+                    result.update(range(start, end + 1))
             except ValueError:
                 pass
         else:
@@ -42,7 +43,7 @@ def _parse_range_str(range_str: str, max_val: int) -> List[int]:
                     result.add(val)
             except ValueError:
                 pass
-    return sorted(list(result))
+    return sorted(result)
 
 
 def _gaps_to_ranges_str(gaps: List[int]) -> str:
@@ -322,7 +323,7 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
                 st.write("**Selection Target**")
                 target_protein = st.selectbox(
                     "Apply selection to:",
-                    ["All Proteins (Alignment Columns)"] + list(sequences.keys()),
+                    [_ALL_PROTEINS_LABEL] + list(sequences.keys()),
                     index=0,
                     help="Choose 'All Proteins' to select columns in the alignment, or a specific protein to use its internal numbering.",
                 )
@@ -336,7 +337,7 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
                         cons_str = _selection_to_range_str(
                             [i + 1 for i in conserved_cols]
                         )
-                        target_k = "All Proteins (Alignment Columns)"
+                        target_k = _ALL_PROTEINS_LABEL
                         st.session_state.residue_selections[target_k] = cons_str
                         st.session_state[f"text_input_{target_k}"] = cons_str
                         st.rerun()
@@ -415,7 +416,7 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
 
                         indices = _parse_range_str(input_str, n_total)
 
-                        if target == "All Proteins (Alignment Columns)":
+                        if target == _ALL_PROTEINS_LABEL:
                             # Apply columns to EVERY protein
                             for p_idx, (_, seq) in enumerate(sequences.items()):
                                 chain_id = chr(ord("A") + p_idx)
@@ -438,7 +439,7 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
 
                     # De-duplicate
                     for k in final_mapping:
-                        final_mapping[k] = sorted(list(set(final_mapping[k])))
+                        final_mapping[k] = sorted(set(final_mapping[k]))
 
                     st.session_state.highlight_chains = final_mapping
                     st.session_state.show_3d_viewer = True

@@ -237,8 +237,8 @@ def render_ligand_tab(results: Dict[str, Any]) -> None:
 
                 st.subheader("Comparison Details")
 
-                set1 = set([x["residue"] for x in d1["interactions"]])
-                set2 = set([x["residue"] for x in d2["interactions"]])
+                set1 = {x["residue"] for x in d1["interactions"]}
+                set2 = {x["residue"] for x in d2["interactions"]}
 
                 shared = set1.intersection(set2)
                 unique1 = set1 - set2

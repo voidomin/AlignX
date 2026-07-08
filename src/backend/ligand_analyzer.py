@@ -81,7 +81,7 @@ class LigandAnalyzer:
                     # Check if it's a HETATM (heteroatom)
                     # BioPython uses keys like ('H_NAG', 123, ' ') for HETATMs
                     # Standard residues have empty first element in tuple id
-                    hetfield, resseq, icode = residue.get_id()
+                    hetfield, resseq, _ = residue.get_id()
 
                     if hetfield != " ":
                         resname = residue.get_resname().strip()
@@ -182,8 +182,7 @@ class LigandAnalyzer:
         for atom in target_atoms:
             # Find nearby atoms
             neighbors = ns.search(atom.get_coord(), cutoff, level="R")
-            for residue in neighbors:
-                interacting_residues.add(residue)
+            interacting_residues.update(neighbors)
 
         # Format results
         results = {"ligand": ligand_id, "interactions": []}
@@ -331,7 +330,7 @@ class LigandAnalyzer:
         for item in all_interactions:
             # Create a set of "ResName" strings found in the pocket
             # This measures "Is the chemical environment similar?"
-            fp = set([res["residue"] for res in item["interactions"]])
+            fp = {res["residue"] for res in item["interactions"]}
             fingerprints.append(fp)
 
         for i in range(n):

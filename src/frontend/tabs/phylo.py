@@ -134,15 +134,15 @@ def render_phylo_tree_tab(results: Dict[str, Any]) -> None:
                     y=reg_data["psi"],
                     mode="markers+text" if show_all else "markers",
                     name=region,
-                    marker=dict(
-                        color=color_map.get(region, "#9E9E9E"),
-                        opacity=reg_data["opacity"],
-                        size=reg_data["size"],
-                        line=dict(width=1, color="rgba(255,255,255,0.3)"),
-                    ),
+                    marker={
+                        "color": color_map.get(region, "#9E9E9E"),
+                        "opacity": reg_data["opacity"],
+                        "size": reg_data["size"],
+                        "line": {"width": 1, "color": "rgba(255,255,255,0.3)"},
+                    },
                     text=reg_data["residue_name"] + reg_data["residue_id"].astype(str),
                     textposition="top center",
-                    textfont=dict(size=9, color="white"),
+                    textfont={"size": 9, "color": "white"},
                     customdata=reg_data[
                         ["protein_name", "residue_name", "residue_id", "phi", "psi"]
                     ],
@@ -158,14 +158,22 @@ def render_phylo_tree_tab(results: Dict[str, Any]) -> None:
             template="plotly_dark",
             xaxis_title="Phi (φ)",
             yaxis_title="Psi (ψ)",
-            xaxis=dict(range=[-180, 180], gridcolor="rgba(255,255,255,0.05)"),
-            yaxis=dict(range=[-180, 180], gridcolor="rgba(255,255,255,0.05)"),
+            xaxis={"range": [-180, 180], "gridcolor": "rgba(255,255,255,0.05)"},
+            yaxis={"range": [-180, 180], "gridcolor": "rgba(255,255,255,0.05)"},
             height=600,
-            margin=dict(t=30, b=50, l=40, r=40),
-            legend=dict(
-                orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5
-            ),
-            hoverlabel=dict(bgcolor="#1E1E1E", font_size=12, font_family="monospace"),
+            margin={"t": 30, "b": 50, "l": 40, "r": 40},
+            legend={
+                "orientation": "h",
+                "yanchor": "bottom",
+                "y": 1.02,
+                "xanchor": "center",
+                "x": 0.5,
+            },
+            hoverlabel={
+                "bgcolor": "#1E1E1E",
+                "font_size": 12,
+                "font_family": "monospace",
+            },
         )
 
         st.plotly_chart(fig, use_container_width=True)

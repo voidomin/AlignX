@@ -264,7 +264,9 @@ export class LigandTab {
                         // Highlight table row
                         this.element.querySelectorAll('#interactions-table-body tr').forEach(row => {
                             row.className = "hover:bg-surface-raised transition-colors cursor-pointer group";
-                            row.querySelectorAll('td').forEach(td => td.classList.remove('text-tertiary', 'font-bold'));
+                            for (const td of row.querySelectorAll('td')) {
+                                td.classList.remove('text-tertiary', 'font-bold');
+                            }
                         });
                         tr.className = "row-selected cursor-pointer group";
                         tr.querySelectorAll('td').forEach(td => td.classList.add('text-tertiary', 'font-bold'));
