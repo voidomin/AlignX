@@ -35,6 +35,7 @@ Eighteenth batch of the `new_coverage` push - `rmsd_calculator.py`'s remaining g
 ### Verified
 - Full backend suite: 776 tests passing, both locally and in a CI-matching Docker container.
 - `black`/`ruff` clean.
+- Confirmed via re-analysis: `new_coverage` 78.19% → 78.32%.
 
 ## [3.69.0]
 
