@@ -127,6 +127,37 @@ class TestCalculateRmsdFromSuperposition:
 
         assert result is None
 
+    def test_single_model_falls_back_to_per_chain_entities(self, tmp_path):
+        """When Mustang emits everything as one MODEL (rather than one MODEL
+        per structure), the function must fall back to treating each chain
+        within that single model as one structure."""
+        pdb_file = tmp_path / "aligned.pdb"
+        lines = ["MODEL     1"]
+        for chain_id, coords in zip(
+            "AB",
+            (
+                [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+                [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            ),
+        ):
+            for i, (x, y, z) in enumerate(coords, start=1):
+                lines.append(
+                    f"ATOM  {i:5d}  CA  ALA {chain_id}{i:4d}    {x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00           C"
+                )
+        lines.append("ENDMDL")
+        lines.append("END\n")
+        pdb_file.write_text("\n".join(lines))
+
+        result = calculate_rmsd_from_superposition(pdb_file, num_expected=2)
+
+        assert result is not None
+        assert result.shape == (2, 2)
+        assert result.iloc[0, 1] == pytest.approx(0.0)
+
+    def test_returns_none_on_parse_failure(self, tmp_path):
+        result = calculate_rmsd_from_superposition(tmp_path, num_expected=2)
+        assert result is None
+
 
 class TestParseMustangLogForRmsd:
     def test_parses_a_real_shaped_rmsd_table(self, tmp_path):
@@ -161,6 +192,13 @@ class TestParseMustangLogForRmsd:
         result = parse_mustang_log_for_rmsd(log_file)
         assert result is not None
         assert result.iloc[0, 1] == 0.0
+
+    def test_fewer_rows_than_the_last_rows_width_returns_none(self, tmp_path):
+        # The last parsed row has 3 values, but only 2 total valid rows
+        # were found - too few to form a 3x3 square submatrix.
+        log_file = tmp_path / "mustang.log"
+        log_file.write_text("1   0.00   0.85   1.20\n")
+        assert parse_mustang_log_for_rmsd(log_file) is None
 
 
 class TestParseRmsRotFile:
@@ -203,6 +241,11 @@ class TestParseRmsRotFile:
         assert result is not None
         assert result.shape == (2, 2)
 
+    def test_returns_none_on_read_failure(self, tmp_path):
+        # A directory can't be opened as a file - exercises the read
+        # failure path rather than a missing-marker/malformed-content one.
+        assert parse_rms_rot_file(tmp_path, ["1ABC", "2XYZ"]) is None
+
 
 class TestParseRmsdMatrix:
     def test_prefers_rms_rot_file_when_present(self, tmp_path):
@@ -228,6 +271,15 @@ class TestParseRmsdMatrix:
 
     def test_returns_none_when_nothing_present(self, tmp_path):
         assert parse_rmsd_matrix(tmp_path, ["1ABC", "2XYZ"]) is None
+
+    def test_falls_back_to_structure_calculation_when_no_rms_rot_or_log(self, tmp_path):
+        _write_two_structure_alignment_pdb(tmp_path / "alignment.pdb")
+        (tmp_path / "alignment.afasta").write_text(">structA\nAAA\n>structB\nAAA\n")
+
+        result = parse_rmsd_matrix(tmp_path, ["1ABC", "2XYZ"])
+
+        assert result is not None
+        assert result.loc["structA", "structB"] == pytest.approx(1.0)
 
 
 def _write_two_structure_alignment_pdb(path: Path):
@@ -276,6 +328,35 @@ class TestCalculateStructureRmsd:
         # Only columns 0 and 2 are common; both structA/structB residues
         # there are identical (0,0,0) and (2,0,0) once the gap is excluded.
         assert result.loc["structA", "structB"] == pytest.approx(0.0)
+
+    def test_falls_back_to_chains_when_pdb_uses_a_single_model(self, tmp_path):
+        """Mustang sometimes emits everything as one MODEL with one chain
+        per structure, rather than one MODEL per structure - _select_structures
+        must fall back to per-chain entities when the model count alone
+        doesn't match the alignment's structure count."""
+        pdb_file = tmp_path / "alignment.pdb"
+        fasta_file = tmp_path / "alignment.afasta"
+        lines = ["MODEL     1"]
+        for chain_id, coords in zip(
+            "AB",
+            (
+                [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+                [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+            ),
+        ):
+            for i, (x, y, z) in enumerate(coords, start=1):
+                lines.append(
+                    f"ATOM  {i:5d}  CA  ALA {chain_id}{i:4d}    {x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00           C"
+                )
+        lines.append("ENDMDL")
+        lines.append("END\n")
+        pdb_file.write_text("\n".join(lines))
+        fasta_file.write_text(">structA\nAA\n>structB\nAA\n")
+
+        result = calculate_structure_rmsd(pdb_file, fasta_file)
+
+        assert result is not None
+        assert result.loc["structA", "structB"] == pytest.approx(1.0)
 
 
 class TestCalculateAlignmentQualityMetrics:

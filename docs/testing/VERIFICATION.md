@@ -43,7 +43,7 @@ Run the test suite script:
 powershell -File scripts\run_tests.ps1
 ```
 *Expected Output:*
-- Pytest runs 668 items successfully and shows no errors.
+- Pytest runs 674 items successfully and shows no errors.
 - Verification scripts are executed automatically as part of the run.
 
 ---

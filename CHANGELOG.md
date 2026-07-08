@@ -2,6 +2,17 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.62.0]
+
+Thirteenth batch of the `new_coverage` push - `rmsd_calculator.py`'s remaining fallback branches: `calculate_rmsd_from_superposition`'s per-chain fallback and parse-failure path, `parse_mustang_log_for_rmsd`'s non-square-submatrix rejection, `parse_rms_rot_file`'s read-failure path, `_select_structures`'s single-model-multiple-chains fallback (shared by `calculate_structure_rmsd`), and `parse_rmsd_matrix`'s final fallback to `calculate_structure_rmsd` when neither a `.rms_rot` nor Mustang log file is present.
+
+### Added
+- **`tests/test_rmsd_calculator.py`** (+6 tests): a single-MODEL/multi-chain synthetic PDB fixture exercising the chain-fallback branch in both `calculate_rmsd_from_superposition` and `calculate_structure_rmsd`'s shared `_select_structures` logic, a directory-as-file parse-failure case for both `calculate_rmsd_from_superposition` and `parse_rms_rot_file`, a too-few-rows-for-the-implied-width case for `parse_mustang_log_for_rmsd`, and `parse_rmsd_matrix`'s full-fallback-chain integration test (no `.rms_rot`, no log, real PDB+FASTA present). File coverage: 84% → 90%.
+
+### Verified
+- Full backend suite: 674 tests passing, both locally and in a CI-matching Docker container (one `test_sidebar.py` test flaked once under Docker's constrained resources but passed consistently on retry, both alone and as part of the full suite - not a regression from this batch).
+- `black`/`ruff` clean.
+
 ## [3.61.0]
 
 Twelfth batch of the `new_coverage` push - `annotation_aggregator.py`'s remaining gaps, mostly the `httpx.HTTPError` exception-fallback branch that every one of its 7 external-API fetchers has (InterPro, QuickGO annotations/term-names, STRING, Reactome, GMGC, SIFTS) but only some had a test for, plus the GO-term-name persistent-cache read/write helpers and the cache-hit path through `resolve_go_term_names`.
