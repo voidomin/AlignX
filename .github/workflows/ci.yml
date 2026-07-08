@@ -25,7 +25,11 @@ jobs:
           # --only-binary :all: blocks arbitrary setup.py/build-backend code
           # execution from a compromised sdist. fpdf (see requirements.txt)
           # ships no wheel at all and is exempted via --no-binary.
-          pip install --only-binary :all: --no-binary fpdf -r requirements.txt
+          # --require-hashes: requirements.txt is a pip-compile --generate-hashes
+          # lock file (generated from requirements.in) - refuses to install
+          # anything whose downloaded artifact doesn't match the hash recorded
+          # when the lock file was generated.
+          pip install --require-hashes --only-binary :all: --no-binary fpdf -r requirements.txt
 
       - name: Lint with ruff
         run: |

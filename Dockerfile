@@ -37,8 +37,13 @@ COPY requirements.txt .
 # what would otherwise let a compromised package's setup.py/build backend
 # run arbitrary code during install. fpdf (see requirements.txt) ships no
 # wheel at all and is exempted via --no-binary - everything else installs
-# from a wheel only.
-RUN pip install --no-cache-dir --only-binary :all: --no-binary fpdf -r requirements.txt
+# from a wheel only. --require-hashes (requirements.txt is a pip-compile
+# --generate-hashes lock file, generated from requirements.in) additionally
+# refuses to install anything whose downloaded artifact doesn't match the
+# hash recorded when the lock file was generated - a compromised/repointed
+# package release can't silently substitute itself in even with correct
+# version pinning.
+RUN pip install --no-cache-dir --require-hashes --only-binary :all: --no-binary fpdf -r requirements.txt
 
 # Copy exactly what this container runs - not the whole build context.
 # uvicorn's entrypoint below only ever imports src.backend.*, which reads

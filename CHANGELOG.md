@@ -2,6 +2,22 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.63.0]
+
+Resolves the last deferred SonarCloud security finding (`S8544`, hash-pinned dependency lockfile), revisiting the decision documented in 3.24.0 as "not something to commit to without an explicit decision" - this is that decision.
+
+### Added
+- **`requirements.in`**: the human-edited source of truth (loose `>=` constraints, same content `requirements.txt` used to be), now separate from the generated lock file.
+- **`requirements.txt`** regenerated as a full `pip-compile --generate-hashes --allow-unsafe` lock file (~1900 lines, every package pinned to an exact version with SHA-256 hashes for every distribution pip might install). `numpy`/`pandas`/`scipy`/`matplotlib`/`contourpy` are pinned exactly in `requirements.in` (not left loose) to the newest release each still ships a `cp310` wheel for - pip's resolver otherwise picks the newest overall release first (cp311+/cp313-only for these) and backtracks through hundreds of older candidates one at a time, which was impractically slow (confirmed by watching it fail to converge after 5+ minutes before pinning).
+
+### Changed
+- **`Dockerfile`** and **`.github/workflows/ci.yml`**: both `pip install` steps now pass `--require-hashes` alongside the existing `--only-binary :all: --no-binary fpdf`.
+
+### Verified
+- Lock file generated inside a real `python:3.10-slim` container (matching the Dockerfile's base image and CI's Python version) via `docker run`, not the local Python 3.12 dev environment - an earlier attempt using the local environment produced a lock file with `cp312`-only wheels (e.g. `contourpy==1.3.3`) that failed to install under 3.10.
+- Full `docker build` with `--require-hashes` succeeded; ran the container and confirmed `/health`, then submitted a real `/api/jobs/align` job (4HHB+2HHB) through the actual HTTP API - completed successfully with real RMSD output, confirming the hash-pinned dependency set doesn't change runtime behavior.
+- Full local test suite: 674 tests passing (unaffected - this is a packaging-only change, the local dev venv wasn't reinstalled).
+
 ## [3.62.0]
 
 Thirteenth batch of the `new_coverage` push - `rmsd_calculator.py`'s remaining fallback branches: `calculate_rmsd_from_superposition`'s per-chain fallback and parse-failure path, `parse_mustang_log_for_rmsd`'s non-square-submatrix rejection, `parse_rms_rot_file`'s read-failure path, `_select_structures`'s single-model-multiple-chains fallback (shared by `calculate_structure_rmsd`), and `parse_rmsd_matrix`'s final fallback to `calculate_structure_rmsd` when neither a `.rms_rot` nor Mustang log file is present.

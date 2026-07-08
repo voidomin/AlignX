@@ -1,0 +1,61 @@
+# Core Web Framework
+streamlit>=1.35.0
+
+# Bioinformatics & Data Processing
+biopython>=1.81
+requests>=2.31.0
+httpx>=0.25.0
+certifi>=2023.7.22  # explicit CA bundle for mustang_runner.py's verified TLS download
+pydantic>=2.0.0
+# Pinned exactly (not >=) - these are the newest releases that still ship a
+# cp310 wheel; the Docker image is python:3.10-slim, and pip-compile's
+# resolver otherwise picks the newest overall release first (cp311+/cp313-only
+# for these 4) and backtracks through hundreds of older candidate versions
+# one at a time trying to find a cp310-compatible one, which is impractically
+# slow.
+pandas==2.3.3
+numpy==2.2.6
+scipy==1.15.3
+
+# Visualization
+matplotlib==3.10.9
+contourpy==1.3.2  # matplotlib dependency, same cp310-wheel constraint as above
+seaborn>=0.12.0
+plotly>=5.16.0
+pillow>=10.0.0
+fpdf>=1.7.2  # ships no wheel (sdist only) - exempted from --only-binary :all: below.
+# The actively-maintained fpdf2 fork is API-compatible on paper, but its
+# multi_cell() is measurably stricter about available horizontal space and
+# raises FPDFException on input this project's report_generator.py already
+# renders fine under classic fpdf - confirmed by actually generating a report
+# with fpdf2 installed, not just reading the changelog. Migrating is a real,
+# separate task (review every cell()/multi_cell() call, re-verify every
+# report section), not a side effect of a CI hardening pass.
+
+# Phylogenetics
+dendropy>=4.6.0
+
+# Configuration & Utilities
+pyyaml>=6.0.0
+python-dotenv>=1.0.0
+jinja2>=3.1.0
+psutil>=5.9.0
+
+# Progress & CLI
+tqdm>=4.66.0
+rich>=13.5.0
+
+# Optional: R integration for Bio3D (Mustang alternative)
+# rpy2>=3.5.0
+
+# Development & CI
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+black==26.5.1
+ruff==0.15.19
+
+# API Web Server
+fastapi>=0.110.0
+uvicorn>=0.28.0
+python-multipart>=0.0.9  # required by FastAPI's UploadFile (POST /api/upload)
