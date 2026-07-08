@@ -12,6 +12,7 @@ Seventeenth batch of the `new_coverage` push - more of `pdb_manager.py`'s remain
 ### Verified
 - Full backend suite: 772 tests passing, both locally and in a CI-matching Docker container.
 - `black`/`ruff` clean.
+- Confirmed via re-analysis: `new_coverage` 77.95% → 78.19%.
 
 ## [3.68.0]
 
