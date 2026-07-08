@@ -2,6 +2,20 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.52.0]
+
+Sixth batch of the legacy Streamlit UI cleanup (1 of 14 findings: complexity 58, `input_section.py`'s `render_input_section`).
+
+### Fixed
+- **`render_input_section`** (58→within limit): split into per-tab renderers (`_render_smart_search_tab`, `_render_upload_tab`, `_render_example_tab`) plus focused helpers for each tab's sub-pieces (`_render_suggestion_pills`, `_render_validation_badges`/`_badge_style_for_id`). Along the way, de-duplicated two real repeats: the "uppercase unless AlphaFold ID" cleanup logic (copy-pasted twice) into `_clean_id_list()`, and the 4-line metadata/chain-info reset (copy-pasted **four** times across the smart-search, suggestion-click, upload, and example callbacks) into `_reset_structure_dependent_state()`.
+
+### Added
+- **`tests/test_input_section.py`** (new, 8 tests): unit tests for `_clean_id_list` and `_badge_style_for_id` (pure functions), plus `AppTest`-based tests for `render_input_section` including a real end-to-end check that typing an ID string triggers the `on_change` callback, cleans/uppercases the IDs, and resets stale metadata. Zero prior coverage.
+
+### Verified
+- Full suite: 576 tests passing.
+- `black`/`ruff` clean.
+
 ## [3.51.0]
 
 Ninth batch of the `new_coverage` push - closes several real gaps in `api.py`, the FastAPI backend's largest single file (previously 81% covered): the untested `/api/clusters` endpoint, `/api/comparison/runs`, the `_find_structure_pdb_path` run-results-dir fallback branch, the `lifespan` startup/shutdown context manager, and several 500-error exception handlers (`/api/notebook`, `/api/discover/citations`) that had never actually been triggered.

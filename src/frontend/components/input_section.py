@@ -1,5 +1,5 @@
 import streamlit as st
-from typing import Any, List
+from typing import Any, List, Tuple
 from examples.protein_sets import EXAMPLES
 import urllib.request
 import urllib.parse
@@ -35,206 +35,213 @@ def cached_rcsb_suggestions(query_text: str) -> List[str]:
         return []
 
 
+def _clean_id_list(raw_ids: List[str]) -> List[str]:
+    """Uppercases each ID except AlphaFold ones (AF- prefix), whose
+    embedded UniProt accession is case-sensitive."""
+    return [pid if pid.upper().startswith("AF-") else pid.upper() for pid in raw_ids]
+
+
+def _reset_structure_dependent_state() -> None:
+    """Clears everything derived from the previous structure set - called
+    whenever the set of loaded PDB IDs changes, so stale metadata/chain
+    info from the old set is never shown against the new one."""
+    st.session_state.metadata_fetched = False
+    st.session_state.metadata = {}
+    st.session_state.chain_info = {}
+    st.session_state.manual_chain_selections = {}
+
+
+def _on_pdb_input_change() -> None:
+    pdb_input = st.session_state.input_pdb_text_dashboard
+    if not pdb_input:
+        return
+    raw_ids = [pid.strip() for pid in pdb_input.split(",") if pid.strip()]
+    clean_ids = _clean_id_list(raw_ids)
+    if clean_ids != st.session_state.get("pdb_ids", []):
+        st.session_state.pdb_ids = clean_ids
+        _reset_structure_dependent_state()
+
+
+def _make_select_suggestion_callback(sug: str, parts: List[str]):
+    def select_suggestion():
+        p_list = list(parts)
+        p_list[-1] = sug
+        new_val = ", ".join(p_list) + ", "
+        st.session_state.input_pdb_text_dashboard = new_val
+
+        raw_ids = [pid.strip() for pid in new_val.split(",") if pid.strip()]
+        st.session_state.pdb_ids = _clean_id_list(raw_ids)
+        _reset_structure_dependent_state()
+
+    return select_suggestion
+
+
+def _render_suggestion_pills(parts: List[str], last_item: str) -> None:
+    if not (
+        last_item
+        and 1 <= len(last_item) < 4
+        and not last_item.upper().startswith("AF-")
+    ):
+        return
+
+    sugs = cached_rcsb_suggestions(last_item)
+    existing_parts = [p.upper() for p in parts[:-1]]
+    sugs = [s for s in sugs if s not in existing_parts]
+    if not sugs:
+        return
+
+    st.markdown(
+        "<div style='font-size:0.82rem; color:#ff7e42; font-weight:600; margin:0.3rem 0 0.1rem;'>💡 Suggested PDB IDs:</div>",
+        unsafe_allow_html=True,
+    )
+    cols = st.columns(len(sugs) if len(sugs) <= 6 else 6)
+    for idx, sug in enumerate(sugs[:6]):
+        with cols[idx]:
+            st.button(
+                sug,
+                key=f"sug_{sug}_{idx}",
+                on_click=_make_select_suggestion_callback(sug, parts),
+                use_container_width=True,
+            )
+
+
+def _badge_style_for_id(p: str) -> Tuple[str, str, str, str, str, bool]:
+    """(bg_color, border_color, text_color, icon, tooltip, is_valid) for
+    one raw ID token, to render as a validation badge."""
+    if p.upper().startswith("AF-"):
+        return (
+            "rgba(66,114,255,0.15)",
+            "rgba(66,114,255,0.5)",
+            "#7eaaff",
+            "✨",
+            "AlphaFold ID",
+            True,
+        )
+    if re.fullmatch(r"[A-Za-z0-9]{4}", p):
+        return (
+            "rgba(0,200,100,0.12)",
+            "rgba(0,200,100,0.4)",
+            "#00c864",
+            "✓",
+            "Valid PDB",
+            True,
+        )
+    return (
+        "rgba(255,80,80,0.12)",
+        "rgba(255,80,80,0.4)",
+        "#ff6060",
+        "✗",
+        "Invalid — must be 4 characters",
+        False,
+    )
+
+
+def _render_validation_badges(pdb_input: str) -> None:
+    """Inline validation badges (#5)."""
+    if not pdb_input:
+        return
+
+    raw_ids = [pid.strip() for pid in pdb_input.split(",") if pid.strip()]
+    badges_html = (
+        '<div style="display:flex; flex-wrap:wrap; gap:6px; margin:4px 0 8px;">'
+    )
+    all_valid = True
+    for pid in raw_ids:
+        p = pid.strip()
+        color, border, text, icon, tip, is_valid = _badge_style_for_id(p)
+        all_valid = all_valid and is_valid
+        badges_html += (
+            f'<span title="{tip}" style="'
+            f"background:{color}; border:1px solid {border};"
+            f"border-radius:20px; padding:2px 10px; font-size:0.8rem;"
+            f"font-family:monospace; color:{text}; cursor:default;"
+            f'">{icon} {p.upper()}</span>'
+        )
+    badges_html += "</div>"
+    if not all_valid:
+        badges_html += '<p style="color:#ff8080; font-size:0.75rem; margin:0;">'
+        badges_html += "⚠️ Some IDs look invalid. PDB codes must be exactly 4 alphanumeric characters.</p>"
+    st.markdown(badges_html, unsafe_allow_html=True)
+
+
+def _render_smart_search_tab() -> None:
+    pdb_input = st.text_input(
+        "Enter IDs (PDB or AlphaFold)",
+        placeholder="e.g., 1LYZ, 2LYZ, 3LYZ",
+        help="Supports 4-letter PDB codes or AlphaFold identifiers. Comma-separated.",
+        key="input_pdb_text_dashboard",
+        on_change=_on_pdb_input_change,
+    )
+
+    current_input = st.session_state.get("input_pdb_text_dashboard", "")
+    parts = [p.strip() for p in current_input.split(",")] if current_input else []
+    last_item = parts[-1] if parts else ""
+    _render_suggestion_pills(parts, last_item)
+
+    _render_validation_badges(pdb_input)
+
+
+def _on_file_upload() -> None:
+    st.session_state.input_pdb_text_dashboard = ""
+
+
+def _render_upload_tab(pdb_manager: Any) -> None:
+    uploaded_files = st.file_uploader(
+        "Upload structure files (.pdb, .cif)",
+        accept_multiple_files=True,
+        type=["pdb", "cif"],
+        help="Upload PDB or mmCIF files. They will be automatically standardized for alignment.",
+        key="structure_file_uploader",
+        on_change=_on_file_upload,
+    )
+    if not uploaded_files:
+        return
+
+    new_ids = []
+    for uploaded_file in uploaded_files:
+        success, msg, path = pdb_manager.save_uploaded_file(uploaded_file)
+        if success:
+            new_ids.append(path.stem)
+        else:
+            st.error(f"Failed to save {uploaded_file.name}: {msg}")
+
+    if new_ids:
+        st.info(f"Loaded {len(new_ids)} files: {', '.join(new_ids)}")
+        current_ids = set(st.session_state.get("pdb_ids", []))
+        current_ids.update(new_ids)
+        st.session_state.pdb_ids = list(current_ids)
+        _reset_structure_dependent_state()
+
+
+def _load_example_callback(ex_name: str) -> None:
+    st.session_state.input_pdb_text_dashboard = ""
+    st.session_state.pdb_ids = EXAMPLES[ex_name]
+    _reset_structure_dependent_state()
+
+
+def _render_example_tab() -> None:
+    example_names = ["Select an example..."] + list(EXAMPLES.keys())
+    selected_example = st.selectbox("Choose a dataset:", example_names)
+    if selected_example == "Select an example...":
+        return
+    st.button(
+        f"Load {selected_example}",
+        on_click=_load_example_callback,
+        args=(selected_example,),
+    )
+
+
 def render_input_section(pdb_manager: Any):
     """
     Render the PDB/AlphaFold input section.
     """
     with st.container():
-        # Use tabs for different input methods
         tab_input, tab_upload, tab_example = st.tabs(
             ["✍️ Smart Search", "📂 Upload Files", "🧪 Load Example"]
         )
-
-        # --- Tab 1: Smart Search (PDB & AlphaFold) ---
         with tab_input:
-
-            def on_pdb_input_change():
-                pdb_input = st.session_state.input_pdb_text_dashboard
-                if pdb_input:
-                    raw_ids = [
-                        pid.strip() for pid in pdb_input.split(",") if pid.strip()
-                    ]
-                    clean_ids = []
-                    for pid in raw_ids:
-                        if pid.upper().startswith("AF-"):
-                            clean_ids.append(pid)
-                        else:
-                            clean_ids.append(pid.upper())
-
-                    if clean_ids != st.session_state.get("pdb_ids", []):
-                        st.session_state.pdb_ids = clean_ids
-                        st.session_state.metadata_fetched = False
-                        st.session_state.metadata = {}
-                        st.session_state.chain_info = {}
-                        st.session_state.manual_chain_selections = {}
-
-            pdb_input = st.text_input(
-                "Enter IDs (PDB or AlphaFold)",
-                placeholder="e.g., 1LYZ, 2LYZ, 3LYZ",
-                help="Supports 4-letter PDB codes or AlphaFold identifiers. Comma-separated.",
-                key="input_pdb_text_dashboard",
-                on_change=on_pdb_input_change,
-            )
-
-            # Suggestions autocomplete pills
-            last_item = ""
-            current_input = st.session_state.get("input_pdb_text_dashboard", "")
-            if current_input:
-                parts = [p.strip() for p in current_input.split(",")]
-                if parts:
-                    last_item = parts[-1]
-
-            if (
-                last_item
-                and 1 <= len(last_item) < 4
-                and not last_item.upper().startswith("AF-")
-            ):
-                sugs = cached_rcsb_suggestions(last_item)
-                existing_parts = [p.upper() for p in parts[:-1]]
-                sugs = [s for s in sugs if s not in existing_parts]
-
-                if sugs:
-                    st.markdown(
-                        "<div style='font-size:0.82rem; color:#ff7e42; font-weight:600; margin:0.3rem 0 0.1rem;'>💡 Suggested PDB IDs:</div>",
-                        unsafe_allow_html=True,
-                    )
-                    cols = st.columns(len(sugs) if len(sugs) <= 6 else 6)
-                    for idx, sug in enumerate(sugs[:6]):
-                        with cols[idx]:
-
-                            def make_select_callback(s=sug, p_list=list(parts)):
-                                def select_suggestion():
-                                    p_list[-1] = s
-                                    new_val = ", ".join(p_list) + ", "
-                                    st.session_state.input_pdb_text_dashboard = new_val
-
-                                    raw_ids = [
-                                        pid.strip()
-                                        for pid in new_val.split(",")
-                                        if pid.strip()
-                                    ]
-                                    clean_ids = []
-                                    for pid in raw_ids:
-                                        if pid.upper().startswith("AF-"):
-                                            clean_ids.append(pid)
-                                        else:
-                                            clean_ids.append(pid.upper())
-
-                                    st.session_state.pdb_ids = clean_ids
-                                    st.session_state.metadata_fetched = False
-                                    st.session_state.metadata = {}
-                                    st.session_state.chain_info = {}
-                                    st.session_state.manual_chain_selections = {}
-
-                                return select_suggestion
-
-                            st.button(
-                                sug,
-                                key=f"sug_{sug}_{idx}",
-                                on_click=make_select_callback(sug, parts),
-                                use_container_width=True,
-                            )
-
-            # Inline validation badges (#5)
-            if pdb_input:
-                import re
-
-                raw_ids = [pid.strip() for pid in pdb_input.split(",") if pid.strip()]
-                badges_html = '<div style="display:flex; flex-wrap:wrap; gap:6px; margin:4px 0 8px;">'
-                all_valid = True
-                for pid in raw_ids:
-                    p = pid.strip()
-                    if p.upper().startswith("AF-"):
-                        color, border, text = (
-                            "rgba(66,114,255,0.15)",
-                            "rgba(66,114,255,0.5)",
-                            "#7eaaff",
-                        )
-                        icon = "✨"
-                        tip = "AlphaFold ID"
-                    elif re.fullmatch(r"[A-Za-z0-9]{4}", p):
-                        color, border, text = (
-                            "rgba(0,200,100,0.12)",
-                            "rgba(0,200,100,0.4)",
-                            "#00c864",
-                        )
-                        icon = "✓"
-                        tip = "Valid PDB"
-                    else:
-                        color, border, text = (
-                            "rgba(255,80,80,0.12)",
-                            "rgba(255,80,80,0.4)",
-                            "#ff6060",
-                        )
-                        icon = "✗"
-                        tip = "Invalid — must be 4 characters"
-                        all_valid = False
-                    badges_html += (
-                        f'<span title="{tip}" style="'
-                        f"background:{color}; border:1px solid {border};"
-                        f"border-radius:20px; padding:2px 10px; font-size:0.8rem;"
-                        f"font-family:monospace; color:{text}; cursor:default;"
-                        f'">{icon} {p.upper()}</span>'
-                    )
-                badges_html += "</div>"
-                if not all_valid:
-                    badges_html += (
-                        '<p style="color:#ff8080; font-size:0.75rem; margin:0;">'
-                    )
-                    badges_html += "⚠️ Some IDs look invalid. PDB codes must be exactly 4 alphanumeric characters.</p>"
-                st.markdown(badges_html, unsafe_allow_html=True)
-
-        # --- Tab 2: File Upload ---
+            _render_smart_search_tab()
         with tab_upload:
-
-            def on_file_upload():
-                st.session_state.input_pdb_text_dashboard = ""
-
-            uploaded_files = st.file_uploader(
-                "Upload structure files (.pdb, .cif)",
-                accept_multiple_files=True,
-                type=["pdb", "cif"],
-                help="Upload PDB or mmCIF files. They will be automatically standardized for alignment.",
-                key="structure_file_uploader",
-                on_change=on_file_upload,
-            )
-            if uploaded_files:
-                new_ids = []
-                for uploaded_file in uploaded_files:
-                    success, msg, path = pdb_manager.save_uploaded_file(uploaded_file)
-                    if success:
-                        new_ids.append(path.stem)
-                    else:
-                        st.error(f"Failed to save {uploaded_file.name}: {msg}")
-
-                if new_ids:
-                    st.info(f"Loaded {len(new_ids)} files: {', '.join(new_ids)}")
-                    current_ids = set(st.session_state.get("pdb_ids", []))
-                    current_ids.update(new_ids)
-                    st.session_state.pdb_ids = list(current_ids)
-                    st.session_state.metadata_fetched = False
-                    st.session_state.metadata = {}
-                    st.session_state.chain_info = {}
-                    st.session_state.manual_chain_selections = {}
-
-        # --- Tab 3: Examples ---
+            _render_upload_tab(pdb_manager)
         with tab_example:
-            # Use EXAMPLES from examples.protein_sets
-            example_names = ["Select an example..."] + list(EXAMPLES.keys())
-            selected_example = st.selectbox("Choose a dataset:", example_names)
-
-            if selected_example != "Select an example...":
-
-                def load_example_callback(ex_name):
-                    st.session_state.input_pdb_text_dashboard = ""
-                    st.session_state.pdb_ids = EXAMPLES[ex_name]
-                    st.session_state.metadata_fetched = False
-                    st.session_state.metadata = {}
-                    st.session_state.chain_info = {}
-                    st.session_state.manual_chain_selections = {}
-
-                st.button(
-                    f"Load {selected_example}",
-                    on_click=load_example_callback,
-                    args=(selected_example,),
-                )
+            _render_example_tab()
