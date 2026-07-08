@@ -2,6 +2,27 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.65.0]
+
+Finishes the S8544 hash-pinning work: 3.63.0's fix only covered the app's own `requirements.txt`; re-checking SonarCloud after that scan landed showed 2 more `S8544` hits on the CI-only `pip install --upgrade pip` and `pip install pip-audit` lines, which weren't hash-pinned at all.
+
+### Added
+- **`requirements-pip.txt`**: a minimal hash-pinned lock for the CI/Dockerfile `pip` self-upgrade step. Pins/hashes were manually pulled from PyPI's JSON API (`pypi.org/pypi/pip/json`) since this is a single package with no dependency tree to resolve.
+- **`requirements-ci.txt`** (+ `requirements-ci.in`): a `pip-compile --generate-hashes` lock for `pip-audit`, the CI-only vulnerability scanner - kept separate from the app's own `requirements.txt`/`.in` since it's a dev tool, not a shipped dependency.
+
+### Changed
+- **`.github/workflows/ci.yml`**: both the `pip install --upgrade pip` and `pip install pip-audit` steps now install from their respective hash-pinned lock files with `--require-hashes`.
+
+### Fixed
+- Discovered along the way: `pip install pkg==X --hash=sha256:...` directly on the command line doesn't reliably trigger hash-checking mode on the pip version GitHub's runners start with (errored "no such option: --hash") - hash-checking mode needs the requirement to come from a `-r <file>` requirements file, which is why `requirements-pip.txt` exists instead of an inline `--hash` flag.
+
+### Verified
+- Ran the complete 3-step install sequence (pip self-upgrade, app requirements, pip-audit) end-to-end inside a real `python:3.10-slim` container - all three succeed with `--require-hashes`, and `pip-audit -r requirements.txt` runs correctly afterward (no known vulnerabilities found).
+- Full local test suite: 725 tests passing.
+- Confirmed via SonarCloud re-scan of the 3.63.0 commit: the Dockerfile and one `ci.yml` S8544 finding cleared, surfacing exactly these 2 remaining ones - this entry's fix targets them specifically.
+
+This closes every SonarCloud finding from this cleanup effort except the 1 documented false positive (`python:S7504` in `sidebar.py`, which needs a manual "Won't Fix" in the SonarCloud UI, not a code change).
+
 ## [3.64.0]
 
 Fourteenth batch of the `new_coverage` push, targeting >80% - `database.py` (all connection-failure fallback branches, uniformly exercised via a single bad-db-path fixture, plus the legacy schema migration path) and `coordinator.py` (its two module-level JSON-sanitization helpers, which had zero tests at all despite being used on every API response; `_resolve_run_identity`; `_generate_insights`'s failure fallback; and the Mustang-alignment-failure and unexpected-exception branches of `run_full_pipeline`).

@@ -21,7 +21,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade --require-hashes -r requirements-pip.txt
           # --only-binary :all: blocks arbitrary setup.py/build-backend code
           # execution from a compromised sdist. fpdf (see requirements.txt)
           # ships no wheel at all and is exempted via --no-binary.
@@ -42,7 +42,10 @@ jobs:
 
       - name: Audit Python dependencies for known vulnerabilities
         run: |
-          pip install --only-binary :all: pip-audit
+          # requirements-ci.txt is a separate pip-compile --generate-hashes
+          # lock file (from requirements-ci.in) for this CI-only tool, kept
+          # apart from the app's own requirements.txt/.in.
+          pip install --require-hashes --only-binary :all: -r requirements-ci.txt
           pip-audit -r requirements.txt
 
       - name: Test with pytest
