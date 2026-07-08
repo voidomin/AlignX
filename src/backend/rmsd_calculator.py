@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any, Tuple
 from Bio.PDB import PDBParser
 from src.utils.logger import get_logger
 
@@ -386,6 +386,72 @@ def calculate_gdt_ts(coords1: np.ndarray, coords2: np.ndarray, l_target: int) ->
     return (p1 + p2 + p4 + p8) / 4.0
 
 
+def _build_structure_data(
+    alignment: list, entities: list, seq_len: int
+) -> List[Dict[str, Any]]:
+    """Maps each aligned sequence's non-gap columns to that structure's
+    actual CA coordinates, for later pairwise TM-score/GDT-TS comparison."""
+    structure_data = []
+    for record, entity in zip(alignment, entities, strict=False):
+        # Original length (excluding gaps)
+        l_orig = len(str(record.seq).replace("-", ""))
+        cas = [atom.coord for atom in entity.get_atoms() if atom.name == "CA"]
+
+        # Each entry of aligned_coords holds either a coordinate or None
+        aligned_coords = [None] * seq_len
+        res_idx = 0
+        for col, char in enumerate(record.seq):
+            if char != "-" and res_idx < len(cas):
+                aligned_coords[col] = cas[res_idx]
+                res_idx += 1
+
+        structure_data.append(
+            {"id": record.id, "aligned_coords": aligned_coords, "L_orig": l_orig}
+        )
+    return structure_data
+
+
+def _common_aligned_coords(
+    target: Dict[str, Any], other: Dict[str, Any], seq_len: int
+) -> Tuple[List[Any], List[Any]]:
+    """Coordinate pairs present (non-gap) in both structures at the same
+    aligned column - the basis for a pairwise TM-score/GDT-TS comparison."""
+    c1, c2 = [], []
+    for col in range(seq_len):
+        t_coord = target["aligned_coords"][col]
+        o_coord = other["aligned_coords"][col]
+        if t_coord is not None and o_coord is not None:
+            c1.append(t_coord)
+            c2.append(o_coord)
+    return c1, c2
+
+
+def _average_quality_scores(
+    target: Dict[str, Any], structure_data: List[Dict[str, Any]], seq_len: int
+) -> Dict[str, float]:
+    """Average TM-score/GDT-TS of `target` against every other structure in
+    the alignment (Mustang gives a global superposition, so this is a
+    reasonable proxy for "how consistent is this structure with the rest of
+    the aligned core"), over their commonly-aligned columns."""
+    tm_scores, gdt_scores = [], []
+    for other in structure_data:
+        if other is target:
+            continue
+        c1, c2 = _common_aligned_coords(target, other, seq_len)
+        if not c1:
+            continue
+        c1, c2 = np.array(c1), np.array(c2)
+        tm_scores.append(calculate_tm_score(c1, c2, target["L_orig"]))
+        gdt_scores.append(calculate_gdt_ts(c1, c2, target["L_orig"]))
+
+    if not tm_scores:
+        return {"tm_score": 0.0, "gdt_ts": 0.0}
+    return {
+        "tm_score": float(np.mean(tm_scores)),
+        "gdt_ts": float(np.mean(gdt_scores)),
+    }
+
+
 def calculate_alignment_quality_metrics(
     pdb_file: Path, fasta_file: Path
 ) -> Optional[Dict[str, Dict[str, float]]]:
@@ -412,73 +478,13 @@ def calculate_alignment_quality_metrics(
             chains = list(models[0].get_chains())
             entities = chains[: len(alignment)]
 
-        # Extract CA coords and sequence mapping
-        # We compute score for each sequence relative to the "Consensus Reference"
-        # Since Mustang gives a global superposition, we can calculate the
-        # average TM-score of each structure against all others in the aligned core.
-
-        structure_data = []  # List of (id, coords, L_orig)
         seq_len = len(alignment[0].seq)
+        structure_data = _build_structure_data(alignment, entities, seq_len)
 
-        for _, (record, entity) in enumerate(zip(alignment, entities, strict=False)):
-            # Original length (excluding gaps)
-            l_orig = len(str(record.seq).replace("-", ""))
-
-            # Map aligned columns to actual CA atoms
-            cas = [atom.coord for atom in entity.get_atoms() if atom.name == "CA"]
-
-            # Each entry of aligned_coords holds either a coordinate or None
-            aligned_coords = [None] * seq_len
-            res_idx = 0
-            for col, char in enumerate(record.seq):
-                if char != "-" and res_idx < len(cas):
-                    aligned_coords[col] = cas[res_idx]
-                    res_idx += 1
-
-            structure_data.append(
-                {"id": record.id, "aligned_coords": aligned_coords, "L_orig": l_orig}
-            )
-
-        results = {}
-        n = len(structure_data)
-
-        for i in range(n):
-            tm_scores = []
-            gdt_scores = []
-
-            target = structure_data[i]
-
-            for j in range(n):
-                if i == j:
-                    continue
-                other = structure_data[j]
-
-                # Find common columns
-                c1 = []
-                c2 = []
-                for col in range(seq_len):
-                    if (
-                        target["aligned_coords"][col] is not None
-                        and other["aligned_coords"][col] is not None
-                    ):
-                        c1.append(target["aligned_coords"][col])
-                        c2.append(other["aligned_coords"][col])
-
-                if c1:
-                    c1 = np.array(c1)
-                    c2 = np.array(c2)
-                    tm_scores.append(calculate_tm_score(c1, c2, target["L_orig"]))
-                    gdt_scores.append(calculate_gdt_ts(c1, c2, target["L_orig"]))
-
-            if tm_scores:
-                results[target["id"]] = {
-                    "tm_score": float(np.mean(tm_scores)),
-                    "gdt_ts": float(np.mean(gdt_scores)),
-                }
-            else:
-                results[target["id"]] = {"tm_score": 0.0, "gdt_ts": 0.0}
-
-        return results
+        return {
+            target["id"]: _average_quality_scores(target, structure_data, seq_len)
+            for target in structure_data
+        }
 
     except Exception:
         logger.exception("Failed to calculate quality metrics")

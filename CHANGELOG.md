@@ -2,6 +2,20 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.38.0]
+
+Sixth batch of the backend `python:S3776` cleanup (3 more of the 41 open findings: complexity 31, 33, 36). 18 of 26 backend findings now resolved.
+
+### Fixed
+- **`rmsd_calculator.py:386`** (`calculate_alignment_quality_metrics`, 31→within limit): the nested "build per-structure coordinate data" then "compare every structure against every other" double loop was split into `_build_structure_data()`, `_common_aligned_coords()`, and `_average_quality_scores()`.
+- **`ligand_analyzer.py:113`** (`calculate_interactions`, 33→within limit): the ligand-lookup triple-nested loop and the per-residue min-distance double loop were extracted into `_find_ligand_and_search_atoms()`, `_min_distance()`, `_interaction_type()`, and `_interaction_record()`.
+- **`rmsd_analyzer.py:216`** (`calculate_residue_rmsf`, 36→within limit): the function's four sequential stages (parse AFASTA, build alignment-column maps, parse PDB CA coordinates, compute per-column RMSF) were split into `_parse_afasta_sequences()`, `_build_structure_maps()`, `_parse_ca_coords()`, and `_rmsf_for_column()` - each stage independently testable.
+
+### Verified
+- Full backend suite: 380 tests passing.
+- `calculate_residue_rmsf` had **zero existing test coverage** despite being a real, reachable code path - manually verified the refactor against a hand-built 2-structure/1-gap synthetic fixture, hand-calculating the expected RMSF at all 4 alignment columns (0.5, 0.0, 0.0, 2.0 Å) and confirming the refactored code produces exactly those values, including correct gap handling and chain-boundary detection.
+- `black`/`ruff` clean on all three touched files.
+
 ## [3.37.0]
 
 Fifth batch of the `new_coverage` push - `session_manager.py`, which had never been unit tested at all (0%) despite being real, load-bearing code (`app.py`'s Streamlit entry point calls it directly).

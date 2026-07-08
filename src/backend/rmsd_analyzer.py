@@ -3,7 +3,7 @@
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 
 from src.utils.logger import get_logger
 
@@ -213,6 +213,96 @@ class RMSDAnalyzer:
             logger.exception("Failed to export Phylip format")
             return False
 
+    @staticmethod
+    def _parse_afasta_sequences(alignment_afasta: Path) -> Dict[str, str]:
+        sequences = {}
+        current_header = None
+        current_seq = []
+        with open(alignment_afasta, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith(">"):
+                    if current_header:
+                        sequences[current_header] = "".join(current_seq)
+                    current_header = line[1:].strip()
+                    current_seq = []
+                else:
+                    current_seq.append(line)
+            if current_header:
+                sequences[current_header] = "".join(current_seq)
+        return sequences
+
+    @staticmethod
+    def _build_structure_maps(sequences: Dict[str, str]) -> List[Dict[int, int]]:
+        """structure_maps[struct_idx][seq_idx] = alignment_idx - maps each
+        structure's ungapped residue index to its alignment column, so a
+        PDB residue (indexed by sequence position) can be placed in the
+        shared alignment-column coordinate grid."""
+        structure_maps = []
+        for seq in sequences.values():
+            mapping = {}
+            seq_idx = 0
+            for align_idx, char in enumerate(seq):
+                if char != "-":
+                    mapping[seq_idx] = align_idx
+                    seq_idx += 1
+            structure_maps.append(mapping)
+        return structure_maps
+
+    @staticmethod
+    def _parse_ca_coords(
+        alignment_pdb: Path,
+        structure_maps: List[Dict[int, int]],
+        alignment_length: int,
+        num_structures: int,
+    ) -> List[List[Optional[np.ndarray]]]:
+        """[alignment_pos][structure_idx] = CA coordinate, or None for a gap.
+        Assumes PDB chains correspond to sequences in order - Mustang
+        outputs Chain A, B, C... in the same order structures were input."""
+        coords = [
+            [None for _ in range(num_structures)] for _ in range(alignment_length)
+        ]
+
+        current_chain_idx = -1
+        current_residue_idx = -1  # Index in the SEQUENCE (ignoring gaps)
+        last_chain_id = None
+
+        with open(alignment_pdb, "r") as f:
+            for line in f:
+                if not (line.startswith("ATOM") and line[12:16].strip() == "CA"):
+                    continue
+
+                chain_id = line[21]
+                if chain_id != last_chain_id:
+                    current_chain_idx += 1
+                    current_residue_idx = -1
+                    last_chain_id = chain_id
+                current_residue_idx += 1
+
+                if current_chain_idx >= num_structures:
+                    break  # Should not happen if files match
+                if current_chain_idx >= len(structure_maps):
+                    continue
+                if current_residue_idx not in structure_maps[current_chain_idx]:
+                    continue
+
+                align_idx = structure_maps[current_chain_idx][current_residue_idx]
+                x, y, z = float(line[30:38]), float(line[38:46]), float(line[46:54])
+                coords[align_idx][current_chain_idx] = np.array([x, y, z])
+
+        return coords
+
+    @staticmethod
+    def _rmsf_for_column(col_coords: List[np.ndarray]) -> float:
+        if len(col_coords) < 2:
+            return 0.0  # Not enough data for variance
+        mean_pos = np.mean(col_coords, axis=0)
+        sq_diffs = [np.sum((c - mean_pos) ** 2) for c in col_coords]
+        # RMSF is the square root of the mean squared deviation
+        return float(np.sqrt(np.mean(sq_diffs)))
+
     def calculate_residue_rmsf(
         self, alignment_pdb: Path, alignment_afasta: Path
     ) -> Tuple[List[float], List[str]]:
@@ -227,111 +317,21 @@ class RMSDAnalyzer:
             Tuple of (rmsf_values, conservation_labels)
         """
         try:
-            # 1. Parse Sequences to get alignment length and structure
-            sequences = {}
-            current_header = None
-            current_seq = []
-
-            with open(alignment_afasta, "r") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    if line.startswith(">"):
-                        if current_header:
-                            sequences[current_header] = "".join(current_seq)
-                        current_header = line[1:].strip()
-                        current_seq = []
-                    else:
-                        current_seq.append(line)
-                if current_header:
-                    sequences[current_header] = "".join(current_seq)
-
+            sequences = self._parse_afasta_sequences(alignment_afasta)
             if not sequences:
                 logger.error("No sequences found in AFASTA file")
                 return [], []
 
             alignment_length = len(next(iter(sequences.values())))
-            num_structures = len(sequences)
+            structure_maps = self._build_structure_maps(sequences)
+            coords = self._parse_ca_coords(
+                alignment_pdb, structure_maps, alignment_length, len(sequences)
+            )
 
-            # Initialize coordinate storage: [alignment_pos][structure_idx] = (x, y, z)
-            # Use None for gaps
-            coords = [
-                [None for _ in range(num_structures)] for _ in range(alignment_length)
+            rmsf_values = [
+                self._rmsf_for_column([c for c in col if c is not None])
+                for col in coords
             ]
-
-            # 2. Parse PDB
-            # We assume PDB chains correspond to sequences in order (or by ID but order is safer for Mustang output)
-            # Mustang outputs Chain A, B, C... in order of input
-
-            current_chain_idx = -1
-            current_residue_idx = -1  # Index in the SEQUENCE (ignoring gaps)
-            last_chain_id = None
-
-            # Map sequence index to alignment index for each structure
-            # structure_maps[struct_idx][seq_idx] = alignment_idx
-            structure_maps = []
-            for seq in sequences.values():
-                mapping = {}
-                seq_idx = 0
-                for align_idx, char in enumerate(seq):
-                    if char != "-":
-                        mapping[seq_idx] = align_idx
-                        seq_idx += 1
-                structure_maps.append(mapping)
-
-            with open(alignment_pdb, "r") as f:
-                for line in f:
-                    if line.startswith("ATOM") and line[12:16].strip() == "CA":
-                        chain_id = line[21]
-
-                        if chain_id != last_chain_id:
-                            current_chain_idx += 1
-                            current_residue_idx = -1
-                            last_chain_id = chain_id
-
-                        current_residue_idx += 1
-
-                        if current_chain_idx >= num_structures:
-                            break  # Should not happen if files match
-
-                        # Get alignment index
-                        # current_residue_idx is the index of the RESIDUE in the sequence
-                        # We need to find which alignment column this corresponds to
-                        if (
-                            current_chain_idx < len(structure_maps)
-                            and current_residue_idx in structure_maps[current_chain_idx]
-                        ):
-                            align_idx = structure_maps[current_chain_idx][
-                                current_residue_idx
-                            ]
-
-                            x = float(line[30:38])
-                            y = float(line[38:46])
-                            z = float(line[46:54])
-
-                            coords[align_idx][current_chain_idx] = np.array([x, y, z])
-
-            # 3. Calculate RMSF per column
-            rmsf_values = []
-
-            for i in range(alignment_length):
-                col_coords = [c for c in coords[i] if c is not None]
-                n = len(col_coords)
-
-                if n < 2:
-                    rmsf_values.append(0.0)  # Not enough data for variance
-                else:
-                    # Calculate mean position (centroid)
-                    mean_pos = np.mean(col_coords, axis=0)
-
-                    # Calculate RMSD from mean
-                    # mean of squared diffs
-                    sq_diffs = [np.sum((c - mean_pos) ** 2) for c in col_coords]
-                    # RMSF is the square root of the mean squared deviation
-                    rmsf = np.sqrt(np.mean(sq_diffs))
-                    rmsf_values.append(float(rmsf))
-
             return rmsf_values, list(sequences.keys())
 
         except Exception:

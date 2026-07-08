@@ -154,71 +154,75 @@ class LigandAnalyzer:
             logger.error(f"Invalid ligand ID format: {sanitize_for_log(ligand_id)}")
             return {"error": "Invalid ID"}
 
-        # Extract atoms for NeighborSearch
-        all_atoms = []
-        for model in structure:
-            for chain in model:
-                for residue in chain:
-                    # Check if this is our target ligand
-                    if (
-                        chain.get_id() == l_chain
-                        and residue.get_id()[1] == l_resi
-                        and residue.get_resname().strip() == l_name
-                    ):
-                        target_ligand = residue
-                        target_atoms = list(residue.get_atoms())
-                    else:
-                        # Add non-ligand atoms to search space
-                        # Exclude solvent/ions from being "interacting partners" usually?
-                        # For now keep protein atoms (standard residues)
-                        if residue.get_id()[0] == " ":
-                            all_atoms.extend(residue.get_atoms())
-
+        target_ligand, target_atoms, search_atoms = self._find_ligand_and_search_atoms(
+            structure, l_chain, l_resi, l_name
+        )
         if not target_ligand:
             return {"error": f"Ligand {ligand_id} not found in structure"}
 
         # Perform Neighbor Search
-        ns = NeighborSearch(all_atoms)
+        ns = NeighborSearch(search_atoms)
         interacting_residues = set()
-
         for atom in target_atoms:
-            # Find nearby atoms
-            neighbors = ns.search(atom.get_coord(), cutoff, level="R")
-            interacting_residues.update(neighbors)
+            interacting_residues.update(ns.search(atom.get_coord(), cutoff, level="R"))
 
-        # Format results
-        results = {"ligand": ligand_id, "interactions": []}
-
-        for res in interacting_residues:
-            # Calculate min distance to ligand
-            min_dist = 999.9
-            res_atoms = list(res.get_atoms())
-            for la in target_atoms:
-                for ra in res_atoms:
-                    dist = la - ra
-                    if dist < min_dist:
-                        min_dist = dist
-
-            results["interactions"].append(
-                {
-                    "residue": res.get_resname(),
-                    "resn": res.get_resname(),
-                    "chain": res.get_parent().get_id(),
-                    "resi": res.get_id()[1],
-                    "distance": round(min_dist, 2),
-                    "type": (
-                        "Hydrophobic"
-                        if res.get_resname()
-                        in ["ALA", "VAL", "LEU", "ILE", "MET", "PHE", "TRP", "PRO"]
-                        else "Polar/Charged"
-                    ),
-                }
-            )
-
-        # Sort by distance
+        results = {
+            "ligand": ligand_id,
+            "interactions": [
+                self._interaction_record(res, target_atoms)
+                for res in interacting_residues
+            ],
+        }
         results["interactions"].sort(key=lambda x: x["distance"])
-
         return results
+
+    @staticmethod
+    def _find_ligand_and_search_atoms(
+        structure, l_chain: str, l_resi: int, l_name: str
+    ):
+        """Locates the target ligand residue and separates the rest of the
+        structure's standard-residue atoms into a NeighborSearch candidate
+        pool (excludes solvent/ions, id[0] != " ", from being "interacting
+        partners")."""
+        target_ligand = None
+        target_atoms = []
+        search_atoms = []
+        for model in structure:
+            for chain in model:
+                for residue in chain:
+                    is_target = (
+                        chain.get_id() == l_chain
+                        and residue.get_id()[1] == l_resi
+                        and residue.get_resname().strip() == l_name
+                    )
+                    if is_target:
+                        target_ligand = residue
+                        target_atoms = list(residue.get_atoms())
+                    elif residue.get_id()[0] == " ":
+                        search_atoms.extend(residue.get_atoms())
+        return target_ligand, target_atoms, search_atoms
+
+    @staticmethod
+    def _min_distance(target_atoms, res_atoms) -> float:
+        return min((la - ra for la in target_atoms for ra in res_atoms), default=999.9)
+
+    @staticmethod
+    def _interaction_type(resname: str) -> str:
+        hydrophobic = {"ALA", "VAL", "LEU", "ILE", "MET", "PHE", "TRP", "PRO"}
+        return "Hydrophobic" if resname in hydrophobic else "Polar/Charged"
+
+    def _interaction_record(self, res, target_atoms) -> Dict[str, Any]:
+        resname = res.get_resname()
+        return {
+            "residue": resname,
+            "resn": resname,
+            "chain": res.get_parent().get_id(),
+            "resi": res.get_id()[1],
+            "distance": round(
+                self._min_distance(target_atoms, list(res.get_atoms())), 2
+            ),
+            "type": self._interaction_type(resname),
+        }
 
     def calculate_sasa(self, pdb_file: Path) -> Dict[str, Any]:
         """
