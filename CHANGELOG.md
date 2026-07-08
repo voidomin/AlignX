@@ -47,6 +47,7 @@ Fourteenth batch of the `new_coverage` push, targeting >80% - `database.py` (all
 ### Verified
 - Full backend suite: 711 tests passing, both locally and in a CI-matching Docker container.
 - `black`/`ruff` clean.
+- Confirmed via re-analysis (combined with the concurrent session's supply-chain hash-pinning work through v3.65.0, which also brought open vulnerabilities to 0): `new_coverage` 76.63% → 77.26%.
 
 ## [3.63.0]
 
