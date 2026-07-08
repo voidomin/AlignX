@@ -20,6 +20,7 @@ Mechanical safe-batch cleanup for the remaining ~52 low-severity SonarQube Code 
 - 245 backend + 142 frontend tests, ruff, and black all clean.
 - `phylo.py` (8 of the dict-literal fixes, the highest-complexity file touched) and `sequence.py` (`_parse_range_str`, `render_sequences_tab`) both exercised live through Streamlit's `AppTest` harness with realistic fake torsion/sequence data - zero exceptions.
 - The remaining touched files' specific changes (`ligand.py`'s set comprehension, `clusters.py`'s tuple-unpack, `comparison.py`'s labels dict, `common.py`'s stepper logic, `rmsd_calculator.py`'s renamed TM-score/GDT-TS parameters) verified via direct, isolated equivalence checks against the original logic - exhaustive input sweeps where applicable (the stepper's if/elif/else vs. the original nested ternary, checked across all step/current_step combinations 0-5).
+- **Confirmed via re-analysis**: open Code Smells dropped 92 → 40 (every targeted issue resolved) - the only 40 remaining are the 39 pre-existing Cognitive Complexity findings and `sidebar.py`'s single deliberately-untouched `list()` call. Quality Gate still OK, 0 vulnerabilities/bugs.
 
 ## [3.21.0]
 
