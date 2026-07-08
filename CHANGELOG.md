@@ -40,6 +40,7 @@ Investigating 3.23.0's `new_security_rating` gate failure turned up something ge
 - `npm ci --ignore-scripts` followed by a clean `npm test`/`npm run build` - all 142 tests and the production build still succeed, confirming no dependency in this project's tree actually needs an install-time script.
 - Reproduced the `fpdf2` `multi_cell()` failure directly (not just read about it) before deciding to revert - generated a real report with `fpdf2` installed and hit the exception firsthand.
 - 245 backend tests pass with `fpdf==1.7.2` confirmed back in place.
+- **Confirmed via re-analysis**: all 4 CI jobs (including the `sonarqube` scan) passed on the real push. Open vulnerabilities on `Dockerfile`/`ci.yml` dropped 9 → 4 - only the `S8544` hash-lock findings remain, exactly the ones deliberately left open above. `new_coverage` still failing as expected (36.5%, unaddressed pending a threshold decision).
 
 ## [3.22.0]
 
