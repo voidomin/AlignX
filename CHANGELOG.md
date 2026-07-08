@@ -2,6 +2,21 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.48.0]
+
+Third batch of the legacy Streamlit UI cleanup (2 of 14 findings: complexity 24, 27).
+
+### Fixed
+- **`downloads.py`'s `render_downloads_tab`** (24→within limit): split along its 3 columns/sections into `_render_pdf_report_generator`, `_render_lab_notebook_exporter`, `_render_raw_files_column`, and `_render_complete_package_download`, plus `_render_report_section_checkboxes`.
+- **`phylo.py`'s `render_phylo_tree_tab`** (27→within limit): the tree-visualization section and the much larger Ramachandran plot section (data prep, interactive controls, dynamic opacity/size, Plotly figure construction, summary metrics) were split into 9 focused functions.
+
+### Added
+- **`tests/test_downloads_tab.py`** (new, 2 tests) and **`tests/test_phylo_tab.py`** (new, 3 tests), using `AppTest` - neither file had any prior coverage. The phylo tests include a real Ramachandran plot render with actual torsion data, exercising the full refactored figure-building pipeline (region traces, background shading, opacity/size logic).
+
+### Verified
+- Full suite: 555 tests passing.
+- `black`/`ruff` clean.
+
 ## [3.47.0]
 
 Second batch of the legacy Streamlit UI cleanup (2 of 14 findings: complexity 19, 19), both in `src/frontend/tabs/sequence.py`. Unlike the last batch, these two are pure functions with no Streamlit dependency - real unit tests, not `AppTest`.
