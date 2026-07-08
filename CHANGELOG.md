@@ -11,6 +11,7 @@ Re-analysis after 3.20.1 surfaced a new Quality Gate failure: `python:S5332` ("U
 
 ### Verified
 - All 3 concurrency tests + full 245-test suite pass unchanged, ruff/black clean.
+- **Confirmed via re-analysis**: Quality Gate back to OK, 0 open vulnerabilities/bugs.
 
 ## [3.20.1]
 
