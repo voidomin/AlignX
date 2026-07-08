@@ -2,6 +2,17 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.34.0]
+
+Fourth batch of the `new_coverage` push - `notebook_exporter.py` and `report_generator.py`, the two largest remaining near-zero-coverage backend files (`phylo_tree.py`, the third file originally on this list, had already reached 88% via unrelated concurrent refactor work).
+
+### Added
+- **`tests/test_notebook_exporter.py`** (new, 8 tests): a full real end-to-end export (real Plotly heatmap figure, real alignment.pdb content, ligand table, markdown-stripped insights) verified by reading the actual generated HTML back and checking real content landed in it; missing-stats defaults; the no-heatmap fallback message; and the `template_str` property's fallback-to-minimal-template behavior when the real template file is missing. File coverage: 18% → 97%.
+- **`tests/test_report_generator.py`** (new, 7 tests): a full real PDF generation (real stats, real tiny PNG images for the heatmap/tree sections via Pillow, a real RMSD `DataFrame`), the `sections` filter, regenerating insights when they're not already attached to a run, the Å-to-Latin-1 character mapping `clean_text()` exists specifically for, a corrupt-image-file fallback, and an output-directory-doesn't-exist failure path. File coverage: 13% → 95%.
+
+### Verified
+- 368 backend tests total (up from 353), all passing locally and in a Docker container matching CI's Python 3.10/Linux environment before pushing.
+
 ## [3.33.0]
 
 Third batch of the backend `python:S3776` cleanup (3 more of the 41 open findings: complexity 16, 23, 25). 9 of 26 backend findings now resolved.
