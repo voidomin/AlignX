@@ -94,6 +94,186 @@ class AnalysisCoordinator:
         else:
             logger.info(f"Mustang installation verified: {msg}")
 
+    def _resolve_run_identity(
+        self, output_dir: Optional[Path], pdb_ids: List[str]
+    ) -> Tuple[Path, str, str, datetime]:
+        """Derives (output_dir, run_id, run_name, now) - either fresh, or
+        from a caller-supplied output_dir whose name IS the run_id."""
+        now = datetime.now()
+        if output_dir:
+            return (
+                output_dir,
+                output_dir.name,
+                f"Custom Run ({now.strftime('%H:%M')})",
+                now,
+            )
+
+        run_id = generate_run_id("run", now)
+        run_name = f"Analysis of {len(pdb_ids)} structures ({now.strftime('%H:%M')})"
+        # Namespace results by session ID
+        base = Path("results") / self.session_id if self.session_id else Path("results")
+        return base / run_id, run_id, run_name, now
+
+    def _download_structures(self, pdb_ids: List[str]) -> Tuple[bool, str, List[Path]]:
+        # Run async batch download from sync context
+        download_results = asyncio.run(self.pdb_manager.batch_download(pdb_ids))
+        failed = [
+            pid for pid, (success, msg, path) in download_results.items() if not success
+        ]
+        if failed:
+            return False, f"Failed to download: {', '.join(failed)}", []
+
+        pdb_files = [path for success, msg, path in download_results.values() if path]
+        return True, "", pdb_files
+
+    def _clean_structure(
+        self,
+        pdb_file: Path,
+        chain_selection: Optional[Dict[str, str]],
+        remove_water: bool,
+        remove_heteroatoms: bool,
+    ) -> Tuple[Optional[Path], Optional[str]]:
+        """Cleans one downloaded structure, returning (cleaned_path, None)
+        on success or (None, failure_description) on failure."""
+        pdb_id = pdb_file.stem.split("_")[0].upper()
+        target_chain = chain_selection.get(pdb_id) if chain_selection else None
+
+        # Mustang requires exactly one chain per structure.
+        # If no specific chain is requested, we automatically pick the first one.
+        if not target_chain:
+            info = self.pdb_manager.analyze_structure(pdb_file)
+            if info["chains"]:
+                target_chain = info["chains"][0]["id"]
+                logger.info(
+                    f"Auto-detected multi-chain PDB {pdb_id}. Selecting chain '{target_chain}' for Mustang."
+                )
+
+        success, msg, cleaned_path = self.pdb_manager.clean_pdb(
+            pdb_file,
+            chain=target_chain,
+            remove_water=remove_water,
+            remove_heteroatoms=remove_heteroatoms,
+        )
+        if cleaned_path:
+            return cleaned_path, None
+        logger.warning(f"Could not clean {pdb_file}: {msg}")
+        return None, f"{pdb_id} ({msg})"
+
+    def _clean_structures(
+        self,
+        pdb_files: List[Path],
+        chain_selection: Optional[Dict[str, str]],
+        remove_water: bool,
+        remove_heteroatoms: bool,
+    ) -> Tuple[bool, str, List[Path]]:
+        cleaned_files = []
+        failed_cleaning = []
+        for pdb_file in pdb_files:
+            cleaned_path, failure = self._clean_structure(
+                pdb_file, chain_selection, remove_water, remove_heteroatoms
+            )
+            if cleaned_path:
+                cleaned_files.append(cleaned_path)
+            else:
+                failed_cleaning.append(failure)
+
+        # A structure that fails cleaning must not be silently dropped -
+        # continuing with fewer structures than requested would produce
+        # a misleading result (e.g. the final RMSD matrix would still be
+        # shaped for the full requested set, with fabricated values for
+        # whichever structure got excluded).
+        if failed_cleaning:
+            return (
+                False,
+                f"Failed to prepare structures for alignment: {'; '.join(failed_cleaning)}",
+                [],
+            )
+        return True, "", cleaned_files
+
+    def _run_mustang_alignment(
+        self, cleaned_files: List[Path], output_dir: Path
+    ) -> Tuple[bool, str, Optional[Path]]:
+        if output_dir.exists():
+            shutil.rmtree(output_dir, ignore_errors=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        success, msg, result_dir = self.mustang_runner.run_alignment(
+            cleaned_files, output_dir
+        )
+        if not success:
+            return False, f"Mustang alignment failed: {msg}", None
+
+        # Ensure input PDBs are copied to results
+        for pdb_file in cleaned_files:
+            dest = result_dir / pdb_file.name
+            if not dest.exists():
+                shutil.copy2(pdb_file, dest)
+        return True, "", result_dir
+
+    @staticmethod
+    def _generate_insights(config: Dict[str, Any], results: Dict[str, Any]) -> None:
+        """Mutates `results["insights"]` in place - a failure here shouldn't
+        fail the whole pipeline, since insights are a nice-to-have summary
+        of results that were already computed successfully."""
+        try:
+            from src.backend.insights import InsightsGenerator
+
+            gen = InsightsGenerator(config)
+            results["insights"] = gen.generate_insights(results)
+            logger.info("Pre-generated structural insights.")
+        except Exception as e:
+            logger.warning(f"Failed to generate pre-computed insights: {e}")
+            results["insights"] = []
+
+    def _persist_run(
+        self,
+        run_id: str,
+        run_name: str,
+        pdb_ids: List[str],
+        result_dir: Path,
+        chain_selection: Optional[Dict[str, str]],
+        remove_water: bool,
+        remove_heteroatoms: bool,
+        results: Dict[str, Any],
+        now: datetime,
+    ) -> None:
+        """Saves the run to the history DB, writes metadata.json alongside
+        the results for portability, and injects the same identity fields
+        into `results` for the UI - three views of the same run metadata,
+        kept in sync in one place."""
+        sanitized_results = sanitize_for_json(results)
+        self.history_db.save_run(
+            run_id,
+            run_name,
+            pdb_ids,
+            result_dir,
+            metadata={
+                "chain_selection": chain_selection,
+                "clean_params": {
+                    "remove_water": remove_water,
+                    "remove_heteroatoms": remove_heteroatoms,
+                },
+                "results": sanitized_results,
+            },
+            session_id=self.session_id,
+        )
+
+        import json
+
+        metadata = {
+            "id": run_id,
+            "name": run_name,
+            "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "protein_count": len(pdb_ids),
+            "proteins": pdb_ids,
+        }
+        with open(result_dir / "metadata.json", "w") as f:
+            json.dump(metadata, f, indent=4)
+
+        results["id"] = run_id
+        results["name"] = run_name
+        results["timestamp"] = now.strftime("%Y-%m-%d %H:%M:%S")
+
     def run_full_pipeline(
         self,
         pdb_ids: List[str],
@@ -116,159 +296,50 @@ class AnalysisCoordinator:
             Tuple of (success, message, results_dict).
         """
         try:
-            if not output_dir:
-                now = datetime.now()
-                run_id = generate_run_id("run", now)
-                run_name = (
-                    f"Analysis of {len(pdb_ids)} structures ({now.strftime('%H:%M')})"
-                )
-                # Namespace results by session ID
-                if self.session_id:
-                    output_dir = Path("results") / self.session_id / run_id
-                else:
-                    output_dir = Path("results") / run_id
-            else:
-                run_id = output_dir.name
-                now = datetime.now()
-                run_name = f"Custom Run ({now.strftime('%H:%M')})"
+            output_dir, run_id, run_name, now = self._resolve_run_identity(
+                output_dir, pdb_ids
+            )
 
-            # 1. DATA PREPARATION (Step 1)
             if progress_callback:
                 progress_callback(0.1, "📥 Downloading PDB files...", 1)
+            success, msg, pdb_files = self._download_structures(pdb_ids)
+            if not success:
+                return False, msg, None
 
-            # Run async batch download from sync context
-            download_results = asyncio.run(self.pdb_manager.batch_download(pdb_ids))
-            failed = [
-                pid
-                for pid, (success, msg, path) in download_results.items()
-                if not success
-            ]
-            if failed:
-                return False, f"Failed to download: {', '.join(failed)}", None
-
-            pdb_files = [
-                path for success, msg, path in download_results.values() if path
-            ]
-
-            # 2. CLEANING & FILTERING (Step 2)
             if progress_callback:
                 progress_callback(0.3, "🧹 Cleaning PDB files...", 2)
+            success, msg, cleaned_files = self._clean_structures(
+                pdb_files, chain_selection, remove_water, remove_heteroatoms
+            )
+            if not success:
+                return False, msg, None
 
-            cleaned_files = []
-            failed_cleaning = []
-            for pdb_file in pdb_files:
-                pdb_id = pdb_file.stem.split("_")[0].upper()
-                target_chain = chain_selection.get(pdb_id) if chain_selection else None
-
-                # Mustang requires exactly one chain per structure.
-                # If no specific chain is requested, we automatically pick the first one.
-                if not target_chain:
-                    info = self.pdb_manager.analyze_structure(pdb_file)
-                    if info["chains"]:
-                        target_chain = info["chains"][0]["id"]
-                        logger.info(
-                            f"Auto-detected multi-chain PDB {pdb_id}. Selecting chain '{target_chain}' for Mustang."
-                        )
-
-                success, msg, cleaned_path = self.pdb_manager.clean_pdb(
-                    pdb_file,
-                    chain=target_chain,
-                    remove_water=remove_water,
-                    remove_heteroatoms=remove_heteroatoms,
-                )
-                if cleaned_path:
-                    cleaned_files.append(cleaned_path)
-                else:
-                    logger.warning(f"Could not clean {pdb_file}: {msg}")
-                    failed_cleaning.append(f"{pdb_id} ({msg})")
-
-            # A structure that fails cleaning must not be silently dropped -
-            # continuing with fewer structures than requested would produce
-            # a misleading result (e.g. the final RMSD matrix would still be
-            # shaped for the full requested set, with fabricated values for
-            # whichever structure got excluded).
-            if failed_cleaning:
-                return (
-                    False,
-                    f"Failed to prepare structures for alignment: {'; '.join(failed_cleaning)}",
-                    None,
-                )
-
-            # 3. STRUCTURAL ALIGNMENT (Step 3)
             if progress_callback:
                 progress_callback(0.5, "⚙️ Running Mustang alignment...", 3)
-
-            # Ensure output directory is clean
-            if output_dir.exists():
-                shutil.rmtree(output_dir, ignore_errors=True)
-            output_dir.mkdir(parents=True, exist_ok=True)
-
-            success, msg, result_dir = self.mustang_runner.run_alignment(
+            success, msg, result_dir = self._run_mustang_alignment(
                 cleaned_files, output_dir
             )
             if not success:
-                return False, f"Mustang alignment failed: {msg}", None
+                return False, msg, None
 
-            # Ensure input PDBs are copied to results
-            for pdb_file in cleaned_files:
-                dest = result_dir / pdb_file.name
-                if not dest.exists():
-                    shutil.copy2(pdb_file, dest)
-
-            # 4. DATA PROCESSING & VISUALIZATION (Step 4)
             if progress_callback:
                 progress_callback(0.75, "📊 Generating visualizations...", 4)
-
             results = self.process_result_directory(result_dir, pdb_ids)
             if not results:
                 return False, "Failed to process result directory", None
 
-            # 4.5 GENERATE LLM INSIGHTS (v2.4.1 Optimization)
-            try:
-                from src.backend.insights import InsightsGenerator
-
-                gen = InsightsGenerator(self.config)
-                results["insights"] = gen.generate_insights(results)
-                logger.info("Pre-generated structural insights.")
-            except Exception as e:
-                logger.warning(f"Failed to generate pre-computed insights: {e}")
-                results["insights"] = []
-
-            # 5. SAVE TO HISTORY & WRITE METADATA
-            sanitized_results = sanitize_for_json(results)
-            self.history_db.save_run(
+            self._generate_insights(self.config, results)
+            self._persist_run(
                 run_id,
                 run_name,
                 pdb_ids,
                 result_dir,
-                metadata={
-                    "chain_selection": chain_selection,
-                    "clean_params": {
-                        "remove_water": remove_water,
-                        "remove_heteroatoms": remove_heteroatoms,
-                    },
-                    "results": sanitized_results,
-                },
-                session_id=self.session_id,
+                chain_selection,
+                remove_water,
+                remove_heteroatoms,
+                results,
+                now,
             )
-
-            # Write metadata.json for portability and indexing stability
-            import json
-
-            metadata = {
-                "id": run_id,
-                "name": run_name,
-                "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
-                "protein_count": len(pdb_ids),
-                "proteins": pdb_ids,
-            }
-            with open(result_dir / "metadata.json", "w") as f:
-                json.dump(metadata, f, indent=4)
-
-            # Inject metadata into results for UI
-            results["id"] = run_id
-            results["name"] = run_name
-            results["timestamp"] = now.strftime("%Y-%m-%d %H:%M:%S")
 
             if progress_callback:
                 progress_callback(1.0, "✅ Analysis complete!", 4)

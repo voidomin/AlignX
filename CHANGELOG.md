@@ -2,6 +2,21 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.36.0]
+
+Fifth batch of the backend `python:S3776` cleanup (3 more of the 41 open findings: complexity 29, 30, 31). 15 of 26 backend findings now resolved. This batch includes `coordinator.py`'s `run_full_pipeline` - the core Compare-mode orchestration function - refactored with extra care given its centrality.
+
+### Fixed
+- **`rmsd_calculator.py:61`** (`parse_mustang_log_for_rmsd`, 29→within limit): the per-line row-detection logic (nested try/except with an inner loop and a `break`) was extracted into `_try_parse_rmsd_row()`.
+- **`api.py:366`** (`sanitize_for_json`, 30→within limit): split into `_coerce_numpy_scalar()`, `_is_plotly_bdata()`, and `_decode_plotly_bdata()` - the two nested try/except blocks (numpy-scalar coercion, Plotly binary-data decoding) that drove most of the complexity are now standalone, independently testable functions.
+- **`coordinator.py:93`** (`run_full_pipeline`, 31→within limit): the ~180-line pipeline function was split along its existing numbered-step comments into `_resolve_run_identity`, `_download_structures`, `_clean_structure`/`_clean_structures`, `_run_mustang_alignment`, `_generate_insights`, and `_persist_run` - each stage now returns/raises independently instead of all sharing one function's control flow.
+
+### Verified
+- Full backend suite: 368 tests passing.
+- Given `run_full_pipeline`'s centrality (it's the entire Compare-mode alignment path), went beyond the unit tests: built a fresh Docker image, ran the container, and submitted a real `/api/jobs/align` job for 4HHB/2HHB through the actual HTTP API - completed successfully end-to-end with a real RMSD (0.1 Å), 100% sequence identity, heatmap/tree/newick all generated and saved to history, matching pre-refactor behavior.
+- Manually confirmed `_try_parse_rmsd_row()` and `sanitize_for_json()`'s numpy/Plotly-bdata paths reproduce the originals' exact behavior, including the malformed-input fallback paths.
+- `black`/`ruff` clean on all three touched files.
+
 ## [3.35.1]
 
 Confirming 3.34.0's `new_coverage` progress via re-analysis, and that this entry's Cognitive Complexity refactors (`notebook_exporter.py`'s `export()`, `rmsd_calculator.py`'s `parse_rms_rot_file()`) didn't break the real tests written for those two files in 3.34.0/3.26.0 - both test files re-run clean against the refactored code (38/38 passing), confirming the refactors preserved external behavior as intended.

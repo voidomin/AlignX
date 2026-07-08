@@ -58,6 +58,33 @@ def calculate_rmsd_from_superposition(
         return None
 
 
+def _try_parse_rmsd_row(line: str) -> Optional[List[float]]:
+    """Parses one Mustang log line as an RMSD-matrix row - a numeric row
+    index (1, 2, 3...) followed by RMSD values (float or '---') - or
+    returns None if the line doesn't match that shape."""
+    parts = line.split()
+    if not parts:
+        return None
+    try:
+        int(parts[0])
+    except ValueError:
+        return None
+    if len(parts) <= 1:
+        return None
+
+    row = []
+    for p in parts[1:]:
+        if p == "---":
+            row.append(0.0)
+            continue
+        try:
+            row.append(float(p))
+        except ValueError:
+            # Not a float, might be part of another line
+            break
+    return row or None
+
+
 def parse_mustang_log_for_rmsd(log_file: Path) -> Optional[pd.DataFrame]:
     """
     Parse Mustang's log file (stdout) to extract the pairwise RMSD table.
@@ -75,42 +102,14 @@ def parse_mustang_log_for_rmsd(log_file: Path) -> Optional[pd.DataFrame]:
         with open(log_file, "r") as f:
             lines = f.readlines()
 
-        # Extract protein count by looking at IDs if possible, or just the table
-        # We'll assume the number of proteins is determined by the caller or inferred from the table size
-
         potential_matrix = []
         for line in lines:
             line = line.strip()
             if not line:
                 continue
-
-            # The RMSD table in Mustang logs usually starts with a numeric index
-            # followed by the RMSD values. Let's try to detect those lines.
-            parts = line.split()
-            if not parts:
-                continue
-
-            # Check if the first part looks like a row index (usually 1, 2, 3...)
-            # and the rest look like floats or '---'
-            try:
-                # Basic heuristic: if the first part is an integer and there are multiple parts
-                # it's likely a row of the RMSD matrix.
-                int(parts[0])
-                if len(parts) > 1:
-                    row = []
-                    for p in parts[1:]:
-                        if p == "---":
-                            row.append(0.0)
-                        else:
-                            try:
-                                row.append(float(p))
-                            except ValueError:
-                                # Not a float, might be part of another line
-                                break
-                    if row:
-                        potential_matrix.append(row)
-            except (ValueError, IndexError):
-                continue
+            row = _try_parse_rmsd_row(line)
+            if row:
+                potential_matrix.append(row)
 
         if not potential_matrix:
             return None

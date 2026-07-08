@@ -363,6 +363,52 @@ async def upload_structure(
     return {"chains": {structure_id: sanitize_for_json(info)}}
 
 
+def _coerce_numpy_scalar(val: Any) -> Any:
+    """A 0-d numpy scalar (has dtype/item, no ndim or ndim==0) converts to
+    its plain Python equivalent; anything else passes through unchanged."""
+    if (
+        hasattr(val, "dtype")
+        and hasattr(val, "item")
+        and (not hasattr(val, "ndim") or val.ndim == 0)
+    ):
+        try:
+            return val.item()
+        except Exception:
+            return val
+    return val
+
+
+def _is_plotly_bdata(val: Any) -> bool:
+    return (
+        isinstance(val, dict)
+        and val.keys() >= {"dtype", "bdata"}
+        and isinstance(val.get("bdata"), str)
+    )
+
+
+def _decode_plotly_bdata(val: Dict[str, Any]) -> Any:
+    """Plotly 6.x's compact binary typed-array format for numeric trace data
+    (emitted for figure_factory dendrograms and some Heatmap traces,
+    regardless of whether the original value was a numpy array or a plain
+    list — Plotly's trace validators re-coerce it internally).
+    "shape" is only present for 2D+ arrays (e.g. a heatmap's z); flat 1D
+    arrays (e.g. a dendrogram trace's x/y) omit it entirely. The pinned
+    frontend Plotly.js CDN version can't decode either form, so decode it
+    back into a plain (possibly nested) list here."""
+    import base64
+    import numpy as np
+
+    try:
+        raw = base64.b64decode(val["bdata"])
+        arr = np.frombuffer(raw, dtype=val["dtype"])
+        if "shape" in val:
+            shape = tuple(int(s) for s in str(val["shape"]).replace(" ", "").split(","))
+            arr = arr.reshape(shape)
+        return sanitize_for_json(arr)
+    except Exception:
+        return {str(k): sanitize_for_json(v) for k, v in val.items()}
+
+
 def sanitize_for_json(val: Any) -> Any:
     """
     Recursively convert NumPy types and other non-standard types to JSON-friendly standard Python types,
@@ -371,43 +417,10 @@ def sanitize_for_json(val: Any) -> Any:
     import numpy as np
     import math
 
-    # Convert numpy scalars to Python scalars
-    if (
-        hasattr(val, "dtype")
-        and hasattr(val, "item")
-        and (not hasattr(val, "ndim") or val.ndim == 0)
-    ):
-        try:
-            val = val.item()
-        except Exception:
-            pass
+    val = _coerce_numpy_scalar(val)
 
-    if (
-        isinstance(val, dict)
-        and val.keys() >= {"dtype", "bdata"}
-        and isinstance(val.get("bdata"), str)
-    ):
-        # Plotly 6.x's compact binary typed-array format for numeric trace data
-        # (emitted for figure_factory dendrograms and some Heatmap traces,
-        # regardless of whether the original value was a numpy array or a
-        # plain list — Plotly's trace validators re-coerce it internally).
-        # "shape" is only present for 2D+ arrays (e.g. a heatmap's z); flat 1D
-        # arrays (e.g. a dendrogram trace's x/y) omit it entirely. The pinned
-        # frontend Plotly.js CDN version can't decode either form, so decode
-        # it back into a plain (possibly nested) list here.
-        try:
-            import base64
-
-            raw = base64.b64decode(val["bdata"])
-            arr = np.frombuffer(raw, dtype=val["dtype"])
-            if "shape" in val:
-                shape = tuple(
-                    int(s) for s in str(val["shape"]).replace(" ", "").split(",")
-                )
-                arr = arr.reshape(shape)
-            return sanitize_for_json(arr)
-        except Exception:
-            return {str(k): sanitize_for_json(v) for k, v in val.items()}
+    if _is_plotly_bdata(val):
+        return _decode_plotly_bdata(val)
 
     if isinstance(val, dict):
         return {str(k): sanitize_for_json(v) for k, v in val.items()}
