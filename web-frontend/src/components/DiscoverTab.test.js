@@ -7,6 +7,7 @@ vi.mock('../api.js', () => ({
     isValidPdbId: vi.fn((id) => /^[0-9A-Z]{4}$/.test(id) || /^AF-/.test(id)),
     getDiscoveryReportUrl: vi.fn((runId) => `http://mock/api/discover/report?run_id=${runId}`),
     getDiscoveryExportUrl: vi.fn((runId) => `http://mock/api/discover/export?run_id=${runId}`),
+    getDiscoveryCitationsUrl: vi.fn((runId) => `http://mock/api/discover/citations?run_id=${runId}`),
 }));
 
 import { submitDiscoveryJob, pollJobUntilDone } from '../api.js';

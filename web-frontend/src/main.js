@@ -60,7 +60,8 @@ class App {
             onChainSelection: (pdbId, chainId) => {
                 this.chainSelections[pdbId] = chainId;
             },
-            onRunAlignment: () => this.executeAlignment()
+            onRunAlignment: () => this.executeAlignment(),
+            onQuickStart: (pdbIds) => this.loadQuickStart(pdbIds)
         });
 
         this.ligandTab = new LigandTab({

@@ -12,6 +12,7 @@ function makeTab(overrides = {}) {
         onRemovePDB: vi.fn(),
         onChainSelection: vi.fn(),
         onRunAlignment: vi.fn(),
+        onQuickStart: vi.fn(),
         ...overrides,
     });
 }
@@ -23,7 +24,32 @@ describe('OverviewTab', () => {
 
         expect(tab.element.querySelector('#pdb-count-badge').innerText).toBe('0 Proteins');
         expect(tab.element.querySelector('#pdb-list-container').textContent)
-            .toContain('Add at least 2 PDB structures to align.');
+            .toContain('Add at least 2 PDB structures to align');
+    });
+
+    it('shows quick-start example buttons in the empty state', () => {
+        const tab = makeTab();
+        tab.render();
+
+        const buttons = tab.element.querySelectorAll('#overview-quick-start .quick-start-btn');
+        expect(buttons.length).toBeGreaterThan(0);
+    });
+
+    it('clicking a quick-start example calls onQuickStart with its PDB IDs', () => {
+        const onQuickStart = vi.fn();
+        const tab = makeTab({ onQuickStart });
+        tab.render();
+
+        tab.element.querySelector('#overview-quick-start .quick-start-btn').click();
+
+        expect(onQuickStart).toHaveBeenCalledWith(expect.any(Array));
+    });
+
+    it('hides quick-start examples once structures are selected', () => {
+        const tab = makeTab({ selectedPDBs: ['4RLT', '3UG9'] });
+        tab.render();
+
+        expect(tab.element.querySelector('#overview-quick-start')).toBeNull();
     });
 
     it('calls onAddPDB with the uppercased 4-char input on Add click, and clears the input', () => {

@@ -7,6 +7,7 @@ vi.mock('../api.js', () => ({
     getAlignmentFastaUrl: vi.fn((runId) => `http://api/results/${runId}/alignment.fasta`),
     getAlignmentReportUrl: vi.fn((runId, sections) => `http://api/api/report?run_id=${runId}${sections ? `&sections=${sections.join(',')}` : ''}`),
     getLabNotebookUrl: vi.fn((runId) => `http://api/api/notebook?run_id=${runId}`),
+    getCitationsUrl: vi.fn((runId) => `http://api/api/report/citations?run_id=${runId}`),
 }));
 
 import { fetchSequence } from '../api.js';

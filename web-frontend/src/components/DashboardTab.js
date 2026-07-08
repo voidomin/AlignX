@@ -1,12 +1,7 @@
 import { fetchStats, fetchHistory } from '../api';
+import { QUICK_START_EXAMPLES } from '../quickStartExamples';
 
 const RECENT_RUNS_LIMIT = 5;
-
-const QUICK_START_EXAMPLES = [
-    { label: 'Kinase family', pdbIds: ['1ATP', '1CDK'] },
-    { label: 'Hemoglobin variants', pdbIds: ['4HHB', '2HHB'] },
-    { label: 'Trp-cage + AlphaFold', pdbIds: ['1L2Y', 'AF-P69905-F1'] },
-];
 
 export class DashboardTab {
     constructor(props) {

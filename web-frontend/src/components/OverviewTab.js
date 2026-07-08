@@ -1,5 +1,6 @@
 import { fetchSuggestions, isValidPdbId } from '../api';
 import { escapeHtml } from '../escapeHtml';
+import { QUICK_START_EXAMPLES } from '../quickStartExamples';
 
 const SOURCE_LABELS = {
     pdb: 'PDB',
@@ -20,6 +21,7 @@ export class OverviewTab {
         this.onRemovePDB = props.onRemovePDB;
         this.onChainSelection = props.onChainSelection;
         this.onRunAlignment = props.onRunAlignment;
+        this.onQuickStart = props.onQuickStart;
         this.element = null;
         this.isLoadingChains = false;
         this.isUploading = false;
@@ -271,10 +273,22 @@ export class OverviewTab {
         container.innerHTML = "";
         if (this.selectedPDBs.length === 0) {
             container.innerHTML = `
-                <div class="text-center py-4 text-secondary font-body-sm">
-                    Add at least 2 PDB structures to align.
+                <div class="flex flex-col items-center gap-3 py-4 text-center">
+                    <span class="text-secondary font-body-sm">Add at least 2 PDB structures to align, or try an example:</span>
+                    <div id="overview-quick-start" class="flex flex-wrap justify-center gap-2"></div>
                 </div>
             `;
+            const quickStartContainer = container.querySelector('#overview-quick-start');
+            if (quickStartContainer && this.onQuickStart) {
+                QUICK_START_EXAMPLES.forEach(ex => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = "quick-start-btn px-3 py-1.5 rounded-md bg-surface-raised border border-border-subtle font-label-sm text-label-sm text-secondary hover:text-primary transition-colors";
+                    btn.textContent = `${ex.label} (${ex.pdbIds.join(' + ')})`;
+                    btn.addEventListener('click', () => this.onQuickStart(ex.pdbIds));
+                    quickStartContainer.appendChild(btn);
+                });
+            }
             return;
         }
 

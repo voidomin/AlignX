@@ -2,6 +2,21 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.27.0]
+
+First-run onboarding: the Overview tab's empty state was a bare "Add at least 2 PDB structures to align" message, even though curated quick-start example sets already existed — just on the separate Dashboard tab, which is not where a new user lands (`activeTab` defaults to `'overview'`).
+
+### Added
+- **`web-frontend/src/quickStartExamples.js`**: the `QUICK_START_EXAMPLES` list (kinase family, hemoglobin variants, Trp-cage + AlphaFold) extracted from `DashboardTab.js` into a shared module so both tabs use the same one-click examples instead of duplicating/drifting.
+- **`OverviewTab.js`**'s empty state now renders those same quick-start buttons directly below the "add structures" prompt; clicking one calls the existing `loadQuickStart()` flow (already used by the Dashboard), which loads the pair and switches to Overview — so a first-time user never needs to already know Dashboard has examples.
+
+### Fixed
+- **Pre-existing test gap from 3.25.0**: `SequenceTab.test.js` and `DiscoverTab.test.js` mock `../api.js` and were missing `getCitationsUrl`/`getDiscoveryCitationsUrl` added by the citations-export change, which only surfaced when running the full frontend suite (the narrower `-k citation` pytest run in 3.25.0 didn't catch it, since it's a JS test failure, not Python).
+
+### Verified
+- 3 new `OverviewTab` tests (buttons render, click calls `onQuickStart` with the right IDs, buttons disappear once structures are selected). Full frontend suite: 145 tests passing (0 failing, including the two fixed pre-existing failures).
+- Frontend production build succeeds; backend API test suite (49 relevant tests) unaffected.
+
 ## [3.26.0]
 
 Real test-writing pass toward the `new_coverage` Quality Gate condition (48.4% at the start of this entry, needs 80%, free-tier SonarCloud can't have the threshold adjusted). First batch: the highest-value genuinely-testable backend gaps, prioritized by actual uncovered-line count pulled from SonarCloud's `component_tree` API rather than guessed.
