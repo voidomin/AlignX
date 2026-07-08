@@ -2,6 +2,23 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.23.0]
+
+Wired up real test-coverage reporting to SonarCloud - previously it tracked 0% coverage despite 245 backend + 142 frontend tests existing, because SonarCloud Cloud's free-tier "Automatic Analysis" mode can't ingest coverage reports at all (or read `sonar-project.properties`, per the 3.15.0 finding). Moved analysis to CI-driven instead.
+
+### Added
+- **`pytest-cov`** added to `requirements.txt`; CI's `build` job now runs `pytest --cov=src --cov-report=xml`, uploading `coverage.xml` as a build artifact.
+- **`@vitest/coverage-v8`** added to `web-frontend`; a new `npm run test:coverage` script and `vitest.config.js` coverage config (`v8` provider, `lcov` reporter) produce `coverage/lcov.info`, also uploaded as a CI artifact.
+- **New `sonarqube` CI job** (`.github/workflows/ci.yml`): runs after `build`/`frontend-tests` succeed, downloads both coverage artifacts, and runs `SonarSource/sonarqube-scan-action@v8` with a full (non-shallow) checkout for accurate "new code" blame.
+- **`sonar-project.properties`**: added `sonar.projectKey`, `sonar.organization`, `sonar.python.coverage.reportPaths`, and `sonar.javascript.lcov.reportPaths` - all inert under Automatic Analysis, all load-bearing now that analysis is CI-driven.
+
+### Changed
+- **SonarCloud project settings**: Automatic Analysis switched off (Administration → Analysis Method) - required before CI-based analysis is accepted at all; this also means `sonar.exclusions` (previously confirmed to have no effect - see 3.15.0/3.15.1) now actually takes effect for the first time.
+
+### Verified
+- Local dry run of both coverage commands: backend 54% overall (real gaps surfaced - e.g. `rmsd_calculator.py` at 6%, `session_manager.py`/`utilities.py` at 0%, all pre-existing and not addressed here); frontend 85.55% statements. Both `coverage.xml` and `lcov.info` generate correctly and are gitignored.
+- 245 backend + 142 frontend tests still pass unchanged - this only adds reporting, no test behavior changed.
+
 ## [3.22.0]
 
 Mechanical safe-batch cleanup for the remaining ~52 low-severity SonarQube Code Smells (none gate-blocking), same low-risk pattern as the two earlier safe-batch passes this session.

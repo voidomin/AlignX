@@ -51,7 +51,9 @@ Thumbs.db
 # Testing
 .pytest_cache/
 .coverage
+coverage.xml
 htmlcov/
+web-frontend/coverage/
 reproduce_notebook.py
 
 # Documentation builds

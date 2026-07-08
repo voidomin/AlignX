@@ -40,9 +40,19 @@ jobs:
 
       - name: Test with pytest
         run: |
-          pytest tests/
+          pytest --cov=src --cov-report=xml tests/
         env:
           PYTHONPATH: .
+
+      # Consumed by the sonarqube job below - SonarCloud's Automatic
+      # Analysis (the mode this project used before) can't ingest coverage
+      # reports at all, which is the whole reason analysis moved to CI.
+      - name: Upload backend coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: coverage.xml
+          retention-days: 1
 
   frontend-tests:
     name: Frontend (Vitest)
@@ -70,8 +80,47 @@ jobs:
       - name: Run Vitest
         run: npm test
 
+      - name: Run Vitest with coverage
+        run: npm run test:coverage
+
+      - name: Upload frontend coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: web-frontend/coverage/lcov.info
+          retention-days: 1
+
       - name: Build (sanity check)
         run: npm run build
+
+  sonarqube:
+    name: SonarQube Cloud scan
+    runs-on: ubuntu-latest
+    needs: [build, frontend-tests]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Disabling shallow clone improves the accuracy of SonarCloud's
+          # "new code" blame-based reporting (the same period the Quality
+          # Gate's conditions are evaluated against).
+          fetch-depth: 0
+
+      - name: Download backend coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-coverage
+
+      - name: Download frontend coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-coverage
+          path: web-frontend/coverage
+
+      - name: SonarQube Cloud Scan
+        uses: SonarSource/sonarqube-scan-action@v8
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   docker-build:
     name: Docker build + smoke test
