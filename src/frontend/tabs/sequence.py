@@ -160,24 +160,26 @@ def find_motif_matches(sequences: Dict[str, str], query: str) -> Dict[str, List[
     return matches_map
 
 
-def render_sequences_tab(results: Dict[str, Any]) -> None:
-    """
-    Render the Sequence Analysis tab.
+def _aligned_cols_to_raw_residues(seq: str, aligned_cols) -> List[int]:
+    """Maps a set/list of 1-indexed aligned column numbers back to the
+    1-indexed raw (gap-stripped) residue numbers they correspond to in
+    this particular sequence."""
+    cols = set(aligned_cols)
+    raw_nums = []
+    current_res = 1
+    for i, char in enumerate(seq):
+        if char != "-":
+            if (i + 1) in cols:
+                raw_nums.append(current_res)
+            current_res += 1
+    return raw_nums
 
-    Args:
-        results: The results dictionary containing sequence alignment info.
-    """
-    render_learning_card("Sequence")
-    st.subheader("🧬 Sequence Alignment")
 
-    # Show Global Metrics
-    identity = results["stats"].get("seq_identity", 0.0)
-    st.metric(
-        "Global Sequence Identity",
-        f"{identity:.1f}%",
-        help="Average pairwise identity across all aligned structures.",
-    )
+def _empty_chain_mapping(sequences: Dict[str, str]) -> Dict[str, List[int]]:
+    return {chr(ord("A") + i): [] for i in range(len(sequences))}
 
+
+def _render_conservation_legend() -> None:
     st.markdown(
         """
         <div style="
@@ -200,263 +202,267 @@ def render_sequences_tab(results: Dict[str, Any]) -> None:
         unsafe_allow_html=True,
     )
 
-    if results.get("sequences") and results.get("conservation"):
-        sequences = results["sequences"]
-        conservation = results["conservation"]
 
-        # 1. Visualization
-        html_view = st.session_state.sequence_viewer.generate_html(
-            sequences, conservation
-        )
+def _render_alignment_visualization(
+    sequences: Dict[str, str], conservation: list
+) -> None:
+    html_view = st.session_state.sequence_viewer.generate_html(sequences, conservation)
+    # Dynamic Height Calculation to fix UI gap
+    n_seqs = len(sequences)
+    viz_height = min(600, max(150, 60 + (n_seqs * 30)))
+    st.components.v1.html(html_view, height=viz_height, scrolling=True)
 
-        # Dynamic Height Calculation to fix UI gap
-        n_seqs = len(sequences)
-        viz_height = min(600, max(150, 60 + (n_seqs * 30)))
-        st.components.v1.html(html_view, height=viz_height, scrolling=True)
 
-        # 2. Alignment Table with Gap Indicators
-        st.markdown("#### Alignment Details & Gaps")
-        table_data = []
-        for name, seq in sequences.items():
-            gaps = [i + 1 for i, char in enumerate(seq) if char == "-"]
-            raw_seq = seq.replace("-", "")
-            table_data.append(
-                {
-                    "PDB ID": name,
-                    "Total Length": len(raw_seq),
-                    "Gap Count": len(gaps),
-                    "Gap Positions": _gaps_to_ranges_str(gaps),
-                }
-            )
-        st.table(pd.DataFrame(table_data))
-
-        # Motif Search & Highlight
-        st.divider()
-        st.markdown("#### 🔍 Sequence Motif Search & 3D Mapping")
-        st.caption(
-            "Search for specific amino acid sequences or motifs (e.g. `RYY`, `G.G` or `G-P` where '.' or '-' is a wildcard) and highlight them in the 3D superposition."
-        )
-
-        motif_query = st.text_input(
-            "Enter sequence motif:",
-            value=st.session_state.get("motif_query", ""),
-            placeholder="e.g. RYY or NP.Y or G-P-X",
-            key="motif_search_input",
-        )
-
-        if motif_query:
-            st.session_state.motif_query = motif_query
-            matches = find_motif_matches(sequences, motif_query)
-            if matches:
-                # Count total matches
-                total_hits = sum(len(cols) for cols in matches.values())
-                st.success(
-                    f"✨ Found {total_hits} matching residue positions across {len(matches)} proteins!"
-                )
-
-                # Show matches details
-                match_summary = []
-                for name, cols in matches.items():
-                    # Map alignment columns to raw residue numbers for printing
-                    raw_res_nums = []
-                    current_res = 1
-                    seq = sequences[name]
-                    for i, char in enumerate(seq):
-                        if char != "-":
-                            if (i + 1) in cols:
-                                raw_res_nums.append(current_res)
-                            current_res += 1
-                    ranges_str = _selection_to_range_str(raw_res_nums)
-                    match_summary.append(
-                        {"PDB ID": name, "Residues Matching Motif": ranges_str}
-                    )
-                st.table(pd.DataFrame(match_summary))
-
-                if st.button(
-                    "⭐ Highlight Motif in 3D Viewer",
-                    use_container_width=True,
-                    type="primary",
-                ):
-                    # Map match columns to chain-level residue highlights
-                    all_headers = list(sequences.keys())
-                    final_mapping = {}
-                    for i in range(len(all_headers)):
-                        c_id = chr(ord("A") + i)
-                        final_mapping[c_id] = []
-
-                    for name, cols in matches.items():
-                        p_idx = all_headers.index(name)
-                        chain_id = chr(ord("A") + p_idx)
-
-                        raw_res_nums = []
-                        current_res = 1
-                        seq = sequences[name]
-                        for i, char in enumerate(seq):
-                            if char != "-":
-                                if (i + 1) in cols:
-                                    raw_res_nums.append(current_res)
-                                current_res += 1
-                        final_mapping[chain_id].extend(raw_res_nums)
-
-                    st.session_state.highlight_chains = final_mapping
-                    st.session_state.show_3d_viewer = True
-                    st.toast(
-                        "Motif highlighted! Go to the '3D Visualization' tab to view.",
-                        icon="✨",
-                    )
-                    st.rerun()
-            else:
-                st.warning("No matches found for this motif pattern.")
-
-        # 3. Conserved Residue Highlighting
-        st.divider()
-        st.markdown("#### 🎯 Selective Extraction & Pocket Analysis")
-        st.caption(
-            "Identify 100% conserved residues and highlight them in the 3D viewer."
-        )
-
-        # Find 100% conserved columns (using conservation from sequence_viewer)
-        conserved_cols = [i for i, val in enumerate(conservation) if val >= 1.0]
-
-        if conserved_cols:
-            n_total = len(conservation)
-            st.success(
-                f"Found {len(conserved_cols)} strictly conserved residues ({(len(conserved_cols)/n_total)*100:.1f}% of alignment)"
-            )
-
-            if "residue_selections" not in st.session_state:
-                st.session_state.residue_selections = {}
-
-            sel_col1, sel_col2 = st.columns(2)
-
-            with sel_col1:
-                st.write("**Selection Target**")
-                target_protein = st.selectbox(
-                    "Apply selection to:",
-                    [_ALL_PROTEINS_LABEL] + list(sequences.keys()),
-                    index=0,
-                    help="Choose 'All Proteins' to select columns in the alignment, or a specific protein to use its internal numbering.",
-                )
-
-                col1_btn, col2_btn = st.columns(2)
-                with col1_btn:
-                    if st.button(
-                        "⭐ Select All strictly Conserved columns",
-                        use_container_width=True,
-                    ):
-                        cons_str = _selection_to_range_str(
-                            [i + 1 for i in conserved_cols]
-                        )
-                        target_k = _ALL_PROTEINS_LABEL
-                        st.session_state.residue_selections[target_k] = cons_str
-                        st.session_state[f"text_input_{target_k}"] = cons_str
-                        st.rerun()
-                with col2_btn:
-                    if st.button("🗑️ Clear All Selections", use_container_width=True):
-                        st.session_state.residue_selections.clear()
-                        # Clear text input widget states (reassigns existing
-                        # keys only, never inserts/deletes, so no defensive
-                        # copy is needed here unlike sidebar.py's soft reset).
-                        for k in st.session_state.keys():
-                            if k.startswith("text_input_"):
-                                st.session_state[k] = ""
-                        # Also clear 3D viewer highlights if active
-                        if "highlight_chains" in st.session_state:
-                            st.session_state.highlight_chains.clear()
-                        st.rerun()
-
-            with sel_col2:
-                st.write("**Manual Selection Input**")
-                def_val = st.session_state.residue_selections.get(target_protein, "")
-                user_input = st.text_input(
-                    "Enter residue ranges (e.g. 1-10, 15, 20-25):",
-                    value=def_val,
-                    key=f"text_input_{target_protein}",
-                )
-
-                if user_input != def_val:
-                    st.session_state.residue_selections[target_protein] = user_input
-
-                current_selected = _parse_range_str(user_input, n_total)
-                if current_selected:
-                    st.caption(
-                        f"📍 {len(current_selected)} residues active for this target."
-                    )
-
-            # Check if we have any active selections to show the project button
-            active_entries = {
-                k: v
-                for k, v in st.session_state.residue_selections.items()
-                if v.strip()
+def _render_alignment_details_table(sequences: Dict[str, str]) -> None:
+    st.markdown("#### Alignment Details & Gaps")
+    table_data = []
+    for name, seq in sequences.items():
+        gaps = [i + 1 for i, char in enumerate(seq) if char == "-"]
+        table_data.append(
+            {
+                "PDB ID": name,
+                "Total Length": len(seq.replace("-", "")),
+                "Gap Count": len(gaps),
+                "Gap Positions": _gaps_to_ranges_str(gaps),
             }
+        )
+    st.table(pd.DataFrame(table_data))
 
-            if active_entries:
-                st.markdown("#### 📋 Selective Extraction Summary")
-                # Build summary table
-                summary_data = []
-                for target, ranges in active_entries.items():
-                    summary_data.append({"Target": target, "Residue Ranges": ranges})
-                st.table(pd.DataFrame(summary_data))
 
-                st.info(
-                    "💡 Click the button below to project these selections onto the 3D structures."
-                )
+def _build_motif_match_summary(
+    sequences: Dict[str, str], matches: Dict[str, list]
+) -> pd.DataFrame:
+    match_summary = [
+        {
+            "PDB ID": name,
+            "Residues Matching Motif": _selection_to_range_str(
+                _aligned_cols_to_raw_residues(sequences[name], cols)
+            ),
+        }
+        for name, cols in matches.items()
+    ]
+    return pd.DataFrame(match_summary)
 
-                if st.button(
-                    "✨ Project Selection to 3D Viewer",
-                    use_container_width=True,
-                    type="primary",
-                ):
-                    # Combine all entries from residue_selections
-                    all_headers = list(sequences.keys())
-                    final_mapping = {}
 
-                    # Initialize mapping with empty lists for all chains
-                    for i in range(len(all_headers)):
-                        c_id = chr(ord("A") + i)
-                        final_mapping[c_id] = []
+def _build_chain_mapping_from_matches(
+    sequences: Dict[str, str], matches: Dict[str, list]
+) -> Dict[str, List[int]]:
+    all_headers = list(sequences.keys())
+    final_mapping = _empty_chain_mapping(sequences)
+    for name, cols in matches.items():
+        chain_id = chr(ord("A") + all_headers.index(name))
+        final_mapping[chain_id].extend(
+            _aligned_cols_to_raw_residues(sequences[name], cols)
+        )
+    return final_mapping
 
-                    # Process each entry in selections
-                    for (
-                        target,
-                        input_str,
-                    ) in st.session_state.residue_selections.items():
-                        if not input_str.strip():
-                            continue
 
-                        indices = _parse_range_str(input_str, n_total)
+def _render_motif_matches(sequences: Dict[str, str], matches: Dict[str, list]) -> None:
+    total_hits = sum(len(cols) for cols in matches.values())
+    st.success(
+        f"✨ Found {total_hits} matching residue positions across {len(matches)} proteins!"
+    )
+    st.table(_build_motif_match_summary(sequences, matches))
 
-                        if target == _ALL_PROTEINS_LABEL:
-                            # Apply columns to EVERY protein
-                            for p_idx, (_, seq) in enumerate(sequences.items()):
-                                chain_id = chr(ord("A") + p_idx)
+    if st.button(
+        "⭐ Highlight Motif in 3D Viewer", use_container_width=True, type="primary"
+    ):
+        st.session_state.highlight_chains = _build_chain_mapping_from_matches(
+            sequences, matches
+        )
+        st.session_state.show_3d_viewer = True
+        st.toast(
+            "Motif highlighted! Go to the '3D Visualization' tab to view.", icon="✨"
+        )
+        st.rerun()
 
-                                res_nums = []
-                                current_res = 1
-                                for i, char in enumerate(seq):
-                                    if char != "-":
-                                        if (i + 1) in indices:
-                                            res_nums.append(current_res)
-                                        current_res += 1
-                                final_mapping[chain_id].extend(res_nums)
-                        else:
-                            # Apply internal numbering to SPECIFIC protein
-                            # Find index of header in sequences
-                            if target in all_headers:
-                                p_idx = all_headers.index(target)
-                                chain_id = chr(ord("A") + p_idx)
-                                final_mapping[chain_id].extend(indices)
 
-                    # De-duplicate
-                    for k in final_mapping:
-                        final_mapping[k] = sorted(set(final_mapping[k]))
+def _render_motif_search_section(sequences: Dict[str, str]) -> None:
+    st.divider()
+    st.markdown("#### 🔍 Sequence Motif Search & 3D Mapping")
+    st.caption(
+        "Search for specific amino acid sequences or motifs (e.g. `RYY`, `G.G` or `G-P` where '.' or '-' is a wildcard) and highlight them in the 3D superposition."
+    )
 
-                    st.session_state.highlight_chains = final_mapping
-                    st.session_state.show_3d_viewer = True
-                    st.success(
-                        "Selection transferred. Switch to '3D Visualization' tab to view results."
-                    )
-        else:
-            st.warning("No strictly conserved residues found in this alignment.")
+    motif_query = st.text_input(
+        "Enter sequence motif:",
+        value=st.session_state.get("motif_query", ""),
+        placeholder="e.g. RYY or NP.Y or G-P-X",
+        key="motif_search_input",
+    )
+    if not motif_query:
+        return
+
+    st.session_state.motif_query = motif_query
+    matches = find_motif_matches(sequences, motif_query)
+    if matches:
+        _render_motif_matches(sequences, matches)
     else:
+        st.warning("No matches found for this motif pattern.")
+
+
+def _render_conserved_selection_buttons(conserved_cols: List[int]) -> None:
+    col1_btn, col2_btn = st.columns(2)
+    with col1_btn:
+        if st.button(
+            "⭐ Select All strictly Conserved columns", use_container_width=True
+        ):
+            cons_str = _selection_to_range_str([i + 1 for i in conserved_cols])
+            st.session_state.residue_selections[_ALL_PROTEINS_LABEL] = cons_str
+            st.session_state[f"text_input_{_ALL_PROTEINS_LABEL}"] = cons_str
+            st.rerun()
+    with col2_btn:
+        if st.button("🗑️ Clear All Selections", use_container_width=True):
+            st.session_state.residue_selections.clear()
+            # Clear text input widget states (reassigns existing
+            # keys only, never inserts/deletes, so no defensive
+            # copy is needed here unlike sidebar.py's soft reset).
+            for k in st.session_state.keys():
+                if k.startswith("text_input_"):
+                    st.session_state[k] = ""
+            # Also clear 3D viewer highlights if active
+            if "highlight_chains" in st.session_state:
+                st.session_state.highlight_chains.clear()
+            st.rerun()
+
+
+def _render_manual_selection_input(
+    sequences: Dict[str, str], target_protein: str, n_total: int
+) -> None:
+    st.write("**Manual Selection Input**")
+    def_val = st.session_state.residue_selections.get(target_protein, "")
+    user_input = st.text_input(
+        "Enter residue ranges (e.g. 1-10, 15, 20-25):",
+        value=def_val,
+        key=f"text_input_{target_protein}",
+    )
+    if user_input != def_val:
+        st.session_state.residue_selections[target_protein] = user_input
+
+    current_selected = _parse_range_str(user_input, n_total)
+    if current_selected:
+        st.caption(f"📍 {len(current_selected)} residues active for this target.")
+
+
+def _build_projection_mapping(
+    sequences: Dict[str, str], residue_selections: Dict[str, str], n_total: int
+) -> Dict[str, List[int]]:
+    all_headers = list(sequences.keys())
+    final_mapping = _empty_chain_mapping(sequences)
+
+    for target, input_str in residue_selections.items():
+        if not input_str.strip():
+            continue
+        indices = _parse_range_str(input_str, n_total)
+
+        if target == _ALL_PROTEINS_LABEL:
+            # Apply columns to EVERY protein
+            for p_idx, (_, seq) in enumerate(sequences.items()):
+                chain_id = chr(ord("A") + p_idx)
+                final_mapping[chain_id].extend(
+                    _aligned_cols_to_raw_residues(seq, indices)
+                )
+        elif target in all_headers:
+            # Apply internal numbering to SPECIFIC protein
+            chain_id = chr(ord("A") + all_headers.index(target))
+            final_mapping[chain_id].extend(indices)
+
+    return {k: sorted(set(v)) for k, v in final_mapping.items()}
+
+
+def _render_selective_extraction_summary(
+    sequences: Dict[str, str], n_total: int
+) -> None:
+    active_entries = {
+        k: v for k, v in st.session_state.residue_selections.items() if v.strip()
+    }
+    if not active_entries:
+        return
+
+    st.markdown("#### 📋 Selective Extraction Summary")
+    summary_data = [
+        {"Target": target, "Residue Ranges": ranges}
+        for target, ranges in active_entries.items()
+    ]
+    st.table(pd.DataFrame(summary_data))
+    st.info(
+        "💡 Click the button below to project these selections onto the 3D structures."
+    )
+
+    if st.button(
+        "✨ Project Selection to 3D Viewer", use_container_width=True, type="primary"
+    ):
+        st.session_state.highlight_chains = _build_projection_mapping(
+            sequences, st.session_state.residue_selections, n_total
+        )
+        st.session_state.show_3d_viewer = True
+        st.success(
+            "Selection transferred. Switch to '3D Visualization' tab to view results."
+        )
+
+
+def _render_conserved_residue_section(
+    sequences: Dict[str, str], conservation: list
+) -> None:
+    st.divider()
+    st.markdown("#### 🎯 Selective Extraction & Pocket Analysis")
+    st.caption("Identify 100% conserved residues and highlight them in the 3D viewer.")
+
+    conserved_cols = [i for i, val in enumerate(conservation) if val >= 1.0]
+    if not conserved_cols:
+        st.warning("No strictly conserved residues found in this alignment.")
+        return
+
+    n_total = len(conservation)
+    st.success(
+        f"Found {len(conserved_cols)} strictly conserved residues ({(len(conserved_cols)/n_total)*100:.1f}% of alignment)"
+    )
+
+    if "residue_selections" not in st.session_state:
+        st.session_state.residue_selections = {}
+
+    sel_col1, sel_col2 = st.columns(2)
+    with sel_col1:
+        st.write("**Selection Target**")
+        target_protein = st.selectbox(
+            "Apply selection to:",
+            [_ALL_PROTEINS_LABEL] + list(sequences.keys()),
+            index=0,
+            help="Choose 'All Proteins' to select columns in the alignment, or a specific protein to use its internal numbering.",
+        )
+        _render_conserved_selection_buttons(conserved_cols)
+    with sel_col2:
+        _render_manual_selection_input(sequences, target_protein, n_total)
+
+    _render_selective_extraction_summary(sequences, n_total)
+
+
+def render_sequences_tab(results: Dict[str, Any]) -> None:
+    """
+    Render the Sequence Analysis tab.
+
+    Args:
+        results: The results dictionary containing sequence alignment info.
+    """
+    render_learning_card("Sequence")
+    st.subheader("🧬 Sequence Alignment")
+
+    identity = results["stats"].get("seq_identity", 0.0)
+    st.metric(
+        "Global Sequence Identity",
+        f"{identity:.1f}%",
+        help="Average pairwise identity across all aligned structures.",
+    )
+    _render_conservation_legend()
+
+    if not (results.get("sequences") and results.get("conservation")):
         st.warning("Alignment file (AFASTA) not found. Sequence tab unavailable.")
+        return
+
+    sequences = results["sequences"]
+    conservation = results["conservation"]
+
+    _render_alignment_visualization(sequences, conservation)
+    _render_alignment_details_table(sequences)
+    _render_motif_search_section(sequences)
+    _render_conserved_residue_section(sequences, conservation)

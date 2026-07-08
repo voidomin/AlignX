@@ -2,6 +2,20 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.57.0]
+
+Tenth and final batch of the legacy Streamlit UI cleanup (1 of 14 findings: complexity 179 - `sequence.py`'s `render_sequences_tab`, the largest single function in the entire codebase). **This closes out every one of the original 47 SonarCloud issues from this project's cleanup effort except the 3 deliberately-deferred `S8544` hash-pinning findings.**
+
+### Fixed
+- **`render_sequences_tab`** (179→within limit): split into ~20 functions across its 4 major sections (conservation legend, alignment visualization/table, motif search, conserved-residue selective extraction). Found and eliminated a real triplicated block: "map aligned-alignment columns back to a sequence's raw (gap-stripped) residue numbers" was hand-copied nearly verbatim in the motif-summary table, the motif 3D-highlight mapping, and the selective-extraction 3D-projection mapping - unified into one `_aligned_cols_to_raw_residues()` used by all three.
+
+### Added
+- **`tests/test_sequence_tab.py`** (+10 tests, 20 total now): unit tests for the newly-extracted `_aligned_cols_to_raw_residues`, `_build_chain_mapping_from_matches`, and `_build_projection_mapping`, plus `AppTest`-based tests for the full tab including a real end-to-end motif search (types a query, finds a real match, confirms the success message) - this function had zero prior coverage.
+
+### Verified
+- Full suite: 644 tests passing.
+- `black`/`ruff` clean.
+
 ## [3.56.0]
 
 Ninth batch of the legacy Streamlit UI cleanup (1 of 14 findings: complexity 120, `structure.py`'s `render_3d_viewer_tab`).
