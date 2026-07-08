@@ -18,7 +18,7 @@ Also attempted and reverted a fix for 3.23.0's `new_coverage` gate condition: te
 - Rebuilt the Docker image with the new allowlist and ran the container: `/health` returns healthy, the SPA serves at `/` (200), and a real `POST /api/chains` round-trip against RCSB (fetching and parsing 1CRN) succeeds - confirming `config.yaml` loads correctly and nothing needed by the app was left out.
 - Confirmed both resource files traced as needed (`src/backend/resources/3Dmol-min.js`, `src/resources/templates/*.html`) are actually present inside the built image via `docker exec`.
 - 245 backend tests still pass.
-- **Confirmed via re-analysis**: the sonar.tests/test.inclusions revert restored `code_smells`/`bugs`/`ncloc` to their expected real values.
+- **Confirmed via re-analysis**: the sonar.tests/test.inclusions revert restored `code_smells`/`bugs`/`ncloc` to their expected real values, and `docker:S6470` is gone - open vulnerabilities down to exactly the 4 `S8544` hash-lock findings left over from 3.24.0.
 
 ## [3.24.0]
 
