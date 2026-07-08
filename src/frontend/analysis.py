@@ -196,6 +196,37 @@ def cached_fetch_metadata(
 # -----------------------------------------------------------------------------
 
 
+def _sync_input_widgets_to_run(run: Dict[str, Any]) -> None:
+    meta = run.get("metadata", {})
+    input_method = meta.get("input_method", "Manual Entry")
+    st.session_state.input_method_radio = input_method
+
+    if input_method == "Manual Entry":
+        st.session_state.manual_pdb_input = "\n".join(run["pdb_ids"])
+    elif input_method == "Load Example":
+        st.session_state.example_select = meta.get(
+            "example_name", next(iter(EXAMPLES.keys()))
+        )
+
+
+def _restore_results(
+    result_path: Path, run: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """Runs process_result_directory() and, if it produced anything,
+    attaches the run's id/name/timestamp - shared by both the silent
+    (auto-recovery) and interactive load paths below, which only differ in
+    what they show the user."""
+    results = st.session_state.coordinator.process_result_directory(
+        result_path, run["pdb_ids"]
+    )
+    if not results:
+        return None
+    results["id"] = run["id"]
+    results["name"] = run["name"]
+    results["timestamp"] = run["timestamp"]
+    return results
+
+
 def load_run_from_history(run_id: str, is_auto: bool = False) -> None:
     """
     Load a past run from the database.
@@ -216,48 +247,27 @@ def load_run_from_history(run_id: str, is_auto: bool = False) -> None:
             st.error(f"Result directory not found: {result_path}")
         return
 
-    # Set state
     st.session_state.pdb_ids = run["pdb_ids"]
     st.session_state.metadata = run.get("metadata", {})
     st.session_state.metadata_fetched = True if st.session_state.metadata else False
+    _sync_input_widgets_to_run(run)
 
-    # Sync widgets
-    meta = run.get("metadata", {})
-    input_method = meta.get("input_method", "Manual Entry")
-    st.session_state.input_method_radio = input_method
-
-    if input_method == "Manual Entry":
-        st.session_state.manual_pdb_input = "\n".join(run["pdb_ids"])
-    elif input_method == "Load Example":
-        st.session_state.example_select = meta.get(
-            "example_name", next(iter(EXAMPLES.keys()))
-        )
-
-    # Load results via Coordinator
     if is_auto:
         # Silent recovery
-        results = st.session_state.coordinator.process_result_directory(
-            result_path, run["pdb_ids"]
-        )
+        results = _restore_results(result_path, run)
         if results:
-            results["id"] = run["id"]
-            results["name"] = run["name"]
-            results["timestamp"] = run["timestamp"]
             st.session_state.results = results
+        return
+
+    with st.spinner("Restoring analysis results..."):
+        results = _restore_results(result_path, run)
+
+    if results:
+        st.session_state.results = results
+        st.success(f"Loaded run: {run['name']}")
+        st.rerun()
     else:
-        with st.spinner("Restoring analysis results..."):
-            results = st.session_state.coordinator.process_result_directory(
-                result_path, run["pdb_ids"]
-            )
-            if results:
-                results["id"] = run["id"]
-                results["name"] = run["name"]
-                results["timestamp"] = run["timestamp"]
-                st.session_state.results = results
-                st.success(f"Loaded run: {run['name']}")
-                st.rerun()
-            else:
-                st.error("Failed to process result directory.")
+        st.error("Failed to process result directory.")
 
 
 def run_analysis() -> None:
@@ -342,46 +352,168 @@ def run_analysis() -> None:
         logger.exception("Execution Error")
 
 
+def _render_first_visit_banner() -> None:
+    """First-run Guided Mode prompt (#10) - show once, dismissable."""
+    if not st.session_state.get("first_visit", True) or st.session_state.get(
+        "guided_mode"
+    ):
+        return
+
+    with st.container():
+        st.markdown(
+            """
+            <div style="
+                background: rgba(255,126,66,0.08);
+                border: 1px solid rgba(255,126,66,0.3);
+                border-radius: 10px;
+                padding: 0.8rem 1.2rem;
+                margin-bottom: 0.8rem;
+                display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+            ">
+                <span style="font-size:1.4rem;">🎓</span>
+                <span style="flex:1; color:#e0c8b0; font-size:0.88rem;">
+                    <strong>First time here?</strong> Enable <strong>Guided Mode</strong>
+                    for explanations on every tab.
+                </span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        gc1, gc2 = st.columns([2, 1])
+        with gc1:
+            if st.button("🎓 Enable Guided Mode", use_container_width=True):
+                st.session_state.guided_mode = True
+                st.session_state.first_visit = False
+                st.rerun()
+        with gc2:
+            if st.button("Dismiss", use_container_width=True):
+                st.session_state.first_visit = False
+                st.rerun()
+
+
+def _render_avg_rmsd_metric(results: Dict[str, Any]) -> None:
+    try:
+        import numpy as np
+
+        df = results.get("rmsd_df")
+        if df is None:
+            st.metric("Alignment", "Done")
+            return
+        vals = df.values
+        upper_tri = vals[np.triu_indices_from(vals, k=1)]
+        avg_rmsd = np.mean(upper_tri) if len(upper_tri) > 0 else 0
+        st.metric("Global Avg RMSD", f"{avg_rmsd:.2f} Å")
+    except Exception:
+        st.metric("Alignment", "Done")
+
+
+def _render_metrics_row(results: Optional[Dict[str, Any]], pdb_ids: List[str]) -> None:
+    """Slim metrics row - 3 columns, no destructive buttons here (#4)."""
+    col_m1, col_m2, col_m3 = st.columns(3)
+    with col_m1:
+        st.metric("Proteins Loaded", len(pdb_ids))
+    with col_m2:
+        status = "Analysis Complete" if results else "Ready to Run"
+        if not results and not pdb_ids:
+            status = "Waiting for Input"
+        st.metric("System Status", status)
+    with col_m3:
+        if results:
+            _render_avg_rmsd_metric(results)
+        else:
+            st.metric("Mode", "Analysis")
+
+
+def _ensure_chain_info_loaded(pdb_ids: List[str]) -> None:
+    """Automatic Chain Analysis - fetches/analyzes any of `pdb_ids` not
+    already in `chain_info`, so a newly-added structure gets its chain
+    options without a separate manual step."""
+    current_chain_info = st.session_state.get("chain_info", {})
+    needs_chain_fetch = not current_chain_info or not all(
+        pid in current_chain_info for pid in pdb_ids
+    )
+    if not needs_chain_fetch:
+        return
+
+    with st.spinner("Analyzing structures and loading chains…"):
+        try:
+            download_results = cached_batch_download(
+                st.session_state.pdb_manager, pdb_ids
+            )
+            chain_info = {}
+            for pdb_id, (ok, msg, path) in download_results.items():
+                if ok and path:
+                    try:
+                        chain_info[pdb_id] = cached_analyze_structure(
+                            st.session_state.pdb_manager, path
+                        )
+                    except Exception as e:
+                        st.error(f"Error analyzing {pdb_id}: {str(e)}")
+            st.session_state.chain_info = chain_info
+        except Exception as e:
+            st.error(f"Failed to analyze chains: {str(e)}")
+
+
+def _render_metadata_expander(pdb_ids: List[str]) -> None:
+    with st.expander("📋 Protein Metadata", expanded=True):
+        if not st.session_state.metadata_fetched:
+            with st.spinner("Fetching protein metadata…"):
+                try:
+                    metadata = cached_fetch_metadata(
+                        st.session_state.pdb_manager, pdb_ids
+                    )
+                    st.session_state.metadata = metadata
+                    st.session_state.metadata_fetched = True
+                except Exception as e:
+                    st.error(f"Metadata fetch failed: {str(e)}")
+        render_metadata_viewer(pdb_ids, st.session_state.metadata)
+
+
+def _render_run_and_metadata_controls(pdb_ids: List[str]) -> None:
+    """Lazy metadata (#7) - only show on demand."""
+    col_a, col_b = st.columns([3, 1])
+    with col_a:
+        if st.button(
+            "▶️ Run Alignment",
+            type="primary",
+            use_container_width=True,
+            help=f"Align {len(pdb_ids)} structures using Mustang",
+        ):
+            run_analysis()
+    with col_b:
+        label = (
+            "Hide Info"
+            if st.session_state.get("show_metadata")
+            else "📋 Show Protein Info"
+        )
+        if st.button(label, use_container_width=True):
+            st.session_state.show_metadata = not st.session_state.get(
+                "show_metadata", False
+            )
+            st.rerun()
+
+    if st.session_state.get("show_metadata", False):
+        _render_metadata_expander(pdb_ids)
+
+
+def _render_pre_analysis_tools(pdb_ids: List[str]) -> None:
+    """CASE B: IDs loaded, no results -> pre-analysis tools (#6, #7)."""
+    st.subheader(f"Selected: {len(pdb_ids)} Proteins")
+    _render_protein_pill_bar(pdb_ids)
+
+    _ensure_chain_info_loaded(pdb_ids)
+    if "chain_info" in st.session_state and st.session_state.chain_info:
+        render_chain_selector(st.session_state.chain_info)
+
+    _render_run_and_metadata_controls(pdb_ids)
+
+
 def render_dashboard() -> None:
     """
     Render the main Analysis Dashboard.
     Handles both pre-analysis configuration and post-analysis result display.
     """
-
-    # First-run Guided Mode prompt (#10) — show once, dismissable
-    if st.session_state.get("first_visit", True) and not st.session_state.get(
-        "guided_mode"
-    ):
-        with st.container():
-            st.markdown(
-                """
-                <div style="
-                    background: rgba(255,126,66,0.08);
-                    border: 1px solid rgba(255,126,66,0.3);
-                    border-radius: 10px;
-                    padding: 0.8rem 1.2rem;
-                    margin-bottom: 0.8rem;
-                    display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
-                ">
-                    <span style="font-size:1.4rem;">🎓</span>
-                    <span style="flex:1; color:#e0c8b0; font-size:0.88rem;">
-                        <strong>First time here?</strong> Enable <strong>Guided Mode</strong>
-                        for explanations on every tab.
-                    </span>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            gc1, gc2 = st.columns([2, 1])
-            with gc1:
-                if st.button("🎓 Enable Guided Mode", use_container_width=True):
-                    st.session_state.guided_mode = True
-                    st.session_state.first_visit = False
-                    st.rerun()
-            with gc2:
-                if st.button("Dismiss", use_container_width=True):
-                    st.session_state.first_visit = False
-                    st.rerun()
+    _render_first_visit_banner()
 
     st.caption(
         "Perform rigorous structural alignment, RMSD calculations, and phylogenetic analysis."
@@ -395,112 +527,16 @@ def render_dashboard() -> None:
         render_input_section(st.session_state.pdb_manager)
         st.divider()
 
-    # Slim metrics row — 3 columns, no destructive buttons here (#4)
-    col_m1, col_m2, col_m3 = st.columns(3)
-    with col_m1:
-        st.metric("Proteins Loaded", len(pdb_ids))
-    with col_m2:
-        status = "Analysis Complete" if results else "Ready to Run"
-        if not results and not pdb_ids:
-            status = "Waiting for Input"
-        st.metric("System Status", status)
-    with col_m3:
-        if results:
-            try:
-                import numpy as np
+    _render_metrics_row(results, pdb_ids)
 
-                df = results.get("rmsd_df")
-                if df is not None:
-                    vals = df.values
-                    upper_tri = vals[np.triu_indices_from(vals, k=1)]
-                    avg_rmsd = np.mean(upper_tri) if len(upper_tri) > 0 else 0
-                    st.metric("Global Avg RMSD", f"{avg_rmsd:.2f} Å")
-                else:
-                    st.metric("Alignment", "Done")
-            except Exception:
-                st.metric("Alignment", "Done")
-        else:
-            st.metric("Mode", "Analysis")
-
-    # CASE A: Results Exist -> Show Results
     if results:
+        # CASE A: Results Exist -> Show Results
         display_results()
-
-    # CASE B: IDs loaded, no results -> Show pre-analysis tools (#6, #7)
     elif pdb_ids:
-        st.subheader(f"Selected: {len(pdb_ids)} Proteins")
-        _render_protein_pill_bar(pdb_ids)
-
-        # Automatic Chain Analysis
-        current_chain_info = st.session_state.get("chain_info", {})
-        needs_chain_fetch = not current_chain_info or not all(
-            pid in current_chain_info for pid in pdb_ids
-        )
-
-        if needs_chain_fetch:
-            with st.spinner("Analyzing structures and loading chains…"):
-                try:
-                    download_results = cached_batch_download(
-                        st.session_state.pdb_manager, pdb_ids
-                    )
-                    chain_info = {}
-                    for pdb_id, (ok, msg, path) in download_results.items():
-                        if ok and path:
-                            try:
-                                info = cached_analyze_structure(
-                                    st.session_state.pdb_manager, path
-                                )
-                                chain_info[pdb_id] = info
-                            except Exception as e:
-                                st.error(f"Error analyzing {pdb_id}: {str(e)}")
-                    st.session_state.chain_info = chain_info
-                except Exception as e:
-                    st.error(f"Failed to analyze chains: {str(e)}")
-
-        if "chain_info" in st.session_state and st.session_state.chain_info:
-            render_chain_selector(st.session_state.chain_info)
-
-        # Lazy metadata (#7) — only show on demand
-        col_a, col_b = st.columns([3, 1])
-        with col_a:
-            if st.button(
-                "▶️ Run Alignment",
-                type="primary",
-                use_container_width=True,
-                help=f"Align {len(pdb_ids)} structures using Mustang",
-            ):
-                run_analysis()
-        with col_b:
-            label = (
-                "Hide Info"
-                if st.session_state.get("show_metadata")
-                else "📋 Show Protein Info"
-            )
-            if st.button(label, use_container_width=True):
-                st.session_state.show_metadata = not st.session_state.get(
-                    "show_metadata", False
-                )
-                st.rerun()
-
-        # Lazy metadata expander (#7)
-        if st.session_state.get("show_metadata", False):
-            with st.expander("📋 Protein Metadata", expanded=True):
-                if not st.session_state.metadata_fetched:
-                    with st.spinner("Fetching protein metadata…"):
-                        try:
-                            metadata = cached_fetch_metadata(
-                                st.session_state.pdb_manager, pdb_ids
-                            )
-                            st.session_state.metadata = metadata
-                            st.session_state.metadata_fetched = True
-                        except Exception as e:
-                            st.error(f"Metadata fetch failed: {str(e)}")
-                render_metadata_viewer(pdb_ids, st.session_state.metadata)
-
-    # CASE C: Nothing entered -> welcoming empty state (#1)
+        _render_pre_analysis_tools(pdb_ids)
     else:
+        # CASE C: Nothing entered -> welcoming empty state (#1)
         _render_get_started_card()
 
-    # Console
     log_file = st.session_state.get("log_file")
     render_console(Path(log_file) if log_file else None)

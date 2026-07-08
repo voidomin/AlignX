@@ -2,6 +2,32 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.46.0]
+
+First batch of the legacy Streamlit UI's `python:S3776` cleanup (2 of 14 findings: complexity 16, 61), both in `src/frontend/analysis.py`. Scoped in per an explicit decision to include the Streamlit UI despite it no longer being the actively-developed interface, since it's still deployed.
+
+### Fixed
+- **`load_run_from_history`** (16→within limit): the duplicated "process result directory, attach id/name/timestamp" logic (previously copy-pasted between the silent-auto-recovery and interactive-load branches) was extracted into `_restore_results()`; widget-syncing extracted into `_sync_input_widgets_to_run()`.
+- **`render_dashboard`** (61→within limit): the largest function in this file - split along its existing numbered-comment sections into `_render_first_visit_banner`, `_render_metrics_row`/`_render_avg_rmsd_metric`, `_ensure_chain_info_loaded`, `_render_run_and_metadata_controls`/`_render_metadata_expander`, and `_render_pre_analysis_tools`.
+
+### Added
+- **`tests/test_analysis.py`** (new, 5 tests, using `streamlit.testing.v1.AppTest` - the same real-Streamlit-render approach already established for `sidebar.py`): `render_dashboard`'s empty/pre-analysis/results-shown states, and `load_run_from_history`'s not-found path in both interactive and silent-auto modes. This file had zero prior test coverage.
+
+### Verified
+- Full suite: 540 tests passing (backend + frontend + these 5 new Streamlit AppTest ones).
+- `black`/`ruff` clean.
+
+## [3.45.0]
+
+Eighth batch of the `new_coverage` push - the Streamlit sidebar (`src/frontend/sidebar.py`), previously 0% covered despite being the app's main interactive control surface. Uses Streamlit's `AppTest` harness with a real `session_state` (via `SessionInitializer.initialize()`) rather than hand-faking widget/session semantics, following the same pattern established for `session_manager.py`.
+
+### Added
+- **`tests/test_sidebar.py`** (new, 23 tests): mustang install status banner, System Health diagnostics (Run Diagnostics/Free RAM/Clear Logs buttons, PASSED-status rendering with a faked `SystemManager`), the soft-reset confirm/cancel flow (`_do_soft_reset`'s field clearing, `zip_buffer_*` key cleanup, and its "changed size during iteration" defensive copy), the deep-clean confirm/cancel flow (`_do_deep_clean`'s real filesystem cleanup of `data/raw/<session_id>`/`data/cleaned/<session_id>`), the History panel (empty state, card rendering with protein-preview overflow, Load/Delete/Clear-All-History against a faked `HistoryDatabase`), Guided Mode toggle, and Structure Options (multi-chain-detected warning label, Specify-Chain-ID text input). File coverage: 0% → 94%.
+
+### Verified
+- Full backend suite: 535 tests passing.
+- `black`/`ruff` clean.
+
 ## [3.44.0]
 
 Finishes `pdb_manager.py`'s dedicated-session cleanup: the remaining two findings, including the single largest Cognitive Complexity finding in the codebase (94).
@@ -47,6 +73,7 @@ Seventh batch of the `new_coverage` push - five backend files that had never bee
 ### Verified
 - Full backend suite: 512 tests passing.
 - `black`/`ruff` clean on all touched/new test files.
+- Confirmed via re-analysis (combined with the concurrent session's `pdb_manager.py` complexity work through v3.44.0): `new_coverage` 61.05% → 64.21%.
 
 ## [3.41.0]
 
