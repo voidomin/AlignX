@@ -150,3 +150,197 @@ class TestMigrationMemoization:
 
         db.save_run("run_1", "Run 1", ["4RLT"], Path("results/run_1"))
         assert db.get_aggregate_stats()["total_runs"] == 1
+
+
+def _save_run_at(db, monkeypatch, when, *args, **kwargs):
+    """save_run()'s timestamp column is second-granularity - two real saves
+    in the same wall-clock second sort ambiguously. Freeze datetime.now()
+    to a specific value so ordering tests aren't flaky/slow (sleeping a
+    full second between saves)."""
+    import src.backend.database as database_module
+
+    real_datetime = database_module.datetime
+
+    class FrozenDatetime:
+        @classmethod
+        def now(cls):
+            return when
+
+    monkeypatch.setattr(database_module, "datetime", FrozenDatetime)
+    db.save_run(*args, **kwargs)
+    monkeypatch.setattr(database_module, "datetime", real_datetime)
+
+
+class TestRunCrud:
+    def test_get_run_returns_the_saved_record(self, db):
+        db.save_run(
+            "run_1",
+            "Run 1",
+            ["4RLT", "3UG9"],
+            Path("results/run_1"),
+            metadata={"chain_selection": {"4RLT": "A"}},
+        )
+
+        run = db.get_run("run_1")
+
+        assert run["id"] == "run_1"
+        assert run["pdb_ids"] == ["4RLT", "3UG9"]
+        assert run["metadata"]["chain_selection"] == {"4RLT": "A"}
+
+    def test_get_run_returns_none_for_unknown_id(self, db):
+        assert db.get_run("does_not_exist") is None
+
+    def test_get_all_runs_sorted_newest_first(self, db, monkeypatch):
+        _save_run_at(
+            db,
+            monkeypatch,
+            datetime(2026, 1, 1, 10, 0, 0),
+            "run_1",
+            "Run 1",
+            ["4RLT"],
+            Path("results/run_1"),
+        )
+        _save_run_at(
+            db,
+            monkeypatch,
+            datetime(2026, 1, 1, 10, 0, 1),
+            "run_2",
+            "Run 2",
+            ["3UG9"],
+            Path("results/run_2"),
+        )
+
+        runs = db.get_all_runs()
+
+        assert [r["id"] for r in runs] == ["run_2", "run_1"]
+
+    def test_get_all_runs_respects_limit_and_offset(self, db):
+        for i in range(5):
+            db.save_run(f"run_{i}", f"Run {i}", ["4RLT"], Path(f"results/run_{i}"))
+
+        page = db.get_all_runs(limit=2, offset=1)
+
+        assert len(page) == 2
+
+    def test_get_all_runs_scoped_to_session(self, db):
+        db.save_run("run_1", "Run 1", ["4RLT"], Path("results/run_1"), session_id="s1")
+        db.save_run("run_2", "Run 2", ["3UG9"], Path("results/run_2"), session_id="s2")
+
+        runs = db.get_all_runs(session_id="s1")
+
+        assert [r["id"] for r in runs] == ["run_1"]
+
+    def test_count_runs_matches_saved_count(self, db):
+        db.save_run("run_1", "Run 1", ["4RLT"], Path("results/run_1"))
+        db.save_run("run_2", "Run 2", ["3UG9"], Path("results/run_2"))
+
+        assert db.count_runs() == 2
+
+    def test_count_runs_scoped_to_session(self, db):
+        db.save_run("run_1", "Run 1", ["4RLT"], Path("results/run_1"), session_id="s1")
+        db.save_run("run_2", "Run 2", ["3UG9"], Path("results/run_2"), session_id="s2")
+
+        assert db.count_runs(session_id="s1") == 1
+
+    def test_delete_run_removes_it(self, db):
+        db.save_run("run_1", "Run 1", ["4RLT"], Path("results/run_1"))
+
+        assert db.delete_run("run_1") is True
+        assert db.get_run("run_1") is None
+
+    def test_get_latest_run_returns_the_newest_completed_one(self, db, monkeypatch):
+        _save_run_at(
+            db,
+            monkeypatch,
+            datetime(2026, 1, 1, 10, 0, 0),
+            "run_1",
+            "Run 1",
+            ["4RLT"],
+            Path("results/run_1"),
+            status="completed",
+        )
+        _save_run_at(
+            db,
+            monkeypatch,
+            datetime(2026, 1, 1, 10, 0, 1),
+            "run_2",
+            "Run 2",
+            ["3UG9"],
+            Path("results/run_2"),
+            status="completed",
+        )
+
+        latest = db.get_latest_run()
+
+        assert latest["id"] == "run_2"
+
+    def test_get_latest_run_ignores_failed_runs(self, db):
+        db.save_run(
+            "run_1", "Run 1", ["4RLT"], Path("results/run_1"), status="completed"
+        )
+        db.save_run("run_2", "Run 2", ["3UG9"], Path("results/run_2"), status="failed")
+
+        latest = db.get_latest_run()
+
+        assert latest["id"] == "run_1"
+
+    def test_get_latest_run_returns_none_when_no_runs_exist(self, db):
+        assert db.get_latest_run() is None
+
+    def test_clear_all_runs_empties_the_table(self, db):
+        db.save_run("run_1", "Run 1", ["4RLT"], Path("results/run_1"))
+        db.save_run("run_2", "Run 2", ["3UG9"], Path("results/run_2"))
+
+        assert db.clear_all_runs() is True
+        assert db.count_runs() == 0
+
+
+class TestCacheManagementMethods:
+    def test_register_and_retrieve_cache_item(self, db):
+        db.register_cache_item("4RLT", "/data/raw/4rlt.pdb", 1024)
+
+        items = db.get_oldest_cache_items()
+
+        assert len(items) == 1
+        assert items[0]["id"] == "4RLT"
+        assert items[0]["size_bytes"] == 1024
+
+    def test_get_total_cache_size_sums_across_items(self, db):
+        db.register_cache_item("4RLT", "/data/raw/4rlt.pdb", 1000)
+        db.register_cache_item("3UG9", "/data/raw/3ug9.pdb", 2000)
+
+        assert db.get_total_cache_size() == 3000
+
+    def test_get_total_cache_size_is_zero_when_empty(self, db):
+        assert db.get_total_cache_size() == 0
+
+    def test_update_cache_access_does_not_raise_for_unknown_item(self, db):
+        assert db.update_cache_access("does_not_exist") is True
+
+    def test_remove_cache_item(self, db):
+        db.register_cache_item("4RLT", "/data/raw/4rlt.pdb", 1024)
+
+        assert db.remove_cache_item("4RLT") is True
+        assert db.get_oldest_cache_items() == []
+
+    def test_oldest_cache_items_ordered_oldest_first(self, db, monkeypatch):
+        import src.backend.database as database_module
+
+        real_datetime = database_module.datetime
+
+        class FrozenDatetime:
+            _now = real_datetime(2026, 1, 1, 10, 0, 0)
+
+            @classmethod
+            def now(cls):
+                return cls._now
+
+        monkeypatch.setattr(database_module, "datetime", FrozenDatetime)
+        db.register_cache_item("old_item", "/data/old.pdb", 100)
+
+        FrozenDatetime._now = real_datetime(2026, 1, 2, 10, 0, 0)
+        db.register_cache_item("new_item", "/data/new.pdb", 200)
+
+        items = db.get_oldest_cache_items()
+
+        assert [i["id"] for i in items] == ["old_item", "new_item"]

@@ -2,6 +2,22 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.40.0]
+
+Sixth batch of the `new_coverage` push - `database.py`'s CRUD/cache-management surface and two previously-untested files, `utilities.py` and `foldseek_runner.py`'s exception/edge paths.
+
+### Added
+- **`tests/test_database.py`** (+18 tests): `TestRunCrud` (`get_run`, `get_all_runs` sorting/pagination/session-scoping, `count_runs`, `delete_run`, `get_latest_run`, `clear_all_runs`) and `TestCacheManagementMethods` (register/retrieve/remove cache items, total size, oldest-first ordering). File coverage: 58% → 79%.
+- **`tests/test_utilities.py`** (new, 13 tests): `SystemManager.run_diagnostics` (Mustang detection via subprocess, including binary-missing and unrecognized-output paths), `cleanup_old_runs` (TTL threshold, legacy-dir skip, empty-session-dir removal), `get_aggregate_stats` (sums, DB-error fallback, missing-key handling). File coverage: 39% → 93%.
+- **`tests/test_foldseek_runner.py`** (+7 tests): exception paths for native/WSL binary checks and WSL path lookup, missing-result-file failure, search timeout, WSL command-shape verification. File coverage: 84% → 97%.
+
+### Fixed
+- **`test_database.py` timestamp-ordering flakiness**: two `save_run()` calls within the same wall-clock second produced identical second-granularity timestamps, so `ORDER BY timestamp DESC` didn't reliably resolve their order. Added a `_save_run_at()` helper that monkeypatches `datetime.now()` to distinct controlled values rather than relying on real elapsed time.
+
+### Verified
+- Full backend suite: 417 tests passing, both locally (Python 3.12/Windows) and inside a fresh `python:3.10-slim` Docker container matching CI's exact environment (no platform-dependent bugs found this round).
+- `black`/`ruff` clean on all three touched test files.
+
 ## [3.39.0]
 
 Seventh and final batch of the agreed-scope backend `python:S3776` cleanup (complexity 33, 33, 37, 37). This completes every open finding from 16 through 38 except `pdb_manager.py`'s three (38/69/94), which were deliberately deferred to a dedicated session given the file's size and centrality. 22 of 26 backend findings now resolved.

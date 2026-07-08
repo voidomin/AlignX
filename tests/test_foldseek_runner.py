@@ -89,6 +89,56 @@ class TestCheckInstallation:
 
         assert mock_run.call_count == 1
 
+    def test_native_binary_check_exception_reported_not_raised(self, mock_config):
+        config = {
+            **mock_config,
+            "foldseek": {"local": {"binary_path": "/usr/bin/foldseek"}},
+        }
+        runner = FoldseekRunner(config)
+        runner.is_windows = False
+
+        with patch(
+            "src.backend.foldseek_runner.subprocess.run",
+            side_effect=Exception("permission denied"),
+        ):
+            success, msg = runner.check_installation()
+
+        assert success is False
+        assert "permission denied" in msg
+
+    def test_wsl_binary_check_exception_falls_through_to_not_found(self, mock_config):
+        config = {
+            **mock_config,
+            "foldseek": {"local": {"binary_path": "C:/foldseek/foldseek"}},
+        }
+        runner = FoldseekRunner(config)
+        runner.is_windows = True
+
+        with patch(
+            "src.backend.foldseek_runner.subprocess.run",
+            side_effect=Exception("wsl crashed"),
+        ):
+            success, msg = runner.check_installation()
+
+        assert success is False
+        assert "not found" in msg.lower()
+
+    def test_wsl_path_lookup_exception_falls_through_to_not_found(self, mock_config):
+        config = {**mock_config, "foldseek": {"local": {}}}
+        runner = FoldseekRunner(config)
+        runner.is_windows = True
+
+        with patch(
+            "src.backend.foldseek_runner.shutil.which", return_value=None
+        ), patch(
+            "src.backend.foldseek_runner.subprocess.run",
+            side_effect=Exception("wsl not available"),
+        ):
+            success, msg = runner.check_installation()
+
+        assert success is False
+        assert "not found" in msg.lower()
+
 
 class TestSearchAgainstDirectory:
 
@@ -187,3 +237,78 @@ class TestSearchAgainstDirectory:
         assert success is True
         assert len(hits) == 1
         assert hits[0]["target"] == "2lyz"
+
+    def test_missing_result_file_reported_as_failure(self, mock_config, tmp_path):
+        config = {
+            **mock_config,
+            "foldseek": {"local": {"binary_path": "/usr/bin/foldseek"}},
+        }
+        runner = FoldseekRunner(config)
+        runner.is_windows = False
+
+        def fake_run(cmd, **kwargs):
+            # Never writes result.tsv, unlike the happy-path fake above.
+            return _mock_completed()
+
+        with patch("src.backend.foldseek_runner.subprocess.run", side_effect=fake_run):
+            success, msg, hits = runner.search_against_directory(
+                tmp_path / "query.pdb", tmp_path / "db", tmp_path / "tmp"
+            )
+
+        assert success is False
+        assert "no result file" in msg.lower()
+        assert hits == []
+
+    def test_search_timeout_reported_as_failure(self, mock_config, tmp_path):
+        import subprocess as subprocess_module
+
+        config = {
+            **mock_config,
+            "foldseek": {"local": {"binary_path": "/usr/bin/foldseek"}, "timeout": 1},
+        }
+        runner = FoldseekRunner(config)
+        runner.is_windows = False
+
+        def fake_run(cmd, **kwargs):
+            if cmd == ["/usr/bin/foldseek"]:
+                return _mock_completed()
+            raise subprocess_module.TimeoutExpired(cmd, 1)
+
+        with patch("src.backend.foldseek_runner.subprocess.run", side_effect=fake_run):
+            success, msg, hits = runner.search_against_directory(
+                tmp_path / "query.pdb", tmp_path / "db", tmp_path / "tmp"
+            )
+
+        assert success is False
+        assert "timed out" in msg.lower()
+        assert hits == []
+
+    def test_uses_wsl_command_shape_when_use_wsl_is_true(self, mock_config, tmp_path):
+        config = {**mock_config, "foldseek": {"local": {}}}
+        runner = FoldseekRunner(config)
+        runner.is_windows = True
+        runner.use_wsl = True
+        runner.executable = "/mnt/c/foldseek/foldseek"
+        # Skip check_installation()'s own detection by pre-seeding the cache.
+        from src.backend.foldseek_runner import FoldseekRunner as FR
+
+        FR._cached_installation = (True, "cached", True, "/mnt/c/foldseek/foldseek")
+
+        captured_cmd = {}
+
+        def fake_run(cmd, **kwargs):
+            captured_cmd["cmd"] = cmd
+            result_path = Path(cmd[4])
+            result_path.write_text("")
+            return _mock_completed()
+
+        with patch(
+            "src.backend.foldseek_runner.shutil.which", return_value="wsl"
+        ), patch("src.backend.foldseek_runner.subprocess.run", side_effect=fake_run):
+            runner.search_against_directory(
+                tmp_path / "query.pdb", tmp_path / "db", tmp_path / "tmp"
+            )
+
+        FR._cached_installation = None
+        assert captured_cmd["cmd"][0] == "wsl"
+        assert "easy-search" in captured_cmd["cmd"]
