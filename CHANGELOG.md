@@ -2,6 +2,20 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.68.0]
+
+Repository-cleanup pass, prompted by a "what's left to work on" check now that the feature roadmap, test coverage, and SonarCloud findings are all in good shape. Surveyed for actual cruft first (tracked binaries, stray `__pycache__`, dead roadmap items) - found none; `mustang_build/` and the local `run_history.db` are both correctly gitignored already. The one real gap: nothing explained why 5 `requirements*` files now exist after the S8544 hash-pinning work.
+
+### Added
+- **`docs/DEPENDENCIES.md`**: explains the 5-file split (`requirements.in`/`.txt`, `requirements-ci.in`/`.txt`, `requirements-pip.txt`), how to regenerate a lock file (must be done inside `python:3.10-slim` to match the actual deploy target, with the earlier Python-3.12-resolved failure as a documented cautionary example), and how to verify a rebuilt one.
+
+### Changed
+- **`README.md`**: added `docs/DEPENDENCIES.md` to the documentation table.
+- **`requirements.in`**: added a top-of-file pointer to the new doc for anyone who opens it directly.
+
+### Considered and skipped
+- **Archiving old `CHANGELOG.md` entries**: the file is 1070 lines/136KB, but `v2.5.0`/`v3.0.0` are already the *oldest* entries (the file itself says "earlier history wasn't tracked in a changelog") - archiving them would only remove ~45 lines. The bulk of the file is the detailed v3.x decision log, which has been genuinely useful as reference material this session (e.g. the fpdf/fpdf2 and S8544 backstory) - not worth trimming.
+
 ## [3.67.0]
 
 Sixteenth batch of the `new_coverage` push - `api.py`'s own `sanitize_for_json` implementation (separate from `coordinator.py`'s; handles Plotly's compact binary-typed-array trace format and NaN/Infinity replacement) and its 6 helper functions, none of which had any direct unit tests before despite backing every JSON response the API returns.

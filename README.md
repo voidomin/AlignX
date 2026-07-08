@@ -153,6 +153,7 @@ Full step-by-step verification protocol (setup checks, scientific metrics, API s
 | [docs/design/DESIGN.md](docs/design/DESIGN.md) | SPA visual design system (colors, typography, component styling) |
 | [docs/design/UI_UX_DESIGN.md](docs/design/UI_UX_DESIGN.md) | Streamlit UI/UX layout spec and interaction flows |
 | [docs/POSITIONING.md](docs/POSITIONING.md) | Problem framing, audience targeting, and distribution plan for reaching students/researchers |
+| [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) | Why there are 5 `requirements*` files (hash-pinned lock files) and how to regenerate them |
 | [docs/archive/](docs/archive/) | Superseded planning docs, kept for history |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting, what's been checked, known limitations |

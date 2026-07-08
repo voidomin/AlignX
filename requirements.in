@@ -1,3 +1,8 @@
+# Source for requirements.txt (a pip-compile --generate-hashes lock file -
+# edit this file, never requirements.txt directly). See docs/DEPENDENCIES.md
+# for the full picture, including requirements-ci.in/.txt and
+# requirements-pip.txt.
+
 # Core Web Framework
 streamlit>=1.35.0
 
