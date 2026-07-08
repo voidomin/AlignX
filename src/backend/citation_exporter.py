@@ -10,12 +10,21 @@ result needs this to be accurate, not exhaustive - an unused source cited
 "just in case" is as wrong as a missing one.
 """
 
+import re
 from datetime import datetime
 from pathlib import Path
 from tempfile import gettempdir
 from typing import Any, Dict, List
 
 from src.backend.pdb_manager import PDBManager
+
+# Matches _safe_segment()'s pattern in api.py - every run_id this project
+# generates (see src/utils/run_id.py) is alnum/underscore/hyphen only.
+# api.py already validates run_id before ever calling export(), but this
+# module has no visibility into that from a static-analysis standpoint
+# (and shouldn't rely on it regardless) - it's the one thing here that
+# reaches a filesystem path, so it validates for itself too.
+_SAFE_RUN_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 
 # Each entry is the citation for one underlying tool/database/algorithm.
 # `bibtex` keys are unique but otherwise arbitrary - they only need to be
@@ -346,6 +355,9 @@ class CitationExporter:
     def export(
         self, citation_ids: List[str], run_id: str, version: str = "0.0.0"
     ) -> Path:
+        if not _SAFE_RUN_ID.match(run_id):
+            raise ValueError(f"Invalid run_id: {run_id!r}")
+
         ids = list(dict.fromkeys(citation_ids + ["structscope"]))
         entries = [BIBLIOGRAPHY[c] for c in ids if c in BIBLIOGRAPHY]
 

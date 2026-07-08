@@ -598,6 +598,54 @@ def test_report_endpoint_reconstructs_types_from_sanitized_metadata(tmp_path):
         assert results_arg["rmsd_df"].loc["4RLT", "3UG9"] == pytest.approx(6.7)
 
 
+def test_compare_citations_endpoint_returns_a_real_export(tmp_path):
+    with patch("src.backend.api.history_db.get_run") as mock_get_run:
+        mock_get_run.return_value = {"id": "run_123", "pdb_ids": ["4RLT", "3UG9"]}
+
+        response = client.get("/api/report/citations?run_id=run_123")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "text/plain; charset=utf-8"
+        assert b"MUSTANG" in response.content
+        assert b"run_123" in response.content
+
+
+def test_compare_citations_endpoint_404s_for_unknown_run():
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        response = client.get("/api/report/citations?run_id=does_not_exist")
+        assert response.status_code == 404
+
+
+def test_discover_citations_endpoint_returns_a_real_export():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run:
+        mock_get_run.return_value = {
+            "id": "discover_123",
+            "metadata": {
+                "run_type": "discover",
+                "results": {"pdb_id": "4RLT", "databases_searched": ["pdb100"]},
+            },
+        }
+
+        response = client.get("/api/discover/citations?run_id=discover_123")
+
+        assert response.status_code == 200
+        assert (
+            b"Foldseek" in response.content or b"foldseek" in response.content.lower()
+        )
+
+
+def test_discover_citations_endpoint_rejects_a_compare_run():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run:
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "metadata": {"run_type": "compare"},
+        }
+
+        response = client.get("/api/discover/citations?run_id=run_123")
+
+        assert response.status_code == 400
+
+
 def test_report_endpoint_sections_param_bypasses_cache(tmp_path):
     """Requesting specific report sections must always regenerate the PDF
     (never reuse a cached full report from a prior default request), and the

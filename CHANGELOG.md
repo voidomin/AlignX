@@ -2,6 +2,24 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.28.0]
+
+Second batch of the `new_coverage` push (54.3% after the previous batch) also fixed 3 new `pythonsecurity:S2083` (path-injection) vulnerabilities that landed alongside the concurrent citation-export feature - `CitationExporter.export()` built a temp-file path from `run_id` with no validation of its own, relying entirely on `api.py` having already validated it before calling in. SonarCloud's analyzer can't see that cross-module guarantee, and more importantly, `citation_exporter.py` shouldn't have to rely on it either.
+
+### Fixed
+- **`src/backend/citation_exporter.py`**: `CitationExporter.export()` now validates `run_id` against the same `^[A-Za-z0-9_-]+$` pattern `api.py`'s `_safe_segment()` already enforces, raising `ValueError` on anything else, before it ever reaches the temp-file path construction. Defense in depth, not just satisfying the analyzer - this module has no way to know whether a future caller validates first. (A separate CI break from the same concurrent commits - unformatted `citation_exporter.py`/`api.py` failing `black --check .` - was already fixed in the previous commit.)
+
+### Added
+- **`tests/test_citation_exporter.py`** (new, 20 tests): `_structure_source_citation`, `citations_for_compare_run`/`citations_for_discover_run` (including which annotation sources get cited only when they actually contributed data to a neighbor), and `CitationExporter.export()`'s validation (path traversal, path separators, empty string all rejected) plus a real end-to-end export producing an actual file with both plain-text and BibTeX sections. File coverage: 0% → 97%.
+- **`tests/test_api.py`** (+4 tests): `/api/report/citations` and `/api/discover/citations`, including the 404-for-unknown-run and 400-for-wrong-run-type paths.
+
+### Fixed (test infrastructure)
+- **3 tests in `tests/test_mustang_runner.py`** from the previous entry's batch turned out to be platform-dependent in a way that only broke on Linux CI, not locally on Windows: `Path("C:/Users/...")` only behaves as a genuine absolute Windows path with a drive letter on an actual Windows machine - on Linux, pathlib treats "C:" as a plain directory name, so `.absolute()` silently prepended the real CWD instead of producing the drive-letter string the WSL-path-conversion logic expects. Found by reproducing CI's exact environment locally via Docker (`python:3.10-slim`, fresh `pip install`, real repo files) rather than trusting the Windows-local test run - fixed by mocking `.absolute()`'s return value directly instead of relying on a real `Path`.
+
+### Verified
+- 340 backend tests total (up from 316), all passing in both the local Windows dev environment and a Docker container reproducing CI's exact Python 3.10/Linux setup - this was the deciding check that caught the 3 platform-dependent failures before they could reach CI a second time.
+- **Confirmed via re-analysis**: `new_coverage` rose 48.4% → 54.3%.
+
 ## [3.27.0]
 
 First-run onboarding: the Overview tab's empty state was a bare "Add at least 2 PDB structures to align" message, even though curated quick-start example sets already existed — just on the separate Dashboard tab, which is not where a new user lands (`activeTab` defaults to `'overview'`).
