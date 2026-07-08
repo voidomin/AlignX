@@ -2,6 +2,18 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.64.0]
+
+Fourteenth batch of the `new_coverage` push, targeting >80% - `database.py` (all connection-failure fallback branches, uniformly exercised via a single bad-db-path fixture, plus the legacy schema migration path) and `coordinator.py` (its two module-level JSON-sanitization helpers, which had zero tests at all despite being used on every API response; `_resolve_run_identity`; `_generate_insights`'s failure fallback; and the Mustang-alignment-failure and unexpected-exception branches of `run_full_pipeline`).
+
+### Added
+- **`tests/test_database.py`** (+17 tests): `TestConnectionFailuresDegradeGracefully` (a single bad-db-path fixture reused across all 14 public methods to verify each returns its documented safe default rather than raising), `TestLegacyDatabaseMigration` (a hand-built pre-migration schema gets a working `session_id` column added transparently), and `get_latest_run`'s session-scoping success path. File coverage: 79% → 100%.
+- **`tests/test_coordinator.py`** (+25 tests): `_sanitize_json_key`/`sanitize_for_json` (numpy int/float, Path, tuple, DataFrame, arbitrary-object, dict-key sanitization), `_resolve_run_identity` (custom output_dir vs. fresh-run-id generation, session-namespaced path), `_generate_insights` (success and failure-falls-back-to-empty-list), and `run_full_pipeline`'s Mustang-alignment-failure and top-level unexpected-exception branches. File coverage: 89% → 96%.
+
+### Verified
+- Full backend suite: 711 tests passing, both locally and in a CI-matching Docker container.
+- `black`/`ruff` clean.
+
 ## [3.63.0]
 
 Resolves the last deferred SonarCloud security finding (`S8544`, hash-pinned dependency lockfile), revisiting the decision documented in 3.24.0 as "not something to commit to without an explicit decision" - this is that decision.

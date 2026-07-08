@@ -1,7 +1,79 @@
 from pathlib import Path
 from unittest.mock import patch, AsyncMock
 
-from src.backend.coordinator import AnalysisCoordinator
+import numpy as np
+import pandas as pd
+import pytest
+
+from src.backend.coordinator import (
+    AnalysisCoordinator,
+    sanitize_for_json,
+    _sanitize_json_key,
+)
+
+
+class TestSanitizeJsonKey:
+    def test_numpy_integer_key_becomes_python_int(self):
+        key = _sanitize_json_key(np.int64(5))
+        assert key == 5
+        assert isinstance(key, int)
+
+    def test_numpy_floating_key_becomes_python_float(self):
+        key = _sanitize_json_key(np.float32(1.5))
+        assert key == pytest.approx(1.5)
+        assert isinstance(key, float)
+
+    def test_path_key_becomes_string(self):
+        assert _sanitize_json_key(Path("results/run_1")) == str(Path("results/run_1"))
+
+    def test_other_non_primitive_key_becomes_string(self):
+        class Weird:
+            def __str__(self):
+                return "weird-key"
+
+        assert _sanitize_json_key(Weird()) == "weird-key"
+
+    def test_primitive_keys_pass_through_unchanged(self):
+        assert _sanitize_json_key("a") == "a"
+        assert _sanitize_json_key(1) == 1
+        assert _sanitize_json_key(True) is True
+        assert _sanitize_json_key(None) is None
+
+
+class TestSanitizeForJson:
+    def test_tuple_becomes_list(self):
+        assert sanitize_for_json((1, 2, 3)) == [1, 2, 3]
+
+    def test_numpy_floating_becomes_python_float(self):
+        result = sanitize_for_json(np.float64(3.5))
+        assert result == pytest.approx(3.5)
+        assert isinstance(result, float)
+
+    def test_numpy_integer_becomes_python_int(self):
+        result = sanitize_for_json(np.int32(7))
+        assert result == 7
+        assert isinstance(result, int)
+
+    def test_numpy_array_becomes_list(self):
+        assert sanitize_for_json(np.array([1, 2, 3])) == [1, 2, 3]
+
+    def test_dataframe_becomes_split_dict(self):
+        df = pd.DataFrame({"a": [1, 2]}, index=["x", "y"])
+        result = sanitize_for_json(df)
+        assert result["columns"] == ["a"]
+        assert result["index"] == ["x", "y"]
+        assert result["data"] == [[1], [2]]
+
+    def test_path_becomes_string(self):
+        assert sanitize_for_json(Path("a/b")) == str(Path("a/b"))
+
+    def test_dict_keys_are_sanitized_too(self):
+        result = sanitize_for_json({np.int64(1): "value"})
+        assert result == {1: "value"}
+
+    def test_plain_value_passes_through(self):
+        assert sanitize_for_json("hello") == "hello"
+        assert sanitize_for_json(42) == 42
 
 
 def _write_alignment_fixture(result_dir: Path):
@@ -90,6 +162,108 @@ def test_init_warns_but_does_not_raise_when_mustang_not_installed(mock_config):
     ):
         coordinator = AnalysisCoordinator(mock_config)
         assert coordinator is not None
+
+
+def test_run_full_pipeline_fails_when_mustang_alignment_fails(mock_config, tmp_path):
+    with patch(
+        "src.backend.coordinator.MustangRunner.check_installation",
+        return_value=(True, "ok"),
+    ), patch(
+        "src.backend.coordinator.PDBManager.batch_download", new_callable=AsyncMock
+    ) as mock_download, patch(
+        "src.backend.coordinator.PDBManager.analyze_structure",
+        return_value={"chains": []},
+    ), patch(
+        "src.backend.coordinator.PDBManager.clean_pdb"
+    ) as mock_clean, patch(
+        "src.backend.coordinator.MustangRunner.run_alignment"
+    ) as mock_align:
+        pdb_file = tmp_path / "4rlt.pdb"
+        pdb_file.write_text("ATOM")
+        mock_download.return_value = {"4RLT": (True, "ok", pdb_file)}
+        mock_clean.return_value = (True, "ok", pdb_file)
+        mock_align.return_value = (False, "Mustang exited with code 139", None)
+
+        coordinator = AnalysisCoordinator(mock_config)
+        success, msg, results = coordinator.run_full_pipeline(
+            ["4RLT"], output_dir=tmp_path / "out"
+        )
+
+        assert success is False
+        assert "Mustang exited with code 139" in msg
+        assert results is None
+
+
+def test_run_full_pipeline_catches_unexpected_exception(mock_config, tmp_path):
+    with patch(
+        "src.backend.coordinator.MustangRunner.check_installation",
+        return_value=(True, "ok"),
+    ), patch(
+        "src.backend.coordinator.PDBManager.batch_download",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("boom"),
+    ):
+        coordinator = AnalysisCoordinator(mock_config)
+        success, msg, results = coordinator.run_full_pipeline(
+            ["4RLT"], output_dir=tmp_path / "out"
+        )
+
+        assert success is False
+        assert "boom" in msg
+        assert results is None
+
+
+class TestResolveRunIdentity:
+    def test_uses_provided_output_dir_as_run_id(self, mock_config, tmp_path):
+        with patch(
+            "src.backend.coordinator.MustangRunner.check_installation",
+            return_value=(True, "ok"),
+        ):
+            coordinator = AnalysisCoordinator(mock_config)
+            output_dir = tmp_path / "my_run"
+
+            resolved_dir, run_id, run_name, now = coordinator._resolve_run_identity(
+                output_dir, ["4RLT"]
+            )
+
+            assert resolved_dir == output_dir
+            assert run_id == "my_run"
+            assert "Custom Run" in run_name
+
+    def test_generates_fresh_run_id_when_no_output_dir_given(self, mock_config):
+        with patch(
+            "src.backend.coordinator.MustangRunner.check_installation",
+            return_value=(True, "ok"),
+        ):
+            coordinator = AnalysisCoordinator(mock_config, session_id="sess-1")
+
+            resolved_dir, run_id, run_name, now = coordinator._resolve_run_identity(
+                None, ["4RLT", "3UG9"]
+            )
+
+            assert run_id.startswith("run")
+            assert "sess-1" in str(resolved_dir)
+            assert "2 structures" in run_name
+
+
+class TestGenerateInsights:
+    def test_populates_insights_on_success(self, mock_config):
+        results = {"rmsd_df": None}
+        with patch(
+            "src.backend.insights.InsightsGenerator.generate_insights",
+            return_value=["Some insight"],
+        ):
+            AnalysisCoordinator._generate_insights(mock_config, results)
+        assert results["insights"] == ["Some insight"]
+
+    def test_falls_back_to_empty_list_on_failure(self, mock_config):
+        results = {"rmsd_df": None}
+        with patch(
+            "src.backend.insights.InsightsGenerator.generate_insights",
+            side_effect=RuntimeError("boom"),
+        ):
+            AnalysisCoordinator._generate_insights(mock_config, results)
+        assert results["insights"] == []
 
 
 def test_run_full_pipeline_fails_when_download_fails(mock_config, tmp_path):

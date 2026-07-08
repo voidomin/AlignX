@@ -287,6 +287,18 @@ class TestRunCrud:
     def test_get_latest_run_returns_none_when_no_runs_exist(self, db):
         assert db.get_latest_run() is None
 
+    def test_get_latest_run_scoped_to_session_ignores_other_sessions(self, db):
+        db.save_run(
+            "run_1", "Run 1", ["4RLT"], Path("results/run_1"), session_id="sess-A"
+        )
+        db.save_run(
+            "run_2", "Run 2", ["3UG9"], Path("results/run_2"), session_id="sess-B"
+        )
+
+        latest = db.get_latest_run(session_id="sess-A")
+
+        assert latest["id"] == "run_1"
+
     def test_clear_all_runs_empties_the_table(self, db):
         db.save_run("run_1", "Run 1", ["4RLT"], Path("results/run_1"))
         db.save_run("run_2", "Run 2", ["3UG9"], Path("results/run_2"))
@@ -344,3 +356,91 @@ class TestCacheManagementMethods:
         items = db.get_oldest_cache_items()
 
         assert [i["id"] for i in items] == ["old_item", "new_item"]
+
+
+class TestConnectionFailuresDegradeGracefully:
+    """Every method wraps its sqlite3 calls in a try/except that logs and
+    returns a safe default rather than raising - a bad db_path (parent
+    directory doesn't exist, so sqlite3 can't even open/create the file)
+    exercises that fallback uniformly across the whole class."""
+
+    @pytest.fixture
+    def unusable_db(self, tmp_path):
+        bad_path = tmp_path / "no_such_dir" / "test_history.db"
+        return HistoryDatabase(str(bad_path))
+
+    def test_init_does_not_raise(self, tmp_path):
+        bad_path = tmp_path / "no_such_dir" / "test_history.db"
+        HistoryDatabase(str(bad_path))  # must not raise
+
+    def test_save_run_returns_false(self, unusable_db):
+        assert (
+            unusable_db.save_run("run_1", "Run 1", ["4RLT"], Path("results/run_1"))
+            is False
+        )
+
+    def test_get_all_runs_returns_empty_list(self, unusable_db):
+        assert unusable_db.get_all_runs() == []
+
+    def test_count_runs_returns_zero(self, unusable_db):
+        assert unusable_db.count_runs() == 0
+
+    def test_get_run_returns_none(self, unusable_db):
+        assert unusable_db.get_run("run_1") is None
+
+    def test_delete_run_returns_false(self, unusable_db):
+        assert unusable_db.delete_run("run_1") is False
+
+    def test_get_latest_run_returns_none(self, unusable_db):
+        assert unusable_db.get_latest_run() is None
+
+    def test_get_latest_run_scoped_to_session_returns_none(self, unusable_db):
+        assert unusable_db.get_latest_run(session_id="sess-1") is None
+
+    def test_clear_all_runs_returns_false(self, unusable_db):
+        assert unusable_db.clear_all_runs() is False
+
+    def test_register_cache_item_returns_false(self, unusable_db):
+        assert unusable_db.register_cache_item("4RLT", "/x.pdb", 100) is False
+
+    def test_update_cache_access_returns_false(self, unusable_db):
+        assert unusable_db.update_cache_access("4RLT") is False
+
+    def test_get_oldest_cache_items_returns_empty_list(self, unusable_db):
+        assert unusable_db.get_oldest_cache_items() == []
+
+    def test_remove_cache_item_returns_false(self, unusable_db):
+        assert unusable_db.remove_cache_item("4RLT") is False
+
+    def test_get_total_cache_size_returns_zero(self, unusable_db):
+        assert unusable_db.get_total_cache_size() == 0
+
+    def test_get_annotation_cache_returns_none(self, unusable_db):
+        assert unusable_db.get_annotation_cache("key1") is None
+
+    def test_set_annotation_cache_returns_false(self, unusable_db):
+        assert unusable_db.set_annotation_cache("key1", "svc", "{}") is False
+
+
+class TestLegacyDatabaseMigration:
+    def test_adds_session_id_column_to_a_pre_existing_db(self, tmp_path):
+        db_path = tmp_path / "legacy.db"
+        with sqlite3.connect(str(db_path)) as conn:
+            conn.execute("""
+                CREATE TABLE runs (
+                    id TEXT PRIMARY KEY,
+                    timestamp TEXT NOT NULL,
+                    name TEXT,
+                    pdb_ids TEXT NOT NULL,
+                    status TEXT,
+                    result_path TEXT,
+                    metadata TEXT
+                )
+                """)
+            conn.commit()
+
+        db = HistoryDatabase(str(db_path))
+        assert db.save_run(
+            "run_1", "Run 1", ["4RLT"], Path("results/run_1"), session_id="sess-1"
+        )
+        assert db.get_all_runs(session_id="sess-1")[0]["id"] == "run_1"
