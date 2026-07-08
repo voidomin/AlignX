@@ -379,6 +379,43 @@ def test_chains_endpoint_tags_source_for_alphafold_id():
         assert data["method"] == "Predicted (AF2)"
 
 
+def test_chains_endpoint_rejects_empty_pdb_ids_list():
+    response = client.post("/api/chains", json={"pdb_ids": []})
+    assert response.status_code == 400
+    assert "empty" in response.json()["detail"].lower()
+
+
+def test_chains_endpoint_reports_download_failures():
+    with patch(
+        "src.backend.coordinator.PDBManager.batch_download", new_callable=AsyncMock
+    ) as mock_download:
+        mock_download.return_value = {"9ZZZ": (False, "404 Not Found", None)}
+
+        response = client.post("/api/chains", json={"pdb_ids": ["9ZZZ"]})
+
+        assert response.status_code == 400
+        assert "9ZZZ" in response.json()["detail"]
+
+
+class TestRateLimitClientKey:
+    def test_uses_api_key_header_when_present(self):
+        key = api_module._rate_limit_client_key(
+            MagicMock(
+                headers={"X-API-Key": "secret"},
+                query_params={},
+            )
+        )
+        assert key == "key:secret"
+
+    def test_falls_back_to_client_ip_when_no_key(self):
+        request = MagicMock(headers={}, query_params={})
+        request.client.host = "127.0.0.1"
+
+        key = api_module._rate_limit_client_key(request)
+
+        assert key == "ip:127.0.0.1"
+
+
 def test_upload_endpoint_returns_chain_info_for_a_valid_structure():
     with patch(
         "src.backend.coordinator.PDBManager.save_uploaded_bytes"
@@ -603,6 +640,34 @@ def test_comparison_endpoint_uses_upper_triangle_mean():
         assert data["target_mean_rmsd"] == pytest.approx(10.0)
 
 
+def test_comparison_endpoint_400s_when_no_overlapping_proteins():
+    with patch("src.backend.api.ResultManager.calculate_difference", return_value=None):
+        response = client.get(
+            "/api/comparison?current_run_id=run_a&target_run_id=run_b"
+        )
+        assert response.status_code == 400
+        assert "overlapping" in response.json()["detail"].lower()
+
+
+def test_comparison_endpoint_404s_when_rmsd_matrix_missing():
+    with patch(
+        "src.backend.api.ResultManager.calculate_difference"
+    ) as mock_diff, patch(
+        "src.backend.api.ResultManager.get_run_rmsd", return_value=None
+    ):
+        mock_diff.return_value = pd.DataFrame()
+        response = client.get(
+            "/api/comparison?current_run_id=run_a&target_run_id=run_b"
+        )
+        assert response.status_code == 404
+
+
+def test_ligands_endpoint_404s_when_structure_not_found():
+    with patch("pathlib.Path.exists", return_value=False):
+        response = client.get("/api/ligands?pdb_id=4RLT")
+    assert response.status_code == 404
+
+
 def test_list_comparison_runs_excludes_given_run_id():
     with patch("src.backend.api.ResultManager.list_runs") as mock_list_runs:
         mock_list_runs.return_value = [
@@ -690,6 +755,40 @@ def test_legitimate_ids_are_not_rejected_by_path_validation():
     """Verify that well-formed run_id/session_id (matching real formats) pass validation and 404 only because the run doesn't exist."""
     response = client.get("/api/sequence?run_id=run_1234567890")
     assert response.status_code == 404  # not found, but not rejected as invalid
+
+
+def test_submit_alignment_job_rejects_fewer_than_two_ids():
+    response = client.post("/api/jobs/align", json={"pdb_ids": ["4RLT"]})
+    assert response.status_code == 400
+    assert "at least 2" in response.json()["detail"].lower()
+
+
+def test_get_alignment_job_404s_for_unknown_job_id():
+    response = client.get("/api/jobs/does-not-exist")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_execute_alignment_job_marks_failed_on_pipeline_error():
+    job_id = "test-job-fail"
+    api_module.alignment_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    with patch(
+        "src.backend.api.AnalysisCoordinator.run_full_pipeline",
+        return_value=(False, "Mustang exited with code 139", None),
+    ):
+        await api_module._execute_alignment_job(
+            job_id,
+            pdb_ids=["4RLT", "3UG9"],
+            chain_selection={},
+            remove_water=True,
+            remove_heteroatoms=True,
+            session_id=None,
+        )
+
+    job = api_module.alignment_jobs.pop(job_id)
+    assert job["status"] == "failed"
+    assert "Mustang exited with code 139" in job["error"]
 
 
 @pytest.mark.asyncio

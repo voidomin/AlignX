@@ -2,6 +2,17 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.73.0]
+
+Twentieth batch of the `new_coverage` push - more of `api.py`'s remaining gaps, spread across several endpoints: `/api/chains`'s empty-list and download-failure error paths, `_rate_limit_client_key` (had zero tests despite gating both job-submission rate limiters), `/api/jobs/align`'s fewer-than-2-IDs validation and `/api/jobs/{job_id}`'s 404, `_execute_alignment_job`'s failure-marks-job-failed path, and `/api/comparison`'s no-overlap/matrix-not-found error paths plus `/api/ligands`'s 404.
+
+### Added
+- **`tests/test_api.py`** (+10 tests): `/api/chains` empty-`pdb_ids` (400) and download-failure (400) cases; `_rate_limit_client_key`'s API-key-header vs. client-IP-fallback branches; `/api/jobs/align`'s <2-IDs validation and `/api/jobs/{job_id}`'s unknown-job 404; `_execute_alignment_job` correctly marking a job `"failed"` with the underlying error message when the pipeline itself fails; `/api/comparison`'s no-overlapping-proteins (400) and missing-RMSD-matrix (404) branches; `/api/ligands`'s structure-not-found 404. File coverage: 91% → 93%.
+
+### Verified
+- Full backend suite: 792 tests passing, both locally and in a CI-matching Docker container.
+- `black`/`ruff` clean.
+
 ## [3.72.0]
 
 Nineteenth batch of the `new_coverage` push - `mustang_runner.py`'s remaining installation-detection branches: `_check_native_installation`'s exception path, `_construct_command`'s fallback-executable and WSL-command-shape branches, `_perform_installation_check`'s deep-WSL-check-success and local-check-success short-circuits, and `_deep_wsl_check`'s exception path.
@@ -12,6 +23,7 @@ Nineteenth batch of the `new_coverage` push - `mustang_runner.py`'s remaining in
 ### Verified
 - Full backend suite: 782 tests passing, both locally and in a CI-matching Docker container.
 - `black`/`ruff` clean.
+- Confirmed via re-analysis: `new_coverage` 78.32% → 78.46%.
 
 ## [3.71.0]
 
