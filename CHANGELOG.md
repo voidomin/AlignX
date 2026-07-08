@@ -2,6 +2,20 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.56.0]
+
+Ninth batch of the legacy Streamlit UI cleanup (1 of 14 findings: complexity 120, `structure.py`'s `render_3d_viewer_tab`).
+
+### Fixed
+- **`render_3d_viewer_tab`** (120→within limit): split into ~15 functions across its lazy-load gate, cluster filtering, style/view controls, and export options. De-duplicated a real repeat found during extraction: the Conservation Density and RMSF Flexibility themes' residue-color-mapping loops were identical apart from which score array and color function they used - unified into `_build_residue_colors_from_scores()`.
+
+### Added
+- **`tests/test_structure_tab.py`** (new, 11 tests): unit tests for `get_conservation_color`/`get_rmsf_color`/`_build_residue_colors_from_scores`/`_build_residue_colors` (pure functions), plus `AppTest`-based tests for the tab including a real end-to-end 3D-viewer render (lazy-load prompt → initialize → superimposed view) using an actual small PDB file. Zero prior coverage.
+
+### Verified
+- Full suite: 615 tests passing.
+- `black`/`ruff` clean.
+
 ## [3.55.0]
 
 Tenth batch of the `new_coverage` push - `pdb_manager.py`'s `fetch_metadata` pipeline (the v3.44.0 refactor's 8 new helper methods) had **zero automated test coverage** despite being a real, heavily-used code path spanning 4 live external APIs (RCSB GraphQL, UniProt, SWISS-MODEL's repository API, ESM Atlas's fixed fields) - the prior session verified it manually against the live APIs but never wrote pytest tests for it.
