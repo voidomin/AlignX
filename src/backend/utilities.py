@@ -67,40 +67,51 @@ class SystemManager:
         Returns:
             List of deleted directory names.
         """
-        deleted = []
-        now = time.time()
-        threshold = days * 24 * 60 * 60
-
         if not self.results_dir.exists():
             return []
 
+        now = time.time()
+        threshold = days * 24 * 60 * 60
+
+        deleted = []
         # In v2.4, results are nested under session_id: results/{session_id}/run_{timestamp}
         # Iterate over session directories
         for session_dir in self.results_dir.iterdir():
             if not session_dir.is_dir() or session_dir.name.startswith("run_"):
                 # Skip legacy run folders if any, we only process session dirs
                 continue
-
-            for run_dir in session_dir.iterdir():
-                if run_dir.is_dir() and run_dir.name.startswith("run_"):
-                    # Check modification time
-                    mtime = run_dir.stat().st_mtime
-                    if (now - mtime) > threshold:
-                        try:
-                            shutil.rmtree(run_dir)
-                            deleted.append(f"{session_dir.name}/{run_dir.name}")
-                            logger.info(f"Cleaned up old run directory: {run_dir.name}")
-                        except Exception:
-                            logger.exception(f"Failed to delete {run_dir.name}")
-
-            # Optional: if session dir is now empty, delete it
-            if not list(session_dir.iterdir()):
-                try:
-                    shutil.rmtree(session_dir)
-                except Exception:
-                    pass
+            deleted.extend(self._cleanup_session_runs(session_dir, now, threshold))
+            self._remove_if_empty(session_dir)
 
         return deleted
+
+    def _cleanup_session_runs(
+        self, session_dir: Path, now: float, threshold: float
+    ) -> List[str]:
+        """Deletes every run directory under `session_dir` older than
+        `threshold` seconds, returning the ones actually deleted."""
+        deleted = []
+        for run_dir in session_dir.iterdir():
+            if not (run_dir.is_dir() and run_dir.name.startswith("run_")):
+                continue
+            if (now - run_dir.stat().st_mtime) <= threshold:
+                continue
+            try:
+                shutil.rmtree(run_dir)
+                deleted.append(f"{session_dir.name}/{run_dir.name}")
+                logger.info(f"Cleaned up old run directory: {run_dir.name}")
+            except Exception:
+                logger.exception(f"Failed to delete {run_dir.name}")
+        return deleted
+
+    @staticmethod
+    def _remove_if_empty(session_dir: Path) -> None:
+        if list(session_dir.iterdir()):
+            return
+        try:
+            shutil.rmtree(session_dir)
+        except Exception:
+            pass
 
     def get_aggregate_stats(self, db: Any) -> Dict[str, Any]:
         """

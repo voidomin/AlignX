@@ -24,46 +24,49 @@ class RamachandranService:
         Returns:
             Dict mapping chain IDs to DataFrames with [residue_index, residue_name, phi, psi]
         """
-        results = {}
         try:
             from Bio.PDB import Polypeptide
 
             structure = self.parser.get_structure("protein", str(pdb_file))
-
+            results = {}
             for model in structure:
                 for chain in model:
-                    angles = []
-                    # BioPython's Polypeptide module makes this easy
-                    poly = Polypeptide.Polypeptide(chain)
-                    phi_psi = poly.get_phi_psi_list()
-
-                    for i, (phi, psi) in enumerate(phi_psi):
-                        res = poly[i]
-                        res_name = res.get_resname()
-                        res_id = res.get_id()[1]
-
-                        # Convert radians to degrees, handle None for termini
-                        phi_deg = np.degrees(phi) if phi is not None else None
-                        psi_deg = np.degrees(psi) if psi is not None else None
-
-                        if phi_deg is not None or psi_deg is not None:
-                            angles.append(
-                                {
-                                    "residue_id": res_id,
-                                    "residue_name": res_name,
-                                    "phi": phi_deg,
-                                    "psi": psi_deg,
-                                    "region": self._classify_region(phi_deg, psi_deg),
-                                }
-                            )
-
+                    angles = self._chain_torsion_angles(chain, Polypeptide)
                     if angles:
                         results[chain.id] = pd.DataFrame(angles)
-
             return results
         except Exception:
             logger.exception(f"Failed to calculate torsion angles for {pdb_file}")
             return {}
+
+    def _chain_torsion_angles(self, chain, polypeptide_module) -> list:
+        """Phi/psi angle rows for every residue in one chain that has at
+        least one resolvable angle (termini only ever have one of the
+        two)."""
+        # BioPython's Polypeptide module makes this easy
+        poly = polypeptide_module.Polypeptide(chain)
+        angles = []
+        for i, (phi, psi) in enumerate(poly.get_phi_psi_list()):
+            row = self._torsion_row(poly[i], phi, psi)
+            if row:
+                angles.append(row)
+        return angles
+
+    def _torsion_row(
+        self, res, phi: Optional[float], psi: Optional[float]
+    ) -> Optional[Dict[str, Any]]:
+        # Convert radians to degrees, handle None for termini
+        phi_deg = np.degrees(phi) if phi is not None else None
+        psi_deg = np.degrees(psi) if psi is not None else None
+        if phi_deg is None and psi_deg is None:
+            return None
+        return {
+            "residue_id": res.get_id()[1],
+            "residue_name": res.get_resname(),
+            "phi": phi_deg,
+            "psi": psi_deg,
+            "region": self._classify_region(phi_deg, psi_deg),
+        }
 
     def _classify_region(self, phi: Optional[float], psi: Optional[float]) -> str:
         """

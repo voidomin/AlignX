@@ -2,6 +2,20 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.33.0]
+
+Third batch of the backend `python:S3776` cleanup (3 more of the 41 open findings: complexity 16, 23, 25). 9 of 26 backend findings now resolved.
+
+### Fixed
+- **`coordinator.py:30`** (`sanitize_for_json`, 16→within limit): the dict-key sanitization `if/elif/elif` chain nested inside the dict branch's `for k, v in val.items()` loop was extracted into `_sanitize_json_key()`, turning the dict branch into a one-line comprehension.
+- **`ramachandran_service.py:20`** (`calculate_torsion_angles`, 23→within limit): the triple-nested `for model / for chain / for i, (phi, psi)` loop was split into `_chain_torsion_angles()` (per-chain) and `_torsion_row()` (per-residue), each independently well under the threshold.
+- **`utilities.py:60`** (`cleanup_old_runs`, 25→within limit): the nested `for session_dir / for run_dir / if / if / try` was split into `_cleanup_session_runs()` (per-session deletion) and `_remove_if_empty()` (the trailing empty-dir cleanup), removing two levels of nesting from the outer loop.
+
+### Verified
+- Full backend suite: 368 tests passing (up from 353 - unrelated to this entry, from concurrent test-coverage work).
+- Manually confirmed `sanitize_for_json()` still correctly sanitizes both dict keys and values (np.int64 key, Path key, nested np.float32/tuple values) in one call.
+- `black`/`ruff` clean on all three touched files (reformatted by `black` for line-length after extraction, no logic change).
+
 ## [3.32.0]
 
 Second batch of the backend `python:S3776` cleanup (3 more of the 41 open findings: complexity 20, 20, 22).

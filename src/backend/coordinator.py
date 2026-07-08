@@ -27,6 +27,21 @@ from src.utils.run_id import generate_run_id
 logger = get_logger()
 
 
+def _sanitize_json_key(k: Any) -> Any:
+    """A dict key must itself be JSON-serializable, which np.integer/
+    np.floating/Path (and anything else non-primitive) aren't."""
+    import numpy as np
+    from pathlib import Path
+
+    if isinstance(k, (np.integer, np.floating)):
+        return k.item()
+    if isinstance(k, Path):
+        return str(k)
+    if not isinstance(k, (str, int, float, bool, type(None))):
+        return str(k)
+    return k
+
+
 def sanitize_for_json(val: Any) -> Any:
     """Recursively convert custom objects (Path, np.ndarray, DataFrame, etc) to JSON-serializable types."""
     import numpy as np
@@ -34,18 +49,7 @@ def sanitize_for_json(val: Any) -> Any:
     from pathlib import Path
 
     if isinstance(val, dict):
-        sanitized_dict = {}
-        for k, v in val.items():
-            # Sanitize the key to ensure it is JSON-serializable
-            sanitized_key = k
-            if isinstance(k, (np.integer, np.floating)):
-                sanitized_key = k.item()
-            elif isinstance(k, Path):
-                sanitized_key = str(k)
-            elif not isinstance(k, (str, int, float, bool, type(None))):
-                sanitized_key = str(k)
-            sanitized_dict[sanitized_key] = sanitize_for_json(v)
-        return sanitized_dict
+        return {_sanitize_json_key(k): sanitize_for_json(v) for k, v in val.items()}
     elif isinstance(val, list):
         return [sanitize_for_json(item) for item in val]
     elif isinstance(val, tuple):
