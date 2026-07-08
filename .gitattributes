@@ -1,1 +1,22 @@
+# Auto-detect text files and normalize line endings to LF in the
+# repository (still checked out as CRLF on Windows if core.autocrlf is
+# set) - eliminates the "LF will be replaced by CRLF" warnings that
+# otherwise show up on every commit from a Windows checkout.
+* text=auto eol=lf
+
 *.sh text eol=lf
+*.ps1 text eol=crlf
+
+# Binary files - never diff/normalize these.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.tgz binary
+*.db binary
+
+# Built frontend bundle - not hand-written, shouldn't count toward
+# language stats or get diffed line-by-line.
+static/assets/*.js linguist-generated=true

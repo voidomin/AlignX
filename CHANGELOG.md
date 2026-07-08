@@ -2,6 +2,29 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.71.0]
+
+Second repo-cleanup pass, prompted by a request to make the repo "match industry-level" standards. Audited naming consistency, config duplication, and missing conventional OSS files.
+
+### Fixed
+- **`citation_exporter.py`**: the generated citation URL pointed at `https://github.com/AlignX/AlignX` - not a real repo (the actual org is `voidomin`, not `AlignX`). Anyone citing StructScope in a paper right now would get a dead link. Fixed to `https://github.com/voidomin/AlignX`.
+- **`mypy.ini`**: `python_version` was `3.12`; the app actually runs on 3.10 everywhere (Dockerfile, CI). Checking against the wrong version could pass code relying on syntax/behavior unavailable at runtime. (`mypy` isn't currently wired into CI or installed locally, so this was a dormant but real correctness issue, not a build-breaking one.)
+- **`environment.yml`**: conda env name was still `mustang-pipeline`, a leftover from before the AlignX→StructScope rename. No code referenced the name, so renaming to `structscope` was a clean, zero-risk fix.
+
+### Added
+- **`.gitattributes`**: was previously only handling `*.sh` line endings - explains the "LF will be replaced by CRLF" warnings seen on nearly every commit from this Windows checkout throughout this session. Added `* text=auto eol=lf` plus explicit binary/PowerShell rules. (Existing tracked files' line endings aren't retroactively rewritten by this alone - that would need a separate `git add --renormalize .` pass, deliberately not done here since it'd touch every text file's diff in one large commit.)
+- **`CONTRIBUTING.md`**: setup steps, PR checklist, and this codebase's actual conventions (extraction-only refactors, verify SonarCloud findings before "fixing" them, dependency changes go through `requirements.in`).
+- **`CODE_OF_CONDUCT.md`**: standard Contributor Covenant v2.1.
+- **`.github/ISSUE_TEMPLATE/`** (`bug_report.md`, `feature_request.md`, `config.yml`) and **`.github/PULL_REQUEST_TEMPLATE.md`**.
+- `README.md`'s doc table now links `CONTRIBUTING.md`/`CODE_OF_CONDUCT.md`.
+
+### Considered and deferred (explicit user decision)
+- **Renaming the GitHub repo from `AlignX` to `StructScope`**, and updating the Streamlit UI's footer branding to match - both are real, already-documented (see `docs/ROADMAP_V3.md` §3.3) naming inconsistencies, but renaming the actual repo breaks existing clone URLs/bookmarks and was deliberately left for a separate decision rather than bundled into this cleanup pass.
+
+### Verified
+- Full suite: 776 tests passing.
+- `black`/`ruff` clean on the touched Python file.
+
 ## [3.70.0]
 
 Eighteenth batch of the `new_coverage` push - `rmsd_calculator.py`'s remaining gaps in `calculate_structure_rmsd` and `calculate_alignment_quality_metrics`: parse-failure paths for both, the single-model-multiple-chains fallback for the quality-metrics function, and the no-common-aligned-columns case degrading to a zero score rather than an error.

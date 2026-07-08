@@ -31,12 +31,12 @@ _SAFE_RUN_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 # stable and collision-free within a single export.
 BIBLIOGRAPHY: Dict[str, Dict[str, str]] = {
     "structscope": {
-        "text": "StructScope v{VERSION} (https://github.com/AlignX/AlignX).",
+        "text": "StructScope v{VERSION} (https://github.com/voidomin/AlignX).",
         "bibtex": (
             "@software{structscope,\n"
             "  title = {StructScope},\n"
             "  version = {{VERSION}},\n"
-            "  url = {https://github.com/AlignX/AlignX}\n"
+            "  url = {https://github.com/voidomin/AlignX}\n"
             "}"
         ),
     },

@@ -1,4 +1,4 @@
-name: mustang-pipeline
+name: structscope
 channels:
   - bioconda
   - conda-forge
