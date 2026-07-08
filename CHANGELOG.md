@@ -25,6 +25,7 @@ Eleventh batch of the `new_coverage` push - `mustang_runner.py`'s compile-from-s
 ### Verified
 - Full backend suite: 644 tests passing, both locally and in a CI-matching Docker container.
 - `black`/`ruff` clean.
+- Confirmed via re-analysis: `new_coverage` 72.03% → 75.87%.
 
 ## [3.57.0]
 
