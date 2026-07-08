@@ -46,6 +46,21 @@ class TestFoldseekClient:
     def test_parse_hits_handles_empty(self):
         assert FoldseekClient.parse_hits({}) == []
 
+    def test_parse_hits_passes_through_a_bare_list(self):
+        raw = [{"target": "1ABC"}, {"target": "2XYZ"}]
+        assert FoldseekClient.parse_hits(raw) == raw
+
+    def test_parse_hits_handles_non_dict_non_list_input(self):
+        assert FoldseekClient.parse_hits(None) == []
+
+    def test_flatten_alignments_wraps_a_single_dict(self):
+        assert FoldseekClient._flatten_alignments({"target": "1ABC"}) == [
+            {"target": "1ABC"}
+        ]
+
+    def test_flatten_alignments_returns_empty_for_unexpected_type(self):
+        assert FoldseekClient._flatten_alignments("not-a-hit") == []
+
     @pytest.mark.asyncio
     @patch("src.backend.foldseek_client.httpx.AsyncClient.post")
     async def test_submit_search_returns_ticket_id(self, mock_post, tmp_path):
@@ -139,6 +154,63 @@ class TestFoldseekClient:
         client = FoldseekClient()
         result = await client.fetch_results("ticket-1")
         assert result == {"alignments": [{"target": "1ABC"}]}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.foldseek_client.httpx.AsyncClient.post")
+    async def test_submit_search_wraps_http_errors(self, mock_post, tmp_path):
+        import httpx
+
+        structure = tmp_path / "query.pdb"
+        structure.write_text("ATOM\n")
+        mock_post.side_effect = httpx.ConnectError("no route")
+
+        client = FoldseekClient()
+        with pytest.raises(FoldseekError, match="submission failed"):
+            await client.submit_search(structure, databases=["pdb100"])
+
+    @pytest.mark.asyncio
+    @patch("src.backend.foldseek_client.httpx.AsyncClient.get")
+    async def test_poll_until_complete_wraps_http_errors(self, mock_get):
+        import httpx
+
+        mock_get.side_effect = httpx.ConnectError("no route")
+
+        client = FoldseekClient()
+        with pytest.raises(FoldseekError, match="polling failed"):
+            await client.poll_until_complete("ticket-1")
+
+    @pytest.mark.asyncio
+    @patch("src.backend.foldseek_client.httpx.AsyncClient.get")
+    async def test_fetch_results_wraps_http_errors(self, mock_get):
+        import httpx
+
+        mock_get.side_effect = httpx.ConnectError("no route")
+
+        client = FoldseekClient()
+        with pytest.raises(FoldseekError, match="result fetch failed"):
+            await client.fetch_results("ticket-1")
+
+    @pytest.mark.asyncio
+    async def test_search_runs_submit_poll_and_fetch_end_to_end(self, tmp_path):
+        structure = tmp_path / "query.pdb"
+        structure.write_text("ATOM\n")
+
+        client = FoldseekClient()
+        with patch.object(
+            client, "submit_search", AsyncMock(return_value="ticket-1")
+        ) as mock_submit, patch.object(
+            client, "poll_until_complete", AsyncMock()
+        ) as mock_poll, patch.object(
+            client, "fetch_results", AsyncMock(return_value={"alignments": []})
+        ) as mock_fetch:
+            result = await client.search(structure, databases=["pdb100"])
+
+        assert result == {"alignments": []}
+        mock_submit.assert_called_once()
+        mock_poll.assert_called_once_with(
+            "ticket-1", client=mock_submit.call_args[1]["client"]
+        )
+        mock_fetch.assert_called_once()
 
 
 class TestRateLimiterCrossThreadSafety:

@@ -2,6 +2,19 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.66.0]
+
+Fifteenth batch of the `new_coverage` push, closing out the last few small-to-medium backend gaps: `foldseek_client.py`, `rmsd_analyzer.py` (most notably `calculate_residue_rmsf`'s full helper chain, which had **zero** automated coverage despite a prior manual-verification claim), and `cache_manager.py`.
+
+### Added
+- **`tests/test_foldseek_client.py`** (+9 tests): `parse_hits`/`_flatten_alignments` edge cases (bare list, non-dict input, single-dict wrapping), `httpx.HTTPError` fallback for `submit_search`/`poll_until_complete`/`fetch_results`, and `search()`'s end-to-end submit→poll→fetch orchestration. File coverage: 89% → 100%.
+- **`tests/test_rmsd_analyzer.py`** (+8 tests): `generate_heatmap`/`generate_plotly_heatmap`/`export_to_phylip` failure paths, and a real end-to-end `calculate_residue_rmsf` test against a hand-built 2-structure/1-gap fixture with hand-computed expected RMSF values (0.0, 0.0, 1.5, 0.0 across 4 alignment columns, including correct gap and chain-boundary handling) plus empty-input and parse-failure cases. File coverage: 48% → 97%.
+- **`tests/test_cache_manager.py`** (new, 11 tests): disabled-cache no-ops for all three public methods, missing-file registration warning, real file-size registration, LRU eviction (including the eviction-failure-is-logged-not-raised path), and `get_cache_status`'s percentage math (including the zero-limit guard). File coverage: 83% → 100%.
+
+### Verified
+- Full backend suite: 735 tests passing, both locally and in a CI-matching Docker container.
+- `black`/`ruff` clean.
+
 ## [3.65.0]
 
 Finishes the S8544 hash-pinning work: 3.63.0's fix only covered the app's own `requirements.txt`; re-checking SonarCloud after that scan landed showed 2 more `S8544` hits on the CI-only `pip install --upgrade pip` and `pip install pip-audit` lines, which weren't hash-pinned at all.
