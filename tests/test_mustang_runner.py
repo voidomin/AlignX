@@ -72,6 +72,35 @@ class TestMustangRunner:
         assert "fasta" in cmd
         assert input_files[0].name in cmd
 
+    def test_construct_command_falls_back_when_no_executable_set(self, mock_config):
+        runner = MustangRunner(mock_config)
+        runner.executable = None
+
+        with patch.object(runner, "_fallback_executable") as mock_fallback:
+
+            def set_executable():
+                runner.executable = "mustang"
+
+            mock_fallback.side_effect = set_executable
+            runner._construct_command([Path("a.pdb"), Path("b.pdb")], Path("results"))
+
+        mock_fallback.assert_called_once()
+
+    @patch("shutil.which", return_value="/usr/bin/wsl")
+    def test_construct_command_uses_wsl_shape_when_use_wsl(
+        self, mock_which, mock_config
+    ):
+        runner = MustangRunner(mock_config)
+        runner.executable = "mustang"
+        runner.use_wsl = True
+
+        cmd, _ = runner._construct_command(
+            [Path("a.pdb"), Path("b.pdb")], Path("results")
+        )
+
+        assert cmd[0] == "/usr/bin/wsl"
+        assert cmd[1] == "mustang"
+
     @patch("src.backend.mustang_runner.os.chmod")
     def test_locate_compiled_binary_sets_owner_only_permissions(
         self, mock_chmod, mock_config, tmp_path
@@ -296,6 +325,20 @@ class TestCheckNativeInstallation:
 
         assert found is False
 
+    @patch("subprocess.run")
+    def test_returns_false_when_binary_invocation_raises(
+        self, mock_run, mock_config, tmp_path
+    ):
+        runner = MustangRunner(mock_config)
+        fake_binary = tmp_path / "mustang"
+        fake_binary.write_text("fake")
+        runner.mustang_path = fake_binary
+        mock_run.side_effect = OSError("permission denied")
+
+        found, msg = runner._check_native_installation()
+
+        assert found is False
+
 
 class TestCheckWslSystemInstallation:
     def test_returns_false_on_non_windows(self, mock_config):
@@ -501,6 +544,15 @@ class TestDeepWslCheck:
 
         assert found is False
 
+    @patch("subprocess.run")
+    def test_returns_false_when_subprocess_raises(self, mock_run, mock_config):
+        runner = MustangRunner(mock_config)
+        mock_run.side_effect = OSError("wsl not available")
+
+        found, msg = runner._deep_wsl_check()
+
+        assert found is False
+
 
 class TestPerformInstallationCheck:
     @patch("shutil.which")
@@ -553,6 +605,40 @@ class TestPerformInstallationCheck:
 
         assert found is True
         assert "Compiled Mustang binary" in msg
+
+    @patch("shutil.which")
+    def test_windows_deep_wsl_check_success_short_circuits(
+        self, mock_which, mock_config
+    ):
+        runner = MustangRunner(mock_config)
+        runner.is_windows = True
+        mock_which.return_value = None
+
+        with patch.object(
+            runner, "_deep_wsl_check", return_value=(True, "found via deep WSL check")
+        ) as mock_deep_check:
+            found, msg = runner._perform_installation_check()
+
+        assert found is True
+        assert msg == "found via deep WSL check"
+        mock_deep_check.assert_called_once()
+
+    @patch("shutil.which")
+    def test_local_or_compiled_check_success_updates_executable(
+        self, mock_which, mock_config
+    ):
+        runner = MustangRunner(mock_config)
+        runner.is_windows = False
+        mock_which.return_value = None
+
+        with patch.object(
+            runner, "_check_mustang", return_value=(True, "found via local check")
+        ), patch.object(runner, "_update_executable_from_check") as mock_update:
+            found, msg = runner._perform_installation_check()
+
+        assert found is True
+        assert msg == "found via local check"
+        mock_update.assert_called_once()
 
 
 class TestFallbackExecutable:

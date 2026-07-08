@@ -2,6 +2,17 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.72.0]
+
+Nineteenth batch of the `new_coverage` push - `mustang_runner.py`'s remaining installation-detection branches: `_check_native_installation`'s exception path, `_construct_command`'s fallback-executable and WSL-command-shape branches, `_perform_installation_check`'s deep-WSL-check-success and local-check-success short-circuits, and `_deep_wsl_check`'s exception path.
+
+### Added
+- **`tests/test_mustang_runner.py`** (+6 tests): `_check_native_installation` returning `False` when the binary invocation itself raises; `_construct_command` falling back to `_fallback_executable()` when no executable is set yet, and using the `wsl <exe>` command shape when `use_wsl` is `True`; `_perform_installation_check`'s Windows deep-WSL-check success and local/compiled-check success short-circuits (each verifying the follow-up call - `_update_executable_from_check` - actually happens); `_deep_wsl_check` returning `False` when the underlying subprocess call raises. File coverage: 93% → 97%.
+
+### Verified
+- Full backend suite: 782 tests passing, both locally and in a CI-matching Docker container.
+- `black`/`ruff` clean.
+
 ## [3.71.0]
 
 Second repo-cleanup pass, prompted by a request to make the repo "match industry-level" standards. Audited naming consistency, config duplication, and missing conventional OSS files.
