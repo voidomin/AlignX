@@ -46,7 +46,7 @@ def _get_selected_run_id(selection, df):
     return df.iloc[selected_rows[0]]["Run ID"]
 
 
-def _render_selected_mission_actions(selected_run_id, db):
+def _render_selected_mission_actions(selected_run_id):
     if st.button("🚀 Load Mission", type="primary", use_container_width=True):
         with st.spinner("Loading historical data..."):
             load_run_from_history(selected_run_id)
@@ -77,7 +77,7 @@ def _render_selected_run_details(selected_run_id, runs, db):
     st.write("")
     col_act1, col_act2 = st.columns([1, 1])
     with col_act1:
-        _render_selected_mission_actions(selected_run_id, db)
+        _render_selected_mission_actions(selected_run_id)
     with col_act2:
         _render_delete_record_action(selected_run_id, db)
 

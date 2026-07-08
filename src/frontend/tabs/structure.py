@@ -82,9 +82,7 @@ def _build_residue_colors(
         rmsf_values = results.get("rmsf_values", [])
         if not rmsf_values:
             return None
-        max_rmsf = max(rmsf_values) if rmsf_values else 5.0
-        if max_rmsf == 0:
-            max_rmsf = 1.0
+        max_rmsf = max(rmsf_values) or 1.0
         return _build_residue_colors_from_scores(
             sequences, rmsf_values, lambda score: get_rmsf_color(score, max_rmsf)
         )

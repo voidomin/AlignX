@@ -2,6 +2,19 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.59.0]
+
+Follow-up pass after re-checking SonarCloud's dashboard (which had already re-scanned most of today's work, dropping from 47 to 9 open issues): 2 new findings the refactors themselves introduced, plus one still-open complexity finding that needed a second pass.
+
+### Fixed
+- **`python:S1172`** (`pages/2_Mission_History.py`, `_render_selected_mission_actions`): an unused `db` parameter left over from the extraction - removed it and updated the one call site.
+- **`pythonbugs:S2583`** (`structure.py`, `_build_residue_colors`): `max_rmsf = max(rmsf_values) if rmsf_values else 5.0` had a genuinely dead `else` branch - by the time this line runs, the function has already returned if `rmsf_values` were empty, in both the refactored version and the original. Simplified to `max(rmsf_values) or 1.0`.
+- **`python:S3776`** (`pdb_manager.py`, `download_pdb`, still C(17) cyclomatic complexity after the 3.43.0 pass): extracted `_resolve_output_file()`, `_try_local_cache_hit()`, and `_dispatch_source_fetch()` (a dict-based dispatch replacing the remaining if/elif/else chain). Down to B(8).
+
+### Verified
+- Full suite: 644 tests passing (no count change - these are bugfixes/further refactors of already-tested code).
+- `black`/`ruff` clean.
+
 ## [3.58.0]
 
 Eleventh batch of the `new_coverage` push - `mustang_runner.py`'s compile-from-source fallback path (`_download_mustang_source`, `_prepare_compilation_dir`, `_execute_compilation`, `_locate_compiled_binary`, `_compile_from_source`), which had never been exercised by a test despite being the real recovery path when no bundled Mustang binary is available.

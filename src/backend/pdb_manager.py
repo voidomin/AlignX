@@ -396,6 +396,60 @@ class PDBManager:
         except Exception as e:
             return False, f"PDB Download failed: {e}", None
 
+    def _resolve_output_file(self, pdb_id: str, source: str) -> Path:
+        # Use lower-case filenames internally to avoid WSL case-sensitivity issues
+        ext = ".cif" if source == "alphafold" else ".pdb"
+        safe_id = pdb_id.lower()
+        output_file = self.raw_dir / f"{safe_id}{ext}"
+        if output_file.exists():
+            return output_file
+
+        # detect_source() doesn't recognize an uploaded ID's "UPLOAD-"
+        # prefix, so ext defaults to .pdb above - but save_uploaded_bytes()
+        # saves with whichever extension actually matches the upload's
+        # real format. Check for that before assuming this ID needs to
+        # be fetched from a remote source it was never downloaded from.
+        alt_ext = ".pdb" if ext == ".cif" else ".cif"
+        alt_file = self.raw_dir / f"{safe_id}{alt_ext}"
+        return alt_file if alt_file.exists() else output_file
+
+    def _try_local_cache_hit(
+        self, output_file: Path, force: bool, pdb_id: str
+    ) -> Optional[Tuple[bool, str, Path]]:
+        if not (output_file.exists() and not force):
+            return None
+        file_size_mb = output_file.stat().st_size / (1024 * 1024)
+        if self.cache_manager:
+            self.cache_manager.update_access(pdb_id)
+        return True, f"Using local file ({file_size_mb:.2f} MB)", output_file
+
+    async def _dispatch_source_fetch(
+        self,
+        source: str,
+        pdb_id: str,
+        client: httpx.AsyncClient,
+        manage_client: bool,
+    ) -> Tuple[bool, str, Optional[httpx.Response], str]:
+        """Returns (success, msg, response, effective_pdb_id) - only the
+        standard-PDB branch uppercases pdb_id, which then also affects the
+        caller's later cache-registration/log messages, so the (possibly
+        unchanged) id is threaded back through the return value."""
+        fetchers = {
+            "alphafold": self._fetch_alphafold_response,
+            "swissmodel": self._fetch_swissmodel_response,
+            "esmfold": self._fetch_esmfold_response,
+        }
+        fetch = fetchers.get(source)
+        if fetch:
+            success, msg, response = await fetch(pdb_id, client, manage_client)
+            return success, msg, response, pdb_id
+
+        pdb_id = pdb_id.upper()
+        success, msg, response = await self._fetch_pdb_response(
+            pdb_id, client, manage_client
+        )
+        return success, msg, response, pdb_id
+
     async def download_pdb(
         self,
         pdb_id: str,
@@ -409,28 +463,11 @@ class PDBManager:
         """
         pdb_id = pdb_id.strip()
         source = self.detect_source(pdb_id)
-        ext = ".cif" if source == "alphafold" else ".pdb"
+        output_file = self._resolve_output_file(pdb_id, source)
 
-        # Use lower-case filenames internally to avoid WSL case-sensitivity issues
-        safe_id = pdb_id.lower()
-        output_file = self.raw_dir / f"{safe_id}{ext}"
-
-        if not output_file.exists():
-            # detect_source() doesn't recognize an uploaded ID's "UPLOAD-"
-            # prefix, so ext defaults to .pdb above - but save_uploaded_bytes()
-            # saves with whichever extension actually matches the upload's
-            # real format. Check for that before assuming this ID needs to
-            # be fetched from a remote source it was never downloaded from.
-            alt_ext = ".pdb" if ext == ".cif" else ".cif"
-            alt_file = self.raw_dir / f"{safe_id}{alt_ext}"
-            if alt_file.exists():
-                output_file = alt_file
-
-        if output_file.exists() and not force:
-            file_size_mb = output_file.stat().st_size / (1024 * 1024)
-            if self.cache_manager:
-                self.cache_manager.update_access(pdb_id)
-            return True, f"Using local file ({file_size_mb:.2f} MB)", output_file
+        cache_hit = self._try_local_cache_hit(output_file, force, pdb_id)
+        if cache_hit:
+            return cache_hit
 
         if not self.validate_pdb_id(pdb_id):
             return False, f"Invalid ID format: {pdb_id}", None
@@ -439,25 +476,9 @@ class PDBManager:
         if manage_client:
             client = httpx.AsyncClient(timeout=self.timeout)
 
-        if source == "alphafold":
-            success, msg, response = await self._fetch_alphafold_response(
-                pdb_id, client, manage_client
-            )
-        elif source == "swissmodel":
-            success, msg, response = await self._fetch_swissmodel_response(
-                pdb_id, client, manage_client
-            )
-        elif source == "esmfold":
-            success, msg, response = await self._fetch_esmfold_response(
-                pdb_id, client, manage_client
-            )
-        else:
-            # Standard PDB
-            pdb_id = pdb_id.upper()
-            success, msg, response = await self._fetch_pdb_response(
-                pdb_id, client, manage_client
-            )
-
+        success, msg, response, pdb_id = await self._dispatch_source_fetch(
+            source, pdb_id, client, manage_client
+        )
         if not success:
             return False, msg, None
 
