@@ -2,6 +2,17 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.24.2]
+
+Fixed the `new_coverage` gate condition's underlying metric problem for real this time, after 3.24.1's `sonar.tests`/`sonar.test.inclusions` attempt broke the whole analysis. Also confirmed SonarCloud's free tier can't have its Quality Gate threshold edited at all (custom quality gates are a Team/Enterprise-only feature) - lowering the 80% requirement was never actually on the table.
+
+### Fixed
+- **`sonar-project.properties`**: added `sonar.coverage.exclusions=tests/**/*.py,web-frontend/src/**/*.test.js` - a narrower, different property than the one that broke things before. It only removes matching files from the coverage *requirement*, without touching `sonar.sources`/`sonar.tests` scanning/classification at all.
+
+### Verified
+- **Confirmed via re-analysis**, checking the exact metrics that broke last time first: `ncloc` (17846), `code_smells` (42), `bugs`/`vulnerabilities` (0/4) all read their expected real values - this fix did not repeat 3.24.1's breakage.
+- Overall `coverage` rose 34.2% → 43.9%; the gate-relevant `new_coverage` rose 36.5% → 48.4% (`new_lines_to_cover` dropped 8097 → 5998, confirming ~2099 test-file lines were correctly excluded). Still below the 80% gate threshold - real test-writing is the only path left to close the remaining gap, tracked separately.
+
 ## [3.24.1]
 
 Fixed the last CI/CD-scanning vulnerability from 3.24.0's investigation that wasn't an `S8544` hash-lock finding: `docker:S6470` ("Dockerfiles should not copy the build context using recursive or glob patterns", CRITICAL) on the Dockerfile's `COPY . .` - a different, newer rule than the Security Hotspot already marked "Safe" on the same line weeks ago, this one a hard Vulnerability rather than something reviewable as a hotspot.
