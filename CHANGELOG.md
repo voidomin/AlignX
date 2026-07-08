@@ -2,6 +2,17 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.69.0]
+
+Seventeenth batch of the `new_coverage` push - more of `pdb_manager.py`'s remaining gaps: `_CleanSelect`'s duck-typed Bio.PDB.Select methods (never directly unit tested, only indirectly via a real `PDBIO.save()` call that doesn't guarantee every branch fires), the AlphaFold/SWISS-MODEL/ESM Atlas fetch helpers' exception paths, `batch_download` (had zero direct tests despite being the parallel-download entry point coordinator.py calls), and `download_pdb`'s cache-registration and save-failure paths.
+
+### Added
+- **`tests/test_pdb_manager.py`** (+15 tests): `_CleanSelect.accept_model`/`accept_chain`/`accept_atom` (hydrogen exclusion by element and by name prefix) and `_below_plddt_threshold`'s exception/no-atoms fallbacks; `_fetch_alphafold_response`'s timeout and generic-exception paths, `_fetch_swissmodel_response`'s and `_fetch_esmfold_response`'s generic-exception paths; `batch_download` (parallel mapping, one failure doesn't abort the batch); `download_pdb`'s cache-manager registration call and its save-failure (`_write_bytes` raising) path. File coverage: 90% → 95%.
+
+### Verified
+- Full backend suite: 772 tests passing, both locally and in a CI-matching Docker container.
+- `black`/`ruff` clean.
+
 ## [3.68.0]
 
 Repository-cleanup pass, prompted by a "what's left to work on" check now that the feature roadmap, test coverage, and SonarCloud findings are all in good shape. Surveyed for actual cruft first (tracked binaries, stray `__pycache__`, dead roadmap items) - found none; `mustang_build/` and the local `run_history.db` are both correctly gitignored already. The one real gap: nothing explained why 5 `requirements*` files now exist after the S8544 hash-pinning work.

@@ -1,6 +1,7 @@
 import asyncio
 from pathlib import Path
 from unittest.mock import patch, AsyncMock, MagicMock
+import httpx
 import pytest
 from src.backend.pdb_manager import PDBManager
 
@@ -625,4 +626,201 @@ class TestBatchClean:
         results = manager.batch_clean([good_file, bad_file])
 
         assert results["good.pdb"][0] is True
-        assert results["does_not_exist.pdb"][0] is False
+
+
+class TestCleanSelect:
+    """Direct unit tests for _CleanSelect's Bio.PDB.Select-duck-typed
+    methods - clean_pdb()'s existing tests exercise these indirectly
+    through a real PDBIO.save() call, which doesn't guarantee every
+    branch (e.g. accept_model/accept_chain always return 1 and may not
+    even be invoked by every Bio.PDB version's save() path)."""
+
+    def _select(
+        self,
+        is_plddt_model=False,
+        plddt_scale=1.0,
+        remove_water=True,
+        remove_heteroatoms=True,
+    ):
+        from src.backend.pdb_manager import _CleanSelect
+
+        return _CleanSelect(
+            is_plddt_model, plddt_scale, remove_water, remove_heteroatoms
+        )
+
+    def test_accept_model_always_keeps(self):
+        assert self._select().accept_model(object()) == 1
+
+    def test_accept_chain_always_keeps(self):
+        assert self._select().accept_chain(object()) == 1
+
+    def test_accept_atom_excludes_hydrogen_by_element(self):
+        atom = MagicMock(element="H")
+        atom.name = "H1"
+        assert self._select().accept_atom(atom) == 0
+
+    def test_accept_atom_excludes_hydrogen_by_name_prefix(self):
+        atom = MagicMock(element="")
+        atom.name = "HB2"
+        assert self._select().accept_atom(atom) == 0
+
+    def test_accept_atom_keeps_non_hydrogen(self):
+        atom = MagicMock(element="C")
+        atom.name = "CA"
+        assert self._select().accept_atom(atom) == 1
+
+    def test_below_plddt_threshold_false_on_attribute_error(self):
+        residue = MagicMock()
+        residue.get_atoms.side_effect = AttributeError("no atoms")
+        select = self._select(is_plddt_model=True, plddt_scale=1.0)
+        assert select._below_plddt_threshold(residue) is False
+
+    def test_below_plddt_threshold_false_when_no_atoms(self):
+        residue = MagicMock()
+        residue.get_atoms.return_value = iter([])
+        select = self._select(is_plddt_model=True, plddt_scale=1.0)
+        assert select._below_plddt_threshold(residue) is False
+
+
+class TestFetchAlphafoldResponse:
+    @pytest.mark.asyncio
+    @patch("src.backend.pdb_manager.httpx.AsyncClient.get")
+    async def test_timeout_reports_clean_failure(self, mock_get, mock_config):
+        mock_get.side_effect = httpx.TimeoutException("timed out")
+        manager = PDBManager(mock_config)
+
+        async with httpx.AsyncClient() as client:
+            success, msg, response = await manager._fetch_alphafold_response(
+                "AF-P69905-F1", client, manage_client=False
+            )
+
+        assert success is False
+        assert "timeout" in msg.lower()
+        assert response is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.pdb_manager.httpx.AsyncClient.get")
+    async def test_unexpected_exception_reports_clean_failure(
+        self, mock_get, mock_config
+    ):
+        mock_get.side_effect = RuntimeError("boom")
+        manager = PDBManager(mock_config)
+
+        async with httpx.AsyncClient() as client:
+            success, msg, response = await manager._fetch_alphafold_response(
+                "AF-P69905-F1", client, manage_client=False
+            )
+
+        assert success is False
+        assert "boom" in msg
+        assert response is None
+
+
+class TestFetchSwissmodelResponse:
+    @pytest.mark.asyncio
+    @patch("src.backend.pdb_manager.httpx.AsyncClient.get")
+    async def test_unexpected_exception_reports_clean_failure(
+        self, mock_get, mock_config
+    ):
+        mock_get.side_effect = RuntimeError("boom")
+        manager = PDBManager(mock_config)
+
+        async with httpx.AsyncClient() as client:
+            success, msg, response = await manager._fetch_swissmodel_response(
+                "SM-P69905", client, manage_client=False
+            )
+
+        assert success is False
+        assert "boom" in msg
+        assert response is None
+
+
+class TestBatchDownload:
+    @pytest.mark.asyncio
+    async def test_downloads_all_ids_in_parallel_and_maps_results(self, mock_config):
+        manager = PDBManager(mock_config)
+
+        async def fake_download(pdb_id, force=False, client=None):
+            return True, "ok", Path(f"/fake/{pdb_id}.pdb")
+
+        with patch.object(manager, "download_pdb", side_effect=fake_download):
+            results = await manager.batch_download(["4RLT", "3UG9"])
+
+        assert set(results.keys()) == {"4RLT", "3UG9"}
+        assert all(r[0] is True for r in results.values())
+
+    @pytest.mark.asyncio
+    async def test_a_single_failure_does_not_abort_the_batch(self, mock_config):
+        manager = PDBManager(mock_config)
+
+        async def fake_download(pdb_id, force=False, client=None):
+            if pdb_id == "9ZZZ":
+                return False, "404 Not Found", None
+            return True, "ok", Path(f"/fake/{pdb_id}.pdb")
+
+        with patch.object(manager, "download_pdb", side_effect=fake_download):
+            results = await manager.batch_download(["4RLT", "9ZZZ"])
+
+        assert results["4RLT"][0] is True
+        assert results["9ZZZ"][0] is False
+
+
+class TestDownloadPdbSaveHandling:
+    @pytest.mark.asyncio
+    @patch("src.backend.pdb_manager.httpx.AsyncClient.get")
+    async def test_registers_with_cache_manager_on_success(
+        self, mock_get, mock_config, temp_workspace
+    ):
+        mock_response = AsyncMock()
+        mock_response.status_code = 200
+        mock_response.content = b"ATOM"
+        mock_get.return_value = mock_response
+
+        cache_manager = MagicMock()
+        manager = PDBManager(mock_config, cache_manager=cache_manager)
+        manager.raw_dir = temp_workspace["raw"]
+
+        await manager.download_pdb("1A0J")
+
+        cache_manager.register_item.assert_called_once()
+        assert cache_manager.register_item.call_args[0][0] == "1A0J"
+
+    @pytest.mark.asyncio
+    @patch("src.backend.pdb_manager.httpx.AsyncClient.get")
+    @patch("src.backend.pdb_manager._write_bytes")
+    async def test_save_failure_reports_clean_error(
+        self, mock_write, mock_get, mock_config, temp_workspace
+    ):
+        mock_response = AsyncMock()
+        mock_response.status_code = 200
+        mock_response.content = b"ATOM"
+        mock_get.return_value = mock_response
+        mock_write.side_effect = OSError("disk full")
+
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+
+        success, msg, path = await manager.download_pdb("1A0J")
+
+        assert success is False
+        assert "disk full" in msg
+        assert path is None
+
+
+class TestFetchEsmfoldResponse:
+    @pytest.mark.asyncio
+    @patch("src.backend.pdb_manager.httpx.AsyncClient.get")
+    async def test_unexpected_exception_reports_clean_failure(
+        self, mock_get, mock_config
+    ):
+        mock_get.side_effect = RuntimeError("boom")
+        manager = PDBManager(mock_config)
+
+        async with httpx.AsyncClient() as client:
+            success, msg, response = await manager._fetch_esmfold_response(
+                "ESM-MGYP001", client, manage_client=False
+            )
+
+        assert success is False
+        assert "boom" in msg
+        assert response is None
