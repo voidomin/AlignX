@@ -14,6 +14,7 @@ Fifteenth batch of the `new_coverage` push, closing out the last few small-to-me
 ### Verified
 - Full backend suite: 735 tests passing, both locally and in a CI-matching Docker container.
 - `black`/`ruff` clean.
+- Confirmed via re-analysis: `new_coverage` 77.26% → 77.71%.
 
 ## [3.65.0]
 
