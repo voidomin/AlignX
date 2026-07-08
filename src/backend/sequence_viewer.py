@@ -90,6 +90,31 @@ class SequenceViewer:
 
         return scores
 
+    def _residue_cell_html(self, char: str, score: float) -> str:
+        """One <td> for a single aligned residue, colored by how conserved
+        its column is (or flagged as a gap)."""
+        if char == "-":
+            bg_color = self.colors["gap"]
+        elif score >= 1.0:  # Identical column
+            bg_color = self.colors["identity"]
+        elif score > 0.7:  # High similarity
+            bg_color = self.colors["high_similarity"]
+        else:
+            bg_color = self.colors["default"]
+
+        res_class = "res-val" if score > 0.5 or char == "-" else ""
+        return f'<td class="{res_class}" style="background-color: {bg_color}; font-family: monospace; width: 20px; text-align: center;">{char}</td>'
+
+    @staticmethod
+    def _consensus_symbol(score: float) -> str:
+        if score >= 1.0:
+            return "*"
+        if score > 0.7:
+            return ":"
+        if score > 0.5:
+            return "."
+        return "&nbsp;"
+
     def generate_html(
         self, sequences: Dict[str, str], conservation: List[float]
     ) -> str:
@@ -104,21 +129,10 @@ class SequenceViewer:
 
         # 2. Sequence Rows
         for header, seq in sequences.items():
-            residues_html = ""
-            for i, char in enumerate(seq):
-                score = conservation[i]
-                bg_color = self.colors["default"]
-
-                # Coloring logic
-                if char == "-":
-                    bg_color = self.colors["gap"]
-                elif score >= 1.0:  # Identical column
-                    bg_color = self.colors["identity"]
-                elif score > 0.7:  # High similarity
-                    bg_color = self.colors["high_similarity"]
-
-                res_class = "res-val" if score > 0.5 or char == "-" else ""
-                residues_html += f'<td class="{res_class}" style="background-color: {bg_color}; font-family: monospace; width: 20px; text-align: center;">{char}</td>'
+            residues_html = "".join(
+                self._residue_cell_html(char, conservation[i])
+                for i, char in enumerate(seq)
+            )
 
             rows_html += f"""
             <tr>
@@ -128,19 +142,10 @@ class SequenceViewer:
             """
 
         # Consensus/Conservation Row
-        cons_html = ""
-        for score in conservation:
-            symbol = "&nbsp;"
-            if score >= 1.0:
-                symbol = "*"
-            elif score > 0.7:
-                symbol = ":"
-            elif score > 0.5:
-                symbol = "."
-
-            cons_html += (
-                f'<td style="text-align: center; font-weight: bold;">{symbol}</td>'
-            )
+        cons_html = "".join(
+            f'<td style="text-align: center; font-weight: bold;">{self._consensus_symbol(score)}</td>'
+            for score in conservation
+        )
 
         rows_html += f"""
         <tr style="background-color: var(--st-secondary-bg, #f1f2f6);">

@@ -317,34 +317,45 @@ def citations_for_compare_run(pdb_ids: List[str]) -> List[str]:
     return ids
 
 
+# Per-neighbor annotation fields (see annotation_aggregator.py) mapped to
+# the citation they justify - cited only if at least one neighbor actually
+# has data in that field, not just because Discover mode can query it.
+_ANNOTATION_FIELD_SOURCE = [
+    ("domains", "interpro"),
+    ("go_terms", "quickgo"),
+    ("string_partners", "string"),
+    ("reactome_pathways", "reactome"),
+]
+
+
 def citations_for_discover_run(results: Dict[str, Any]) -> List[str]:
     """Citation ids for a Discover run: Foldseek, the query structure's own
     source database, every Foldseek database actually searched, and every
     annotation source that actually contributed data to at least one
     neighbor - not every source Discover mode is capable of querying."""
-    ids = ["foldseek", _structure_source_citation(results.get("pdb_id", ""))]
+    ids: List[str] = []
+    seen = set()
+
+    def add(citation_id: str) -> None:
+        if citation_id not in seen:
+            seen.add(citation_id)
+            ids.append(citation_id)
+
+    add("foldseek")
+    add(_structure_source_citation(results.get("pdb_id", "")))
 
     databases_searched = results.get("databases_searched") or []
     for db in databases_searched:
         source_id = _FOLDSEEK_DB_SOURCE.get(db)
-        if source_id and source_id not in ids:
-            ids.append(source_id)
-    if (
-        any(db in _SIFTS_TRIGGER_DBS for db in databases_searched)
-        and "sifts" not in ids
-    ):
-        ids.append("sifts")
+        if source_id:
+            add(source_id)
+    if any(db in _SIFTS_TRIGGER_DBS for db in databases_searched):
+        add("sifts")
 
-    annotations = results.get("annotations") or {}
-    per_neighbor = annotations.get("per_neighbor") or []
-    if any(n.get("domains") for n in per_neighbor) and "interpro" not in ids:
-        ids.append("interpro")
-    if any(n.get("go_terms") for n in per_neighbor) and "quickgo" not in ids:
-        ids.append("quickgo")
-    if any(n.get("string_partners") for n in per_neighbor) and "string" not in ids:
-        ids.append("string")
-    if any(n.get("reactome_pathways") for n in per_neighbor) and "reactome" not in ids:
-        ids.append("reactome")
+    per_neighbor = (results.get("annotations") or {}).get("per_neighbor") or []
+    for field, citation_id in _ANNOTATION_FIELD_SOURCE:
+        if any(n.get(field) for n in per_neighbor):
+            add(citation_id)
 
     return ids
 

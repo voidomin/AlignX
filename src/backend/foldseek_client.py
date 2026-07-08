@@ -217,19 +217,26 @@ class FoldseekClient:
             return await self.fetch_results(ticket_id, client=client)
 
     @staticmethod
+    def _flatten_alignments(db_alignments: Any) -> List[Dict[str, Any]]:
+        if isinstance(db_alignments, list):
+            return db_alignments
+        if isinstance(db_alignments, dict):
+            return [db_alignments]
+        return []
+
+    @staticmethod
     def parse_hits(raw_result: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Flattens a raw Foldseek result payload into a list of hit dicts."""
-        hits: List[Dict[str, Any]] = []
-        if isinstance(raw_result, dict):
-            if "results" in raw_result:
-                for result_group in raw_result.get("results", []):
-                    for db_alignments in result_group.get("alignments", []):
-                        if isinstance(db_alignments, list):
-                            hits.extend(db_alignments)
-                        elif isinstance(db_alignments, dict):
-                            hits.append(db_alignments)
-            elif "alignments" in raw_result:
-                hits = raw_result["alignments"]
-        elif isinstance(raw_result, list):
-            hits = raw_result
-        return hits
+        if isinstance(raw_result, list):
+            return raw_result
+        if not isinstance(raw_result, dict):
+            return []
+
+        if "results" in raw_result:
+            hits: List[Dict[str, Any]] = []
+            for result_group in raw_result.get("results", []):
+                for db_alignments in result_group.get("alignments", []):
+                    hits.extend(FoldseekClient._flatten_alignments(db_alignments))
+            return hits
+
+        return raw_result.get("alignments", [])

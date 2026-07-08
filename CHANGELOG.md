@@ -2,6 +2,20 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.31.0]
+
+First batch of the `python:S3776` Cognitive Complexity cleanup (41 open findings total, complexity 16-179, mostly in the legacy Streamlit UI). Scoped to backend-only, smallest-excess-first, per an explicit decision to skip the legacy Streamlit-only files for now given their size (up to 179) and the regression risk of touching live logic there without dedicated attention. This entry covers the 3 smallest backend findings (17, 17, 18).
+
+### Fixed
+- **`citation_exporter.py:320`** (17→within limit): `citations_for_discover_run()` had four near-identical `if any(...) and "x" not in ids: ids.append("x")` blocks. Replaced with a data-driven `_ANNOTATION_FIELD_SOURCE` list and a small `add()` closure that handles dedup once instead of per-branch.
+- **`sequence_viewer.py:93`** (17→within limit): `generate_html()`'s per-residue coloring `if/elif` chain and per-column consensus-symbol `if/elif` chain, both nested inside loops, were extracted into `_residue_cell_html()` and `_consensus_symbol()` - same logic, but a nested branch inside a loop no longer compounds with the enclosing function's own complexity.
+- **`foldseek_client.py:220`** (18→within limit): `parse_hits()`'s nested `if isinstance(dict) → if/elif → for → for → if/elif isinstance` was flattened into early returns plus a `_flatten_alignments()` helper for the innermost list-or-dict-or-neither check.
+
+### Verified
+- All three refactors produce byte-identical output to the originals on representative inputs (checked manually: `parse_hits` against dict/list/empty/garbage payloads, `generate_html` against a real conservation+sequence pair).
+- Full backend suite: 353 tests passing (no change in count - these are refactors, not behavior changes, so no new tests were needed beyond the existing coverage each function already had).
+- `black --check` and `ruff check` clean on all three touched files.
+
 ## [3.30.0]
 
 First pass at the 47 open SonarCloud issues pulled from the public API (`api/issues/search?componentKeys=voidomin_AlignX&resolved=false`): 3 are the `S8544` hash-pinned-lockfile decision explicitly deferred in v3.24.0 (still deferred, no change here), 41 are Cognitive Complexity (`S3776`) refactors ranging from just-over-threshold to extreme (up to 179, mostly in the legacy Streamlit UI) - deliberately out of scope for this entry, tracked as a separate follow-up. This entry only covers the remaining 3 mechanical/safe ones.
