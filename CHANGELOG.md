@@ -2,6 +2,17 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.51.0]
+
+Ninth batch of the `new_coverage` push - closes several real gaps in `api.py`, the FastAPI backend's largest single file (previously 81% covered): the untested `/api/clusters` endpoint, `/api/comparison/runs`, the `_find_structure_pdb_path` run-results-dir fallback branch, the `lifespan` startup/shutdown context manager, and several 500-error exception handlers (`/api/notebook`, `/api/discover/citations`) that had never actually been triggered.
+
+### Added
+- **`tests/test_api.py`** (+16 tests): `/api/clusters` (real clustering via a 4-structure RMSD matrix producing 2 families, malformed-payload and <2-structures 400s), `/api/comparison/runs` (exclude_run_id filtering, path-traversal rejection), `_find_structure_pdb_path` (direct unit tests for the run-results-dir fallback and the not-found case), `/api/notebook` and `/api/discover/citations` 500-error paths (file-not-created, unexpected exporter exception), and the `lifespan` context manager (verifies both background sweep tasks start on startup and are actually cancelled on shutdown, not leaked). File coverage: 81% → 88%.
+
+### Verified
+- Full backend suite: 568 tests passing, both locally and in a CI-matching Docker container.
+- `black`/`ruff` clean.
+
 ## [3.50.0]
 
 Fifth batch of the legacy Streamlit UI cleanup (2 of 14 findings: complexity 37, 47), both in `src/utils/session_manager.py`.

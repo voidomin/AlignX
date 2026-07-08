@@ -333,6 +333,28 @@ def test_memory_endpoints():
     assert data["status"] in ["cleared"]
 
 
+def test_find_structure_pdb_path_falls_back_to_run_results_dir():
+    """When a structure isn't in the session's raw-download folder (e.g. it
+    was uploaded directly into a run rather than downloaded), the lookup
+    must fall back to that run's own results folder before giving up."""
+
+    def fake_exists(self):
+        return "results" in str(self) and "run_123" in str(self)
+
+    with patch("pathlib.Path.exists", fake_exists):
+        result = api_module._find_structure_pdb_path("4RLT", "run_123", None)
+
+    assert result is not None
+    assert "run_123" in str(result)
+
+
+def test_find_structure_pdb_path_returns_none_when_nowhere_found():
+    with patch("pathlib.Path.exists", return_value=False):
+        result = api_module._find_structure_pdb_path("4RLT", "run_123", None)
+
+    assert result is None
+
+
 def test_interactions_and_ligands_endpoints():
     """Verify that ligands and interactions retrieval endpoints handle mocks successfully."""
     with patch("src.backend.api.ligand_analyzer") as mock_analyzer:
@@ -459,6 +481,70 @@ def test_comparison_endpoint_uses_upper_triangle_mean():
         assert data["target_mean_rmsd"] == pytest.approx(10.0)
 
 
+def test_list_comparison_runs_excludes_given_run_id():
+    with patch("src.backend.api.ResultManager.list_runs") as mock_list_runs:
+        mock_list_runs.return_value = [
+            {"id": "run1", "timestamp": "2026-01-01", "proteins": ["4RLT"]},
+            {"id": "run2", "timestamp": "2026-01-02", "proteins": ["3UG9"]},
+        ]
+
+        response = client.get("/api/comparison/runs?exclude_run_id=run1")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert [r["id"] for r in data["runs"]] == ["run2"]
+
+
+def test_list_comparison_runs_rejects_path_traversal_session_id():
+    response = client.get("/api/comparison/runs?session_id=../../etc")
+    assert response.status_code == 400
+
+
+def test_clusters_endpoint_groups_close_structures():
+    rmsd_df = {
+        "index": ["A", "B", "C", "D"],
+        "columns": ["A", "B", "C", "D"],
+        "data": [
+            [0.0, 1.0, 8.0, 8.0],
+            [1.0, 0.0, 8.0, 8.0],
+            [8.0, 8.0, 0.0, 1.0],
+            [8.0, 8.0, 1.0, 0.0],
+        ],
+    }
+
+    response = client.post("/api/clusters", json={"rmsd_df": rmsd_df, "threshold": 3.0})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["threshold"] == 3.0
+    families = data["clusters"]
+    assert len(families) == 2
+    member_sets = [set(f["members"]) for f in families]
+    assert {"A", "B"} in member_sets
+    assert {"C", "D"} in member_sets
+    for f in families:
+        assert f["avg_rmsd"] == pytest.approx(1.0)
+
+
+def test_clusters_endpoint_rejects_malformed_payload():
+    response = client.post(
+        "/api/clusters",
+        json={"rmsd_df": {"index": ["A"], "columns": ["A"]}, "threshold": 3.0},
+    )
+
+    assert response.status_code == 400
+    assert "Invalid rmsd_df payload" in response.json()["detail"]
+
+
+def test_clusters_endpoint_rejects_fewer_than_two_structures():
+    rmsd_df = {"index": ["A"], "columns": ["A"], "data": [[0.0]]}
+
+    response = client.post("/api/clusters", json={"rmsd_df": rmsd_df})
+
+    assert response.status_code == 400
+    assert "At least 2 structures" in response.json()["detail"]
+
+
 def test_path_traversal_is_rejected():
     """Verify that run_id/session_id/pdb_id values with path-traversal characters are rejected (400), not resolved on disk."""
     traversal_cases = [
@@ -482,6 +568,25 @@ def test_legitimate_ids_are_not_rejected_by_path_validation():
     """Verify that well-formed run_id/session_id (matching real formats) pass validation and 404 only because the run doesn't exist."""
     response = client.get("/api/sequence?run_id=run_1234567890")
     assert response.status_code == 404  # not found, but not rejected as invalid
+
+
+@pytest.mark.asyncio
+async def test_lifespan_starts_and_cancels_both_sweep_tasks():
+    """The lifespan context manager spawns the alignment and discovery
+    background sweep tasks on startup and must cancel both on shutdown,
+    not leak them."""
+    async with api_module.lifespan(app):
+        tasks = [
+            t
+            for t in asyncio.all_tasks()
+            if t.get_coro().__name__
+            in ("_sweep_alignment_jobs", "_sweep_discovery_jobs")
+        ]
+        assert len(tasks) == 2
+        assert all(not t.done() for t in tasks)
+
+    await asyncio.sleep(0)  # let cancellation propagate
+    assert all(t.cancelled() or t.done() for t in tasks)
 
 
 @pytest.mark.asyncio
@@ -646,6 +751,25 @@ def test_discover_citations_endpoint_rejects_a_compare_run():
         assert response.status_code == 400
 
 
+def test_discover_citations_endpoint_500s_on_unexpected_export_error():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "src.backend.citation_exporter.CitationExporter.export"
+    ) as mock_export:
+        mock_export.side_effect = RuntimeError("disk full")
+        mock_get_run.return_value = {
+            "id": "discover_123",
+            "metadata": {
+                "run_type": "discover",
+                "results": {"pdb_id": "4RLT", "databases_searched": ["pdb100"]},
+            },
+        }
+
+        response = client.get("/api/discover/citations?run_id=discover_123")
+
+        assert response.status_code == 500
+        assert "disk full" in response.json()["detail"]
+
+
 def test_report_endpoint_sections_param_bypasses_cache(tmp_path):
     """Requesting specific report sections must always regenerate the PDF
     (never reuse a cached full report from a prior default request), and the
@@ -723,6 +847,42 @@ def test_notebook_endpoint(tmp_path):
         results_arg = mock_export.call_args[0][0]
         assert isinstance(results_arg["result_dir"], Path)
         assert isinstance(results_arg["alignment_pdb"], Path)
+
+
+def test_notebook_endpoint_500s_when_file_not_actually_created(tmp_path):
+    missing_html = tmp_path / "never_written.html"
+
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "src.backend.notebook_exporter.NotebookExporter.export"
+    ) as mock_export:
+        mock_export.return_value = missing_html
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT"],
+            "metadata": {"results": {"stats": {}, "id": "run_123"}},
+        }
+
+        response = client.get("/api/notebook?run_id=run_123")
+
+        assert response.status_code == 500
+        assert "not created successfully" in response.json()["detail"]
+
+
+def test_notebook_endpoint_500s_on_unexpected_exporter_error():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "src.backend.notebook_exporter.NotebookExporter.export"
+    ) as mock_export:
+        mock_export.side_effect = RuntimeError("disk full")
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT"],
+            "metadata": {"results": {"stats": {}, "id": "run_123"}},
+        }
+
+        response = client.get("/api/notebook?run_id=run_123")
+
+        assert response.status_code == 500
+        assert "disk full" in response.json()["detail"]
 
 
 def _discover_run(run_id="discover_123", results_overrides=None):
