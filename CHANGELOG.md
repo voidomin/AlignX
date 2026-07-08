@@ -2,6 +2,17 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.53.0]
+
+Seventh batch of the legacy Streamlit UI cleanup (1 of 14 findings: complexity 71, `sidebar.py`'s `render_sidebar`).
+
+### Fixed
+- **`render_sidebar`** (71→within limit): split into 15 focused functions across its 5 logical sections (Mustang status, System Health expander, Session Controls expander, History expander, Structure Options expander). Along the way, corrected a subtle risk in the naive extraction: the original always renders "Free RAM" and lets its own internal try/except degrade gracefully if `psutil.Process()` fails; an earlier draft of this refactor would have skipped rendering the button entirely in that case, which was caught and fixed before landing.
+
+### Verified
+- Full suite: 601 tests passing, including all 23 existing `test_sidebar.py` tests (94% coverage from an earlier pass) - System Health, Session Controls confirm/cancel flows, History cards, and Structure Options all exercised.
+- `black`/`ruff` clean.
+
 ## [3.52.0]
 
 Sixth batch of the legacy Streamlit UI cleanup (1 of 14 findings: complexity 58, `input_section.py`'s `render_input_section`).
