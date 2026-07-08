@@ -2,6 +2,19 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.18.0]
+
+Real fix for the 6 remaining SonarCloud vulnerabilities (`jssecurity:S8476`, "client-side requests should not be vulnerable to forging attacks") in `web-frontend/src/api.js`/`Viewer3D.js` - reversed course from the earlier plan to mark these "False Positive". Researched what the rule's own remediation model actually requires: a **Validator** (confirm the value matches an expected, safe shape before it's used) - `encodeURIComponent()` is only a **Sanitizer** (escapes characters so a string doesn't break URL syntax), which is a different thing. An attacker-supplied value like `../other-endpoint` is still fully functional after percent-encoding; sanitizing it doesn't validate that it's the kind of value that should be used at all.
+
+### Fixed
+- **`api.js`**: every function that builds a request URL from a `run_id`/`job_id`/`ligand_id`/`pdb_id` now validates the value's shape first (mirroring the backend's own `_safe_segment()` regex, or `isValidPdbId()` for structure IDs) and throws before ever reaching `fetch()` if it doesn't match - not just at the 6 originally-flagged call sites, but consistently across every function in the file with the same pattern, including several Sonar didn't flag (`fetchJobStatus`, `fetchComparison`, `fetchInteractions`, `getShareLink`, `getAlignmentFastaUrl`, `getLabNotebookUrl`, `getDiscoveryReportUrl`, `getDiscoveryExportUrl`).
+- **`getAlignmentReportUrl`'s `sections` param** now validated against an explicit allowlist of the 5 known report sections, rather than just percent-encoded.
+- This closes a real (if narrow) gap: `main.js`'s shared-run-link handling reads `shared_run` directly from the URL query string - genuinely attacker-influenced input, since anyone can craft a link. A malformed value there previously would have been percent-encoded and sent to the backend as-is (which would reject it, but only after the request was made); it's now rejected client-side before any network call happens.
+
+### Verified
+- 142 frontend tests (20 new), including parameterized tests proving `fetchRun`/`fetchSequence`/`fetchJobStatus`/`fetchLigands`/`getAlignmentPdbUrl`/`getShareLink` all reject malformed IDs (`../admin`, `a/b`, path traversal attempts, empty strings) without ever calling `fetch`.
+- Live through the real running server: normal usage (real alignment, PDF/FASTA/notebook downloads, ligands, history, share-link generation) all still work; separately opened the app with `?shared_run=../../etc/passwd` and confirmed it's now rejected client-side with a clean error banner instead of reaching the network.
+
 ## [3.17.1]
 
 Resolves one of the two remaining SonarCloud Security Hotspots (`mustang_runner.py`'s `os.chmod` calls).

@@ -138,9 +138,16 @@ describe('api.js (no API key configured)', () => {
     it('getAlignmentReportUrl appends a comma-joined sections param when a subset is given', async () => {
         const { getAlignmentReportUrl } = await import('./api.js');
         const url = getAlignmentReportUrl('run_1', ['summary', 'insights']);
-        // URL-encoded (%2C, not a literal comma) - FastAPI decodes query
-        // params automatically, so sections.split(",") still sees "summary,insights".
-        expect(url).toContain('sections=summary%2Cinsights');
+        // Each section name is validated against a fixed allowlist before
+        // being joined, so no percent-encoding is needed - unlike a raw
+        // user-controlled value, we know exactly what's in this string.
+        expect(url).toContain('sections=summary,insights');
+    });
+
+    it('getAlignmentReportUrl rejects a section name outside the known allowlist', async () => {
+        const { getAlignmentReportUrl } = await import('./api.js');
+        expect(() => getAlignmentReportUrl('run_1', ['summary', 'not-a-real-section']))
+            .toThrow('Invalid report section');
     });
 
     it('getLabNotebookUrl points at the notebook endpoint for the given run', async () => {
@@ -244,5 +251,64 @@ describe('api.js (API key configured)', () => {
         const link = getShareLink('run_1');
         expect(link).toContain('shared_run=run_1');
         expect(link).toContain('api_key=secret-key');
+    });
+});
+
+describe('api.js request-ID validation', () => {
+    // SonarCloud jssecurity:S8476 ("client-side requests should not be
+    // vulnerable to forging attacks"): a value must be validated against
+    // its expected shape *before* it reaches a request URL, not just
+    // percent-encoded into it - encodeURIComponent() alone would still let
+    // a value like "../other-endpoint" through, just escaped. These tests
+    // prove the validators actually reject malformed/malicious values
+    // rather than silently passing them through.
+    beforeEach(() => {
+        global.fetch = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    const maliciousRunIds = ['../admin', 'a/b', 'a b', 'run_1?x=y', ''];
+
+    it.each(maliciousRunIds)('fetchRun rejects a malformed run_id: %j', async (bad) => {
+        const { fetchRun } = await import('./api.js');
+        await expect(fetchRun(bad)).rejects.toThrow('Invalid runId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it.each(maliciousRunIds)('fetchSequence rejects a malformed run_id: %j', async (bad) => {
+        const { fetchSequence } = await import('./api.js');
+        await expect(fetchSequence(bad)).rejects.toThrow('Invalid runId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it.each(maliciousRunIds)('fetchJobStatus rejects a malformed job_id: %j', async (bad) => {
+        const { fetchJobStatus } = await import('./api.js');
+        await expect(fetchJobStatus(bad)).rejects.toThrow('Invalid jobId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('getAlignmentPdbUrl throws rather than building a URL from a malformed run_id', async () => {
+        const { getAlignmentPdbUrl } = await import('./api.js');
+        expect(() => getAlignmentPdbUrl('../../etc/passwd')).toThrow('Invalid runId');
+    });
+
+    it('getShareLink throws rather than building a link from a malformed run_id', async () => {
+        const { getShareLink } = await import('./api.js');
+        expect(() => getShareLink('not a real id')).toThrow('Invalid runId');
+    });
+
+    it('fetchLigands rejects a pdbId that is not a recognized structure ID format', async () => {
+        const { fetchLigands } = await import('./api.js');
+        await expect(fetchLigands('../evil', 'run_1')).rejects.toThrow('Invalid pdbId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('accepts genuinely valid IDs without throwing', async () => {
+        mockFetchOnce({ ligands: [] });
+        const { fetchLigands } = await import('./api.js');
+        await expect(fetchLigands('4RLT', 'run_1783414603_2b797f99f0bee74f')).resolves.toBeDefined();
     });
 });
