@@ -196,5 +196,5 @@ class ReportGenerator:
             return self.report_path
 
         except Exception as e:
-            logger.error(f"Failed to generate report: {e}")
+            logger.exception("Failed to generate report")
             raise e

@@ -58,8 +58,8 @@ class RMSDAnalyzer:
             logger.info(f"Heatmap saved to {output_path}")
             return True
 
-        except Exception as e:
-            logger.error(f"Failed to generate heatmap: {str(e)}")
+        except Exception:
+            logger.exception("Failed to generate heatmap")
             return False
 
     def generate_plotly_heatmap(self, rmsd_df: pd.DataFrame):
@@ -117,8 +117,8 @@ class RMSDAnalyzer:
 
             return fig
 
-        except Exception as e:
-            logger.error(f"Failed to generate Plotly heatmap: {str(e)}")
+        except Exception:
+            logger.exception("Failed to generate Plotly heatmap")
             return None
 
     def calculate_statistics(self, rmsd_df: pd.DataFrame) -> Dict:
@@ -209,8 +209,8 @@ class RMSDAnalyzer:
             logger.info(f"Phylip distance matrix saved to {output_path}")
             return True
 
-        except Exception as e:
-            logger.error(f"Failed to export Phylip format: {str(e)}")
+        except Exception:
+            logger.exception("Failed to export Phylip format")
             return False
 
     def calculate_residue_rmsf(
@@ -334,9 +334,6 @@ class RMSDAnalyzer:
 
             return rmsf_values, list(sequences.keys())
 
-        except Exception as e:
-            logger.error(f"Failed to calculate residue RMSF: {str(e)}")
-            import traceback
-
-            logger.error(traceback.format_exc())
+        except Exception:
+            logger.exception("Failed to calculate residue RMSF")
             return [], []

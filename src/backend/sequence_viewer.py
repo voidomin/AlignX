@@ -57,8 +57,8 @@ class SequenceViewer:
 
             return sequences
 
-        except Exception as e:
-            logger.error(f"Failed to parse AFASTA file: {e}")
+        except Exception:
+            logger.exception("Failed to parse AFASTA file")
             return None
 
     def calculate_conservation(self, sequences: Dict[str, str]) -> List[float]:

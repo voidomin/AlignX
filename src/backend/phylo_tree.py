@@ -75,7 +75,7 @@ class PhyloTreeGenerator:
             return True, "Tree generated successfully", output_path
 
         except Exception as e:
-            logger.error(f"Failed to generate phylogenetic tree: {str(e)}")
+            logger.exception("Failed to generate phylogenetic tree")
             return False, f"Tree generation failed: {str(e)}", None
 
     def export_newick(
@@ -114,7 +114,7 @@ class PhyloTreeGenerator:
             return True, "Newick tree exported", output_path
 
         except Exception as e:
-            logger.error(f"Failed to export Newick: {str(e)}")
+            logger.exception("Failed to export Newick")
             return False, f"Newick export failed: {str(e)}", None
 
     def _linkage_to_newick(self, linkage_matrix: np.ndarray, labels: list) -> str:
@@ -192,6 +192,6 @@ class PhyloTreeGenerator:
 
             return fig
 
-        except Exception as e:
-            logger.error(f"Failed to generate Plotly tree: {str(e)}")
+        except Exception:
+            logger.exception("Failed to generate Plotly tree")
             return None

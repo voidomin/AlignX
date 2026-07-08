@@ -2,6 +2,18 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.20.1]
+
+Finished the `logging.exception()` migration from earlier this session - querying SonarCloud's API directly (`rules=python:S8572`) turned up 10 remaining `logger.error(f"...: {e}")` sites across `phylo_tree.py` (3), `rmsd_analyzer.py` (5), `report_generator.py` (1), and `sequence_viewer.py` (1) that weren't in the original ~20-file sweep.
+
+### Fixed
+- All 10 sites now use `logger.exception(...)` (auto-includes the traceback) instead of manually interpolating `str(e)`/`{e}` into the message. Dropped the now-unused `except Exception as e:` binding wherever `e` wasn't also needed elsewhere in the block (e.g. re-raised or included in a returned error string).
+- `rmsd_analyzer.py`'s `calculate_residue_rmsf` had a redundant second `logger.error(traceback.format_exc())` call plus an inline `import traceback` - both removed since `logger.exception()` already captures the full traceback.
+
+### Verified
+- 245 backend tests, ruff, and black all clean.
+- SonarCloud: 10 `python:S8572` issues open before this fix, confirmed via `api/issues/search?rules=python:S8572`.
+
 ## [3.20.0]
 
 Fixed the real `/api/history` payload-bloat issue flagged as an open item in `docs/ROADMAP_V4.md`'s Phase 4 (found there: a 42MB response for just 20 runs, once each run's cached Plotly heatmap/tree figures and Discover hit/annotation payloads accumulate in its `metadata` blob). The History tab and Dashboard's recent-activity list never actually render that data - only `reloadPastRun()` needs it, and only once a specific run is clicked.
