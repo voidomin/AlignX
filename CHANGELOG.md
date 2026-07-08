@@ -2,23 +2,23 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [3.23.0]
+## [3.24.1]
 
-Wired up real test-coverage reporting to SonarCloud - previously it tracked 0% coverage despite 245 backend + 142 frontend tests existing, because SonarCloud Cloud's free-tier "Automatic Analysis" mode can't ingest coverage reports at all (or read `sonar-project.properties`, per the 3.15.0 finding). Moved analysis to CI-driven instead.
+Fixed the last CI/CD-scanning vulnerability from 3.24.0's investigation that wasn't an `S8544` hash-lock finding: `docker:S6470` ("Dockerfiles should not copy the build context using recursive or glob patterns", CRITICAL) on the Dockerfile's `COPY . .` - a different, newer rule than the Security Hotspot already marked "Safe" on the same line weeks ago, this one a hard Vulnerability rather than something reviewable as a hotspot.
 
-### Added
-- **`pytest-cov`** added to `requirements.txt`; CI's `build` job now runs `pytest --cov=src --cov-report=xml`, uploading `coverage.xml` as a build artifact.
-- **`@vitest/coverage-v8`** added to `web-frontend`; a new `npm run test:coverage` script and `vitest.config.js` coverage config (`v8` provider, `lcov` reporter) produce `coverage/lcov.info`, also uploaded as a CI artifact.
-- **New `sonarqube` CI job** (`.github/workflows/ci.yml`): runs after `build`/`frontend-tests` succeed, downloads both coverage artifacts, and runs `SonarSource/sonarqube-scan-action@v8` with a full (non-shallow) checkout for accurate "new code" blame.
-- **`sonar-project.properties`**: added `sonar.projectKey`, `sonar.organization`, `sonar.python.coverage.reportPaths`, and `sonar.javascript.lcov.reportPaths` - all inert under Automatic Analysis, all load-bearing now that analysis is CI-driven.
+Also attempted and reverted a fix for 3.23.0's `new_coverage` gate condition: test files (`tests/*.py`, `*.test.js`) count as "new code requiring coverage," but coverage.py/Vitest never instrument a test file's own lines, so every test file shows 0% covered - meaning writing *more* tests without fixing this first would make the metric worse, not better. Tried the standard fix (`sonar.tests`/`sonar.test.inclusions` in `sonar-project.properties`); it broke the entire analysis instead (re-analysis showed `code_smells`/`bugs`/`vulnerabilities` all reporting 0 and `ncloc` missing entirely - the scanner analyzed almost nothing). Reverted immediately and confirmed a full recovery. Root cause not yet understood; left alone rather than guessing again.
 
-### Changed
-- **SonarCloud project settings**: Automatic Analysis switched off (Administration → Analysis Method) - required before CI-based analysis is accepted at all; this also means `sonar.exclusions` (previously confirmed to have no effect - see 3.15.0/3.15.1) now actually takes effect for the first time.
+### Fixed
+- **`Dockerfile`**: `COPY . .` replaced with an explicit allowlist (`COPY src/ src/`, `COPY config.yaml .`, `COPY static/ static/`) - traced every `project_root / ...` reference in `src/backend/`/`src/utils/` to confirm those three are the *only* things the FastAPI container's `uvicorn src.backend.api:app` entrypoint ever reads; `app.py`, `pages/`, `docs/`, `tests/`, `examples/`, and everything else in the repo is Streamlit-only or dev tooling this container never touches.
+
+### Reverted
+- **`sonar-project.properties`**: `sonar.tests=tests,web-frontend/src` + `sonar.test.inclusions=...` added and removed within the same session after confirming it broke analysis wholesale rather than just reclassifying test files. Not re-attempted pending further investigation.
 
 ### Verified
-- Local dry run of both coverage commands: backend 54% overall (real gaps surfaced - e.g. `rmsd_calculator.py` at 6%, `session_manager.py`/`utilities.py` at 0%, all pre-existing and not addressed here); frontend 85.55% statements. Both `coverage.xml` and `lcov.info` generate correctly and are gitignored.
-- 245 backend + 142 frontend tests still pass unchanged - this only adds reporting, no test behavior changed.
-- **Confirmed via the actual CI-driven analysis** (all 4 jobs, including the new `sonarqube` job, passed): SonarCloud now reports real coverage (34.2% overall) for the first time ever. This also surfaced two Quality Gate conditions that were previously vacuously passing with no data: `new_coverage` (36.5% vs. an 80% default threshold - expected for a project just starting to track coverage) and `new_security_rating` (see 3.24.0 - a set of real findings in `Dockerfile`/`ci.yml` that Automatic Analysis apparently never scanned at all).
+- Rebuilt the Docker image with the new allowlist and ran the container: `/health` returns healthy, the SPA serves at `/` (200), and a real `POST /api/chains` round-trip against RCSB (fetching and parsing 1CRN) succeeds - confirming `config.yaml` loads correctly and nothing needed by the app was left out.
+- Confirmed both resource files traced as needed (`src/backend/resources/3Dmol-min.js`, `src/resources/templates/*.html`) are actually present inside the built image via `docker exec`.
+- 245 backend tests still pass.
+- **Confirmed via re-analysis**: the sonar.tests/test.inclusions revert restored `code_smells`/`bugs`/`ncloc` to their expected real values.
 
 ## [3.24.0]
 
@@ -41,6 +41,24 @@ Investigating 3.23.0's `new_security_rating` gate failure turned up something ge
 - Reproduced the `fpdf2` `multi_cell()` failure directly (not just read about it) before deciding to revert - generated a real report with `fpdf2` installed and hit the exception firsthand.
 - 245 backend tests pass with `fpdf==1.7.2` confirmed back in place.
 - **Confirmed via re-analysis**: all 4 CI jobs (including the `sonarqube` scan) passed on the real push. Open vulnerabilities on `Dockerfile`/`ci.yml` dropped 9 → 4 - only the `S8544` hash-lock findings remain, exactly the ones deliberately left open above. `new_coverage` still failing as expected (36.5%, unaddressed pending a threshold decision).
+
+## [3.23.0]
+
+Wired up real test-coverage reporting to SonarCloud - previously it tracked 0% coverage despite 245 backend + 142 frontend tests existing, because SonarCloud Cloud's free-tier "Automatic Analysis" mode can't ingest coverage reports at all (or read `sonar-project.properties`, per the 3.15.0 finding). Moved analysis to CI-driven instead.
+
+### Added
+- **`pytest-cov`** added to `requirements.txt`; CI's `build` job now runs `pytest --cov=src --cov-report=xml`, uploading `coverage.xml` as a build artifact.
+- **`@vitest/coverage-v8`** added to `web-frontend`; a new `npm run test:coverage` script and `vitest.config.js` coverage config (`v8` provider, `lcov` reporter) produce `coverage/lcov.info`, also uploaded as a CI artifact.
+- **New `sonarqube` CI job** (`.github/workflows/ci.yml`): runs after `build`/`frontend-tests` succeed, downloads both coverage artifacts, and runs `SonarSource/sonarqube-scan-action@v8` with a full (non-shallow) checkout for accurate "new code" blame.
+- **`sonar-project.properties`**: added `sonar.projectKey`, `sonar.organization`, `sonar.python.coverage.reportPaths`, and `sonar.javascript.lcov.reportPaths` - all inert under Automatic Analysis, all load-bearing now that analysis is CI-driven.
+
+### Changed
+- **SonarCloud project settings**: Automatic Analysis switched off (Administration → Analysis Method) - required before CI-based analysis is accepted at all; this also means `sonar.exclusions` (previously confirmed to have no effect - see 3.15.0/3.15.1) now actually takes effect for the first time.
+
+### Verified
+- Local dry run of both coverage commands: backend 54% overall (real gaps surfaced - e.g. `rmsd_calculator.py` at 6%, `session_manager.py`/`utilities.py` at 0%, all pre-existing and not addressed here); frontend 85.55% statements. Both `coverage.xml` and `lcov.info` generate correctly and are gitignored.
+- 245 backend + 142 frontend tests still pass unchanged - this only adds reporting, no test behavior changed.
+- **Confirmed via the actual CI-driven analysis** (all 4 jobs, including the new `sonarqube` job, passed): SonarCloud now reports real coverage (34.2% overall) for the first time ever. This also surfaced two Quality Gate conditions that were previously vacuously passing with no data: `new_coverage` (36.5% vs. an 80% default threshold - expected for a project just starting to track coverage) and `new_security_rating` (see 3.24.0 - a set of real findings in `Dockerfile`/`ci.yml` that Automatic Analysis apparently never scanned at all).
 
 ## [3.22.0]
 

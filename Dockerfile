@@ -40,9 +40,16 @@ COPY requirements.txt .
 # from a wheel only.
 RUN pip install --no-cache-dir --only-binary :all: --no-binary fpdf -r requirements.txt
 
-# Copy application code. Everything relevant to what's excluded from this
-# (.env, .git, credentials) is covered by .dockerignore, not this line.
-COPY . .
+# Copy exactly what this container runs - not the whole build context.
+# uvicorn's entrypoint below only ever imports src.backend.*, which reads
+# config.yaml (project_root / "config.yaml" in api.py) and serves the
+# pre-built SPA from static/ - app.py, pages/, docs/, tests/, examples/,
+# and everything else in the repo is Streamlit-only or dev tooling this
+# container never touches, so there's nothing left that a recursive/glob
+# copy could accidentally pull in.
+COPY src/ src/
+COPY config.yaml .
+COPY static/ static/
 
 # Run as a non-root user - the base python image defaults to root, which
 # this container has no actual need for (binds an unprivileged port, writes
