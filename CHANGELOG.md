@@ -2,6 +2,19 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.21.0]
+
+Mechanical FastAPI documentation cleanup in `src/backend/api.py` - the two largest remaining SonarQube Code Smell rules (70 issues combined, neither gate-blocking since both predate the "new code" baseline): `python:S8410` ("use Annotated for dependency injection", 40 instances) and `python:S8415` ("document this HTTPException in responses", 30 instances).
+
+### Changed
+- Every one of the 17 route handlers' `param: Type = Query(...)/Body(...)/File(...)` parameters converted to the `param: Annotated[Type, Query(...)]` style FastAPI's own docs now recommend. Pure syntax change - confirmed no parameter's actual default/validation behavior shifted (in particular, `chain_selection`'s `{}` default is never mutated in place anywhere downstream, so the Annotated style's literal-default doesn't reintroduce Python's classic mutable-default-argument bug).
+- Added a `responses={...}` dict to every decorator whose handler (directly, or via `_safe_segment()`/`_get_discover_run_results()`) can raise an `HTTPException`, documenting the real status codes and reasons - visible now in `/docs`' Swagger UI instead of only discoverable by reading the handler body.
+
+### Verified
+- 245 backend tests, ruff, and black all clean.
+- `app.openapi()` still generates a valid schema with the new `responses` entries correctly merged alongside FastAPI's default `200`/`422` entries.
+- Live through the real running server: a full alignment run (`/api/chains` → `/api/jobs/align` → poll → `/api/history` → click-to-reload) completed with zero console errors; spot-checked a 200 (`/api/history`), a 400 (`/api/stats?session_id=../etc`), and a 404 (`/api/jobs/doesnotexist`) all still return their original bodies/status codes unchanged.
+
 ## [3.20.2]
 
 Re-analysis after 3.20.1 surfaced a new Quality Gate failure: `python:S5332` ("Using HTTP protocol is insecure") flagging `tests/test_concurrency.py`'s `base_url="http://test"`. This is a *different* rule than the `jssecurity:S8476` finding on the same literal string resolved back in 3.19.0 - that one was JS-side CSRF/SSRF reasoning about `api.js`; this is Python-side, and unlike the earlier one, it turned out to have a real fix rather than being a genuine tool limitation.

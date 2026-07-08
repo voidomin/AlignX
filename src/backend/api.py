@@ -6,7 +6,7 @@ import secrets
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Annotated, List, Dict, Any, Optional
 
 import matplotlib
 
@@ -217,7 +217,7 @@ def health_check():
 
 
 @app.get("/api/suggest")
-def get_rcsb_suggestions(q: str = Query(..., min_length=1)):
+def get_rcsb_suggestions(q: Annotated[str, Query(..., min_length=1)]):
     """
     Fetch matching PDB IDs from RCSB Suggest API.
     """
@@ -248,9 +248,17 @@ def get_rcsb_suggestions(q: str = Query(..., min_length=1)):
         return {"query": q, "suggestions": [], "error": str(e)}
 
 
-@app.post("/api/chains")
+@app.post(
+    "/api/chains",
+    responses={
+        400: {
+            "description": "Invalid pdb_id/session_id, an empty pdb_ids list, or a structure failed to download"
+        }
+    },
+)
 async def analyze_chains(
-    pdb_ids: List[str] = Body(..., embed=True), session_id: Optional[str] = Query(None)
+    pdb_ids: Annotated[List[str], Body(..., embed=True)],
+    session_id: Annotated[Optional[str], Query()] = None,
 ):
     """
     Download PDB files and analyze their structural chains.
@@ -303,9 +311,17 @@ async def analyze_chains(
     return {"chains": sanitize_for_json(chain_info)}
 
 
-@app.post("/api/upload")
+@app.post(
+    "/api/upload",
+    responses={
+        400: {
+            "description": "Invalid session_id, an unsupported file extension, or the uploaded file failed to parse as a real structure"
+        }
+    },
+)
 async def upload_structure(
-    file: UploadFile = File(...), session_id: Optional[str] = Query(None)
+    file: Annotated[UploadFile, File(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
 ):
     """
     Accept a user-uploaded .pdb/.ent/.cif structure file (rather than
@@ -508,13 +524,19 @@ async def _execute_alignment_job(job_id: str, **pipeline_kwargs):
         }
 
 
-@app.post("/api/jobs/align", status_code=202)
+@app.post(
+    "/api/jobs/align",
+    status_code=202,
+    responses={
+        400: {"description": "Fewer than 2 PDB IDs, or an invalid pdb_id/session_id"}
+    },
+)
 async def submit_alignment_job(
-    pdb_ids: List[str] = Body(..., embed=True),
-    chain_selection: Dict[str, str] = Body(default={}, embed=True),
-    remove_water: bool = Body(default=True, embed=True),
-    remove_heteroatoms: bool = Body(default=True, embed=True),
-    session_id: Optional[str] = Query(None),
+    pdb_ids: Annotated[List[str], Body(..., embed=True)],
+    chain_selection: Annotated[Dict[str, str], Body(embed=True)] = {},
+    remove_water: Annotated[bool, Body(embed=True)] = True,
+    remove_heteroatoms: Annotated[bool, Body(embed=True)] = True,
+    session_id: Annotated[Optional[str], Query()] = None,
 ):
     """
     Submit a Mustang multiple structural alignment run as a background job.
@@ -545,7 +567,12 @@ async def submit_alignment_job(
     return {"job_id": job_id, "status": "queued"}
 
 
-@app.get("/api/jobs/{job_id}")
+@app.get(
+    "/api/jobs/{job_id}",
+    responses={
+        404: {"description": "No alignment or discovery job exists with this job_id"}
+    },
+)
 def get_alignment_job(job_id: str):
     """
     Poll the status/result of a submitted job (alignment or discovery - job
@@ -615,11 +642,19 @@ async def _execute_discovery_job(job_id: str, **pipeline_kwargs):
         }
 
 
-@app.post("/api/jobs/discover", status_code=202)
+@app.post(
+    "/api/jobs/discover",
+    status_code=202,
+    responses={
+        400: {
+            "description": "Missing/invalid pdb_id, invalid structure identifier, invalid databases list, or invalid session_id"
+        }
+    },
+)
 async def submit_discovery_job(
-    pdb_id: str = Body(..., embed=True),
-    databases: Optional[List[str]] = Body(default=None, embed=True),
-    session_id: Optional[str] = Query(None),
+    pdb_id: Annotated[str, Body(..., embed=True)],
+    databases: Annotated[Optional[List[str]], Body(embed=True)] = None,
+    session_id: Annotated[Optional[str], Query()] = None,
 ):
     """
     Submit a single-structure Foldseek discovery run as a background job:
@@ -656,10 +691,15 @@ async def submit_discovery_job(
     return {"job_id": job_id, "status": "queued"}
 
 
-@app.post("/api/clusters")
+@app.post(
+    "/api/clusters",
+    responses={
+        400: {"description": "Malformed rmsd_df payload or fewer than 2 structures"}
+    },
+)
 def get_clusters(
-    rmsd_df: Dict[str, Any] = Body(..., embed=True),
-    threshold: float = Body(default=3.0, embed=True),
+    rmsd_df: Annotated[Dict[str, Any], Body(..., embed=True)],
+    threshold: Annotated[float, Body(embed=True)] = 3.0,
 ):
     """
     Identify structural clusters from an RMSD matrix at a given threshold.
@@ -702,9 +742,13 @@ def get_clusters(
     return {"threshold": threshold, "clusters": sanitize_for_json(families)}
 
 
-@app.get("/api/comparison/runs")
+@app.get(
+    "/api/comparison/runs",
+    responses={400: {"description": "Invalid exclude_run_id or session_id"}},
+)
 def list_comparison_runs(
-    exclude_run_id: Optional[str] = Query(None), session_id: Optional[str] = Query(None)
+    exclude_run_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[Optional[str], Query()] = None,
 ):
     """
     List past runs available as batch-comparison targets.
@@ -726,11 +770,19 @@ def list_comparison_runs(
     }
 
 
-@app.get("/api/comparison")
+@app.get(
+    "/api/comparison",
+    responses={
+        400: {
+            "description": "Invalid run_id/session_id, or no overlapping proteins between the two runs"
+        },
+        404: {"description": "RMSD matrix not found for one or both runs"},
+    },
+)
 def compare_runs(
-    current_run_id: str = Query(...),
-    target_run_id: str = Query(...),
-    session_id: Optional[str] = Query(None),
+    current_run_id: Annotated[str, Query(...)],
+    target_run_id: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
 ):
     """
     Compute the RMSD difference matrix between two past runs.
@@ -772,11 +824,17 @@ def compare_runs(
     }
 
 
-@app.get("/api/ligands")
+@app.get(
+    "/api/ligands",
+    responses={
+        400: {"description": "Invalid pdb_id, run_id, or session_id"},
+        404: {"description": "Structure PDB not found in the active workspace"},
+    },
+)
 def get_ligands(
-    pdb_id: str = Query(...),
-    run_id: Optional[str] = Query(None),
-    session_id: Optional[str] = Query(None),
+    pdb_id: Annotated[str, Query(...)],
+    run_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[Optional[str], Query()] = None,
 ):
     """
     Retrieve ligands present in the specified structure.
@@ -819,12 +877,18 @@ def get_ligands(
     return {"pdb_id": pdb_id, "ligands": sanitize_for_json(ligands)}
 
 
-@app.get("/api/interactions")
+@app.get(
+    "/api/interactions",
+    responses={
+        400: {"description": "Invalid pdb_id, ligand_id, run_id, or session_id"},
+        404: {"description": "Structure PDB not found in the active workspace"},
+    },
+)
 def get_interactions(
-    pdb_id: str = Query(...),
-    ligand_id: str = Query(...),
-    run_id: Optional[str] = Query(None),
-    session_id: Optional[str] = Query(None),
+    pdb_id: Annotated[str, Query(...)],
+    ligand_id: Annotated[str, Query(...)],
+    run_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[Optional[str], Query()] = None,
 ):
     """
     Perform binding site analysis and return interaction details.
@@ -951,9 +1015,9 @@ def _lighten_run_for_list(run: Dict[str, Any]) -> Dict[str, Any]:
 
 @app.get("/api/history")
 def get_history(
-    session_id: Optional[str] = Query(None),
-    limit: int = Query(20, ge=1, le=200),
-    offset: int = Query(0, ge=0),
+    session_id: Annotated[Optional[str], Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ):
     """
     Fetch a page of runs recorded in the history SQLite database, newest
@@ -978,7 +1042,13 @@ def get_history(
     }
 
 
-@app.get("/api/runs/{run_id}")
+@app.get(
+    "/api/runs/{run_id}",
+    responses={
+        400: {"description": "Invalid run_id"},
+        404: {"description": "Run not found in the history database"},
+    },
+)
 def get_run_by_id(run_id: str):
     """
     Fetch a single run's raw history record by ID, regardless of which
@@ -998,8 +1068,8 @@ def get_run_by_id(run_id: str):
     return sanitize_for_json(run)
 
 
-@app.get("/api/stats")
-def get_aggregate_stats(session_id: Optional[str] = Query(None)):
+@app.get("/api/stats", responses={400: {"description": "Invalid session_id"}})
+def get_aggregate_stats(session_id: Annotated[Optional[str], Query()] = None):
     """
     Dashboard-level aggregate totals across all runs (total run count,
     total proteins analyzed, cache size).
@@ -1008,8 +1078,18 @@ def get_aggregate_stats(session_id: Optional[str] = Query(None)):
     return sanitize_for_json(history_db.get_aggregate_stats(session_id=session_id))
 
 
-@app.get("/api/sequence")
-def get_sequence(run_id: str = Query(...), session_id: Optional[str] = Query(None)):
+@app.get(
+    "/api/sequence",
+    responses={
+        400: {"description": "Invalid run_id or session_id"},
+        404: {"description": "Alignment FASTA not found for this run"},
+        500: {"description": "Failed to parse the alignment FASTA file"},
+    },
+)
+def get_sequence(
+    run_id: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
+):
     """
     Parse the alignment FASTA for a run and return sequences,
     conservation scores, and identity percentage.
@@ -1049,14 +1129,23 @@ def get_sequence(run_id: str = Query(...), session_id: Optional[str] = Query(Non
     )
 
 
-@app.get("/api/report")
+@app.get(
+    "/api/report",
+    responses={
+        400: {"description": "Invalid run_id or session_id"},
+        404: {"description": "Run not found in the history database"},
+        500: {"description": "Report generation failed"},
+    },
+)
 def get_pdf_report(
-    run_id: str = Query(...),
-    session_id: Optional[str] = Query(None),
-    sections: Optional[str] = Query(
-        None,
-        description="Comma-separated report sections to include (summary,insights,heatmap,tree,matrix). Omit for the full default report.",
-    ),
+    run_id: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
+    sections: Annotated[
+        Optional[str],
+        Query(
+            description="Comma-separated report sections to include (summary,insights,heatmap,tree,matrix). Omit for the full default report."
+        ),
+    ] = None,
 ):
     """
     Generate and retrieve the PDF analysis report for a run.
@@ -1144,8 +1233,18 @@ def get_pdf_report(
         )
 
 
-@app.get("/api/notebook")
-def get_lab_notebook(run_id: str = Query(...), session_id: Optional[str] = Query(None)):
+@app.get(
+    "/api/notebook",
+    responses={
+        400: {"description": "Invalid run_id or session_id"},
+        404: {"description": "Run not found in the history database"},
+        500: {"description": "Lab notebook generation failed"},
+    },
+)
+def get_lab_notebook(
+    run_id: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
+):
     """
     Generate and retrieve the standalone HTML lab notebook for a run.
     """
@@ -1230,8 +1329,15 @@ def _get_discover_run_results(run_id: str) -> Dict[str, Any]:
     return results
 
 
-@app.get("/api/discover/report")
-def get_discovery_report(run_id: str = Query(...)):
+@app.get(
+    "/api/discover/report",
+    responses={
+        400: {"description": "Invalid run_id, or the run isn't a Discover run"},
+        404: {"description": "Run not found, or has no stored Discover results"},
+        500: {"description": "Discovery report generation failed"},
+    },
+)
+def get_discovery_report(run_id: Annotated[str, Query(...)]):
     """
     Generate and retrieve a standalone HTML report for a Discover run -
     the export/report parity Compare mode has always had.
@@ -1262,8 +1368,14 @@ def get_discovery_report(run_id: str = Query(...)):
         )
 
 
-@app.get("/api/discover/export")
-def export_discovery_json(run_id: str = Query(...)):
+@app.get(
+    "/api/discover/export",
+    responses={
+        400: {"description": "Invalid run_id, or the run isn't a Discover run"},
+        404: {"description": "Run not found, or has no stored Discover results"},
+    },
+)
+def export_discovery_json(run_id: Annotated[str, Query(...)]):
     """Downloads the raw JSON result for a Discover run - for programmatic
     reuse, unlike the human-readable HTML report above."""
     from fastapi.responses import JSONResponse
