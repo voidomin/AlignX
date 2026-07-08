@@ -33,8 +33,12 @@ WORKDIR /app
 # Copy requirements file
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# --only-binary :all: refuses to build any package from source, which is
+# what would otherwise let a compromised package's setup.py/build backend
+# run arbitrary code during install. fpdf (see requirements.txt) ships no
+# wheel at all and is exempted via --no-binary - everything else installs
+# from a wheel only.
+RUN pip install --no-cache-dir --only-binary :all: --no-binary fpdf -r requirements.txt
 
 # Copy application code. Everything relevant to what's excluded from this
 # (.env, .git, credentials) is covered by .dockerignore, not this line.

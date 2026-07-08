@@ -16,7 +16,14 @@ matplotlib>=3.7.0
 seaborn>=0.12.0
 plotly>=5.16.0
 pillow>=10.0.0
-fpdf>=1.7.2
+fpdf>=1.7.2  # ships no wheel (sdist only) - exempted from --only-binary :all: below.
+# The actively-maintained fpdf2 fork is API-compatible on paper, but its
+# multi_cell() is measurably stricter about available horizontal space and
+# raises FPDFException on input this project's report_generator.py already
+# renders fine under classic fpdf - confirmed by actually generating a report
+# with fpdf2 installed, not just reading the changelog. Migrating is a real,
+# separate task (review every cell()/multi_cell() call, re-verify every
+# report section), not a side effect of a CI hardening pass.
 
 # Phylogenetics
 dendropy>=4.6.0

@@ -18,6 +18,28 @@ Wired up real test-coverage reporting to SonarCloud - previously it tracked 0% c
 ### Verified
 - Local dry run of both coverage commands: backend 54% overall (real gaps surfaced - e.g. `rmsd_calculator.py` at 6%, `session_manager.py`/`utilities.py` at 0%, all pre-existing and not addressed here); frontend 85.55% statements. Both `coverage.xml` and `lcov.info` generate correctly and are gitignored.
 - 245 backend + 142 frontend tests still pass unchanged - this only adds reporting, no test behavior changed.
+- **Confirmed via the actual CI-driven analysis** (all 4 jobs, including the new `sonarqube` job, passed): SonarCloud now reports real coverage (34.2% overall) for the first time ever. This also surfaced two Quality Gate conditions that were previously vacuously passing with no data: `new_coverage` (36.5% vs. an 80% default threshold - expected for a project just starting to track coverage) and `new_security_rating` (see 3.24.0 - a set of real findings in `Dockerfile`/`ci.yml` that Automatic Analysis apparently never scanned at all).
+
+## [3.24.0]
+
+Investigating 3.23.0's `new_security_rating` gate failure turned up something genuinely new: 9 MAJOR findings in `Dockerfile` and `.github/workflows/ci.yml` - CI/CD supply-chain hardening rules that Automatic Analysis evidently never applied to these file types, only now running for the first time under CI-driven analysis.
+
+### Fixed
+- **GitHub Actions pinned to full commit SHAs** instead of mutable version tags (`@v4` → `@34e114...  # v4.3.1`, etc.) across every job - a compromised/repointed tag could otherwise inject arbitrary code into the pipeline. Looked up each action's actual resolved SHA via GitHub's API rather than guessing.
+- **`pip install --only-binary :all:`** added to every pip install step (Dockerfile + CI) - blocks a compromised package's `setup.py`/build-backend from executing arbitrary code during install, which source (sdist) builds allow and wheel installs don't.
+- **`npm ci --ignore-scripts`** added to the frontend CI job - blocks npm packages' preinstall/install/postinstall lifecycle hooks from running arbitrary code.
+
+### Changed
+- **`fpdf` → stays `fpdf` (not migrated to `fpdf2`)**: `--only-binary :all:` broke the Docker build outright because the original `fpdf` (last released 2015) ships no wheel at all, only a source distribution. Tried the obvious fix - `fpdf2`, the actively maintained, wheel-shipping, API-compatible fork - but it turned out to *not* be a safe drop-in: generating a real report with `fpdf2` installed raised `FPDFException: Not enough horizontal space to render a single character` from the existing `report_generator.py` code, which works fine under classic `fpdf`. fpdf2's `multi_cell()` is measurably stricter about available width than the original. Reverted to `fpdf`, and exempted just that one package from the binary-only rule via `--no-binary fpdf` instead - migrating to fpdf2 for real would mean reviewing and re-verifying every `cell()`/`multi_cell()` call across every report section, which is a legitimate future task, not a safe side effect of a CI-hardening pass.
+
+### Not fixed (deliberately, pending a decision)
+- **`githubactions:S8544`/`docker:S8544`** ("Python dependencies should be locked to verified versions", 3 instances) wants a hash-pinned lock file (`pip install --require-hashes`), not just a flag. Tried generating one with `pip-tools`' `pip-compile --generate-hashes`; it works but produces a large lock file, immediately surfaced a `setuptools` pinning complication, and creates an ongoing maintenance burden (every dependency bump needs regenerating hashes) - different in kind from the flag-based fixes above, and not something to commit to without an explicit decision.
+
+### Verified
+- Rebuilt the actual Docker image twice locally (once with the `--only-binary :all:` break, once with the `fpdf` exemption fix) and ran the container - `/health` responds correctly.
+- `npm ci --ignore-scripts` followed by a clean `npm test`/`npm run build` - all 142 tests and the production build still succeed, confirming no dependency in this project's tree actually needs an install-time script.
+- Reproduced the `fpdf2` `multi_cell()` failure directly (not just read about it) before deciding to revert - generated a real report with `fpdf2` installed and hit the exception firsthand.
+- 245 backend tests pass with `fpdf==1.7.2` confirmed back in place.
 
 ## [3.22.0]
 
