@@ -2,6 +2,20 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.32.0]
+
+Second batch of the backend `python:S3776` cleanup (3 more of the 41 open findings: complexity 20, 20, 22).
+
+### Fixed
+- **`annotation_aggregator.py:261`** (`resolve_pdb_uniprot_accession`, 20→within limit): extracted the SIFTS response's nested `for accession, info in ... for mapping in ...` parsing into `_parse_sifts_chain_accessions()`, and flattened the surrounding try/if into early returns.
+- **`ligand_analyzer.py:49`** (`get_ligands`, 22→within limit): the triple-nested `for model / for chain / for residue` loop with an inner `if hetfield != " " → if resname in ignored → continue` was replaced by a list comprehension over a new `_ligand_info_from_residue()` helper (returns `None` for non-ligand residues, filtered out).
+- **`ligand_analyzer.py:289`** (`calculate_interaction_similarity`, 20→within limit): the pairwise Jaccard-index double loop's `if i==j / else / if both-empty / else` chain was extracted into `_jaccard_score()`.
+
+### Verified
+- Full backend suite: 353 tests passing, unchanged from before this batch.
+- Manually confirmed `_jaccard_score()` reproduces the original's exact values (both-empty→0.0, partial overlap→correct ratio, identical sets→1.0) and `parse_hits`/ligand extraction produce the same shapes as before.
+- `black --check` and `ruff check` clean on both touched files.
+
 ## [3.31.0]
 
 First batch of the `python:S3776` Cognitive Complexity cleanup (41 open findings total, complexity 16-179, mostly in the legacy Streamlit UI). Scoped to backend-only, smallest-excess-first, per an explicit decision to skip the legacy Streamlit-only files for now given their size (up to 179) and the regression risk of touching live logic there without dedicated attention. This entry covers the 3 smallest backend findings (17, 17, 18).

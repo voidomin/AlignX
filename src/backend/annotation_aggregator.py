@@ -258,6 +258,18 @@ class AnnotationAggregator:
         match = _GMGC_TARGET_PATTERN.match((target or "").strip())
         return match.group(1) if match else None
 
+    @staticmethod
+    def _parse_sifts_chain_accessions(entry: Dict[str, Any]) -> Dict[str, str]:
+        """Flattens a SIFTS `/mappings/{pdb_id}` entry's per-accession chain
+        mappings into a single {chain_id: accession} dict."""
+        chain_accessions: Dict[str, str] = {}
+        for accession, info in (entry.get("UniProt") or {}).items():
+            for mapping in info.get("mappings", []):
+                mapped_chain = mapping.get("chain_id")
+                if mapped_chain:
+                    chain_accessions[mapped_chain] = accession.upper()
+        return chain_accessions
+
     async def resolve_pdb_uniprot_accession(
         self,
         pdb_id: str,
@@ -274,22 +286,18 @@ class AnnotationAggregator:
             return cache[pdb_id].get(chain_id)
 
         async def _fetch() -> Dict[str, Optional[str]]:
-            chain_accessions: Dict[str, Optional[str]] = {}
             try:
                 response = await client.get(
                     f"{SIFTS_BASE_URL}/{pdb_id.lower()}",
                     headers=_JSON_ACCEPT_HEADERS,
                 )
-                if response.status_code == 200:
-                    entry = response.json().get(pdb_id.lower(), {})
-                    for accession, info in (entry.get("UniProt") or {}).items():
-                        for mapping in info.get("mappings", []):
-                            mapped_chain = mapping.get("chain_id")
-                            if mapped_chain:
-                                chain_accessions[mapped_chain] = accession.upper()
+                if response.status_code != 200:
+                    return {}
+                entry = response.json().get(pdb_id.lower(), {})
+                return self._parse_sifts_chain_accessions(entry)
             except httpx.HTTPError as e:
                 logger.warning(f"SIFTS lookup failed for {pdb_id}: {e}")
-            return chain_accessions
+                return {}
 
         chain_accessions = await self._get_or_fetch(f"sifts:{pdb_id}", "sifts", _fetch)
 

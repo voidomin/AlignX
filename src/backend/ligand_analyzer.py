@@ -1,7 +1,7 @@
 import logging
 import warnings
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 import numpy as np
 import pandas as pd
@@ -73,42 +73,44 @@ class LigandAnalyzer:
             logger.exception(f"Failed to parse {pdb_file}")
             return []
 
-        ligands = []
-
-        for model in structure:
-            for chain in model:
-                for residue in chain:
-                    # Check if it's a HETATM (heteroatom)
-                    # BioPython uses keys like ('H_NAG', 123, ' ') for HETATMs
-                    # Standard residues have empty first element in tuple id
-                    hetfield, resseq, _ = residue.get_id()
-
-                    if hetfield != " ":
-                        resname = residue.get_resname().strip()
-
-                        # Filter out water and common ions
-                        if resname in self.ignored_residues:
-                            continue
-
-                        # Calculate geometric center
-                        coords = [atom.get_coord() for atom in residue]
-                        center = (
-                            np.mean(coords, axis=0).tolist() if coords else [0, 0, 0]
-                        )
-
-                        ligand_info = {
-                            "name": resname,
-                            "id": f"{resname}_{chain.get_id()}_{resseq}",
-                            "chain": chain.get_id(),
-                            "resi": resseq,
-                            "full_id": residue.get_full_id(),
-                            "center": center,
-                            "atom_count": len(residue),
-                        }
-                        ligands.append(ligand_info)
+        ligands = [
+            ligand_info
+            for model in structure
+            for chain in model
+            for ligand_info in (
+                self._ligand_info_from_residue(residue, chain) for residue in chain
+            )
+            if ligand_info is not None
+        ]
 
         logger.info(f"Found {len(ligands)} ligands in {pdb_file.name}")
         return ligands
+
+    def _ligand_info_from_residue(self, residue, chain) -> Optional[Dict[str, Any]]:
+        """Builds a ligand-info dict for one residue if it's a HETATM that
+        isn't water/a common ion/crystallization additive, else None.
+        BioPython uses keys like ('H_NAG', 123, ' ') for HETATMs - standard
+        residues have an empty first element in the tuple id."""
+        hetfield, resseq, _ = residue.get_id()
+        if hetfield == " ":
+            return None
+
+        resname = residue.get_resname().strip()
+        if resname in self.ignored_residues:
+            return None
+
+        coords = [atom.get_coord() for atom in residue]
+        center = np.mean(coords, axis=0).tolist() if coords else [0, 0, 0]
+
+        return {
+            "name": resname,
+            "id": f"{resname}_{chain.get_id()}_{resseq}",
+            "chain": chain.get_id(),
+            "resi": resseq,
+            "full_id": residue.get_full_id(),
+            "center": center,
+            "atom_count": len(residue),
+        }
 
     def calculate_interactions(
         self, pdb_file: Path, ligand_id: str, cutoff: float = 5.0
@@ -335,20 +337,20 @@ class LigandAnalyzer:
 
         for i in range(n):
             for j in range(n):
-                if i == j:
-                    matrix[i][j] = 1.0
-                else:
-                    # Jaccard Index
-                    set_i = fingerprints[i]
-                    set_j = fingerprints[j]
-
-                    if not set_i and not set_j:
-                        score = 0.0  # Both empty
-                    else:
-                        intersection = len(set_i.intersection(set_j))
-                        union = len(set_i.union(set_j))
-                        score = intersection / union if union > 0 else 0.0
-
-                    matrix[i][j] = score
+                matrix[i][j] = (
+                    1.0
+                    if i == j
+                    else self._jaccard_score(fingerprints[i], fingerprints[j])
+                )
 
         return pd.DataFrame(matrix, index=ligand_ids, columns=ligand_ids)
+
+    @staticmethod
+    def _jaccard_score(set_i: set, set_j: set) -> float:
+        """Jaccard index of two residue-composition fingerprints; 0.0 (not
+        1.0) when both pockets are empty, since "no interactions" isn't a
+        meaningful similarity claim."""
+        if not set_i and not set_j:
+            return 0.0
+        union = len(set_i | set_j)
+        return len(set_i & set_j) / union if union > 0 else 0.0
