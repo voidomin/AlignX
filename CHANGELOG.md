@@ -2,6 +2,21 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.39.0]
+
+Seventh and final batch of the agreed-scope backend `python:S3776` cleanup (complexity 33, 33, 37, 37). This completes every open finding from 16 through 38 except `pdb_manager.py`'s three (38/69/94), which were deliberately deferred to a dedicated session given the file's size and centrality. 22 of 26 backend findings now resolved.
+
+### Fixed
+- **`annotation_aggregator.py`**'s `aggregate_for_hits` (33→within limit): the ~180-line Discover annotation pipeline was split into `_resolve_candidates`, `_collect_neighbor_keys`, `_count_neighbor_annotations`, `_top_domains`/`_top_go_terms` (also de-duplicates the top/high-confidence list-building, previously copy-pasted twice each), and `_neighbor_summary_counts`.
+- **`annotation_aggregator.py`**'s `resolve_go_term_names` (33→within limit): the cache-read/cache-write try/except blocks and the per-chunk QuickGO fetch were extracted into `_try_get_cached_go_name`, `_try_cache_go_name`, and `_fetch_go_term_names_chunk`.
+- **`report_generator.py`**'s `generate_full_report` (37→within limit): split along its existing 5 numbered PDF sections into `_write_summary_section`, `_write_insights_section`, a shared `_write_image_section` (used by both the heatmap and tree sections, which render identically apart from which font their "not available" message uses), and `_write_matrix_section`.
+- **`rmsd_calculator.py`**'s `calculate_structure_rmsd` (37→within limit): split into `_build_residue_mapping`, `_select_structures` (the Models-vs-Chains selection logic), and `_common_ca_coords` (the per-pair common-column extraction).
+
+### Verified
+- Full backend suite: 417 tests passing.
+- Manually confirmed `_build_residue_mapping`/`_common_ca_coords` reproduce the original's exact column-mapping and gap-handling behavior against a hand-built 2-sequence alignment with a gap.
+- `black`/`ruff` clean on all four touched files.
+
 ## [3.38.0]
 
 Sixth batch of the backend `python:S3776` cleanup (3 more of the 41 open findings: complexity 31, 33, 36). 18 of 26 backend findings now resolved.

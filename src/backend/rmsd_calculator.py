@@ -229,6 +229,62 @@ def parse_rms_rot_file(
 
 
 # Re-implementing robust RMSD using aligned FASTA + Superimposed PDB
+def _build_residue_mapping(alignment: list, seq_len: int) -> List[List[Optional[int]]]:
+    """mapping[struct_idx][col_idx] = 0-based residue index in that
+    structure's source sequence, or None for a gap column."""
+    mapping = [[None] * seq_len for _ in alignment]
+    for i, record in enumerate(alignment):
+        res_counter = 0  # 0-based index of residues in the PDB structure
+        for col, char in enumerate(record.seq):
+            if char != "-":
+                mapping[i][col] = res_counter
+                res_counter += 1
+    return mapping
+
+
+def _select_structures(structure, num_structures: int) -> list:
+    """Picks Models or Chains as the per-structure entities to compare,
+    depending on which count matches the alignment's structure count -
+    Mustang's output PDB sometimes uses one Model per structure, sometimes
+    one Chain."""
+    models = list(structure.get_models())
+    if len(models) == num_structures:
+        return models
+    if 0 < len(models) < num_structures:
+        chains = list(models[0].get_chains())
+        if len(chains) >= num_structures:
+            logger.info(
+                f"RMSD: Using chains from Model 0 as structures (Found {len(chains)})"
+            )
+            return chains
+        logger.warning(
+            f"RMSD: Structure count mismatch. FASTA={num_structures}, PDB Models={len(models)}, PDB Chains M0={len(chains)}"
+        )
+    return models
+
+
+def _common_ca_coords(
+    mapping: List[List[Optional[int]]],
+    structure_cas: List[list],
+    i: int,
+    j: int,
+    seq_len: int,
+) -> Tuple[List[Any], List[Any]]:
+    """CA coordinate pairs for aligned columns where both structures have a
+    residue (no gap) and the mapped residue index is in bounds."""
+    coords_i, coords_j = [], []
+    for col in range(seq_len):
+        res_i_idx = mapping[i][col]
+        res_j_idx = mapping[j][col]
+        if res_i_idx is None or res_j_idx is None:
+            continue
+        if res_i_idx >= len(structure_cas[i]) or res_j_idx >= len(structure_cas[j]):
+            continue
+        coords_i.append(structure_cas[i][res_i_idx].coord)
+        coords_j.append(structure_cas[j][res_j_idx].coord)
+    return coords_i, coords_j
+
+
 def calculate_structure_rmsd(
     pdb_file: Path, fasta_file: Path
 ) -> Optional[pd.DataFrame]:
@@ -236,7 +292,6 @@ def calculate_structure_rmsd(
     Calculate RMSD using the aligned FASTA to map residues between superimposed structures.
     """
     try:
-        # 1. Parse Aligned FASTA to get the mapping
         from Bio import SeqIO
 
         alignment = list(SeqIO.parse(fasta_file, "fasta"))
@@ -244,97 +299,38 @@ def calculate_structure_rmsd(
         if num_structures < 2:
             return None
 
-        # Map: For each column in alignment, which residue index (0-based) is it in the source sequence?
-        # We build a list of lists: mapping[struct_idx][col_idx] = residue_number (or None)
-
         seq_len = len(alignment[0].seq)
-        mapping = [[None] * seq_len for _ in range(num_structures)]
+        mapping = _build_residue_mapping(alignment, seq_len)
 
-        for i, record in enumerate(alignment):
-            res_counter = 0  # 0-based index of residues in the PDB structure
-            for col, char in enumerate(record.seq):
-                if char != "-":
-                    mapping[i][col] = res_counter
-                    res_counter += 1
-
-        # 2. Parse PDB
         from Bio.PDB import PDBParser
 
         parser = PDBParser(QUIET=True)
         structure = parser.get_structure("aln", str(pdb_file))
-
-        # Determine if we should use Models or Chains
-        models = list(structure.get_models())
-        structures = []
-
-        if len(models) == num_structures:
-            structures = models
-        elif len(models) < num_structures and len(models) > 0:
-            # Check chains in first model
-            chains = list(models[0].get_chains())
-            if len(chains) >= num_structures:
-                logger.info(
-                    f"RMSD: Using chains from Model 0 as structures (Found {len(chains)})"
-                )
-                structures = chains
-            else:
-                logger.warning(
-                    f"RMSD: Structure count mismatch. FASTA={num_structures}, PDB Models={len(models)}, PDB Chains M0={len(chains)}"
-                )
-                # Try to use whatever matches best or just models
-                structures = models
-        else:
-            structures = models
-
-        # Use the minimum common count
+        structures = _select_structures(structure, num_structures)
         n_calc = min(len(structures), num_structures)
 
-        # 3. Compute Pairwise RMSD
-        # For each pair, find columns where BOTH have a residue (no gap).
-        # Extract CA atoms for those residues.
-        # Compute RMSD.
+        # Pre-extract CA atoms for speed (works for both Model and Chain objects)
+        structure_cas = [
+            [atom for atom in entity.get_atoms() if atom.name == "CA"]
+            for entity in structures
+        ]
 
         matrix = np.zeros((num_structures, num_structures))
-
-        # Pre-extract CA atoms for speed
-        # structure_cas[idx] = list of CA Atom objects
-        structure_cas = []
-        for entity in structures:
-            # Get all CA atoms in order (works for both Model and Chain objects)
-            cas = [atom for atom in entity.get_atoms() if atom.name == "CA"]
-            structure_cas.append(cas)
-
         for i in range(n_calc):
             for j in range(i + 1, n_calc):
-                # Find common aligned columns
-                common_coords_i = []
-                common_coords_j = []
-
-                for col in range(seq_len):
-                    res_i_idx = mapping[i][col]
-                    res_j_idx = mapping[j][col]
-
-                    if res_i_idx is not None and res_j_idx is not None:
-                        # Safety check for index bounds
-                        if res_i_idx < len(structure_cas[i]) and res_j_idx < len(
-                            structure_cas[j]
-                        ):
-                            common_coords_i.append(structure_cas[i][res_i_idx].coord)
-                            common_coords_j.append(structure_cas[j][res_j_idx].coord)
-
-                # Calculate RMSD
-                if common_coords_i:
-                    diff = np.array(common_coords_i) - np.array(common_coords_j)
+                coords_i, coords_j = _common_ca_coords(
+                    mapping, structure_cas, i, j, seq_len
+                )
+                if coords_i:
+                    diff = np.array(coords_i) - np.array(coords_j)
                     rmsd = np.sqrt(np.mean(np.sum(diff**2, axis=1)))
                     matrix[i, j] = rmsd
                     matrix[j, i] = rmsd
                 else:
                     matrix[i, j] = 0  # Should not happen if aligned
 
-        # Return labeled dataframe
         names = [r.id for r in alignment]
-        df = pd.DataFrame(matrix, index=names, columns=names)
-        return df
+        return pd.DataFrame(matrix, index=names, columns=names)
 
     except Exception:
         logger.exception("PyRMSD Error")

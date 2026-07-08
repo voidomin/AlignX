@@ -25,6 +25,20 @@ class PDFReport(FPDF):
         self.cell(0, 10, f"Page {self.page_no()}", 0, 0, "C")
 
 
+def _clean_text(text: Any) -> str:
+    """FPDF's classic core fonts are Latin-1 only; map the structural
+    biology symbols we actually emit (Å) and drop anything else FPDF can't
+    encode rather than letting it raise."""
+    if not isinstance(text, str):
+        return str(text)
+    # Å (Angstrom) is \xc5 in Latin-1
+    text = text.replace("Å", chr(197))
+    try:
+        return text.encode("latin-1", "replace").decode("latin-1")
+    except Exception:
+        return "".join(c for c in text if ord(c) < 128)
+
+
 class ReportGenerator:
     def __init__(self, output_dir: Path):
         self.output_dir = output_dir
@@ -32,6 +46,115 @@ class ReportGenerator:
             output_dir
             / f"mustang_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         )
+
+    @staticmethod
+    def _write_summary_section(
+        pdf: FPDF, results: Dict[str, Any], pdb_ids: List[str]
+    ) -> None:
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, _clean_text("1. Analysis Summary"), 0, 1)
+        pdf.set_font("Arial", "", 11)
+        pdf.multi_cell(
+            0,
+            7,
+            _clean_text(f"Analyzed {len(pdb_ids)} structures: {', '.join(pdb_ids)}"),
+        )
+
+        stats = results.get("stats", {})
+        if stats:
+            pdf.ln(5)
+            pdf.set_font("Arial", "B", 10)
+            pdf.cell(40, 7, _clean_text("RMSD Statistics:"), 0, 1)
+            pdf.set_font("Arial", "", 10)
+            pdf.cell(
+                50,
+                7,
+                _clean_text(f"Mean RMSD: {stats.get('mean_rmsd', 0):.2f} Å"),
+                0,
+                1,
+            )
+            pdf.cell(
+                50,
+                7,
+                _clean_text(f"Median RMSD: {stats.get('median_rmsd', 0):.2f} Å"),
+                0,
+                1,
+            )
+            pdf.cell(
+                50,
+                7,
+                _clean_text(
+                    f"Min/Max RMSD: {stats.get('min_rmsd', 0):.2f} / {stats.get('max_rmsd', 0):.2f} Å"
+                ),
+                0,
+                1,
+            )
+        pdf.ln(5)
+
+    @staticmethod
+    def _write_insights_section(pdf: FPDF, results: Dict[str, Any]) -> None:
+        # Reuse insights already computed (and persisted) during the
+        # original pipeline run when available. Regenerating here requires
+        # results["rmsd_df"] to be a live pandas DataFrame, which it no
+        # longer is once a run's metadata has been through
+        # sanitize_for_json and reloaded from history.
+        insights = results.get("insights")
+        if insights is None:
+            from src.backend.insights import InsightsGenerator
+
+            insights = InsightsGenerator({}).generate_insights(results)
+        if not insights:
+            return
+
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, _clean_text("Key Findings"), 0, 1)
+        pdf.set_font("Arial", "", 11)
+        for item in insights:
+            # Remove markdown bold/code and clean encoding
+            clean_item = item.replace("**", "").replace("`", "")
+            pdf.multi_cell(0, 6, _clean_text(f"- {clean_item}"))
+        pdf.ln(5)
+
+    @staticmethod
+    def _write_image_section(
+        pdf: FPDF,
+        title: str,
+        image_path,
+        missing_text: str,
+        missing_font: tuple,
+        after: str,
+    ) -> None:
+        """Shared rendering for the heatmap/tree sections - a title, the
+        image if it exists (falling back to an inline error message if
+        FPDF can't load it), or a placeholder message in `missing_font` if
+        it doesn't (the two sections use different fonts for that message,
+        preserved as-is rather than unified)."""
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, _clean_text(title), 0, 1)
+
+        if image_path and image_path.exists():
+            try:
+                pdf.image(str(image_path), x=10, w=190)
+            except Exception as img_err:
+                pdf.cell(0, 10, _clean_text(f"Error loading image: {img_err}"), 0, 1)
+        else:
+            pdf.set_font(*missing_font)
+            pdf.cell(0, 10, _clean_text(missing_text), 0, 1)
+
+        if after == "page":
+            pdf.add_page()
+        else:
+            pdf.ln(10)
+
+    @staticmethod
+    def _write_matrix_section(pdf: FPDF, results: Dict[str, Any]) -> None:
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, _clean_text("Pairwise RMSD Matrix (Snippet)"), 0, 1)
+
+        rmsd_df = results.get("rmsd_df")
+        if rmsd_df is not None:
+            pdf.set_font("Courier", "", 8)
+            pdf.multi_cell(0, 5, _clean_text(rmsd_df.head(10).to_string()))
 
     def generate_full_report(
         self,
@@ -49,7 +172,6 @@ class ReportGenerator:
         """
         if pdb_ids is None:
             pdb_ids = results.get("pdb_ids", [])
-
         if sections is None:
             sections = ["summary", "insights", "heatmap", "tree", "matrix"]
 
@@ -57,142 +179,37 @@ class ReportGenerator:
             pdf = PDFReport()
             pdf.add_page()
 
-            # Helper to clean text for FPDF (Latin-1)
-            # Helper to clean text for FPDF (Latin-1)
-            def clean_text(text):
-                if not isinstance(text, str):
-                    return str(text)
-                # Map common structural biology symbols to Latin-1
-                # Å (Angstrom) is \xc5 in Latin-1
-                text = text.replace("Å", chr(197))
-                try:
-                    return text.encode("latin-1", "replace").decode("latin-1")
-                except Exception:
-                    return "".join(c for c in text if ord(c) < 128)
-
-            # Title Section (Always included)
             pdf.set_font("Arial", "B", 12)
             pdf.cell(0, 10, f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}", 0, 1)
             pdf.ln(5)
 
-            # 1. Input Summary
             if "summary" in sections:
-                pdf.set_font("Arial", "B", 14)
-                pdf.cell(0, 10, clean_text("1. Analysis Summary"), 0, 1)
-                pdf.set_font("Arial", "", 11)
-                pdf.multi_cell(
-                    0,
-                    7,
-                    clean_text(
-                        f"Analyzed {len(pdb_ids)} structures: {', '.join(pdb_ids)}"
-                    ),
-                )
-
-                stats = results.get("stats", {})
-                if stats:
-                    pdf.ln(5)
-                    pdf.set_font("Arial", "B", 10)
-                    pdf.cell(40, 7, clean_text("RMSD Statistics:"), 0, 1)
-                    pdf.set_font("Arial", "", 10)
-                    pdf.cell(
-                        50,
-                        7,
-                        clean_text(f"Mean RMSD: {stats.get('mean_rmsd', 0):.2f} Å"),
-                        0,
-                        1,
-                    )
-                    pdf.cell(
-                        50,
-                        7,
-                        clean_text(f"Median RMSD: {stats.get('median_rmsd', 0):.2f} Å"),
-                        0,
-                        1,
-                    )
-                    pdf.cell(
-                        50,
-                        7,
-                        clean_text(
-                            f"Min/Max RMSD: {stats.get('min_rmsd', 0):.2f} / {stats.get('max_rmsd', 0):.2f} Å"
-                        ),
-                        0,
-                        1,
-                    )
-                pdf.ln(5)
-
-            # 2. Automated Insights (Key Findings)
+                self._write_summary_section(pdf, results, pdb_ids)
             if "insights" in sections:
-                # Reuse insights already computed (and persisted) during the
-                # original pipeline run when available. Regenerating here
-                # requires results["rmsd_df"] to be a live pandas DataFrame,
-                # which it no longer is once a run's metadata has been
-                # through sanitize_for_json and reloaded from history.
-                insights = results.get("insights")
-                if insights is None:
-                    from src.backend.insights import InsightsGenerator
-
-                    gen = InsightsGenerator({})
-                    insights = gen.generate_insights(results)
-
-                if insights:
-                    pdf.set_font("Arial", "B", 14)
-                    pdf.cell(0, 10, clean_text("Key Findings"), 0, 1)
-                    pdf.set_font("Arial", "", 11)
-                    for item in insights:
-                        # Remove markdown bold/code and clean encoding
-                        clean_item = item.replace("**", "").replace("`", "")
-                        pdf.multi_cell(0, 6, clean_text(f"- {clean_item}"))
-                    pdf.ln(5)
-
-            # 3. RMSD Heatmap
+                self._write_insights_section(pdf, results)
             if "heatmap" in sections:
-                pdf.set_font("Arial", "B", 14)
-                pdf.cell(0, 10, clean_text("RMSD Heatmap"), 0, 1)
-
-                heatmap_path = results.get("heatmap_path")
-                if heatmap_path and heatmap_path.exists():
-                    try:
-                        pdf.image(str(heatmap_path), x=10, w=190)
-                    except Exception as img_err:
-                        pdf.cell(
-                            0, 10, clean_text(f"Error loading image: {img_err}"), 0, 1
-                        )
-                else:
-                    pdf.set_font("Arial", "I", 10)
-                    pdf.cell(0, 10, clean_text("Heatmap image not available"), 0, 1)
-                pdf.add_page()
-
-            # 4. Phylogenetic Tree
+                self._write_image_section(
+                    pdf,
+                    "RMSD Heatmap",
+                    results.get("heatmap_path"),
+                    "Heatmap image not available",
+                    missing_font=("Arial", "I", 10),
+                    after="page",
+                )
             if "tree" in sections:
-                pdf.set_font("Arial", "B", 14)
-                pdf.cell(0, 10, clean_text("Structural Phylogenetic Tree"), 0, 1)
-
-                tree_path = results.get("tree_path")
-                if tree_path and tree_path.exists():
-                    try:
-                        pdf.image(str(tree_path), x=10, w=190)
-                    except Exception as img_err:
-                        pdf.cell(
-                            0, 10, clean_text(f"Error loading image: {img_err}"), 0, 1
-                        )
-                else:
-                    pdf.cell(0, 10, clean_text("Tree image not available"), 0, 1)
-                pdf.ln(10)
-
-            # 5. Pairwise RMSD Matrix (Top results)
+                self._write_image_section(
+                    pdf,
+                    "Structural Phylogenetic Tree",
+                    results.get("tree_path"),
+                    "Tree image not available",
+                    missing_font=("Arial", "B", 14),
+                    after="ln",
+                )
             if "matrix" in sections:
-                pdf.set_font("Arial", "B", 14)
-                pdf.cell(0, 10, clean_text("Pairwise RMSD Matrix (Snippet)"), 0, 1)
+                self._write_matrix_section(pdf, results)
 
-                rmsd_df = results.get("rmsd_df")
-                if rmsd_df is not None:
-                    pdf.set_font("Courier", "", 8)
-                    matrix_str = rmsd_df.head(10).to_string()
-                    pdf.multi_cell(0, 5, clean_text(matrix_str))
-
-            # Footer / Output
             pdf.output(str(self.report_path))
             logger.info(f"Report generated at {self.report_path}")
-
             return self.report_path
 
         except Exception as e:

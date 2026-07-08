@@ -522,6 +522,45 @@ class AnnotationAggregator:
 
         return await self._get_or_fetch(f"gmgc:{gene_id}", "gmgc", _fetch)
 
+    def _try_get_cached_go_name(self, gid: str) -> Optional[str]:
+        if not self.cache_db:
+            return None
+        try:
+            cached = self.cache_db.get_annotation_cache(
+                f"goterm:{gid}", self.cache_ttl_days
+            )
+            return json.loads(cached) if cached is not None else None
+        except Exception as e:
+            logger.warning(f"GO term cache read failed for {gid}: {e}")
+            return None
+
+    def _try_cache_go_name(self, gid: str, name: str) -> None:
+        if not self.cache_db:
+            return
+        try:
+            self.cache_db.set_annotation_cache(
+                f"goterm:{gid}", "goterm", json.dumps(name)
+            )
+        except Exception as e:
+            logger.warning(f"GO term cache write failed for {gid}: {e}")
+
+    async def _fetch_go_term_names_chunk(
+        self, chunk: List[str], client: httpx.AsyncClient
+    ) -> Dict[str, str]:
+        names: Dict[str, str] = {}
+        url = f"{QUICKGO_BASE_URL}/ontology/go/terms/{','.join(chunk)}"
+        try:
+            response = await client.get(url, headers=_JSON_ACCEPT_HEADERS)
+            if response.status_code != 200:
+                return names
+            for term in response.json().get("results", []):
+                if term.get("id") and term.get("name"):
+                    names[term["id"]] = term["name"]
+                    self._try_cache_go_name(term["id"], term["name"])
+        except httpx.HTTPError as e:
+            logger.warning(f"GO term name resolution failed for {chunk}: {e}")
+        return names
+
     async def resolve_go_term_names(
         self, go_ids: List[str], client: httpx.AsyncClient
     ) -> Dict[str, str]:
@@ -532,44 +571,18 @@ class AnnotationAggregator:
         the remaining 5 from QuickGO."""
         unique_ids = sorted({gid for gid in go_ids if gid})
         names: Dict[str, str] = {}
-
         uncached_ids = []
         for gid in unique_ids:
-            if self.cache_db:
-                try:
-                    cached = self.cache_db.get_annotation_cache(
-                        f"goterm:{gid}", self.cache_ttl_days
-                    )
-                    if cached is not None:
-                        names[gid] = json.loads(cached)
-                        continue
-                except Exception as e:
-                    logger.warning(f"GO term cache read failed for {gid}: {e}")
-            uncached_ids.append(gid)
+            cached_name = self._try_get_cached_go_name(gid)
+            if cached_name is not None:
+                names[gid] = cached_name
+            else:
+                uncached_ids.append(gid)
 
         chunk_size = 50
         for i in range(0, len(uncached_ids), chunk_size):
             chunk = uncached_ids[i : i + chunk_size]
-            url = f"{QUICKGO_BASE_URL}/ontology/go/terms/{','.join(chunk)}"
-            try:
-                response = await client.get(url, headers=_JSON_ACCEPT_HEADERS)
-                if response.status_code == 200:
-                    for term in response.json().get("results", []):
-                        if term.get("id") and term.get("name"):
-                            names[term["id"]] = term["name"]
-                            if self.cache_db:
-                                try:
-                                    self.cache_db.set_annotation_cache(
-                                        f"goterm:{term['id']}",
-                                        "goterm",
-                                        json.dumps(term["name"]),
-                                    )
-                                except Exception as e:
-                                    logger.warning(
-                                        f"GO term cache write failed for {term['id']}: {e}"
-                                    )
-            except httpx.HTTPError as e:
-                logger.warning(f"GO term name resolution failed for {chunk}: {e}")
+            names.update(await self._fetch_go_term_names_chunk(chunk, client))
         return names
 
     @staticmethod
@@ -632,6 +645,172 @@ class AnnotationAggregator:
             neighbor["domains"] = await self.fetch_gmgc_features(gmgc_gene_id, client)
         return neighbor
 
+    async def _resolve_candidates(
+        self,
+        hits: List[Dict[str, Any]],
+        candidate_pool_size: int,
+        client: httpx.AsyncClient,
+    ) -> Tuple[List[Dict[str, Any]], List[Optional[str]], List[Optional[str]], int]:
+        """Resolves the oversampled candidate pool to (accession, gmgc_gene_id)
+        pairs. Returns (candidates, accessions, gmgc_gene_ids, resolved_count)."""
+        candidates = sorted(hits, key=self._hit_sort_key)[:candidate_pool_size]
+        pdb_cache: Dict[str, Dict[str, Optional[str]]] = {}
+        accessions = await asyncio.gather(
+            *(self.resolve_accession(hit, client, pdb_cache) for hit in candidates)
+        )
+        # gmgcl_id hits have no UniProt accession at all (see
+        # extract_gmgc_gene_id()'s docstring), so they're only checked
+        # for a GMGC-resolvable gene ID once UniProt resolution has
+        # already failed - the two are mutually exclusive per hit.
+        gmgc_gene_ids = [
+            None if acc else self.extract_gmgc_gene_id(hit.get("target", ""))
+            for hit, acc in zip(candidates, accessions)
+        ]
+        resolved_count = sum(
+            1 for acc, gid in zip(accessions, gmgc_gene_ids) if acc or gid
+        )
+        return candidates, accessions, gmgc_gene_ids, resolved_count
+
+    def _collect_neighbor_keys(
+        self,
+        neighbor: Dict[str, Any],
+        resolved_names: Dict[str, str],
+        domain_meta: Dict[Tuple[str, str], Dict[str, Any]],
+        go_meta: Dict[str, Dict[str, Any]],
+    ) -> Tuple[set, set]:
+        """One neighbor's distinct domain keys and GO ids, updating the
+        shared `domain_meta`/`go_meta` lookups as a side effect (a domain's
+        or GO term's metadata is the same regardless of which neighbor's
+        counters it ends up contributing to)."""
+        domain_keys = set()
+        go_ids = set()
+
+        for domain in neighbor["domains"]:
+            key = (domain.get("name"), domain.get("type"))
+            domain_keys.add(key)
+            domain_meta[key] = domain
+            for g in domain.get("go_terms") or []:
+                if g.get("id"):
+                    go_ids.add(g["id"])
+                    go_meta.setdefault(
+                        g["id"], {"name": g.get("name"), "aspect": g.get("aspect")}
+                    )
+
+        for g in neighbor["go_terms"]:
+            if g.get("id"):
+                go_ids.add(g["id"])
+                go_meta.setdefault(
+                    g["id"],
+                    {"name": resolved_names.get(g["id"]), "aspect": g.get("aspect")},
+                )
+
+        return domain_keys, go_ids
+
+    def _count_neighbor_annotations(
+        self, per_neighbor: List[Dict[str, Any]], resolved_names: Dict[str, str]
+    ) -> Tuple[Counter, Dict, Counter, Dict, Counter, Counter]:
+        """Tallies domain/GO-term frequency across all neighbors, plus a
+        parallel "confident" tally restricted to neighbors whose own
+        structural match probability clears min_confident_probability -
+        Public/Student should only state a function hypothesis from that
+        filtered set, while Researcher gets the unfiltered counts."""
+        domain_counter: Counter = Counter()
+        domain_meta: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        go_counter: Counter = Counter()
+        go_meta: Dict[str, Dict[str, Any]] = {}
+        confident_domain_counter: Counter = Counter()
+        confident_go_counter: Counter = Counter()
+
+        for neighbor in per_neighbor:
+            is_confident = (
+                isinstance(neighbor.get("prob"), (int, float))
+                and neighbor["prob"] >= self.min_confident_probability
+            )
+            domain_keys, go_ids = self._collect_neighbor_keys(
+                neighbor, resolved_names, domain_meta, go_meta
+            )
+            for key in domain_keys:
+                domain_counter[key] += 1
+                if is_confident:
+                    confident_domain_counter[key] += 1
+            for gid in go_ids:
+                go_counter[gid] += 1
+                if is_confident:
+                    confident_go_counter[gid] += 1
+
+        return (
+            domain_counter,
+            domain_meta,
+            go_counter,
+            go_meta,
+            confident_domain_counter,
+            confident_go_counter,
+        )
+
+    @staticmethod
+    def _top_domains(
+        counter: Counter,
+        domain_meta: Dict[Tuple[str, str], Dict[str, Any]],
+        top_n: int,
+    ) -> List[Dict[str, Any]]:
+        return [
+            {
+                "name": name,
+                "type": entry_type,
+                "interpro_accession": domain_meta[(name, entry_type)].get("accession"),
+                "neighbor_count": count,
+            }
+            for (name, entry_type), count in counter.most_common(top_n)
+        ]
+
+    @staticmethod
+    def _top_go_terms(
+        counter: Counter, go_meta: Dict[str, Dict[str, Any]], top_n: int
+    ) -> List[Dict[str, Any]]:
+        return [
+            {
+                "id": gid,
+                "name": go_meta[gid].get("name"),
+                "aspect": go_meta[gid].get("aspect"),
+                "neighbor_count": count,
+            }
+            for gid, count in counter.most_common(top_n)
+        ]
+
+    def _neighbor_summary_counts(
+        self, per_neighbor: List[Dict[str, Any]]
+    ) -> Dict[str, int]:
+        # All neighbors here already have a resolved accession; "annotated"
+        # distinguishes those where InterPro/QuickGO actually returned data
+        # from those where the accession resolved but lookups came back
+        # empty (e.g. an unreviewed UniProt entry with no curated
+        # annotations yet).
+        annotated_count = sum(1 for n in per_neighbor if n["domains"] or n["go_terms"])
+        # A neighbor only counts here if it's BOTH annotated AND its own
+        # Foldseek match probability clears min_confident_probability -
+        # having curated annotations isn't enough on its own if the
+        # structural match itself was weak. This gates whether Public/
+        # Student state a function hypothesis at all (see DiscoverTab).
+        high_confidence_annotated_count = sum(
+            1
+            for n in per_neighbor
+            if (n["domains"] or n["go_terms"])
+            and isinstance(n.get("prob"), (int, float))
+            and n["prob"] >= self.min_confident_probability
+        )
+        # STRING/Reactome coverage is reported separately, not folded into
+        # "annotated_neighbor_count": their absence is expected and common
+        # (STRING only covers organisms with a sequenced genome; Reactome's
+        # curated pathway coverage skews toward well-studied model species),
+        # not a sign the annotation step failed the way an empty
+        # domains/go_terms result would be.
+        return {
+            "annotated_count": annotated_count,
+            "high_confidence_annotated_count": high_confidence_annotated_count,
+            "interaction_count": sum(1 for n in per_neighbor if n["string_partners"]),
+            "pathway_count": sum(1 for n in per_neighbor if n["reactome_pathways"]),
+        }
+
     async def aggregate_for_hits(
         self,
         hits: List[Dict[str, Any]],
@@ -669,24 +848,10 @@ class AnnotationAggregator:
         whatever depth it needs).
         """
         candidate_pool_size = top_n_neighbors * CANDIDATE_OVERSAMPLE_FACTOR
-        candidates = sorted(hits, key=self._hit_sort_key)[:candidate_pool_size]
-
-        pdb_cache: Dict[str, Dict[str, Optional[str]]] = {}
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            accessions = await asyncio.gather(
-                *(self.resolve_accession(hit, client, pdb_cache) for hit in candidates)
-            )
-            # gmgcl_id hits have no UniProt accession at all (see
-            # extract_gmgc_gene_id()'s docstring), so they're only checked
-            # for a GMGC-resolvable gene ID once UniProt resolution has
-            # already failed - the two are mutually exclusive per hit.
-            gmgc_gene_ids = [
-                None if acc else self.extract_gmgc_gene_id(hit.get("target", ""))
-                for hit, acc in zip(candidates, accessions)
-            ]
-            resolved_count = sum(
-                1 for acc, gid in zip(accessions, gmgc_gene_ids) if acc or gid
+            candidates, accessions, gmgc_gene_ids, resolved_count = (
+                await self._resolve_candidates(hits, candidate_pool_size, client)
             )
             resolved_pairs = [
                 (hit, acc, gid)
@@ -712,139 +877,40 @@ class AnnotationAggregator:
             ]
             resolved_names = await self.resolve_go_term_names(unresolved_go_ids, client)
 
-        domain_counter: Counter = Counter()
-        domain_meta: Dict[Tuple[str, str], Dict[str, Any]] = {}
-        go_counter: Counter = Counter()
-        go_meta: Dict[str, Dict[str, Any]] = {}
-        # Parallel counters restricted to neighbors whose OWN structural
-        # match confidence (Foldseek's prob, independent of whether the
-        # accession happened to have curated annotations) clears
-        # min_confident_probability. Public/Student should only state a
-        # function hypothesis from this filtered set - Researcher still
-        # gets the unfiltered top_domains/top_go_terms below, since
-        # researchers want the full picture with confidence numbers
-        # visible, not a hidden filter.
-        confident_domain_counter: Counter = Counter()
-        confident_go_counter: Counter = Counter()
+        (
+            domain_counter,
+            domain_meta,
+            go_counter,
+            go_meta,
+            confident_domain_counter,
+            confident_go_counter,
+        ) = self._count_neighbor_annotations(per_neighbor, resolved_names)
 
-        for neighbor in per_neighbor:
-            neighbor_domain_keys = set()
-            neighbor_go_ids = set()
-            is_confident = (
-                isinstance(neighbor.get("prob"), (int, float))
-                and neighbor["prob"] >= self.min_confident_probability
-            )
+        summary_counts = self._neighbor_summary_counts(per_neighbor)
 
-            for domain in neighbor["domains"]:
-                key = (domain.get("name"), domain.get("type"))
-                neighbor_domain_keys.add(key)
-                domain_meta[key] = domain
-                for g in domain.get("go_terms") or []:
-                    if g.get("id"):
-                        neighbor_go_ids.add(g["id"])
-                        go_meta.setdefault(
-                            g["id"], {"name": g.get("name"), "aspect": g.get("aspect")}
-                        )
-
-            for g in neighbor["go_terms"]:
-                if g.get("id"):
-                    neighbor_go_ids.add(g["id"])
-                    go_meta.setdefault(
-                        g["id"],
-                        {
-                            "name": resolved_names.get(g["id"]),
-                            "aspect": g.get("aspect"),
-                        },
-                    )
-
-            for key in neighbor_domain_keys:
-                domain_counter[key] += 1
-                if is_confident:
-                    confident_domain_counter[key] += 1
-            for gid in neighbor_go_ids:
-                go_counter[gid] += 1
-                if is_confident:
-                    confident_go_counter[gid] += 1
-
-        top_domains = [
-            {
-                "name": name,
-                "type": entry_type,
-                "interpro_accession": domain_meta[(name, entry_type)].get("accession"),
-                "neighbor_count": count,
-            }
-            for (name, entry_type), count in domain_counter.most_common(top_n_summary)
-        ]
-        high_confidence_top_domains = [
-            {
-                "name": name,
-                "type": entry_type,
-                "interpro_accession": domain_meta[(name, entry_type)].get("accession"),
-                "neighbor_count": count,
-            }
-            for (name, entry_type), count in confident_domain_counter.most_common(
-                top_n_summary
-            )
-        ]
-        top_go_terms = [
-            {
-                "id": gid,
-                "name": go_meta[gid].get("name"),
-                "aspect": go_meta[gid].get("aspect"),
-                "neighbor_count": count,
-            }
-            for gid, count in go_counter.most_common(top_n_summary)
-        ]
-        high_confidence_top_go_terms = [
-            {
-                "id": gid,
-                "name": go_meta[gid].get("name"),
-                "aspect": go_meta[gid].get("aspect"),
-                "neighbor_count": count,
-            }
-            for gid, count in confident_go_counter.most_common(top_n_summary)
-        ]
-
-        # All neighbors here already have a resolved accession (see above);
-        # "annotated" now distinguishes those where InterPro/QuickGO actually
-        # returned data from those where the accession resolved but lookups
-        # came back empty (e.g. an unreviewed UniProt entry with no curated
-        # annotations yet).
-        annotated_count = sum(1 for n in per_neighbor if n["domains"] or n["go_terms"])
-        # A neighbor only counts here if it's BOTH annotated AND its own
-        # Foldseek match probability clears min_confident_probability -
-        # having curated annotations isn't enough on its own if the
-        # structural match itself was weak. This gates whether Public/
-        # Student state a function hypothesis at all (see DiscoverTab).
-        high_confidence_annotated_count = sum(
-            1
-            for n in per_neighbor
-            if (n["domains"] or n["go_terms"])
-            and isinstance(n.get("prob"), (int, float))
-            and n["prob"] >= self.min_confident_probability
-        )
-        # STRING/Reactome coverage is reported separately, not folded into
-        # "annotated_neighbor_count": their absence is expected and common
-        # (STRING only covers organisms with a sequenced genome; Reactome's
-        # curated pathway coverage skews toward well-studied model species),
-        # not a sign the annotation step failed the way an empty
-        # domains/go_terms result would be.
-        interaction_count = sum(1 for n in per_neighbor if n["string_partners"])
-        pathway_count = sum(1 for n in per_neighbor if n["reactome_pathways"])
         return {
             "neighbors_considered": len(per_neighbor),
             "total_hit_count": len(hits),
             "candidates_examined": len(candidates),
             "resolvable_hit_count": resolved_count,
-            "annotated_neighbor_count": annotated_count,
-            "unannotated_neighbor_count": len(per_neighbor) - annotated_count,
+            "annotated_neighbor_count": summary_counts["annotated_count"],
+            "unannotated_neighbor_count": len(per_neighbor)
+            - summary_counts["annotated_count"],
             "min_confident_probability": self.min_confident_probability,
-            "high_confidence_annotated_count": high_confidence_annotated_count,
-            "neighbors_with_interactions_count": interaction_count,
-            "neighbors_with_pathways_count": pathway_count,
-            "top_domains": top_domains,
-            "top_go_terms": top_go_terms,
-            "high_confidence_top_domains": high_confidence_top_domains,
-            "high_confidence_top_go_terms": high_confidence_top_go_terms,
+            "high_confidence_annotated_count": summary_counts[
+                "high_confidence_annotated_count"
+            ],
+            "neighbors_with_interactions_count": summary_counts["interaction_count"],
+            "neighbors_with_pathways_count": summary_counts["pathway_count"],
+            "top_domains": self._top_domains(
+                domain_counter, domain_meta, top_n_summary
+            ),
+            "top_go_terms": self._top_go_terms(go_counter, go_meta, top_n_summary),
+            "high_confidence_top_domains": self._top_domains(
+                confident_domain_counter, domain_meta, top_n_summary
+            ),
+            "high_confidence_top_go_terms": self._top_go_terms(
+                confident_go_counter, go_meta, top_n_summary
+            ),
             "per_neighbor": per_neighbor,
         }
