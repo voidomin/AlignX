@@ -2,6 +2,21 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.47.0]
+
+Second batch of the legacy Streamlit UI cleanup (2 of 14 findings: complexity 19, 19), both in `src/frontend/tabs/sequence.py`. Unlike the last batch, these two are pure functions with no Streamlit dependency - real unit tests, not `AppTest`.
+
+### Fixed
+- **`_parse_range_str`** (19→within limit): the per-token (range or single number) parsing logic was extracted into `_parse_range_part()`.
+- **`find_motif_matches`** (19→within limit): the per-sequence gap-stripping/raw-to-aligned-column mapping and regex search were extracted into `_raw_to_aligned_map()` and `_motif_matches_for_sequence()`.
+
+### Added
+- **`tests/test_sequence_tab.py`** (new, 10 tests): `_parse_range_str` (mixed ranges, empty input, dedup/sort, clamping, malformed tokens) and `find_motif_matches` (correct aligned-column mapping across a gap, no-match omission, empty query, invalid regex, both wildcard syntaxes). Neither function had any prior coverage.
+
+### Verified
+- Full suite: 550 tests passing.
+- `black`/`ruff` clean.
+
 ## [3.46.0]
 
 First batch of the legacy Streamlit UI's `python:S3776` cleanup (2 of 14 findings: complexity 16, 61), both in `src/frontend/analysis.py`. Scoped in per an explicit decision to include the Streamlit UI despite it no longer being the actively-developed interface, since it's still deployed.

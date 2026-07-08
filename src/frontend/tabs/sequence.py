@@ -1,9 +1,33 @@
 import streamlit as st
 import pandas as pd
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from src.frontend.tabs.common import render_learning_card
 
 _ALL_PROTEINS_LABEL = "All Proteins (Alignment Columns)"
+
+
+def _parse_range_part(part: str, max_val: int) -> List[int]:
+    """One comma-separated token of a range string ('1-20' or '30') into
+    the residue indices it names, clamped to [1, max_val] - or [] if the
+    token is empty, malformed, or out of range."""
+    part = part.strip()
+    if not part:
+        return []
+
+    if "-" in part:
+        try:
+            start_str, end_str = part.split("-")
+            start = max(1, int(start_str))
+            end = min(max_val, int(end_str))
+            return list(range(start, end + 1)) if start <= end else []
+        except ValueError:
+            return []
+
+    try:
+        val = int(part)
+        return [val] if 1 <= val <= max_val else []
+    except ValueError:
+        return []
 
 
 def _parse_range_str(range_str: str, max_val: int) -> List[int]:
@@ -21,28 +45,8 @@ def _parse_range_str(range_str: str, max_val: int) -> List[int]:
         return []
 
     result = set()
-    parts = range_str.split(",")
-    for part in parts:
-        part = part.strip()
-        if not part:
-            continue
-
-        if "-" in part:
-            try:
-                start_str, end_str = part.split("-")
-                start = max(1, int(start_str))
-                end = min(max_val, int(end_str))
-                if start <= end:
-                    result.update(range(start, end + 1))
-            except ValueError:
-                pass
-        else:
-            try:
-                val = int(part)
-                if 1 <= val <= max_val:
-                    result.add(val)
-            except ValueError:
-                pass
+    for part in range_str.split(","):
+        result.update(_parse_range_part(part, max_val))
     return sorted(result)
 
 
@@ -103,6 +107,33 @@ def _selection_to_range_str(residues: List[int]) -> str:
     return ", ".join(ranges)
 
 
+def _raw_to_aligned_map(aligned_seq: str) -> Tuple[str, Dict[int, int]]:
+    """Strips gaps from an aligned sequence, returning the raw (ungapped)
+    sequence and a map from raw (0-indexed) position to aligned (1-indexed)
+    column - lets a match found in the raw sequence be reported at its real
+    alignment column."""
+    raw_chars = []
+    raw_to_aligned = {}
+    current_raw_idx = 0
+    for aligned_idx, char in enumerate(aligned_seq):
+        if char != "-":
+            raw_chars.append(char)
+            raw_to_aligned[current_raw_idx] = aligned_idx + 1
+            current_raw_idx += 1
+    return "".join(raw_chars).upper(), raw_to_aligned
+
+
+def _motif_matches_for_sequence(aligned_seq: str, pattern) -> List[int]:
+    raw_seq, raw_to_aligned = _raw_to_aligned_map(aligned_seq)
+    aligned_positions = []
+    for match in pattern.finditer(raw_seq):
+        start, end = match.span()  # [start, end)
+        for raw_pos in range(start, end):
+            if raw_pos in raw_to_aligned:
+                aligned_positions.append(raw_to_aligned[raw_pos])
+    return aligned_positions
+
+
 def find_motif_matches(sequences: Dict[str, str], query: str) -> Dict[str, List[int]]:
     """
     Find columns in the alignment matching a motif query.
@@ -111,9 +142,8 @@ def find_motif_matches(sequences: Dict[str, str], query: str) -> Dict[str, List[
     """
     import re
 
-    matches_map = {}
     if not query.strip():
-        return matches_map
+        return {}
 
     # Clean query: convert 'X' or 'x' or '-' to regex wildcard '.'
     clean_query = query.upper().replace("X", ".").replace("-", ".").replace(" ", "")
@@ -122,31 +152,11 @@ def find_motif_matches(sequences: Dict[str, str], query: str) -> Dict[str, List[
     except re.error:
         return {}  # Invalid regex
 
+    matches_map = {}
     for name, aligned_seq in sequences.items():
-        # Get raw sequence and its alignment index map
-        raw_chars = []
-        raw_to_aligned = {}  # raw index (0-indexed) -> aligned index (1-indexed)
-
-        current_raw_idx = 0
-        for aligned_idx, char in enumerate(aligned_seq):
-            if char != "-":
-                raw_chars.append(char)
-                raw_to_aligned[current_raw_idx] = aligned_idx + 1
-                current_raw_idx += 1
-
-        raw_seq = "".join(raw_chars).upper()
-
-        # Find all matches of pattern in raw_seq
-        aligned_positions = []
-        for match in pattern.finditer(raw_seq):
-            start, end = match.span()  # [start, end)
-            for raw_pos in range(start, end):
-                if raw_pos in raw_to_aligned:
-                    aligned_positions.append(raw_to_aligned[raw_pos])
-
-        if aligned_positions:
-            matches_map[name] = aligned_positions
-
+        positions = _motif_matches_for_sequence(aligned_seq, pattern)
+        if positions:
+            matches_map[name] = positions
     return matches_map
 
 
