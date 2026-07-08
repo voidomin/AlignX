@@ -2,6 +2,19 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.26.0]
+
+Real test-writing pass toward the `new_coverage` Quality Gate condition (48.4% at the start of this entry, needs 80%, free-tier SonarCloud can't have the threshold adjusted). First batch: the highest-value genuinely-testable backend gaps, prioritized by actual uncovered-line count pulled from SonarCloud's `component_tree` API rather than guessed.
+
+### Added
+- **`tests/test_rmsd_calculator.py`** (new, 30 tests): `calculate_tm_score`/`calculate_gdt_ts` (including a real correction to a wrong hand-computed assumption - TM-score only reaches 1.0 when `l_target` equals the actual compared-point count, not any larger target length), `calculate_rmsd_from_superposition`, `parse_mustang_log_for_rmsd`, `parse_rms_rot_file`, `parse_rmsd_matrix`'s fallback-strategy ordering, `calculate_structure_rmsd` (including a gapped-alignment case), and `calculate_alignment_quality_metrics` (including discovering that each structure's score is averaged across *all* other structures, not just its best match - a real behavior my first draft assertion got wrong). File coverage: 4.5% → 85%.
+- **`tests/test_coordinator.py`** (+6 tests): `AnalysisCoordinator.__init__`'s Mustang-not-installed warning path, `run_full_pipeline`'s download-failure path, a full mocked-I/O-but-real-processing happy path through `run_full_pipeline` (Mustang/PDB download mocked, but `process_result_directory`, history persistence, and `metadata.json` writing all run for real against a real alignment output directory), and `process_result_directory` exercised directly against a real (minimal) Mustang-shaped output directory. File coverage: 32% → 87%.
+- **`tests/test_mustang_runner.py`** (+37 tests): the full installation-detection strategy chain (native/WSL/compiled-binary checks and their priority order in `_check_mustang`), `_perform_installation_check`'s multi-stage fallback (PATH → WSL → compiled → compile-from-source), `_deep_wsl_check`, `_update_executable_from_check`, `_fallback_executable`, `_convert_to_wsl_path`, `_ensure_fasta_exists`'s three branches, `_finalize_alignment_output`'s exit-code handling, and `_stream_process_output`'s line-buffering/timeout behavior (including a real fix to my first draft's mock setup - `poll()` is only consulted when `readline()` returns empty, not every iteration). File coverage: 54% → 74%.
+
+### Verified
+- 316 backend tests total (up from 245), all passing; ruff and black clean on every new/touched file.
+- Every test in this entry was run and its real failures fixed against actual code behavior, not written to assert whatever the implementation already does - two independent wrong assumptions (TM-score normalization, quality-metric averaging) were caught and corrected this way, and the mustang_runner mock-ordering bug was root-caused by reading the actual loop structure, not guessed at.
+
 ## [3.25.0]
 
 A "Methods & Citations" export for both Compare and Discover runs — a scientist citing a StructScope result in a paper previously had no easy way to know exactly what to attribute (algorithm, structure source databases, annotation sources actually used).
