@@ -14,6 +14,7 @@ Mechanical FastAPI documentation cleanup in `src/backend/api.py` - the two large
 - 245 backend tests, ruff, and black all clean.
 - `app.openapi()` still generates a valid schema with the new `responses` entries correctly merged alongside FastAPI's default `200`/`422` entries.
 - Live through the real running server: a full alignment run (`/api/chains` → `/api/jobs/align` → poll → `/api/history` → click-to-reload) completed with zero console errors; spot-checked a 200 (`/api/history`), a 400 (`/api/stats?session_id=../etc`), and a 404 (`/api/jobs/doesnotexist`) all still return their original bodies/status codes unchanged.
+- **Confirmed via re-analysis**: both `python:S8410` and `python:S8415` dropped to 0 open issues (was 40 and 30) - including the ones attributed to `_safe_segment()`'s own `raise HTTPException`, resolved transitively once every one of its ~15 callers documented the 400 it can produce. Total open Code Smells 162 → 92; Quality Gate still OK.
 
 ## [3.20.2]
 
