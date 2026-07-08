@@ -2,6 +2,20 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.25.0]
+
+A "Methods & Citations" export for both Compare and Discover runs — a scientist citing a StructScope result in a paper previously had no easy way to know exactly what to attribute (algorithm, structure source databases, annotation sources actually used).
+
+### Added
+- **`src/backend/citation_exporter.py`**: a bibliography of the tools/databases StructScope can draw on (Mustang, Foldseek, PDB, AlphaFold DB, SWISS-MODEL, ESM Atlas, InterPro, QuickGO, STRING, Reactome, SIFTS, GMGC, StructScope itself), plus `citations_for_compare_run()`/`citations_for_discover_run()`, which inspect a run's actual data (structure ID prefixes, Foldseek databases searched, which annotation types actually returned data for at least one neighbor) to cite only what that specific run used — not everything Discover mode is capable of querying.
+- **`GET /api/report/citations`** (Compare) and **`GET /api/discover/citations`** (Discover): generate a combined plain-text + BibTeX `.txt` file, following the same run-lookup pattern as the existing report/notebook/export endpoints.
+- **Frontend**: an "Export Citations" link next to the existing PDF/notebook downloads in `SequenceTab.js`, and next to Report/JSON in `DiscoverTab.js`.
+
+### Verified
+- Manually exercised both citation-builder functions and the file export end-to-end (correct dedup, correct source detection per structure prefix, correct annotation-source gating).
+- Confirmed both routes register on the FastAPI app.
+- Full frontend production build succeeds; full existing API test suite (49 relevant tests) still passes unchanged — no test files touched, so no overlap with concurrent test-coverage work.
+
 ## [3.24.2]
 
 Fixed the `new_coverage` gate condition's underlying metric problem for real this time, after 3.24.1's `sonar.tests`/`sonar.test.inclusions` attempt broke the whole analysis. Also confirmed SonarCloud's free tier can't have its Quality Gate threshold edited at all (custom quality gates are a Team/Enterprise-only feature) - lowering the 80% requirement was never actually on the table.

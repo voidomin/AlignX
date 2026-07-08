@@ -1,4 +1,4 @@
-import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl, getAlignmentReportUrl, getLabNotebookUrl } from '../api';
+import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl, getAlignmentReportUrl, getLabNotebookUrl, getCitationsUrl } from '../api';
 
 const REPORT_SECTIONS = [
     { key: 'summary', label: 'Summary' },
@@ -69,9 +69,13 @@ export class SequenceTab {
                         <span class="font-body-sm text-body-sm text-primary font-mono">lab_notebook.html</span>
                         <a id="download-notebook-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">View Notebook</a>
                     </div>
-                    <div class="flex items-center justify-between py-2">
+                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
                         <span class="font-body-sm text-body-sm text-primary font-mono">mustang_report.pdf</span>
                         <a id="download-report-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download PDF</a>
+                    </div>
+                    <div class="flex items-center justify-between py-2">
+                        <span class="font-body-sm text-body-sm text-primary font-mono">citations.txt</span>
+                        <a id="download-citations-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Export Citations</a>
                     </div>
                     <div id="report-section-checklist" class="flex flex-wrap gap-x-4 gap-y-1.5 pt-2">
                         ${REPORT_SECTIONS.map(s => `
@@ -138,6 +142,7 @@ export class SequenceTab {
         const fastaLink = this.element.querySelector('#download-fasta-link');
         const notebookLink = this.element.querySelector('#download-notebook-link');
         const reportLink = this.element.querySelector('#download-report-link');
+        const citationsLink = this.element.querySelector('#download-citations-link');
 
         if (this.currentRunId) {
             pdbLink.href = getAlignmentPdbUrl(this.currentRunId);
@@ -148,6 +153,9 @@ export class SequenceTab {
 
             notebookLink.href = getLabNotebookUrl(this.currentRunId);
             notebookLink.classList.remove('opacity-55', 'pointer-events-none');
+
+            citationsLink.href = getCitationsUrl(this.currentRunId);
+            citationsLink.classList.remove('opacity-55', 'pointer-events-none');
 
             this.element.querySelectorAll('.report-section-checkbox').forEach(cb => { cb.checked = true; });
             this.updateReportLink();
@@ -160,6 +168,9 @@ export class SequenceTab {
 
             notebookLink.href = "#";
             notebookLink.classList.add('opacity-55', 'pointer-events-none');
+
+            citationsLink.href = "#";
+            citationsLink.classList.add('opacity-55', 'pointer-events-none');
 
             reportLink.href = "#";
             reportLink.classList.add('opacity-55', 'pointer-events-none');

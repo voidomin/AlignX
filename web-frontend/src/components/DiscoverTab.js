@@ -1,4 +1,4 @@
-import { submitDiscoveryJob, pollJobUntilDone, isValidPdbId, getDiscoveryReportUrl, getDiscoveryExportUrl } from '../api';
+import { submitDiscoveryJob, pollJobUntilDone, isValidPdbId, getDiscoveryReportUrl, getDiscoveryExportUrl, getDiscoveryCitationsUrl } from '../api';
 
 const SOURCE_LABELS = {
     pdb: 'PDB',
@@ -300,6 +300,10 @@ export class DiscoverTab {
                 <a href="${getDiscoveryExportUrl(r.id)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 font-label-sm text-label-sm text-secondary hover:text-primary transition-colors">
                     <span class="material-symbols-outlined text-[16px]">data_object</span>
                     Download JSON
+                </a>
+                <a href="${getDiscoveryCitationsUrl(r.id)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 font-label-sm text-label-sm text-secondary hover:text-primary transition-colors">
+                    <span class="material-symbols-outlined text-[16px]">format_quote</span>
+                    Export Citations
                 </a>
             </div>
         ` : '';

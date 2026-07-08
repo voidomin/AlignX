@@ -1305,6 +1305,53 @@ def get_lab_notebook(
         )
 
 
+@app.get(
+    "/api/report/citations",
+    responses={
+        400: {"description": "Invalid run_id or session_id"},
+        404: {"description": "Run not found in the history database"},
+        500: {"description": "Citation export failed"},
+    },
+)
+def get_compare_citations(
+    run_id: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Generate and retrieve the Methods & Citations export (plain text +
+    BibTeX) for a Compare run.
+    """
+    from src.backend.citation_exporter import CitationExporter, citations_for_compare_run
+    from fastapi.responses import FileResponse
+
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    run = history_db.get_run(run_id)
+    if not run:
+        raise HTTPException(
+            status_code=404, detail=f"Run {run_id} not found in history database."
+        )
+
+    pdb_ids = run.get("pdb_ids", [])
+    version = config.get("app", {}).get("version", "0.0.0")
+
+    try:
+        citation_ids = citations_for_compare_run(pdb_ids)
+        exporter = CitationExporter()
+        citations_path = exporter.export(citation_ids, run_id, version=version)
+        return FileResponse(
+            path=str(citations_path),
+            media_type="text/plain",
+            filename=f"citations_{run_id}.txt",
+        )
+    except Exception as e:
+        logger.exception("Failed to generate citations export")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate citations export: {str(e)}"
+        )
+
+
 def _get_discover_run_results(run_id: str) -> Dict[str, Any]:
     """Shared lookup for the two Discover export endpoints below: finds the
     saved run, confirms it's actually a Discover run (not a Compare run -
@@ -1387,6 +1434,43 @@ def export_discovery_json(run_id: Annotated[str, Query(...)]):
             "Content-Disposition": f'attachment; filename="discover_{run_id}.json"'
         },
     )
+
+
+@app.get(
+    "/api/discover/citations",
+    responses={
+        400: {"description": "Invalid run_id, or the run isn't a Discover run"},
+        404: {"description": "Run not found, or has no stored Discover results"},
+        500: {"description": "Citation export failed"},
+    },
+)
+def get_discover_citations(run_id: Annotated[str, Query(...)]):
+    """
+    Generate and retrieve the Methods & Citations export (plain text +
+    BibTeX) for a Discover run.
+    """
+    from src.backend.citation_exporter import CitationExporter, citations_for_discover_run
+    from fastapi.responses import FileResponse
+
+    results = _get_discover_run_results(run_id)
+    version = config.get("app", {}).get("version", "0.0.0")
+
+    try:
+        citation_ids = citations_for_discover_run(results)
+        exporter = CitationExporter()
+        citations_path = exporter.export(citation_ids, run_id, version=version)
+        return FileResponse(
+            path=str(citations_path),
+            media_type="text/plain",
+            filename=f"discover_citations_{run_id}.txt",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Failed to generate discovery citations export")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate citations export: {str(e)}"
+        )
 
 
 # Mount static site for frontend SPA

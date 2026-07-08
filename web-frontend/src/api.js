@@ -329,6 +329,11 @@ export function getLabNotebookUrl(runId) {
     return withApiKey(buildUrl('/api/notebook', { run_id: runId }));
 }
 
+export function getCitationsUrl(runId) {
+    runId = assertSafeSegment(runId, 'runId');
+    return withApiKey(buildUrl('/api/report/citations', { run_id: runId }));
+}
+
 export function getDiscoveryReportUrl(runId) {
     runId = assertSafeSegment(runId, 'runId');
     return withApiKey(buildUrl('/api/discover/report', { run_id: runId }));
@@ -337,4 +342,9 @@ export function getDiscoveryReportUrl(runId) {
 export function getDiscoveryExportUrl(runId) {
     runId = assertSafeSegment(runId, 'runId');
     return withApiKey(buildUrl('/api/discover/export', { run_id: runId }));
+}
+
+export function getDiscoveryCitationsUrl(runId) {
+    runId = assertSafeSegment(runId, 'runId');
+    return withApiKey(buildUrl('/api/discover/citations', { run_id: runId }));
 }
