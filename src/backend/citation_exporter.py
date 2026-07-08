@@ -59,7 +59,7 @@ BIBLIOGRAPHY: Dict[str, Dict[str, str]] = {
         "bibtex": (
             "@article{foldseek2024,\n"
             "  author = {van Kempen, Michel and Kim, Stephanie S. and "
-            "Tumescheit, Charlotte and Mirdita, Milot and S{\\\"o}ding, "
+            'Tumescheit, Charlotte and Mirdita, Milot and S{\\"o}ding, '
             "Johannes and Steinegger, Martin},\n"
             "  title = {Fast and accurate protein structure search with "
             "Foldseek},\n"
@@ -320,7 +320,10 @@ def citations_for_discover_run(results: Dict[str, Any]) -> List[str]:
         source_id = _FOLDSEEK_DB_SOURCE.get(db)
         if source_id and source_id not in ids:
             ids.append(source_id)
-    if any(db in _SIFTS_TRIGGER_DBS for db in databases_searched) and "sifts" not in ids:
+    if (
+        any(db in _SIFTS_TRIGGER_DBS for db in databases_searched)
+        and "sifts" not in ids
+    ):
         ids.append("sifts")
 
     annotations = results.get("annotations") or {}

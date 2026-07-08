@@ -1321,7 +1321,10 @@ def get_compare_citations(
     Generate and retrieve the Methods & Citations export (plain text +
     BibTeX) for a Compare run.
     """
-    from src.backend.citation_exporter import CitationExporter, citations_for_compare_run
+    from src.backend.citation_exporter import (
+        CitationExporter,
+        citations_for_compare_run,
+    )
     from fastapi.responses import FileResponse
 
     _safe_segment(run_id, "run_id")
@@ -1449,7 +1452,10 @@ def get_discover_citations(run_id: Annotated[str, Query(...)]):
     Generate and retrieve the Methods & Citations export (plain text +
     BibTeX) for a Discover run.
     """
-    from src.backend.citation_exporter import CitationExporter, citations_for_discover_run
+    from src.backend.citation_exporter import (
+        CitationExporter,
+        citations_for_discover_run,
+    )
     from fastapi.responses import FileResponse
 
     results = _get_discover_run_results(run_id)
