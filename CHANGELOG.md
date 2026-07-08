@@ -2,6 +2,13 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.35.1]
+
+Confirming 3.34.0's `new_coverage` progress via re-analysis, and that this entry's Cognitive Complexity refactors (`notebook_exporter.py`'s `export()`, `rmsd_calculator.py`'s `parse_rms_rot_file()`) didn't break the real tests written for those two files in 3.34.0/3.26.0 - both test files re-run clean against the refactored code (38/38 passing), confirming the refactors preserved external behavior as intended.
+
+### Verified
+- **Confirmed via re-analysis**: `new_coverage` rose 56.1% → 56.9%.
+
 ## [3.35.0]
 
 Fourth batch of the backend `python:S3776` cleanup (3 more of the 41 open findings: complexity 26, 27, 28). 12 of 26 backend findings now resolved.
