@@ -2,6 +2,20 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.41.0]
+
+Re-pulled the open SonarCloud issue list (26 remaining) and cleared the 3 quick/mechanical ones before returning to the bigger Cognitive Complexity items.
+
+### Fixed
+- **`python:S1481`** (`coordinator.py:151`): unused `success` from `clean_pdb()`'s return tuple renamed to `_`.
+- **`python:S5958`** (`tests/test_report_generator.py:117`): `pytest.raises(Exception)` narrowed to `pytest.raises(FileNotFoundError)` - confirmed that's the actual (unwrapped) exception `generate_full_report()` raises when its output directory doesn't exist, by reproducing it directly.
+- **`python:S3776`** (`api.py:412`, `sanitize_for_json`, 20→within limit - a new finding since the 3.36.0 refactor only got it from 30 to 20, not under threshold): extracted `_is_intlike`, `_is_floatlike`, `_coerce_float`, and `_coerce_via_to_dict`, and switched the remaining dispatch from `elif` to early `if`/`return`.
+
+### Verified
+- Full backend suite: 417 tests passing.
+- Manually re-verified `sanitize_for_json()`'s numpy scalar/NaN/Inf/ndarray/DataFrame/Path/dict-key-stringification behavior is unchanged.
+- `black`/`ruff` clean.
+
 ## [3.40.0]
 
 Sixth batch of the `new_coverage` push - `database.py`'s CRUD/cache-management surface and two previously-untested files, `utilities.py` and `foldseek_runner.py`'s exception/edge paths.

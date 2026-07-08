@@ -148,7 +148,7 @@ class AnalysisCoordinator:
                     f"Auto-detected multi-chain PDB {pdb_id}. Selecting chain '{target_chain}' for Mustang."
                 )
 
-        success, msg, cleaned_path = self.pdb_manager.clean_pdb(
+        _, msg, cleaned_path = self.pdb_manager.clean_pdb(
             pdb_file,
             chain=target_chain,
             remove_water=remove_water,

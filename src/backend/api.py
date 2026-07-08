@@ -409,45 +409,65 @@ def _decode_plotly_bdata(val: Dict[str, Any]) -> Any:
         return {str(k): sanitize_for_json(v) for k, v in val.items()}
 
 
+def _is_intlike(val: Any) -> bool:
+    import numpy as np
+
+    return isinstance(val, (int, np.integer)) or "int" in type(val).__name__.lower()
+
+
+def _is_floatlike(val: Any) -> bool:
+    import numpy as np
+
+    return (
+        isinstance(val, (float, np.floating)) or "float" in type(val).__name__.lower()
+    )
+
+
+def _coerce_float(val: Any) -> Optional[float]:
+    import math
+
+    try:
+        fval = float(val)
+        return None if (math.isnan(fval) or math.isinf(fval)) else fval
+    except Exception:
+        return None
+
+
+def _coerce_via_to_dict(val: Any) -> Any:
+    try:
+        if type(val).__name__ == "DataFrame":
+            return sanitize_for_json(val.to_dict(orient="split"))
+        return sanitize_for_json(val.to_dict())
+    except Exception:
+        return str(val)
+
+
 def sanitize_for_json(val: Any) -> Any:
     """
     Recursively convert NumPy types and other non-standard types to JSON-friendly standard Python types,
     replacing NaN and Infinity with None.
     """
     import numpy as np
-    import math
 
     val = _coerce_numpy_scalar(val)
 
     if _is_plotly_bdata(val):
         return _decode_plotly_bdata(val)
-
     if isinstance(val, dict):
         return {str(k): sanitize_for_json(v) for k, v in val.items()}
-    elif isinstance(val, (list, tuple, set)):
+    if isinstance(val, (list, tuple, set)):
         return [sanitize_for_json(item) for item in val]
-    elif isinstance(val, (int, np.integer)) or "int" in type(val).__name__.lower():
+    if _is_intlike(val):
         return int(val)
-    elif isinstance(val, (float, np.floating)) or "float" in type(val).__name__.lower():
-        try:
-            fval = float(val)
-            if math.isnan(fval) or math.isinf(fval):
-                return None
-            return fval
-        except Exception:
-            return None
-    elif isinstance(val, np.ndarray):
+    if _is_floatlike(val):
+        return _coerce_float(val)
+    if isinstance(val, np.ndarray):
         return sanitize_for_json(val.tolist())
-    elif hasattr(val, "to_plotly_json"):
+    if hasattr(val, "to_plotly_json"):
         return sanitize_for_json(val.to_plotly_json())
-    elif hasattr(val, "to_dict"):
-        try:
-            if type(val).__name__ == "DataFrame":
-                return sanitize_for_json(val.to_dict(orient="split"))
-            return sanitize_for_json(val.to_dict())
-        except Exception:
-            return str(val)
-    elif isinstance(val, Path):
+    if hasattr(val, "to_dict"):
+        return _coerce_via_to_dict(val)
+    if isinstance(val, Path):
         return str(val)
     return val
 

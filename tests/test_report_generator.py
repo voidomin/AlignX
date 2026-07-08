@@ -114,5 +114,5 @@ class TestGenerateFullReport:
         results = {"pdb_ids": ["4RLT"], "stats": {"mean_rmsd": 1.0}}
         generator = ReportGenerator(tmp_path / "does_not_exist")
 
-        with pytest.raises(Exception):
+        with pytest.raises(FileNotFoundError):
             generator.generate_full_report(results)
