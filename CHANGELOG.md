@@ -2,6 +2,22 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.44.0]
+
+Finishes `pdb_manager.py`'s dedicated-session cleanup: the remaining two findings, including the single largest Cognitive Complexity finding in the codebase (94).
+
+### Fixed
+- **`build_residue_renumber_map`** (31→within limit): this function's own docstring warned "keep this predicate in sync with `CleanSelect.accept_residue`" - it was a hand-duplicated copy of the exact same accept/reject logic. Now that `_CleanSelect` is a real reusable class (from the 3.43.0 `clean_pdb` refactor), it calls `clean_select.accept_residue()` directly instead - fixes the complexity finding and eliminates the duplication (and the risk of the two drifting apart) at the same time.
+- **`fetch_metadata`** (94→within limit, the largest finding in the codebase): split into `_classify_pdb_ids`, `_fetch_uniprot_name_organism` (shared by AlphaFold/SWISS-MODEL), `_fetch_rcsb_metadata`/`_parse_rcsb_entry`, `_fetch_alphafold_metadata`, `_fetch_swissmodel_metadata`/`_fetch_swissmodel_repository_info`, `_esm_metadata`, and `_remap_metadata_to_original_ids`, plus a shared `_empty_metadata()` replacing three copy-pasted default-dict literals.
+
+### Verified
+- Full backend suite: 512 tests passing.
+- `fetch_metadata` had **zero existing test coverage** despite being a real, heavily-used code path - given the scale of this rewrite, verified directly against all 4 live metadata APIs (RCSB, UniProt via AlphaFold, SWISS-MODEL's own repository API, ESM Atlas's fixed fields) with a real mixed-source batch, confirming correct per-source titles/methods/resolutions/organisms, case-insensitive original-ID remapping (`4hhb` and `4HHB` both resolving correctly), and edge cases (empty batch, unknown PDB ID, malformed AlphaFold ID).
+- Real end-to-end Docker verification of the `build_residue_renumber_map` reuse: ran a real 4HHB+2HHB alignment, then hit `/api/ligands` (found the real HEM heme groups) and `/api/interactions` (found the biologically-correct proximal histidine HIS87 2.14 Å from the heme, with a correctly-computed `aligned_resi`).
+- `black`/`ruff` clean.
+
+This closes out `pdb_manager.py` - all 4 of its Cognitive Complexity findings are now resolved, along with every other backend finding in the original 41-item S3776 list. Only the legacy Streamlit UI's 14 findings remain in that category.
+
 ## [3.43.0]
 
 `pdb_manager.py` was explicitly deferred earlier as "a dedicated session" given it's the single most-used file in the app - this starts that session with its two highest-complexity findings.

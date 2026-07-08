@@ -697,8 +697,10 @@ class PDBManager:
         output, which is built from a cleaned copy with every chain
         renumbered from 1 (and ligands typically stripped). This lets
         callers translate a raw residue number into the number the aligned
-        structure actually uses. Keep this predicate in sync with
-        CleanSelect.accept_residue in clean_pdb() above.
+        structure actually uses. Reuses `_CleanSelect.accept_residue` - the
+        exact same predicate clean_pdb() uses to decide what survives -
+        instead of a second, hand-duplicated copy that could drift out of
+        sync with it.
         """
         try:
             structure = self._get_structure(pdb_file)
@@ -707,51 +709,20 @@ class PDBManager:
             return {}
 
         is_plddt_model = pdb_file.name.lower().startswith(("af-", "esm-"))
-        # See the matching scale-detection note in clean_pdb() - ESM Atlas
-        # structures use a 0-1 confidence scale, not AlphaFold's 0-100.
-        plddt_scale = 1.0
-        if is_plddt_model:
-            try:
-                max_bfactor = max(
-                    (atom.bfactor for atom in structure.get_atoms()), default=0.0
-                )
-                if max_bfactor <= 1.5:
-                    plddt_scale = 100.0
-            except Exception:
-                pass
+        plddt_scale = self._detect_plddt_scale(structure, is_plddt_model)
+        clean_select = _CleanSelect(
+            is_plddt_model, plddt_scale, remove_water, remove_heteroatoms
+        )
 
-        model = structure[0]
-
-        target_chain_obj = None
-        for ch in model:
-            if chain is None or ch.id == chain:
-                target_chain_obj = ch
-                break
+        target_chain_obj = self._find_target_chain(structure[0], chain)
         if not target_chain_obj:
             return {}
 
         mapping: Dict[int, int] = {}
         res_count = 1
         for residue in target_chain_obj:
-            if remove_water and (residue.id[0] == "W" or residue.resname == "HOH"):
+            if not clean_select.accept_residue(residue):
                 continue
-
-            if is_plddt_model:
-                try:
-                    atoms = list(residue.get_atoms())
-                    if atoms and (atoms[0].bfactor * plddt_scale) < 50:
-                        continue
-                except (AttributeError, IndexError):
-                    pass
-
-            if residue.id[0] == " " or residue.has_id("CA"):
-                keep = True
-            else:
-                keep = not remove_heteroatoms
-
-            if not keep:
-                continue
-
             mapping[residue.id[1]] = res_count
             res_count += 1
 
@@ -787,21 +758,21 @@ class PDBManager:
 
         return results
 
-    async def fetch_metadata(
-        self, pdb_ids: List[str], client: Optional[httpx.AsyncClient] = None
-    ) -> Dict[str, Dict]:
-        """
-        Fetch metadata for multiple PDB IDs from RCSB GraphQL API (Asynchronous).
-        """
-        if not pdb_ids:
-            return {}
+    @staticmethod
+    def _empty_metadata() -> Dict[str, str]:
+        return {"title": "N/A", "method": "N/A", "resolution": "N/A", "organism": "N/A"}
 
-        # State mapping
-        original_to_base = {}
-        unique_base_ids = []
-        af_ids = []
-        sm_ids = []
-        esm_ids = []
+    @staticmethod
+    def _classify_pdb_ids(
+        pdb_ids: List[str],
+    ) -> Tuple[Dict[str, str], List[str], List[str], List[str], List[str]]:
+        """Splits a mixed batch of PDB/AlphaFold/SWISS-MODEL/ESM Atlas IDs
+        into their per-source id lists, deduplicated, plus a mapping from
+        each original (as-passed) id to the base id its metadata is keyed
+        under - multiple original IDs can share one base id (e.g. two chain
+        variants of the same PDB entry)."""
+        original_to_base: Dict[str, str] = {}
+        unique_base_ids, af_ids, sm_ids, esm_ids = [], [], [], []
 
         for pid in pdb_ids:
             # Preserve original casing in mapping keys
@@ -820,10 +791,63 @@ class PDBManager:
                 unique_base_ids.append(base_id)
                 original_to_base[pid] = base_id
 
-        unique_base_ids = list(set(unique_base_ids))
-        af_ids = list(set(af_ids))
-        sm_ids = list(set(sm_ids))
-        esm_ids = list(set(esm_ids))
+        return (
+            original_to_base,
+            list(set(unique_base_ids)),
+            list(set(af_ids)),
+            list(set(sm_ids)),
+            list(set(esm_ids)),
+        )
+
+    @staticmethod
+    async def _fetch_uniprot_name_organism(
+        client: httpx.AsyncClient, uniprot_id: str, fallback_name: str
+    ) -> Tuple[str, str]:
+        """Best-effort UniProt lookup for a protein's name and organism,
+        shared by the AlphaFold and SWISS-MODEL metadata fetchers below
+        (both are keyed by UniProt accession)."""
+        try:
+            up_url = f"https://rest.uniprot.org/uniprotkb/{uniprot_id}.json"
+            up_resp = await client.get(up_url, timeout=10)
+            if up_resp.status_code != 200:
+                logger.warning(
+                    f"UniProt API returned {up_resp.status_code} for {uniprot_id}"
+                )
+                return fallback_name, "N/A"
+
+            up_data = up_resp.json()
+            desc = up_data.get("proteinDescription", {})
+
+            name = None
+            name_sources = [
+                desc.get("recommendedName"),
+                desc.get("submissionNames", [{}])[0],
+                desc.get("alternativeNames", [{}])[0],
+            ]
+            for source in name_sources:
+                if source and isinstance(source, dict):
+                    name = source.get("fullName", {}).get("value")
+                    if name:
+                        break
+
+            if not name:
+                genes = up_data.get("genes", [{}])
+                name = genes[0].get("geneName", {}).get("value", fallback_name)
+
+            organism = up_data.get("organism", {}).get("scientificName", "N/A")
+            return name, organism
+        except Exception as e:
+            logger.warning(
+                f"Failed to fetch UniProt meta for {uniprot_id}: ({type(e).__name__}) {e}"
+            )
+            return fallback_name, "N/A"
+
+    @staticmethod
+    async def _fetch_rcsb_metadata(
+        client: httpx.AsyncClient, unique_base_ids: List[str]
+    ) -> Dict[str, Dict[str, str]]:
+        if not unique_base_ids:
+            return {}
 
         query = """
         query($ids: [String!]!) {
@@ -838,206 +862,174 @@ class PDBManager:
           }
         }
         """
+        url = "https://data.rcsb.org/graphql"
+        payload = {"query": query, "variables": {"ids": unique_base_ids}}
+        logger.info(f"Fetching metadata for {len(unique_base_ids)} PDB entries")
+        response = await client.post(url, json=payload)
+        if response.status_code != 200:
+            return {}
 
-        base_results = {
-            bid: {
-                "title": "N/A",
-                "method": "N/A",
-                "resolution": "N/A",
-                "organism": "N/A",
-            }
-            for bid in (unique_base_ids + af_ids + sm_ids + esm_ids)
+        data = response.json()
+        entries = (data.get("data") or {}).get("entries") or []
+        results = {}
+        for entry in entries:
+            bid = entry.get("rcsb_id")
+            if not bid:
+                continue
+            results[bid] = PDBManager._parse_rcsb_entry(entry)
+        return results
+
+    @staticmethod
+    def _parse_rcsb_entry(entry: Dict[str, Any]) -> Dict[str, str]:
+        struct = entry.get("struct") or {}
+        exptl_list = entry.get("exptl") or []
+        res_list = (entry.get("rcsb_entry_info") or {}).get("resolution_combined") or []
+
+        organism = "N/A"
+        for entity in entry.get("polymer_entities") or []:
+            sources = entity.get("rcsb_entity_source_organism") or []
+            if sources:
+                organism = sources[0].get("scientific_name", "N/A")
+                break
+
+        return {
+            "title": struct.get("title", "N/A"),
+            "method": exptl_list[0].get("method", "N/A") if exptl_list else "N/A",
+            "resolution": f"{res_list[0]:.2f} \u00c5" if res_list else "N/A",
+            "organism": organism,
         }
 
-        async def fetch_uniprot_name_organism(client, uniprot_id, fallback_name):
-            """Best-effort UniProt lookup for a protein's name and organism,
-            shared by the AlphaFold and SWISS-MODEL metadata branches below
-            (both are keyed by UniProt accession)."""
-            try:
-                up_url = f"https://rest.uniprot.org/uniprotkb/{uniprot_id}.json"
-                up_resp = await client.get(up_url, timeout=10)
-                if up_resp.status_code != 200:
-                    logger.warning(
-                        f"UniProt API returned {up_resp.status_code} for {uniprot_id}"
-                    )
-                    return fallback_name, "N/A"
+    async def _fetch_alphafold_metadata(
+        self, client: httpx.AsyncClient, af_ids: List[str]
+    ) -> Dict[str, Dict[str, str]]:
+        results = {}
+        for af_id in af_ids:
+            # Extract UniProt ID (AF-P12345-F1 -> P12345)
+            parts = af_id.split("-")
+            if len(parts) < 2:
+                continue
+            name, organism = await self._fetch_uniprot_name_organism(
+                client, parts[1], "AF Model"
+            )
+            results[af_id] = {
+                "title": f"[AlphaFold] {name}",
+                "method": "Predicted (AF2)",
+                "resolution": "pLDDT Scored",
+                "organism": organism,
+            }
+        return results
 
-                up_data = up_resp.json()
-                desc = up_data.get("proteinDescription", {})
+    @staticmethod
+    async def _fetch_swissmodel_repository_info(
+        client: httpx.AsyncClient, up_id: str, sm_id: str
+    ) -> Tuple[str, str]:
+        """(method, resolution) from SWISS-MODEL's own repository API -
+        it aggregates both true homology models and experimental PDB
+        structures already covering that UniProt entry, so "method"
+        reflects which one this actually is."""
+        method, resolution = "Homology model", "N/A"
+        try:
+            sm_url = f"https://swissmodel.expasy.org/repository/uniprot/{up_id}.json"
+            sm_resp = await client.get(sm_url, timeout=10)
+            if sm_resp.status_code == 200:
+                sm_data = sm_resp.json()
+                models = (sm_data.get("result") or {}).get("structures") or []
+                if models:
+                    model = models[0]
+                    method = model.get("method") or method
+                    template = model.get("template")
+                    coverage = model.get("coverage")
+                    if template:
+                        resolution = f"Template {template}" + (
+                            f" ({coverage * 100:.0f}% cov.)"
+                            if isinstance(coverage, (int, float))
+                            else ""
+                        )
+        except Exception as e:
+            logger.warning(
+                f"Failed to fetch SWISS-MODEL meta for {sm_id}: ({type(e).__name__}) {e}"
+            )
+        return method, resolution
 
-                name = None
-                name_sources = [
-                    desc.get("recommendedName"),
-                    desc.get("submissionNames", [{}])[0],
-                    desc.get("alternativeNames", [{}])[0],
-                ]
-                for source in name_sources:
-                    if source and isinstance(source, dict):
-                        name = source.get("fullName", {}).get("value")
-                        if name:
-                            break
+    async def _fetch_swissmodel_metadata(
+        self, client: httpx.AsyncClient, sm_ids: List[str]
+    ) -> Dict[str, Dict[str, str]]:
+        results = {}
+        for sm_id in sm_ids:
+            up_id = sm_id.split("-", 1)[1]
+            name, organism = await self._fetch_uniprot_name_organism(
+                client, up_id, "SWISS-MODEL"
+            )
+            method, resolution = await self._fetch_swissmodel_repository_info(
+                client, up_id, sm_id
+            )
+            results[sm_id] = {
+                "title": f"[SWISS-MODEL] {name}",
+                "method": method,
+                "resolution": resolution,
+                "organism": organism,
+            }
+        return results
 
-                if not name:
-                    genes = up_data.get("genes", [{}])
-                    name = genes[0].get("geneName", {}).get("value", fallback_name)
+    @staticmethod
+    def _esm_metadata(esm_ids: List[str]) -> Dict[str, Dict[str, str]]:
+        # No per-structure metadata API exists for these anonymous
+        # metagenomic predictions - fields are fixed.
+        return {
+            esm_id: {
+                "title": f"[ESMFold] {esm_id.split('-', 1)[1]}",
+                "method": "Predicted (ESMFold)",
+                "resolution": "pLDDT Scored",
+                "organism": "Metagenomic (unclassified)",
+            }
+            for esm_id in esm_ids
+        }
 
-                organism = up_data.get("organism", {}).get("scientificName", "N/A")
-                return name, organism
-            except Exception as e:
-                logger.warning(
-                    f"Failed to fetch UniProt meta for {uniprot_id}: ({type(e).__name__}) {e}"
-                )
-                return fallback_name, "N/A"
+    def _remap_metadata_to_original_ids(
+        self, original_to_base: Dict[str, str], base_results: Dict[str, Dict[str, str]]
+    ) -> Dict[str, Dict[str, str]]:
+        final_results = {}
+        for orig_id, b_id in original_to_base.items():
+            # Try uppercase match first, then exact
+            meta = base_results.get(b_id) or base_results.get(b_id.upper())
+            final_results[orig_id] = meta or self._empty_metadata()
+        return final_results
+
+    async def fetch_metadata(
+        self, pdb_ids: List[str], client: Optional[httpx.AsyncClient] = None
+    ) -> Dict[str, Dict]:
+        """
+        Fetch metadata for multiple PDB IDs from RCSB GraphQL API (Asynchronous).
+        """
+        if not pdb_ids:
+            return {}
+
+        original_to_base, unique_base_ids, af_ids, sm_ids, esm_ids = (
+            self._classify_pdb_ids(pdb_ids)
+        )
+        base_results = {
+            bid: self._empty_metadata()
+            for bid in (unique_base_ids + af_ids + sm_ids + esm_ids)
+        }
 
         try:
             manage_client = client is None
             if manage_client:
                 client = httpx.AsyncClient(timeout=15)
 
-            # 1. Fetch RCSB Metadata
-            if unique_base_ids:
-                url = "https://data.rcsb.org/graphql"
-                payload = {"query": query, "variables": {"ids": unique_base_ids}}
-                logger.info(f"Fetching metadata for {len(unique_base_ids)} PDB entries")
-                response = await client.post(url, json=payload)
-
-                if response.status_code == 200:
-                    data = response.json()
-                    entries = (data.get("data") or {}).get("entries") or []
-                    for entry in entries:
-                        bid = entry.get("rcsb_id")
-                        if not bid:
-                            continue
-
-                        struct = entry.get("struct") or {}
-                        exptl_list = entry.get("exptl") or []
-                        info = entry.get("rcsb_entry_info") or {}
-                        res_list = info.get("resolution_combined") or []
-
-                        organism = "N/A"
-                        entities = entry.get("polymer_entities") or []
-                        if entities:
-                            for entity in entities:
-                                sources = (
-                                    entity.get("rcsb_entity_source_organism") or []
-                                )
-                                if sources:
-                                    organism = sources[0].get("scientific_name", "N/A")
-                                    break
-
-                        base_results[bid] = {
-                            "title": struct.get("title", "N/A"),
-                            "method": (
-                                exptl_list[0].get("method", "N/A")
-                                if exptl_list
-                                else "N/A"
-                            ),
-                            "resolution": (
-                                f"{res_list[0]:.2f} \u00c5" if res_list else "N/A"
-                            ),
-                            "organism": organism,
-                        }
-
-            # 2. Fetch AlphaFold Metadata (via UniProt)
-            for af_id in af_ids:
-                # Extract UniProt ID (AF-P12345-F1 -> P12345)
-                parts = af_id.split("-")
-                if len(parts) < 2:
-                    continue
-                up_id = parts[1]
-
-                name, organism = await fetch_uniprot_name_organism(
-                    client, up_id, "AF Model"
-                )
-                base_results[af_id] = {
-                    "title": f"[AlphaFold] {name}",
-                    "method": "Predicted (AF2)",
-                    "resolution": "pLDDT Scored",
-                    "organism": organism,
-                }
-
-            # 3. Fetch SWISS-MODEL Metadata (template/method info + UniProt name/organism)
-            for sm_id in sm_ids:
-                up_id = sm_id.split("-", 1)[1]
-
-                name, organism = await fetch_uniprot_name_organism(
-                    client, up_id, "SWISS-MODEL"
-                )
-
-                method = "Homology model"
-                resolution = "N/A"
-                try:
-                    sm_url = (
-                        f"https://swissmodel.expasy.org/repository/uniprot/{up_id}.json"
-                    )
-                    sm_resp = await client.get(sm_url, timeout=10)
-                    if sm_resp.status_code == 200:
-                        sm_data = sm_resp.json()
-                        models = (sm_data.get("result") or {}).get("structures") or []
-                        if models:
-                            model = models[0]
-                            # SWISS-MODEL Repository aggregates both true
-                            # homology models and experimental PDB structures
-                            # already covering that UniProt entry - "method"
-                            # reflects which one this actually is.
-                            method = model.get("method") or method
-                            template = model.get("template")
-                            coverage = model.get("coverage")
-                            if template:
-                                resolution = f"Template {template}" + (
-                                    f" ({coverage * 100:.0f}% cov.)"
-                                    if isinstance(coverage, (int, float))
-                                    else ""
-                                )
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to fetch SWISS-MODEL meta for {sm_id}: ({type(e).__name__}) {e}"
-                    )
-
-                base_results[sm_id] = {
-                    "title": f"[SWISS-MODEL] {name}",
-                    "method": method,
-                    "resolution": resolution,
-                    "organism": organism,
-                }
-
-            # 4. ESM Atlas Metadata (no per-structure metadata API exists for
-            # these anonymous metagenomic predictions - fields are fixed)
-            for esm_id in esm_ids:
-                mgyp_id = esm_id.split("-", 1)[1]
-                base_results[esm_id] = {
-                    "title": f"[ESMFold] {mgyp_id}",
-                    "method": "Predicted (ESMFold)",
-                    "resolution": "pLDDT Scored",
-                    "organism": "Metagenomic (unclassified)",
-                }
+            base_results.update(
+                await self._fetch_rcsb_metadata(client, unique_base_ids)
+            )
+            base_results.update(await self._fetch_alphafold_metadata(client, af_ids))
+            base_results.update(await self._fetch_swissmodel_metadata(client, sm_ids))
+            base_results.update(self._esm_metadata(esm_ids))
 
             if manage_client:
                 await client.aclose()
 
-            # Map back to original IDs (case-insensitive lookup)
-            final_results = {}
-            for orig_id, b_id in original_to_base.items():
-                # Try uppercase match first, then exact
-                meta = base_results.get(b_id) or base_results.get(b_id.upper())
-                final_results[orig_id] = meta or {
-                    "title": "N/A",
-                    "method": "N/A",
-                    "resolution": "N/A",
-                    "organism": "N/A",
-                }
-
-            return final_results
+            return self._remap_metadata_to_original_ids(original_to_base, base_results)
 
         except Exception:
             logger.exception("Metadata fetch critical failure")
             # Fallback for all IDs to prevent UI crash
-            return {
-                pid: {
-                    "title": "N/A",
-                    "method": "N/A",
-                    "resolution": "N/A",
-                    "organism": "N/A",
-                }
-                for pid in pdb_ids
-            }
+            return {pid: self._empty_metadata() for pid in pdb_ids}
