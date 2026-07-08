@@ -12,6 +12,7 @@ Sixteenth batch of the `new_coverage` push - `api.py`'s own `sanitize_for_json` 
 ### Verified
 - Full backend suite: 757 tests passing, both locally and in a CI-matching Docker container.
 - `black`/`ruff` clean.
+- Confirmed via re-analysis: `new_coverage` 77.71% → 77.95%.
 
 ## [3.66.0]
 
