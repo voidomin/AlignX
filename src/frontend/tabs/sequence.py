@@ -326,9 +326,7 @@ def _render_conserved_selection_buttons(conserved_cols: List[int]) -> None:
             st.rerun()
 
 
-def _render_manual_selection_input(
-    sequences: Dict[str, str], target_protein: str, n_total: int
-) -> None:
+def _render_manual_selection_input(target_protein: str, n_total: int) -> None:
     st.write("**Manual Selection Input**")
     def_val = st.session_state.residue_selections.get(target_protein, "")
     user_input = st.text_input(
@@ -432,7 +430,7 @@ def _render_conserved_residue_section(
         )
         _render_conserved_selection_buttons(conserved_cols)
     with sel_col2:
-        _render_manual_selection_input(sequences, target_protein, n_total)
+        _render_manual_selection_input(target_protein, n_total)
 
     _render_selective_extraction_summary(sequences, n_total)
 

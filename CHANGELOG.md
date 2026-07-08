@@ -2,6 +2,18 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.60.0]
+
+One more unused-parameter regression caught proactively (ran `ruff check --select ARG` across every file touched today to sweep for more before the next SonarCloud scan finds them one at a time).
+
+### Fixed
+- **`python:S1172`** (`sequence.py`, `_render_manual_selection_input`): unused `sequences` parameter, removed along with its one call site's argument.
+
+### Verified
+- `ruff check --select ARG` across all of `src/frontend/`, `src/backend/`, `src/utils/`, `pages/`: the only other hits are pre-existing and intentional (duck-typed interface methods like `_CleanSelect.accept_model`/`accept_chain` that must accept an unused arg to match the calling convention, and two findings unrelated to today's work).
+- Full suite: 644 tests passing.
+- `black`/`ruff` clean.
+
 ## [3.59.0]
 
 Follow-up pass after re-checking SonarCloud's dashboard (which had already re-scanned most of today's work, dropping from 47 to 9 open issues): 2 new findings the refactors themselves introduced, plus one still-open complexity finding that needed a second pass.
