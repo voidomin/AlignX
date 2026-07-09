@@ -188,6 +188,28 @@ class TestPDBManager:
         assert cleaned_path.exists()
         assert cleaned_path.parent == temp_workspace["cleaned"]
 
+    def test_clean_pdb_reports_error_when_no_alpha_carbons_remain(
+        self, mock_config, temp_workspace
+    ):
+        """Mustang only aligns protein structures - a chain with no CA
+        atoms at all (e.g. non-protein content) must fail cleanly with a
+        clear message, not silently produce an empty/unusable output."""
+        manager = PDBManager(mock_config)
+        manager.cleaned_dir = temp_workspace["cleaned"]
+
+        raw_file = temp_workspace["raw"] / "no_ca.pdb"
+        raw_file.write_text(
+            "ATOM      1  N   ALA A   1      27.340  24.430   2.614  1.00  9.67           N  \n"
+            "ATOM      2  C   ALA A   1      26.913  26.639   3.531  1.00  9.62           C  \n"
+            "TER\n"
+        )
+
+        success, msg, cleaned_path = manager.clean_pdb(raw_file)
+
+        assert success is False
+        assert "0 Alpha Carbon" in msg
+        assert cleaned_path is None
+
     def test_clean_pdb_prunes_low_plddt_for_alphafold_0_to_100_scale(
         self, mock_config, temp_workspace
     ):
@@ -324,6 +346,33 @@ class TestPDBManager:
 
         # Only ALA (0.90 * 100 = 90 >= 50) survives; GLY (20) is pruned.
         assert mapping == {1: 1}
+
+    def test_build_residue_renumber_map_returns_empty_on_parse_failure(
+        self, mock_config, temp_workspace
+    ):
+        manager = PDBManager(mock_config)
+
+        mapping = manager.build_residue_renumber_map(
+            temp_workspace["raw"] / "does_not_exist.pdb"
+        )
+
+        assert mapping == {}
+
+    def test_build_residue_renumber_map_returns_empty_when_chain_not_found(
+        self, mock_config, temp_workspace
+    ):
+        manager = PDBManager(mock_config)
+        content = (
+            "ATOM      1  N   ALA A  49      11.104  13.203   7.334  1.00 20.00           N\n"
+            "ATOM      2  CA  ALA A  49      12.104  14.203   8.334  1.00 20.00           C\n"
+            "TER"
+        )
+        raw_file = temp_workspace["raw"] / "single_chain.pdb"
+        raw_file.write_text(content)
+
+        mapping = manager.build_residue_renumber_map(raw_file, chain="Z")
+
+        assert mapping == {}
 
     def test_save_uploaded_bytes_saves_and_validates_a_real_structure(
         self, mock_config, temp_workspace, dummy_pdb_content
@@ -627,6 +676,26 @@ class TestBatchClean:
 
         assert results["good.pdb"][0] is True
 
+    def test_reports_a_genuinely_unexpected_exception_from_the_worker(
+        self, mock_config, temp_workspace, dummy_pdb_content
+    ):
+        """clean_pdb() already handles its own expected failures internally
+        (returning a (False, msg, None) tuple) - this covers the outer
+        try/except around future.result() itself, for an exception that
+        somehow escapes clean_pdb() rather than being caught by it."""
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+        manager.cleaned_dir = temp_workspace["cleaned"]
+
+        pdb_file = temp_workspace["raw"] / "boom.pdb"
+        pdb_file.write_text(dummy_pdb_content)
+
+        with patch.object(manager, "clean_pdb", side_effect=RuntimeError("boom")):
+            results = manager.batch_clean([pdb_file])
+
+        assert results["boom.pdb"][0] is False
+        assert "boom" in results["boom.pdb"][1]
+
 
 class TestCleanSelect:
     """Direct unit tests for _CleanSelect's Bio.PDB.Select-duck-typed
@@ -680,6 +749,20 @@ class TestCleanSelect:
         residue.get_atoms.return_value = iter([])
         select = self._select(is_plddt_model=True, plddt_scale=1.0)
         assert select._below_plddt_threshold(residue) is False
+
+    def test_accept_residue_keeps_hetatm_with_a_ca_atom(self):
+        """A non-standard residue (e.g. a modified amino acid) with a CA
+        atom is still part of the protein backbone, so it's kept even when
+        remove_heteroatoms is True - unlike a true ligand/ion, which has
+        no CA at all."""
+        residue = MagicMock()
+        residue.id = ("H_MSE", 5, " ")
+        residue.resname = "MSE"
+        residue.has_id.return_value = True
+
+        select = self._select(remove_water=True, remove_heteroatoms=True)
+
+        assert select.accept_residue(residue) == 1
 
 
 class TestFetchAlphafoldResponse:

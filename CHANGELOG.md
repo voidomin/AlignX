@@ -2,6 +2,17 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.75.0]
+
+Twenty-first batch of the `new_coverage` push - more of `pdb_manager.py`'s remaining gaps: `clean_pdb`'s zero-alpha-carbon error path, `build_residue_renumber_map`'s parse-failure and chain-not-found early returns, `batch_clean`'s genuinely-unexpected-exception path (distinct from `clean_pdb`'s own internally-handled failures), and `_CleanSelect.accept_residue`'s HETATM-with-a-CA-atom retention branch.
+
+### Added
+- **`tests/test_pdb_manager.py`** (+5 tests): `clean_pdb` reporting a clean error when a chain has zero CA atoms (Mustang only aligns protein structures); `build_residue_renumber_map` returning `{}` on a parse failure and on a not-found chain; `batch_clean` reporting a genuinely-unexpected exception from the worker (as opposed to `clean_pdb`'s own already-handled failure tuple); `_CleanSelect.accept_residue` keeping a non-standard residue that still has a CA atom (e.g. a modified amino acid) even with `remove_heteroatoms=True`. File coverage: 95% → 97%.
+
+### Verified
+- Full backend suite: 797 tests passing, both locally and in a CI-matching Docker container.
+- `black`/`ruff` clean.
+
 ## [3.74.0]
 
 Final pre-deployment audit turned up two gaps: a real deployment (API key set) could silently run with wide-open, credentialed CORS with no warning, and `README.md`'s clone command still had a placeholder org name.
