@@ -67,7 +67,7 @@ Have one structure and no idea what it does? The **Discover** tab searches it ag
 ### 1. Installation
 
 ```bash
-git clone https://github.com/<your-org>/AlignX.git
+git clone https://github.com/voidomin/AlignX.git
 cd AlignX
 
 python -m venv .venv

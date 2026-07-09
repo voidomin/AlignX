@@ -416,6 +416,27 @@ class TestRateLimitClientKey:
         assert key == "ip:127.0.0.1"
 
 
+class TestCorsMisconfigurationWarning:
+    def test_warns_when_api_key_set_and_cors_still_default(self):
+        warning = api_module._cors_misconfiguration_warning("secret-key", "*")
+        assert warning is not None
+        assert "ALIGNX_CORS_ORIGINS" in warning
+
+    def test_no_warning_when_api_key_unset(self):
+        assert api_module._cors_misconfiguration_warning(None, "*") is None
+
+    def test_no_warning_when_cors_restricted(self):
+        assert (
+            api_module._cors_misconfiguration_warning(
+                "secret-key", "https://example.com"
+            )
+            is None
+        )
+
+    def test_no_warning_when_neither_set(self):
+        assert api_module._cors_misconfiguration_warning(None, "*") is None
+
+
 def test_upload_endpoint_returns_chain_info_for_a_valid_structure():
     with patch(
         "src.backend.coordinator.PDBManager.save_uploaded_bytes"

@@ -93,6 +93,30 @@ app.add_middleware(
 _ALIGNX_API_KEY = os.environ.get("ALIGNX_API_KEY")
 
 
+def _cors_misconfiguration_warning(
+    api_key: Optional[str], cors_origins_env: str
+) -> Optional[str]:
+    """A configured API key is the signal that this is a real deployment,
+    not local development - if CORS is still wide-open in that case, this
+    returns a warning to log at startup rather than silently shipping
+    credentialed CORS to any origin (see SECURITY.md's "Known Limitations":
+    there was previously no CI/deploy-time check for this omission at
+    all). Returns None when there's nothing to warn about."""
+    if api_key and cors_origins_env == "*":
+        return (
+            "ALIGNX_API_KEY is set but ALIGNX_CORS_ORIGINS is still the "
+            "default '*' - this serves wide-open, credentialed CORS to any "
+            "origin. Set ALIGNX_CORS_ORIGINS to your actual frontend "
+            "origin(s) for a real deployment."
+        )
+    return None
+
+
+_cors_warning = _cors_misconfiguration_warning(_ALIGNX_API_KEY, _cors_origins_env)
+if _cors_warning:
+    logger.warning(_cors_warning)
+
+
 _AUTH_REQUIRED_PREFIXES = ("/api/", "/results/", "/raw/")
 
 

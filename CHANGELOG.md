@@ -2,6 +2,21 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.74.0]
+
+Final pre-deployment audit turned up two gaps: a real deployment (API key set) could silently run with wide-open, credentialed CORS with no warning, and `README.md`'s clone command still had a placeholder org name.
+
+### Added
+- **`src/backend/api.py`**: `_cors_misconfiguration_warning(api_key, cors_origins_env)` - a pure function checked at module load. When `ALIGNX_API_KEY` is set (the signal that this is a real deployment, not local dev) but `ALIGNX_CORS_ORIGINS` is still the default `*`, logs a startup warning rather than shipping credentialed CORS to any origin silently. Closes the gap noted in `SECURITY.md`'s "Known Limitations".
+- **`tests/test_api.py`**: `TestCorsMisconfigurationWarning` (+4 tests) covering the warn/no-warn branches directly against the extracted pure function.
+
+### Fixed
+- **`README.md`**: clone command still read `git clone https://github.com/<your-org>/AlignX.git` - a literal placeholder, not a real URL. Fixed to `https://github.com/voidomin/AlignX.git`.
+
+### Verified
+- Full backend suite: 801 tests passing.
+- `black`/`ruff` clean.
+
 ## [3.73.0]
 
 Twentieth batch of the `new_coverage` push - more of `api.py`'s remaining gaps, spread across several endpoints: `/api/chains`'s empty-list and download-failure error paths, `_rate_limit_client_key` (had zero tests despite gating both job-submission rate limiters), `/api/jobs/align`'s fewer-than-2-IDs validation and `/api/jobs/{job_id}`'s 404, `_execute_alignment_job`'s failure-marks-job-failed path, and `/api/comparison`'s no-overlap/matrix-not-found error paths plus `/api/ligands`'s 404.
