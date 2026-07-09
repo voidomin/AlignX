@@ -1389,4 +1389,386 @@ async def test_discovery_job_sweep_drops_old_finished_jobs_but_keeps_recent_and_
 
     remaining = set(api_module.discovery_jobs.keys())
     assert remaining == {"recent_completed", "still_running"}
+
+
+@pytest.mark.asyncio
+async def test_execute_alignment_job_marks_completed_on_success():
+    """Mirrors test_execute_alignment_job_marks_failed_on_pipeline_error but
+    for the success branch - the TestClient-driven job-submission tests
+    schedule this as a fire-and-forget background task, which the sync test
+    client's event loop doesn't necessarily run to completion before the
+    request returns, so the success dict-assignment itself needs a direct
+    await to actually execute."""
+    job_id = "test-job-success"
+    api_module.alignment_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    with patch(
+        "src.backend.api.AnalysisCoordinator.run_full_pipeline",
+        return_value=(True, "ok", {"id": "run_abc", "stats": {"mean_rmsd": 1.1}}),
+    ):
+        await api_module._execute_alignment_job(
+            job_id,
+            pdb_ids=["4RLT", "3UG9"],
+            chain_selection={},
+            remove_water=True,
+            remove_heteroatoms=True,
+            session_id=None,
+        )
+
+    job = api_module.alignment_jobs.pop(job_id)
+    assert job["status"] == "completed"
+    assert job["results"]["id"] == "run_abc"
+
+
+def test_suggest_endpoint_returns_error_payload_on_request_failure():
+    """A network failure calling RCSB's suggest API shouldn't 500 - the
+    autocomplete box degrades to no suggestions instead."""
+    with patch("urllib.request.urlopen", side_effect=OSError("connection refused")):
+        response = client.get("/api/suggest?q=hemogl")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["suggestions"] == []
+    assert "connection refused" in data["error"]
+
+
+def test_chains_endpoint_metadata_fetch_failure_is_non_fatal():
+    """Best-effort title/method/resolution/organism enrichment must not
+    break chain analysis if RCSB's metadata GraphQL endpoint fails."""
+    with patch(
+        "src.backend.pdb_manager.PDBManager.batch_download"
+    ) as mock_download, patch(
+        "src.backend.pdb_manager.PDBManager.analyze_structure"
+    ) as mock_analyze, patch(
+        "src.backend.pdb_manager.PDBManager.fetch_metadata",
+        new_callable=AsyncMock,
+    ) as mock_metadata:
+        mock_download.return_value = {"4RLT": (True, "ok", Path("4rlt.pdb"))}
+        mock_analyze.return_value = {"chains": [{"id": "A", "residue_count": 100}]}
+        mock_metadata.side_effect = RuntimeError("RCSB GraphQL timeout")
+
+        response = client.post("/api/chains", json={"pdb_ids": ["4RLT"]})
+
+        assert response.status_code == 200
+        assert "title" not in response.json()["chains"]["4RLT"]
+
+
+def test_find_structure_pdb_path_scopes_lookups_by_session_id():
+    """Both the raw-download-folder lookup and the run-results-folder
+    fallback must be scoped under the session's own subfolder when a
+    session_id is given, not just the top-level raw/results dirs."""
+
+    def fake_exists(self):
+        return "session_xyz" in str(self) and "run_123" in str(self)
+
+    with patch("pathlib.Path.exists", fake_exists):
+        result = api_module._find_structure_pdb_path("4RLT", "run_123", "session_xyz")
+
+    assert result is not None
+    assert "session_xyz" in str(result)
+    assert "run_123" in str(result)
+
+
+def test_interactions_endpoint_404s_when_structure_not_found():
+    with patch("pathlib.Path.exists", return_value=False):
+        response = client.get("/api/interactions?pdb_id=4RLT&ligand_id=RET_A_296")
+    assert response.status_code == 404
+
+
+def test_add_aligned_resi_noop_when_run_not_found():
+    """If run_id was given but doesn't resolve to a real run (e.g. it was
+    deleted), skip the renumber-map enrichment silently rather than error -
+    the raw interactions are still useful without aligned_resi."""
+    interactions = {"interactions": [{"resi": 191}]}
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        api_module._add_aligned_resi(interactions, "4RLT", Path("4rlt.pdb"), "run_123")
+
+    assert "aligned_resi" not in interactions["interactions"][0]
+
+
+def test_add_aligned_resi_swallows_renumber_map_failure():
+    """A failure while rebuilding the residue renumber map (e.g. the aligned
+    structure file went missing) must not break the whole /api/interactions
+    response - it's a nice-to-have enrichment, not the core result."""
+    interactions = {"interactions": [{"resi": 191}]}
+    with patch(
+        "src.backend.api.history_db.get_run",
+        return_value={"metadata": {"chain_selection": {"4RLT": "A"}}},
+    ), patch(
+        "src.backend.api.PDBManager.build_residue_renumber_map",
+        side_effect=RuntimeError("structure file missing"),
+    ):
+        api_module._add_aligned_resi(interactions, "4RLT", Path("4rlt.pdb"), "run_123")
+
+    assert "aligned_resi" not in interactions["interactions"][0]
+
+
+def test_memory_endpoints_report_error_status_on_psutil_failure():
+    """Both /api/memory and /api/memory/clear degrade to a fixed placeholder
+    RAM value with an error message rather than 500ing, since memory
+    reporting is diagnostic, not core functionality."""
+    with patch("psutil.Process", side_effect=RuntimeError("no such process")):
+        response = client.get("/api/memory")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "error"
+        assert "no such process" in data["message"]
+
+        response = client.post("/api/memory/clear")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "cleared"
+        assert "no such process" in data["message"]
+
+
+def test_history_endpoint_falls_back_when_session_scoped_query_fails():
+    """A malformed/legacy session_id shouldn't break the whole history list
+    - fall back to the unscoped query rather than 500."""
+    with patch("src.backend.api.history_db.get_all_runs") as mock_get_all, patch(
+        "src.backend.api.history_db.count_runs"
+    ) as mock_count:
+
+        def get_all_side_effect(*args, **kwargs):
+            if kwargs.get("session_id"):
+                raise RuntimeError("bad session scope")
+            return []
+
+        mock_get_all.side_effect = get_all_side_effect
+        mock_count.side_effect = lambda **kwargs: 0 if kwargs.get("session_id") else 3
+
+        response = client.get("/api/history?session_id=weird")
+
+        assert response.status_code == 200
+        assert response.json()["total"] == 3
+
+
+def test_sequence_endpoint_scopes_by_session_id():
+    with patch(
+        "src.backend.sequence_viewer.SequenceViewer.parse_afasta"
+    ) as mock_parse, patch(
+        "src.backend.sequence_viewer.SequenceViewer.calculate_conservation",
+        return_value=[1.0],
+    ), patch(
+        "src.backend.sequence_viewer.SequenceViewer.calculate_identity",
+        return_value=100.0,
+    ), patch(
+        "pathlib.Path.exists"
+    ) as mock_exists:
+        mock_parse.return_value = {"4RLT_A": "M"}
+        mock_exists.side_effect = lambda self=None: True
+
+        response = client.get("/api/sequence?run_id=run_123&session_id=sess_1")
+
+        assert response.status_code == 200
+        # parse_afasta is called with the session-scoped fasta path.
+        called_path = str(mock_parse.call_args[0][0])
+        assert "sess_1" in called_path
+
+
+def test_sequence_endpoint_500s_when_fasta_fails_to_parse():
+    with patch(
+        "src.backend.sequence_viewer.SequenceViewer.parse_afasta", return_value={}
+    ), patch("pathlib.Path.exists", return_value=True):
+        response = client.get("/api/sequence?run_id=run_123")
+
+    assert response.status_code == 500
+    assert "Failed to parse" in response.json()["detail"]
+
+
+def test_report_endpoint_404s_for_unknown_run():
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        response = client.get("/api/report?run_id=nope")
+    assert response.status_code == 404
+
+
+def test_report_endpoint_reconstructs_minimal_results_when_metadata_has_no_results(
+    tmp_path,
+):
+    """An older run recorded before metadata.results existed (or one where it
+    was dropped) should still produce a report from whatever stats survived,
+    rather than crashing on a missing key."""
+    dummy_pdf = tmp_path / "mustang_report_test.pdf"
+    dummy_pdf.write_bytes(b"%PDF-1.4 dummy content")
+
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "pathlib.Path.glob", return_value=[]
+    ), patch("src.backend.report_generator.ReportGenerator") as mock_generator_cls:
+        mock_generator_cls.return_value.generate_full_report.return_value = dummy_pdf
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT", "3UG9"],
+            "metadata": {"stats": {"mean_rmsd": 2.5}},
+        }
+
+        response = client.get("/api/report?run_id=run_123&session_id=sess_1")
+
+        assert response.status_code == 200
+        results_arg = mock_generator_cls.return_value.generate_full_report.call_args[0][
+            0
+        ]
+        assert results_arg["stats"] == {"mean_rmsd": 2.5}
+        assert results_arg["id"] == "run_123"
+        res_dir_arg = mock_generator_cls.call_args[0][0]
+        assert "sess_1" in str(res_dir_arg)
+
+
+def test_report_endpoint_reuses_cached_pdf_for_default_request(tmp_path):
+    """A default (no ?sections=) request must reuse an already-generated
+    report on disk instead of regenerating it every time the tab is
+    reopened."""
+    cached_pdf = tmp_path / "mustang_report_cached.pdf"
+    cached_pdf.write_bytes(b"%PDF-1.4 cached content")
+
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "pathlib.Path.glob", return_value=[cached_pdf]
+    ), patch(
+        "src.backend.report_generator.ReportGenerator.generate_full_report"
+    ) as mock_generate:
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT"],
+            "metadata": {"results": {"stats": {}, "id": "run_123"}},
+        }
+
+        response = client.get("/api/report?run_id=run_123")
+
+        assert response.status_code == 200
+        assert b"cached content" in response.content
+        mock_generate.assert_not_called()
+
+
+def test_report_endpoint_500s_when_generated_file_missing(tmp_path):
+    never_written = tmp_path / "never_written.pdf"
+
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "pathlib.Path.glob", return_value=[]
+    ), patch(
+        "src.backend.report_generator.ReportGenerator.generate_full_report",
+        return_value=never_written,
+    ):
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT"],
+            "metadata": {"results": {"stats": {}, "id": "run_123"}},
+        }
+
+        response = client.get("/api/report?run_id=run_123")
+
+        assert response.status_code == 500
+        assert "not created successfully" in response.json()["detail"]
+
+
+def test_report_endpoint_500s_on_unexpected_generator_error():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "pathlib.Path.glob", return_value=[]
+    ), patch(
+        "src.backend.report_generator.ReportGenerator.generate_full_report",
+        side_effect=RuntimeError("disk full"),
+    ):
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT"],
+            "metadata": {"results": {"stats": {}, "id": "run_123"}},
+        }
+
+        response = client.get("/api/report?run_id=run_123")
+
+        assert response.status_code == 500
+        assert "disk full" in response.json()["detail"]
+
+
+def test_notebook_endpoint_404s_for_unknown_run():
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        response = client.get("/api/notebook?run_id=nope")
+    assert response.status_code == 404
+
+
+def test_notebook_endpoint_scopes_result_dir_by_session_id(tmp_path):
+    dummy_html = tmp_path / "lab_notebook.html"
+    dummy_html.write_text("<html>dummy notebook</html>")
+
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "src.backend.notebook_exporter.NotebookExporter.export"
+    ) as mock_export:
+        mock_export.return_value = dummy_html
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT"],
+            "metadata": {"results": {"stats": {}, "id": "run_123"}},
+        }
+
+        response = client.get("/api/notebook?run_id=run_123&session_id=sess_1")
+
+        assert response.status_code == 200
+        results_arg = mock_export.call_args[0][0]
+        assert "sess_1" in str(results_arg["result_dir"])
+
+
+def test_compare_citations_endpoint_500s_on_unexpected_export_error():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "src.backend.citation_exporter.CitationExporter.export"
+    ) as mock_export:
+        mock_export.side_effect = RuntimeError("disk full")
+        mock_get_run.return_value = {"id": "run_123", "pdb_ids": ["4RLT", "3UG9"]}
+
+        response = client.get("/api/report/citations?run_id=run_123")
+
+        assert response.status_code == 500
+        assert "disk full" in response.json()["detail"]
+
+
+def test_discover_export_json_endpoint_404s_when_no_stored_results():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run:
+        mock_get_run.return_value = {
+            "id": "discover_123",
+            "metadata": {"run_type": "discover", "results": None},
+        }
+        response = client.get("/api/discover/export?run_id=discover_123")
+        assert response.status_code == 404
+
+
+def test_discover_report_endpoint_500s_when_file_not_actually_created():
+    missing_html = Path(tempfile.mkdtemp()) / "never_written.html"
+
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "src.backend.discovery_report_exporter.DiscoveryReportExporter.export"
+    ) as mock_export:
+        mock_get_run.return_value = _discover_run()
+        mock_export.return_value = missing_html
+
+        response = client.get("/api/discover/report?run_id=discover_123")
+
+        assert response.status_code == 500
+        assert "not created" in response.json()["detail"]
+
+
+def test_discover_report_endpoint_500s_on_unexpected_export_error():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "src.backend.discovery_report_exporter.DiscoveryReportExporter.export"
+    ) as mock_export:
+        mock_get_run.return_value = _discover_run()
+        mock_export.side_effect = RuntimeError("disk full")
+
+        response = client.get("/api/discover/report?run_id=discover_123")
+
+        assert response.status_code == 500
+        assert "disk full" in response.json()["detail"]
+
+
+def test_discover_citations_endpoint_passes_through_http_exceptions_unwrapped():
+    """If the export step itself raises an HTTPException (as opposed to a
+    generic failure), it must be re-raised as-is, not swallowed and
+    rewrapped by the generic exception handler's own message formatting."""
+    from fastapi import HTTPException
+
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "src.backend.citation_exporter.CitationExporter.export",
+        side_effect=HTTPException(status_code=502, detail="upstream boom"),
+    ):
+        mock_get_run.return_value = _discover_run()
+
+        response = client.get("/api/discover/citations?run_id=discover_123")
+
+        assert response.status_code == 502
+        assert response.json()["detail"] == "upstream boom"
     api_module.discovery_jobs.clear()
