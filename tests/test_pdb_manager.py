@@ -295,6 +295,50 @@ class TestPDBManager:
         assert "ALA B" in content
         assert "ALA A" not in content
 
+    def test_clean_pdb_reports_error_when_requested_chain_missing(
+        self, mock_config, temp_workspace, dummy_pdb_content
+    ):
+        """dummy_pdb_content only has chain A - requesting a chain that
+        doesn't exist must fail cleanly, not crash deeper in the pipeline."""
+        manager = PDBManager(mock_config)
+        manager.cleaned_dir = temp_workspace["cleaned"]
+
+        raw_file = temp_workspace["raw"] / "single_chain.pdb"
+        raw_file.write_text(dummy_pdb_content)
+
+        success, msg, cleaned_path = manager.clean_pdb(raw_file, chain="Z")
+
+        assert success is False
+        assert "Chain Z not found" in msg
+        assert cleaned_path is None
+
+    def test_clean_pdb_drops_hydrogens_but_keeps_the_rest_of_the_residue(
+        self, mock_config, temp_workspace
+    ):
+        """A residue with a mix of accepted and hydrogen atoms must keep
+        the accepted atoms and drop only the hydrogen, not the whole
+        residue."""
+        manager = PDBManager(mock_config)
+        manager.cleaned_dir = temp_workspace["cleaned"]
+
+        content = (
+            "ATOM      1  N   ALA A   1      11.104  13.203   7.334  1.00 20.00           N\n"
+            "ATOM      2  CA  ALA A   1      12.104  14.203   8.334  1.00 20.00           C\n"
+            "ATOM      3  H   ALA A   1      12.500  14.500   8.500  1.00 20.00           H\n"
+            "TER"
+        )
+        raw_file = temp_workspace["raw"] / "with_hydrogen.pdb"
+        raw_file.write_text(content)
+
+        success, _, cleaned_path = manager.clean_pdb(raw_file)
+
+        assert success is True
+        from Bio.PDB import PDBParser
+
+        structure = PDBParser(QUIET=True).get_structure("cleaned", str(cleaned_path))
+        atom_names = {atom.get_name() for atom in structure.get_atoms()}
+        assert atom_names == {"N", "CA"}
+
     def test_build_residue_renumber_map(self, mock_config, temp_workspace):
         """Raw residue numbers (which can start anywhere, e.g. 49) must map to
         the 1-based sequential numbers clean_pdb() assigns, since ligand/
@@ -426,6 +470,22 @@ class TestPDBManager:
         assert "too large" in msg.lower()
         assert path is None
         assert not (temp_workspace["raw"] / "upload-toobig.pdb").exists()
+
+    @patch("src.backend.pdb_manager._write_bytes")
+    def test_save_uploaded_bytes_reports_clean_error_on_write_failure(
+        self, mock_write, mock_config, temp_workspace, dummy_pdb_content
+    ):
+        mock_write.side_effect = OSError("disk full")
+        manager = PDBManager(mock_config)
+        manager.raw_dir = temp_workspace["raw"]
+
+        success, msg, path = manager.save_uploaded_bytes(
+            "my_structure.pdb", dummy_pdb_content.encode(), "UPLOAD-ABCD1234"
+        )
+
+        assert success is False
+        assert "disk full" in msg
+        assert path is None
 
     def test_save_uploaded_bytes_preserves_cif_extension(
         self, mock_config, temp_workspace
@@ -765,6 +825,20 @@ class TestCleanSelect:
         assert select.accept_residue(residue) == 1
 
 
+class TestDetectPlddtScale:
+    def test_defaults_to_1_when_not_a_plddt_model(self):
+        assert PDBManager._detect_plddt_scale(MagicMock(), False) == 1.0
+
+    def test_falls_back_to_1_when_atom_iteration_fails(self):
+        """A structure that fails to yield atoms at all (rather than just
+        having none) must not crash pLDDT-scale detection - default to
+        AlphaFold's 0-100 scale rather than erroring out."""
+        structure = MagicMock()
+        structure.get_atoms.side_effect = RuntimeError("corrupt structure")
+
+        assert PDBManager._detect_plddt_scale(structure, True) == 1.0
+
+
 class TestFetchAlphafoldResponse:
     @pytest.mark.asyncio
     @patch("src.backend.pdb_manager.httpx.AsyncClient.get")
@@ -906,4 +980,74 @@ class TestFetchEsmfoldResponse:
 
         assert success is False
         assert "boom" in msg
+
+    @pytest.mark.asyncio
+    @patch("src.backend.pdb_manager.httpx.AsyncClient.get")
+    async def test_non_200_reports_clean_failure_and_closes_managed_client(
+        self, mock_get, mock_config
+    ):
+        """Mirrors TestFetchSwissmodelResponse's not-found coverage - ESM
+        Atlas' own not-found path was still untested. manage_client=True
+        also exercises the client.aclose() cleanup on this failure branch."""
+        not_found = MagicMock()
+        not_found.status_code = 404
+        mock_get.return_value = not_found
+        manager = PDBManager(mock_config)
+
+        client = httpx.AsyncClient()
+        with patch.object(client, "aclose", AsyncMock()) as mock_aclose:
+            success, msg, response = await manager._fetch_esmfold_response(
+                "ESM-MGYP001", client, manage_client=True
+            )
+            mock_aclose.assert_called_once()
+
+        assert success is False
+        assert "ESM Metagenomic Atlas" in msg
         assert response is None
+
+
+class TestFetchAlphafoldExplicitVersion:
+    @pytest.mark.asyncio
+    @patch("src.backend.pdb_manager.httpx.AsyncClient.get")
+    async def test_explicit_version_suffix_tries_only_that_version(
+        self, mock_get, mock_config
+    ):
+        """An ID like AF-P69905-F1-V4 pins a specific model version - unlike
+        the no-suffix case, which tries v6 down to v1 until one succeeds,
+        this must only ever attempt v4."""
+        success_response = MagicMock()
+        success_response.status_code = 200
+        success_response.content = b"cif data"
+        mock_get.return_value = success_response
+        manager = PDBManager(mock_config)
+
+        async with httpx.AsyncClient() as client:
+            success, msg, response = await manager._fetch_alphafold_response(
+                "AF-P69905-F1-V4", client, manage_client=False
+            )
+
+        assert success is True
+        mock_get.assert_called_once()
+        assert "model_v4.cif" in mock_get.call_args[0][0]
+
+
+class TestCachedLocalFileHit:
+    @pytest.mark.asyncio
+    async def test_registers_access_with_cache_manager_on_local_cache_hit(
+        self, mock_config, temp_workspace
+    ):
+        """A cache hit (file already on disk, force=False) must still tell
+        the cache manager it was accessed, so LRU eviction doesn't treat an
+        actively-reused structure as stale."""
+        cache_manager = MagicMock()
+        manager = PDBManager(mock_config, cache_manager=cache_manager)
+        manager.raw_dir = temp_workspace["raw"]
+
+        existing = temp_workspace["raw"] / "1a0j.pdb"
+        existing.write_bytes(b"ATOM cached")
+
+        success, msg, path = await manager.download_pdb("1A0J")
+
+        assert success is True
+        assert "Using local file" in msg
+        cache_manager.update_access.assert_called_once_with("1A0J")

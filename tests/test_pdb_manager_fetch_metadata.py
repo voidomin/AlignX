@@ -227,6 +227,33 @@ class TestFetchRcsbMetadata:
         assert result["4RLT"]["title"] == "Some Structure"
         assert result["4RLT"]["resolution"] == "2.10 Å"
 
+    async def test_entry_missing_rcsb_id_is_skipped(self, mock_config):
+        """A malformed entry with no rcsb_id can't be keyed into the
+        results dict - skip it rather than crash the whole batch over one
+        bad entry."""
+        manager = PDBManager(mock_config)
+        client = AsyncMock()
+        client.post.return_value = _resp(
+            json_data={
+                "data": {
+                    "entries": [
+                        {"struct": {"title": "No ID"}},
+                        {
+                            "rcsb_id": "4RLT",
+                            "struct": {"title": "Real Structure"},
+                            "exptl": [],
+                            "rcsb_entry_info": {},
+                            "polymer_entities": [],
+                        },
+                    ]
+                }
+            }
+        )
+
+        result = await manager._fetch_rcsb_metadata(client, ["4RLT"])
+
+        assert list(result.keys()) == ["4RLT"]
+
 
 @pytest.mark.asyncio
 class TestFetchAlphafoldMetadata:
@@ -364,3 +391,20 @@ class TestFetchMetadataEndToEnd:
             "4RLT": PDBManager._empty_metadata(),
             "3UG9": PDBManager._empty_metadata(),
         }
+
+    async def test_manages_its_own_client_when_none_is_given(self, mock_config):
+        """When the caller doesn't pass a shared client (unlike every other
+        test in this class), fetch_metadata must open and close its own -
+        closing a caller-supplied client would break the caller's later use
+        of it."""
+        manager = PDBManager(mock_config)
+        with patch.object(
+            manager, "_fetch_rcsb_metadata", AsyncMock(return_value={})
+        ), patch("src.backend.pdb_manager.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client_cls.return_value = mock_client
+
+            result = await manager.fetch_metadata(["4RLT"])
+
+        mock_client.aclose.assert_called_once()
+        assert result == {"4RLT": PDBManager._empty_metadata()}

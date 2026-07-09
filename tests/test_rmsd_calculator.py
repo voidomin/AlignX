@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock
+
 import numpy as np
 import pytest
 from pathlib import Path
@@ -11,6 +13,10 @@ from src.backend.rmsd_calculator import (
     parse_rmsd_matrix,
     calculate_structure_rmsd,
     calculate_alignment_quality_metrics,
+    _try_parse_rmsd_row,
+    _parse_matrix_value,
+    _select_structures,
+    _common_ca_coords,
 )
 
 
@@ -159,6 +165,31 @@ class TestCalculateRmsdFromSuperposition:
         assert result is None
 
 
+class TestTryParseRmsdRow:
+    def test_empty_line_returns_none(self):
+        assert _try_parse_rmsd_row("") is None
+
+    def test_index_only_no_values_returns_none(self):
+        assert _try_parse_rmsd_row("5") is None
+
+    def test_stops_at_first_unparseable_value(self):
+        """A trailing non-numeric token (e.g. the start of unrelated text
+        immediately after the table) must truncate the row rather than
+        raise or discard the values already parsed."""
+        assert _try_parse_rmsd_row("1 0.5 not_a_number 0.9") == [0.5]
+
+
+class TestParseMatrixValue:
+    def test_dashes_become_zero(self):
+        assert _parse_matrix_value("---") == 0.0
+
+    def test_valid_float_parses(self):
+        assert _parse_matrix_value("1.25") == 1.25
+
+    def test_unparseable_value_falls_back_to_zero(self):
+        assert _parse_matrix_value("N/A") == 0.0
+
+
 class TestParseMustangLogForRmsd:
     def test_parses_a_real_shaped_rmsd_table(self, tmp_path):
         log_file = tmp_path / "mustang.log"
@@ -200,6 +231,18 @@ class TestParseMustangLogForRmsd:
         log_file.write_text("1   0.00   0.85   1.20\n")
         assert parse_mustang_log_for_rmsd(log_file) is None
 
+    def test_blank_lines_between_rows_are_skipped(self, tmp_path):
+        log_file = tmp_path / "mustang.log"
+        log_file.write_text("1   0.00   0.85\n\n2   0.85   0.00\n")
+        result = parse_mustang_log_for_rmsd(log_file)
+        assert result is not None
+        assert result.shape == (2, 2)
+
+    def test_returns_none_on_read_failure(self, tmp_path):
+        # A directory can't be opened as a file - exercises the outer
+        # read-failure path rather than a missing-file/malformed-content one.
+        assert parse_mustang_log_for_rmsd(tmp_path) is None
+
 
 class TestParseRmsRotFile:
     def test_parses_pipe_delimited_matrix(self, tmp_path):
@@ -240,6 +283,21 @@ class TestParseRmsRotFile:
         result = parse_rms_rot_file(rms_rot, ["1ABC", "2XYZ"])
         assert result is not None
         assert result.shape == (2, 2)
+
+    def test_marker_present_but_no_pipe_delimited_rows_returns_none(self, tmp_path):
+        rms_rot = tmp_path / "alignment.rms_rot"
+        rms_rot.write_text("RMSD matrix\nNo pipe-delimited rows follow this line.\n")
+        assert parse_rms_rot_file(rms_rot, ["1ABC", "2XYZ"]) is None
+
+    def test_fewer_data_rows_than_pdb_ids_pads_with_zero_rows(self, tmp_path):
+        # Only 1 pipe-delimited row present, but 2 pdb_ids expected - the
+        # missing whole row must be padded with zeros, not raise/truncate.
+        rms_rot = tmp_path / "alignment.rms_rot"
+        rms_rot.write_text("RMSD matrix\n1 | 0.00  0.75\n")
+        result = parse_rms_rot_file(rms_rot, ["1ABC", "2XYZ"])
+        assert result is not None
+        assert result.shape == (2, 2)
+        assert list(result.loc["2XYZ"]) == [0.0, 0.0]
 
     def test_returns_none_on_read_failure(self, tmp_path):
         # A directory can't be opened as a file - exercises the read
@@ -365,6 +423,56 @@ class TestCalculateStructureRmsd:
         result = calculate_structure_rmsd(tmp_path, fasta_file)
 
         assert result is None
+
+    def test_no_common_columns_scores_zero_not_an_error(self, tmp_path):
+        """If a structure has zero CA atoms at all (e.g. only backbone N/C
+        atoms survived cleaning), every mapped residue index is out of
+        bounds for every column - the pair's RMSD must fall back to 0.0
+        rather than raising or leaving a NaN in the matrix."""
+        pdb_file = tmp_path / "alignment.pdb"
+        fasta_file = tmp_path / "alignment.afasta"
+        pdb_file.write_text(
+            "MODEL     1\n"
+            "ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00           N\n"
+            "ENDMDL\n"
+            "MODEL     2\n"
+            "ATOM      1  N   ALA A   1       5.000   5.000   5.000  1.00  0.00           N\n"
+            "ENDMDL\n"
+            "END\n"
+        )
+        fasta_file.write_text(">structA\nA\n>structB\nA\n")
+
+        result = calculate_structure_rmsd(pdb_file, fasta_file)
+
+        assert result is not None
+        assert result.loc["structA", "structB"] == 0.0
+
+
+class TestSelectStructures:
+    def test_falls_back_to_whole_model_list_when_chains_also_insufficient(self):
+        """Neither the model count nor Model 0's chain count matches the
+        alignment's structure count - must fall back to the raw model list
+        (letting the caller's own bounds-checked mapping degrade
+        gracefully) rather than erroring out."""
+        model0 = MagicMock()
+        model0.get_chains.return_value = ["chainA", "chainB"]
+        structure = MagicMock()
+        structure.get_models.return_value = [model0]
+
+        result = _select_structures(structure, num_structures=3)
+
+        assert result == [model0]
+
+
+class TestCommonCaCoords:
+    def test_skips_columns_where_mapped_residue_index_is_out_of_bounds(self):
+        mapping = [[0], [0]]
+        structure_cas = [[], []]
+
+        coords_i, coords_j = _common_ca_coords(mapping, structure_cas, 0, 1, seq_len=1)
+
+        assert coords_i == []
+        assert coords_j == []
 
 
 class TestCalculateAlignmentQualityMetrics:
