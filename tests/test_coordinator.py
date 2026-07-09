@@ -305,6 +305,193 @@ class TestResolveRunIdentity:
             assert "2 structures" in run_name
 
 
+def _pocket_atom_line(serial, name, resname, chain, resi, x, y, z, hetatm=False):
+    record = "HETATM" if hetatm else "ATOM  "
+    name_field = f" {name:<3}"
+    element = name.strip()[0]
+    return (
+        f"{record}{serial:>5} {name_field} {resname:>3} {chain}{resi:>4}    "
+        f"{x:8.3f}{y:8.3f}{z:8.3f}{1.00:6.2f}{20.00:6.2f}"
+        f"{'':>10}{element:>2}"
+    )
+
+
+class TestAnalyzeLigands:
+    def test_pdb_with_a_ligand_reports_it_and_collects_its_interactions(
+        self, mock_config, tmp_path
+    ):
+        pdb_file = tmp_path / "4hhb.pdb"
+        pdb_file.write_text(
+            "\n".join(
+                [
+                    _pocket_atom_line(1, "N", "ALA", "A", 1, 0.0, 1.0, 0.0),
+                    _pocket_atom_line(2, "CA", "ALA", "A", 1, 0.0, 0.0, 0.0),
+                    _pocket_atom_line(3, "C1", "HEM", "A", 100, 0.5, 0.5, 0.5, True),
+                    "TER",
+                ]
+            )
+            + "\n"
+        )
+
+        with patch(
+            "src.backend.coordinator.MustangRunner.check_installation",
+            return_value=(True, "ok"),
+        ):
+            coordinator = AnalysisCoordinator(mock_config)
+
+        ligand_analysis, all_interactions = coordinator._analyze_ligands([pdb_file])
+
+        assert ligand_analysis["4HHB"][0]["name"] == "HEM"
+        assert len(all_interactions) == 1
+        # Namespaced with the structure ID so identically-named ligands
+        # from different structures don't collide in the similarity matrix.
+        assert all_interactions[0]["ligand"] == "4HHB:HEM_A_100"
+
+    def test_pdb_with_no_ligands_reports_empty_list_and_no_interactions(
+        self, mock_config, tmp_path
+    ):
+        pdb_file = tmp_path / "1crn.pdb"
+        pdb_file.write_text(
+            _pocket_atom_line(1, "CA", "ALA", "A", 1, 0.0, 0.0, 0.0) + "\nTER\n"
+        )
+
+        with patch(
+            "src.backend.coordinator.MustangRunner.check_installation",
+            return_value=(True, "ok"),
+        ):
+            coordinator = AnalysisCoordinator(mock_config)
+
+        ligand_analysis, all_interactions = coordinator._analyze_ligands([pdb_file])
+
+        assert ligand_analysis == {"1CRN": []}
+        assert all_interactions == []
+
+    def test_ligand_with_zero_interactions_is_excluded(self, mock_config, tmp_path):
+        """A ligand with no protein neighbors within the cutoff (e.g. it
+        sits alone with nothing else in the file) can't contribute a
+        pocket fingerprint - excluding it here means an "empty pocket"
+        never masquerades as a real dissimilarity signal downstream."""
+        pdb_file = tmp_path / "lonely.pdb"
+        pdb_file.write_text(
+            _pocket_atom_line(1, "C1", "LIG", "A", 100, 0.0, 0.0, 0.0, True) + "\nTER\n"
+        )
+
+        with patch(
+            "src.backend.coordinator.MustangRunner.check_installation",
+            return_value=(True, "ok"),
+        ):
+            coordinator = AnalysisCoordinator(mock_config)
+
+        ligand_analysis, all_interactions = coordinator._analyze_ligands([pdb_file])
+
+        assert len(ligand_analysis["LONELY"]) == 1
+        assert all_interactions == []
+
+    def test_get_ligands_failure_for_one_structure_does_not_abort_the_batch(
+        self, mock_config, tmp_path
+    ):
+        """A crash detecting ligands in one structure (e.g. a corrupt file)
+        must not prevent ligand analysis from completing for the rest."""
+        bad_file = tmp_path / "bad.pdb"
+        bad_file.write_text("garbage")
+        good_file = tmp_path / "1crn.pdb"
+        good_file.write_text(
+            _pocket_atom_line(1, "CA", "ALA", "A", 1, 0.0, 0.0, 0.0) + "\nTER\n"
+        )
+
+        with patch(
+            "src.backend.coordinator.MustangRunner.check_installation",
+            return_value=(True, "ok"),
+        ):
+            coordinator = AnalysisCoordinator(mock_config)
+
+        with patch.object(
+            coordinator.ligand_analyzer,
+            "get_ligands",
+            side_effect=[RuntimeError("corrupt file"), []],
+        ):
+            ligand_analysis, all_interactions = coordinator._analyze_ligands(
+                [bad_file, good_file]
+            )
+
+        assert ligand_analysis == {"BAD": [], "1CRN": []}
+        assert all_interactions == []
+
+
+class TestAttachLigandAnalysis:
+    def test_always_sets_ligand_analysis(self, mock_config, tmp_path):
+        with patch(
+            "src.backend.coordinator.MustangRunner.check_installation",
+            return_value=(True, "ok"),
+        ), patch.object(
+            AnalysisCoordinator,
+            "_analyze_ligands",
+            return_value=({"4RLT": []}, []),
+        ):
+            coordinator = AnalysisCoordinator(mock_config)
+            results = {}
+            coordinator._attach_ligand_analysis([tmp_path / "4rlt.pdb"], results)
+
+        assert results["ligand_analysis"] == {"4RLT": []}
+        assert "ligand_pocket_similarity" not in results
+
+    def test_sets_pocket_similarity_only_with_at_least_two_interactions(
+        self, mock_config, tmp_path
+    ):
+        one_interaction = [{"ligand": "4RLT:HEM_A_1", "interactions": [{}]}]
+        with patch(
+            "src.backend.coordinator.MustangRunner.check_installation",
+            return_value=(True, "ok"),
+        ), patch.object(
+            AnalysisCoordinator,
+            "_analyze_ligands",
+            return_value=({"4RLT": [{"name": "HEM"}]}, one_interaction),
+        ):
+            coordinator = AnalysisCoordinator(mock_config)
+            results = {}
+            coordinator._attach_ligand_analysis([tmp_path / "4rlt.pdb"], results)
+
+        assert "ligand_pocket_similarity" not in results
+
+    def test_computes_pocket_similarity_with_two_or_more_interactions(
+        self, mock_config, tmp_path
+    ):
+        two_interactions = [
+            {"ligand": "4HHB:HEM_A_1", "interactions": [{"residue": "HIS"}]},
+            {"ligand": "2HHB:HEM_A_1", "interactions": [{"residue": "HIS"}]},
+        ]
+        with patch(
+            "src.backend.coordinator.MustangRunner.check_installation",
+            return_value=(True, "ok"),
+        ), patch.object(
+            AnalysisCoordinator,
+            "_analyze_ligands",
+            return_value=({}, two_interactions),
+        ):
+            coordinator = AnalysisCoordinator(mock_config)
+            results = {}
+            coordinator._attach_ligand_analysis([tmp_path / "x.pdb"], results)
+
+        sim_df = results["ligand_pocket_similarity"]
+        assert sim_df.loc["4HHB:HEM_A_1", "2HHB:HEM_A_1"] == 1.0
+
+    def test_swallows_exceptions_and_leaves_a_safe_default(self, mock_config, tmp_path):
+        with patch(
+            "src.backend.coordinator.MustangRunner.check_installation",
+            return_value=(True, "ok"),
+        ), patch.object(
+            AnalysisCoordinator,
+            "_analyze_ligands",
+            side_effect=RuntimeError("boom"),
+        ):
+            coordinator = AnalysisCoordinator(mock_config)
+            results = {"some_other_key": "unchanged"}
+            coordinator._attach_ligand_analysis([tmp_path / "x.pdb"], results)
+
+        assert results["ligand_analysis"] == {}
+        assert results["some_other_key"] == "unchanged"
+
+
 class TestGenerateInsights:
     def test_populates_insights_on_success(self, mock_config):
         results = {"rmsd_df": None}
@@ -455,6 +642,9 @@ def test_run_full_pipeline_succeeds_end_to_end(mock_config, tmp_path):
     assert results["id"] == output_dir.name
     assert results["stats"]["mean_rmsd"] == 1.5
     assert (output_dir / "metadata.json").exists()
+    # Ligand-free/garbage-content input still succeeds and produces the
+    # expected empty-but-present shape, not a missing key or a failure.
+    assert results["ligand_analysis"] == {"4RLT": [], "3UG9": []}
     # All 4 pipeline stages reported progress, ending at 100%.
     assert progress_calls[0] == (0.1, 1)
     assert progress_calls[-1] == (1.0, 4)

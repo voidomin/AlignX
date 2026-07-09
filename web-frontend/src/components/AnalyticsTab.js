@@ -1,8 +1,11 @@
+import { escapeHtml } from '../escapeHtml';
+
 const SUB_TABS = [
     { key: 'quality', label: 'Quality' },
     { key: 'rmsf', label: 'RMSF' },
     { key: 'rmsd', label: 'RMSD Matrix' },
     { key: 'phylo', label: 'Phylogeny' },
+    { key: 'insights', label: 'Insights' },
 ];
 
 export class AnalyticsTab {
@@ -12,6 +15,7 @@ export class AnalyticsTab {
     treeFig = null;
     ramachandranStats = null;
     rmsfValues = [];
+    insights = [];
     activeSubTab = 'quality';
 
     render() {
@@ -81,6 +85,14 @@ export class AnalyticsTab {
                         </div>
                     </div>
                 </div>
+
+                <!-- Automated Insights (plain-language summary bullets) -->
+                <div data-panel="insights" class="border border-border rounded-lg p-4 shrink-0 min-h-[320px]">
+                    <ul id="analytics-insights-list" class="flex flex-col gap-2"></ul>
+                    <div id="analytics-insights-empty" class="flex items-center justify-center h-full text-secondary font-body-sm">
+                        Run alignment to display automated insights.
+                    </div>
+                </div>
             </div>
         `;
 
@@ -123,12 +135,13 @@ export class AnalyticsTab {
         });
     }
 
-    updateResults(runId, heatmapFig, treeFig, ramachandranStats, rmsfValues) {
+    updateResults(runId, heatmapFig, treeFig, ramachandranStats, rmsfValues, insights) {
         this.currentRunId = runId;
         this.heatmapFig = heatmapFig;
         this.treeFig = treeFig;
         this.ramachandranStats = ramachandranStats;
         this.rmsfValues = rmsfValues || [];
+        this.insights = insights || [];
         this.renderVisuals();
     }
 
@@ -260,6 +273,26 @@ export class AnalyticsTab {
                     No phylogenetic tree figure available.
                 </div>
             `;
+        }
+
+        // 5. Render automated insights as a bullet list
+        const insightsList = this.element.querySelector('#analytics-insights-list');
+        const insightsEmpty = this.element.querySelector('#analytics-insights-empty');
+        insightsList.innerHTML = "";
+        if (this.insights?.length > 0) {
+            insightsEmpty.classList.add('hidden');
+            this.insights.forEach(text => {
+                const li = document.createElement('li');
+                li.className = "font-body-sm text-primary border border-border-subtle rounded-md p-2";
+                li.innerHTML = escapeHtml(text).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+                insightsList.appendChild(li);
+            });
+        } else if (this.currentRunId) {
+            insightsEmpty.textContent = "No automated insights available for this run.";
+            insightsEmpty.classList.remove('hidden');
+        } else {
+            insightsEmpty.textContent = "Run alignment to display automated insights.";
+            insightsEmpty.classList.remove('hidden');
         }
     }
 }

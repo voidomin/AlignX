@@ -2,7 +2,7 @@
 
 An automated, full-stack bioinformatics platform covering two workflows: **Compare**, multiple structural alignment of any protein family using Mustang (N-structure 3D viewer, four structure-source databases, phylogenetic analysis, structural clustering, batch comparison, ligand hunting, configurable PDF/HTML reports); and **Discover**, structure-to-function inference for a single unannotated structure via Foldseek structural-neighbor search plus InterPro/QuickGO annotation aggregation — useful for predicted structures (AlphaFold, ESM Atlas) that have no known function yet, since fold is conserved far longer than sequence.
 
-[![Version](https://img.shields.io/badge/version-3.80.0-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-3.81.0-orange.svg)](CHANGELOG.md)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -127,12 +127,12 @@ Copy `.env.example` to `.env` and customize. Notable production-relevant ones:
 
 ## 🧪 Testing
 
-Backend (pytest, 879 tests):
+Backend (pytest, 893 tests):
 ```powershell
 powershell -File scripts\run_tests.ps1
 ```
 
-Frontend (Vitest, 142 tests):
+Frontend (Vitest, 150 tests):
 ```powershell
 cd web-frontend
 npm test
@@ -147,6 +147,8 @@ Full step-by-step verification protocol (setup checks, scientific metrics, API s
 | Doc | Covers |
 |---|---|
 | [docs/FEATURES.md](docs/FEATURES.md) | Full feature reference — what StructScope does, how to use each capability, SPA vs. Streamlit availability |
+| [docs/guides/GETTING_STARTED.md](docs/guides/GETTING_STARTED.md) | Task-oriented walkthrough: your first Compare run, your first Discover run |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module relationships, Compare/Discover data flow, API auth/rate-limit/workflow overview |
 | [docs/setup/WINDOWS_SETUP.md](docs/setup/WINDOWS_SETUP.md) | Installing Mustang, Phylip, PyMOL on Windows (WSL or Bio3D) |
 | [docs/deployment/DEPLOYMENT.md](docs/deployment/DEPLOYMENT.md) | Docker deployment (SPA + FastAPI) + Streamlit Cloud/Hugging Face deployment |
 | [docs/testing/VERIFICATION.md](docs/testing/VERIFICATION.md) | Full verification protocol: setup checks, pytest, Vitest, API smoke tests, UI flow |
@@ -163,6 +165,8 @@ Full step-by-step verification protocol (setup checks, scientific metrics, API s
 ---
 
 ## 📂 Project Architecture
+
+For how these pieces connect at runtime — not just where the files live — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ```
 AlignX/

@@ -12,6 +12,7 @@ from datetime import datetime
 from src.utils.logger import get_logger
 from src.backend.pdb_manager import PDBManager
 from src.backend.mustang_runner import MustangRunner
+from src.backend.ligand_analyzer import LigandAnalyzer
 from src.backend.rmsd_analyzer import RMSDAnalyzer
 from src.backend.phylo_tree import PhyloTreeGenerator
 from src.backend.rmsd_calculator import (
@@ -84,6 +85,7 @@ class AnalysisCoordinator:
         self.cache_manager = CacheManager(config, self.history_db)
         self.pdb_manager = PDBManager(config, self.cache_manager, session_id=session_id)
         self.mustang_runner = MustangRunner(config)
+        self.ligand_analyzer = LigandAnalyzer(config)
         self.rmsd_analyzer = RMSDAnalyzer(config)
         self.sequence_viewer = SequenceViewer()
 
@@ -189,6 +191,77 @@ class AnalysisCoordinator:
                 [],
             )
         return True, "", cleaned_files
+
+    def _analyze_ligands(
+        self, pdb_files: List[Path]
+    ) -> Tuple[Dict[str, List[Dict[str, Any]]], List[Dict[str, Any]]]:
+        """Runs ligand detection on the RAW downloaded structures - cleaning
+        strips HETATM records by default, so this must run against
+        `pdb_files` from `_download_structures`, never `cleaned_files`.
+
+        Returns (ligand_analysis, all_interactions): `ligand_analysis` is
+        `{pdb_id: [get_ligands() dicts]}`, the shape `_get_ligand_insights`
+        and `NotebookExporter._ligand_html` already expect. `all_interactions`
+        is the flat list of `calculate_interactions()` outputs - one per
+        ligand actually found with at least one interacting residue - that
+        `calculate_interaction_similarity` needs; ligands that failed to
+        resolve or found zero interactions are dropped here so an empty
+        pocket can't masquerade as a real dissimilarity signal downstream.
+
+        Each entry's "ligand" field is re-namespaced to "{pdb_id}:{ligand_id}"
+        before being returned - `calculate_interaction_similarity` uses that
+        field verbatim as the resulting DataFrame's index/columns, and the
+        bare ligand_id alone (e.g. "HEM_A_1") doesn't say which structure it
+        came from, so two different structures with identically-shaped
+        ligand IDs would otherwise be indistinguishable in the result.
+        """
+        ligand_analysis: Dict[str, List[Dict[str, Any]]] = {}
+        all_interactions: List[Dict[str, Any]] = []
+
+        for pdb_file in pdb_files:
+            pdb_id = pdb_file.stem.split("_")[0].upper()
+            try:
+                ligands = self.ligand_analyzer.get_ligands(pdb_file)
+            except Exception as e:
+                logger.warning(f"Ligand detection failed for {pdb_id}: {e}")
+                ligands = []
+            ligand_analysis[pdb_id] = ligands
+
+            for ligand in ligands:
+                try:
+                    interactions = self.ligand_analyzer.calculate_interactions(
+                        pdb_file, ligand["id"]
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Interaction calc failed for {pdb_id}/{ligand['id']}: {e}"
+                    )
+                    continue
+                if "error" not in interactions and interactions.get("interactions"):
+                    interactions["ligand"] = f"{pdb_id}:{interactions['ligand']}"
+                    all_interactions.append(interactions)
+
+        return ligand_analysis, all_interactions
+
+    def _attach_ligand_analysis(
+        self, pdb_files: List[Path], results: Dict[str, Any]
+    ) -> None:
+        """Mutates `results` with `ligand_analysis` and (when there's
+        enough data to compare) `ligand_pocket_similarity`. Best-effort,
+        matching `_generate_insights`' philosophy: a bug here must never
+        fail an otherwise-successful Compare run."""
+        try:
+            ligand_analysis, all_interactions = self._analyze_ligands(pdb_files)
+            results["ligand_analysis"] = ligand_analysis
+            if len(all_interactions) >= 2:
+                results["ligand_pocket_similarity"] = (
+                    self.ligand_analyzer.calculate_interaction_similarity(
+                        all_interactions
+                    )
+                )
+        except Exception as e:
+            logger.warning(f"Ligand analysis failed: {e}")
+            results["ligand_analysis"] = {}
 
     def _run_mustang_alignment(
         self, cleaned_files: List[Path], output_dir: Path
@@ -328,6 +401,7 @@ class AnalysisCoordinator:
             if not results:
                 return False, "Failed to process result directory", None
 
+            self._attach_ligand_analysis(pdb_files, results)
             self._generate_insights(self.config, results)
             self._persist_run(
                 run_id,

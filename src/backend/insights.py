@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from collections import Counter
 from typing import List, Dict, Any
 
@@ -37,6 +38,7 @@ class InsightsGenerator:
         insights.extend(self._get_rmsd_summary(rmsd_df))
         insights.extend(self._get_outlier_insights(rmsd_df))
         insights.extend(self._get_ligand_insights(results))
+        insights.extend(self._get_binding_pocket_insights(results))
         insights.extend(self._get_clustering_insights(rmsd_df))
         insights.extend(self._get_quality_metrics_insights(results))
         insights.extend(self._get_ramachandran_insights(results))
@@ -122,6 +124,48 @@ class InsightsGenerator:
                 insights.append(
                     f"💊 **Ligand Analysis**: Found {total_ligands} total ligands. Most common: **{common[0][0]}** ({common[0][1]} occurrences)."
                 )
+        return insights
+
+    def _get_binding_pocket_insights(self, results: Dict[str, Any]) -> List[str]:
+        """Analyze binding-pocket residue-composition similarity (Jaccard
+        index) across every ligand found anywhere in the run. Deliberately
+        silent when nothing crosses a threshold, matching
+        _get_outlier_insights' "only speak when there's something to flag"
+        style rather than _get_rmsd_summary's "always say something" one."""
+        insights = []
+        sim_df = results.get("ligand_pocket_similarity")
+        if sim_df is None or sim_df.empty or sim_df.shape[0] < 2:
+            return insights
+
+        arr = sim_df.to_numpy(dtype=float, copy=True)
+        np.fill_diagonal(arr, np.nan)
+        masked = pd.DataFrame(arr, index=sim_df.index, columns=sim_df.columns)
+
+        flagged = False
+        max_val = masked.max().max()
+        if pd.notna(max_val) and max_val >= 0.6:
+            max_pair = masked.stack().idxmax()
+            insights.append(
+                f"🧲 **Similar Binding Pockets**: `{max_pair[0]}` and `{max_pair[1]}` "
+                f"share a very similar set of pocket residues (Jaccard {max_val:.2f})."
+            )
+            flagged = True
+
+        min_val = masked.min().min()
+        if pd.notna(min_val) and min_val <= 0.2:
+            min_pair = masked.stack().idxmin()
+            insights.append(
+                f"🧪 **Divergent Binding Pockets**: `{min_pair[0]}` and `{min_pair[1]}` "
+                f"share almost no pocket residues (Jaccard {min_val:.2f})."
+            )
+            flagged = True
+
+        if flagged:
+            insights.append(
+                "ℹ️ Pocket comparison is based on residue *names* found near each "
+                "ligand, not aligned positions - most meaningful between "
+                "similar/homologous structures, less so across unrelated folds."
+            )
         return insights
 
     def _get_clustering_insights(self, rmsd_df) -> List[str]:

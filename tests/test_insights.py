@@ -34,6 +34,7 @@ class TestGenerateInsights:
             ("_get_rmsd_summary", ["rmsd"]),
             ("_get_outlier_insights", ["outlier"]),
             ("_get_ligand_insights", ["ligand"]),
+            ("_get_binding_pocket_insights", ["pocket"]),
             ("_get_clustering_insights", ["cluster"]),
             ("_get_quality_metrics_insights", ["quality"]),
             ("_get_ramachandran_insights", ["rama"]),
@@ -42,7 +43,15 @@ class TestGenerateInsights:
 
         result = generator.generate_insights({"rmsd_df": pd.DataFrame()})
 
-        assert result == ["rmsd", "outlier", "ligand", "cluster", "quality", "rama"]
+        assert result == [
+            "rmsd",
+            "outlier",
+            "ligand",
+            "pocket",
+            "cluster",
+            "quality",
+            "rama",
+        ]
 
 
 class TestGetRmsdSummary:
@@ -121,6 +130,58 @@ class TestGetLigandInsights:
 
     def test_zero_ligands_returns_empty(self, generator):
         assert generator._get_ligand_insights({"ligand_analysis": {"P1": []}}) == []
+
+
+class TestGetBindingPocketInsights:
+    def test_missing_key_returns_empty(self, generator):
+        assert generator._get_binding_pocket_insights({}) == []
+
+    def test_empty_dataframe_returns_empty(self, generator):
+        results = {"ligand_pocket_similarity": pd.DataFrame()}
+        assert generator._get_binding_pocket_insights(results) == []
+
+    def test_single_ligand_returns_empty(self, generator):
+        df = pd.DataFrame([[1.0]], index=["A"], columns=["A"])
+        results = {"ligand_pocket_similarity": df}
+        assert generator._get_binding_pocket_insights(results) == []
+
+    def test_similar_pair_flagged_with_caveat(self, generator):
+        df = pd.DataFrame(
+            [[1.0, 0.75], [0.75, 1.0]],
+            index=["4HHB:HEM_A_1", "2HHB:HEM_A_1"],
+            columns=["4HHB:HEM_A_1", "2HHB:HEM_A_1"],
+        )
+        insights = generator._get_binding_pocket_insights(
+            {"ligand_pocket_similarity": df}
+        )
+        assert any("Similar Binding Pockets" in i for i in insights)
+        assert any("4HHB:HEM_A_1" in i and "2HHB:HEM_A_1" in i for i in insights)
+        assert any("residue *names*" in i for i in insights)
+        assert not any("Divergent Binding Pockets" in i for i in insights)
+
+    def test_divergent_pair_flagged_with_caveat(self, generator):
+        df = pd.DataFrame(
+            [[1.0, 0.1], [0.1, 1.0]],
+            index=["4HHB:HEM_A_1", "1CRN:XXX_A_1"],
+            columns=["4HHB:HEM_A_1", "1CRN:XXX_A_1"],
+        )
+        insights = generator._get_binding_pocket_insights(
+            {"ligand_pocket_similarity": df}
+        )
+        assert any("Divergent Binding Pockets" in i for i in insights)
+        assert any("residue *names*" in i for i in insights)
+        assert not any("Similar Binding Pockets" in i for i in insights)
+
+    def test_neither_threshold_crossed_returns_empty_with_no_caveat_noise(
+        self, generator
+    ):
+        df = pd.DataFrame(
+            [[1.0, 0.4], [0.4, 1.0]], index=["A", "B"], columns=["A", "B"]
+        )
+        assert (
+            generator._get_binding_pocket_insights({"ligand_pocket_similarity": df})
+            == []
+        )
 
 
 class TestGetClusteringInsights:

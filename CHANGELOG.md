@@ -2,6 +2,26 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.81.0]
+
+New feature, following a documentation pass: binding-pocket similarity insights for Compare runs, plus surfacing all automated insights live in the SPA for the first time.
+
+`LigandAnalyzer.calculate_interaction_similarity()` (a pairwise Jaccard binding-pocket-residue-similarity matrix across ligands) has existed for a while but was only ever wired up in the legacy Streamlit tab, fed by manually-accumulated button clicks - never in the main Compare pipeline or the actively-developed SPA. This release wires it into `AnalysisCoordinator.run_full_pipeline()` as a new automated insight, and - since that surfaced a second gap - also renders the whole `results["insights"]` list live in the SPA's Analytics tab for the first time (it previously only ever reached a PDF/HTML export, never the UI).
+
+### Added
+- **`docs/ARCHITECTURE.md`** (new): module relationships, Compare/Discover pipeline data flow, and an API auth/rate-limit/workflow overview - additive to `docs/FEATURES.md` (capability reference) and the auto-generated `/docs`/`/openapi.json` (endpoint schema), not a duplicate of either.
+- **`docs/guides/GETTING_STARTED.md`** (new): task-oriented "your first Compare run" / "your first Discover run" walkthroughs for the scientist end-user, linked from README's doc table.
+- **`src/backend/coordinator.py`**: `_analyze_ligands`/`_attach_ligand_analysis` run ligand detection + interaction analysis against every raw downloaded structure during the main pipeline (not just on-demand per-structure via `/api/ligands`), populating `results["ligand_analysis"]` and (when ≥2 ligands were found across the run) `results["ligand_pocket_similarity"]`. Best-effort throughout - a failure here degrades to an empty/absent result, never fails the run. As a side effect, `_get_ligand_insights` (which already existed and already gated on `ligand_analysis` being present) fires in production for the first time too.
+- **`src/backend/insights.py`**: `_get_binding_pocket_insights` - flags the most-similar (Jaccard ≥ 0.6) and most-divergent (≤ 0.2) ligand pairs by pocket-residue composition, with an explicit caveat that this compares residue *names*, not aligned positions. Verified against a real Compare run (4HHB vs 2HHB, two hemoglobin crystal structures) - correctly reported Jaccard 1.00 between their heme pockets.
+- **`web-frontend/src/components/AnalyticsTab.js`**: new "Insights" sub-tab rendering `results.insights` as a bullet list (markdown-lite `**bold**` converted to `<strong>`, escaped via the existing `escapeHtml` helper) - the first time Compare-mode insights are shown anywhere in the SPA itself rather than only in exports. `insights` threaded through `web-frontend/src/main.js` alongside the existing `rmsfValues`/`ramachandranStats` fields.
+- **`tests/test_coordinator.py`** (+9 tests), **`tests/test_insights.py`** (+6 tests), **`web-frontend/src/components/AnalyticsTab.test.js`** (new, 5 tests).
+
+### Verified
+- Full backend suite: 893 tests passing, both locally and in a CI-matching Docker container.
+- Frontend suite: 150 Vitest tests passing.
+- `black`/`ruff` clean.
+- Real end-to-end Compare run (4HHB + 2HHB) against a live local server: `ligand_analysis` populated for the first time, the new binding-pocket insight fired with correct, sensible wording, and the full result round-trips through history persistence (`GET /api/runs/{id}`) with all new fields intact.
+
 ## [3.80.0]
 
 Twenty-sixth batch of the `new_coverage` push - v3.79.0 landed at 79.96%, agonizingly close (~0.04 points / 1-2 lines) to the 80% Quality Gate threshold. Closed `notebook_exporter.py`'s remaining 4 lines and `pdb_manager.py`'s last (the mmCIF-format branch of `_get_structure`, skipped in v3.78.0 as not worth a fixture for one line - worth it now with the gate this close).

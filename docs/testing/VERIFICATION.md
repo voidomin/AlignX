@@ -43,7 +43,7 @@ Run the test suite script:
 powershell -File scripts\run_tests.ps1
 ```
 *Expected Output:*
-- Pytest runs 879 items successfully and shows no errors.
+- Pytest runs 893 items successfully and shows no errors.
 - Verification scripts are executed automatically as part of the run.
 
 ---
@@ -106,7 +106,7 @@ Run the Vitest suite covering `api.js` and the JS components (auth headers, job 
 cd web-frontend
 npm test
 ```
-*Expected Output:* all test files pass (currently 142 tests across the suite, covering `api.js` and every tab/panel component, including `DiscoverTab.js`).
+*Expected Output:* all test files pass (currently 150 tests across the suite, covering `api.js` and every tab/panel component, including `DiscoverTab.js`).
 
 ---
 
