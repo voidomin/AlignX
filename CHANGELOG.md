@@ -2,6 +2,17 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.77.0]
+
+Twenty-third batch of the `new_coverage` push - `phylo_tree.py`'s `PhyloTreeGenerator` (`generate_tree`, `export_newick`, `_linkage_to_newick`, `generate_plotly_tree`) had zero prior automated coverage.
+
+### Added
+- **`tests/test_phylo_tree.py`** (new, 11 tests): `generate_tree`'s real-image-file output, missing-parent-directory creation, and malformed-input failure path; `export_newick`'s valid-Newick-file output (parent-dir creation, malformed-input failure); `_linkage_to_newick`'s 2-leaf and 3-leaf nesting cases (hand-verified expected strings); `generate_plotly_tree`'s per-trace hoverinfo, malformed-input `None` return, and a test documenting a real, harmless Plotly quirk: the function's own `.tolist()` conversion (intended to force plain-JSON-array serialization) doesn't survive `to_plotly_json()` - Plotly's trace validators re-coerce it back into the compact binary "bdata" format regardless, the same quirk already documented in `api.py`'s `_decode_plotly_bdata` docstring. Not a functional bug: every API-returned figure is defensively decoded by that same `sanitize_for_json` step. File coverage: 0% → 100%.
+
+### Verified
+- Full backend suite: 822 tests passing, both locally and in a CI-matching Docker container.
+- `black`/`ruff` clean.
+
 ## [3.76.0]
 
 Twenty-second batch of the `new_coverage` push - `discovery_report_exporter.py`'s remaining gaps (template-file-missing fallback, template caching, the render-failure re-raise path, and `_fmt`/`_sort_key`'s non-float/unparseable-value branches) and `coordinator.py`'s remaining gaps (`run_full_pipeline`'s result-processing-failure branch and `_run_mustang_alignment`'s stale-output-dir-cleanup branch).
