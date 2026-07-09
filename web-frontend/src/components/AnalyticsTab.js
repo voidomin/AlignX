@@ -1,4 +1,22 @@
-import { escapeHtml } from '../escapeHtml';
+// Renders one insight string's markdown-lite **bold** segments as real
+// <strong> DOM nodes, built via createElement/createTextNode rather than
+// any HTML-string sink (innerHTML/insertAdjacentHTML) - this is what
+// makes it safe against injection regardless of what the string
+// contains, not reliant on a string-escaping step a static analyzer
+// can't verify survives a subsequent regex-based HTML reconstruction.
+function appendMarkdownLiteBold(parent, text) {
+    const parts = String(text ?? '').split(/\*\*(.+?)\*\*/g);
+    parts.forEach((part, i) => {
+        if (part === '') return;
+        if (i % 2 === 1) {
+            const strong = document.createElement('strong');
+            strong.textContent = part;
+            parent.appendChild(strong);
+        } else {
+            parent.appendChild(document.createTextNode(part));
+        }
+    });
+}
 
 const SUB_TABS = [
     { key: 'quality', label: 'Quality' },
@@ -284,7 +302,7 @@ export class AnalyticsTab {
             this.insights.forEach(text => {
                 const li = document.createElement('li');
                 li.className = "font-body-sm text-primary border border-border-subtle rounded-md p-2";
-                li.innerHTML = escapeHtml(text).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+                appendMarkdownLiteBold(li, text);
                 insightsList.appendChild(li);
             });
         } else if (this.currentRunId) {
