@@ -2,6 +2,18 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.76.0]
+
+Twenty-second batch of the `new_coverage` push - `discovery_report_exporter.py`'s remaining gaps (template-file-missing fallback, template caching, the render-failure re-raise path, and `_fmt`/`_sort_key`'s non-float/unparseable-value branches) and `coordinator.py`'s remaining gaps (`run_full_pipeline`'s result-processing-failure branch and `_run_mustang_alignment`'s stale-output-dir-cleanup branch).
+
+### Added
+- **`tests/test_discovery_report_exporter.py`** (+8 tests): `template_str`'s missing-file fallback and caching, `export`'s render-failure re-raise (logged then propagated, not swallowed), `_fmt`'s non-float passthrough, and `_sort_key`'s unparseable/missing-`eval` fallback. File coverage: 87% → 100%.
+- **`tests/test_coordinator.py`** (+2 tests): `run_full_pipeline` returning a clean failure when `process_result_directory` itself returns falsy, and `_run_mustang_alignment` clearing a stale pre-existing `output_dir` before realigning (so leftover files from an earlier run at the same path can't linger). File coverage: 96% → 97%.
+
+### Verified
+- Full backend suite: 811 tests passing, both locally and in a CI-matching Docker container.
+- `black`/`ruff` clean.
+
 ## [3.75.0]
 
 Twenty-first batch of the `new_coverage` push - more of `pdb_manager.py`'s remaining gaps: `clean_pdb`'s zero-alpha-carbon error path, `build_residue_renumber_map`'s parse-failure and chain-not-found early returns, `batch_clean`'s genuinely-unexpected-exception path (distinct from `clean_pdb`'s own internally-handled failures), and `_CleanSelect.accept_residue`'s HETATM-with-a-CA-atom retention branch.
@@ -12,6 +24,7 @@ Twenty-first batch of the `new_coverage` push - more of `pdb_manager.py`'s remai
 ### Verified
 - Full backend suite: 797 tests passing, both locally and in a CI-matching Docker container.
 - `black`/`ruff` clean.
+- Confirmed via re-analysis: `new_coverage` 78.58% → 78.71%.
 
 ## [3.74.0]
 

@@ -1,3 +1,7 @@
+from unittest.mock import patch
+
+import pytest
+
 from src.backend.discovery_report_exporter import DiscoveryReportExporter
 
 
@@ -133,3 +137,49 @@ def test_export_sorts_hits_by_evalue_and_caps_at_20():
 
     assert "hit_0" in html  # lowest eval, most confident, must be included
     assert "hit_24" not in html  # beyond the top-20 cap
+
+
+def test_template_str_falls_back_when_template_file_missing(tmp_path):
+    exporter = DiscoveryReportExporter()
+    exporter.template_path = tmp_path / "does_not_exist.html"
+
+    assert "{{ pdb_id }}" in exporter.template_str
+
+
+def test_template_str_is_cached_after_first_read():
+    exporter = DiscoveryReportExporter()
+    first = exporter.template_str
+    second = exporter.template_str
+    assert first is second
+
+
+def test_export_reraises_after_logging_on_render_failure():
+    exporter = DiscoveryReportExporter()
+    with patch(
+        "src.backend.discovery_report_exporter.Template.render",
+        side_effect=RuntimeError("boom"),
+    ):
+        with pytest.raises(RuntimeError, match="boom"):
+            exporter.export(_make_results())
+
+
+class TestFmt:
+    def test_formats_float_to_three_decimals(self):
+        assert DiscoveryReportExporter._fmt(0.123456) == "0.123"
+
+    def test_passes_through_non_float_unchanged(self):
+        assert DiscoveryReportExporter._fmt("N/A") == "N/A"
+        assert DiscoveryReportExporter._fmt(None) is None
+
+
+class TestSortKey:
+    def test_uses_eval_when_present(self):
+        assert DiscoveryReportExporter._sort_key({"eval": "1e-10"}) == pytest.approx(
+            1e-10
+        )
+
+    def test_falls_back_to_default_on_unparseable_value(self):
+        assert DiscoveryReportExporter._sort_key({"eval": "not-a-number"}) == 1e9
+
+    def test_falls_back_to_default_when_no_key_present(self):
+        assert DiscoveryReportExporter._sort_key({}) == 1e9

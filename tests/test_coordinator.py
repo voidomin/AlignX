@@ -194,6 +194,38 @@ def test_run_full_pipeline_fails_when_mustang_alignment_fails(mock_config, tmp_p
         assert results is None
 
 
+def test_run_full_pipeline_fails_when_result_processing_fails(mock_config, tmp_path):
+    with patch(
+        "src.backend.coordinator.MustangRunner.check_installation",
+        return_value=(True, "ok"),
+    ), patch(
+        "src.backend.coordinator.PDBManager.batch_download", new_callable=AsyncMock
+    ) as mock_download, patch(
+        "src.backend.coordinator.PDBManager.analyze_structure",
+        return_value={"chains": []},
+    ), patch(
+        "src.backend.coordinator.PDBManager.clean_pdb"
+    ) as mock_clean, patch(
+        "src.backend.coordinator.MustangRunner.run_alignment"
+    ) as mock_align, patch.object(
+        AnalysisCoordinator, "process_result_directory", return_value=None
+    ):
+        pdb_file = tmp_path / "4rlt.pdb"
+        pdb_file.write_text("ATOM")
+        mock_download.return_value = {"4RLT": (True, "ok", pdb_file)}
+        mock_clean.return_value = (True, "ok", pdb_file)
+        mock_align.return_value = (True, "ok", tmp_path / "out")
+
+        coordinator = AnalysisCoordinator(mock_config)
+        success, msg, results = coordinator.run_full_pipeline(
+            ["4RLT"], output_dir=tmp_path / "out"
+        )
+
+        assert success is False
+        assert "Failed to process result directory" in msg
+        assert results is None
+
+
 def test_run_full_pipeline_catches_unexpected_exception(mock_config, tmp_path):
     with patch(
         "src.backend.coordinator.MustangRunner.check_installation",
@@ -211,6 +243,33 @@ def test_run_full_pipeline_catches_unexpected_exception(mock_config, tmp_path):
         assert success is False
         assert "boom" in msg
         assert results is None
+
+
+class TestRunMustangAlignment:
+    def test_clears_a_pre_existing_output_dir_before_realigning(
+        self, mock_config, tmp_path
+    ):
+        """A stale output_dir from a previous run at the same path must be
+        wiped before Mustang writes fresh output there, not merged with
+        leftover files from the earlier run."""
+        with patch(
+            "src.backend.coordinator.MustangRunner.check_installation",
+            return_value=(True, "ok"),
+        ):
+            coordinator = AnalysisCoordinator(mock_config)
+            output_dir = tmp_path / "out"
+            output_dir.mkdir()
+            stale_file = output_dir / "stale.txt"
+            stale_file.write_text("leftover from a previous run")
+
+            with patch.object(
+                coordinator.mustang_runner,
+                "run_alignment",
+                return_value=(True, "ok", output_dir),
+            ):
+                coordinator._run_mustang_alignment([], output_dir)
+
+            assert not stale_file.exists()
 
 
 class TestResolveRunIdentity:
