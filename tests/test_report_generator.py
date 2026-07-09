@@ -2,11 +2,16 @@ import pandas as pd
 import pytest
 from PIL import Image
 
-from src.backend.report_generator import ReportGenerator
+from src.backend.report_generator import ReportGenerator, _clean_text
 
 
 def _write_tiny_png(path):
     Image.new("RGB", (4, 4), color="red").save(path)
+
+
+class TestCleanText:
+    def test_non_string_input_is_stringified(self):
+        assert _clean_text(1.5) == "1.5"
 
 
 class TestGenerateFullReport:
@@ -73,6 +78,21 @@ class TestGenerateFullReport:
                 index=["4RLT", "3UG9"],
                 columns=["4RLT", "3UG9"],
             ),
+        }
+
+        generator = ReportGenerator(tmp_path)
+        report_path = generator.generate_full_report(results, sections=["insights"])
+
+        assert report_path.exists()
+
+    def test_empty_insights_list_skips_the_section_entirely(self, tmp_path):
+        """An explicitly empty insights list (as opposed to a missing key,
+        which triggers regeneration) must render nothing for that section
+        rather than an empty heading."""
+        results = {
+            "pdb_ids": ["4RLT"],
+            "stats": {"mean_rmsd": 1.0},
+            "insights": [],
         }
 
         generator = ReportGenerator(tmp_path)

@@ -2,6 +2,19 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.79.0]
+
+Twenty-fifth batch of the `new_coverage` push - after v3.78.0 landed at 79.86% (within ~0.14 points / ~9-10 lines of the 80% target), closed the smallest remaining per-file gaps: `discovery_coordinator.py` (3 new-code lines), `rmsd_analyzer.py` (2), and `report_generator.py` (part of 4).
+
+### Added
+- **`tests/test_discovery_coordinator.py`** (+1 test): `run_discovery_pipeline`'s outer catch-all exception handler (a last-resort safety net for failures no earlier branch anticipated, e.g. history persistence itself failing right after a successful search). File coverage: 96% → 100%.
+- **`tests/test_report_generator.py`** (+2 tests): `_clean_text`'s non-string-input passthrough, and `_write_insights_section` skipping rendering entirely for an explicitly-empty (as opposed to missing) insights list.
+- **`tests/test_rmsd_analyzer.py`** (+4 tests): `_parse_afasta_sequences` skipping blank lines; `_parse_ca_coords`' three defensive branches - a stray extra PDB chain beyond the FASTA's own structure count, a chain with no corresponding `structure_maps` entry, and non-CA atom lines - plus a residue index missing from its structure's map. File coverage: 97% → 100%.
+
+### Verified
+- Full backend suite: 876 tests passing, both locally and in a CI-matching Docker container.
+- `black`/`ruff` clean.
+
 ## [3.78.0]
 
 Twenty-fourth batch of the `new_coverage` push - remaining gaps in `api.py` (46 uncovered new-code lines), `pdb_manager.py` (16), and `rmsd_calculator.py` (17), targeted specifically because SonarCloud's per-file `new_uncovered_lines` breakdown showed these three closing almost exactly the ~75-line gap left to the 80% Quality Gate threshold.

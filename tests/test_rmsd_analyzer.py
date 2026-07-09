@@ -188,3 +188,86 @@ class TestCalculateResidueRmsf:
 
         assert rmsf_values == []
         assert labels == []
+
+    def test_blank_lines_in_afasta_are_skipped(self, analyzer, tmp_path):
+        afasta = tmp_path / "alignment.afasta"
+        afasta.write_text(">structA\nAAAA\n\n>structB\nAAAA\n")
+
+        sequences = RMSDAnalyzer._parse_afasta_sequences(afasta)
+
+        assert sequences == {"structA": "AAAA", "structB": "AAAA"}
+
+
+class TestParseCaCoords:
+    def test_extra_chains_beyond_num_structures_are_not_read(self, tmp_path):
+        """A stray extra chain in the PDB (more than the FASTA's own
+        structure count) must stop coordinate collection rather than index
+        past the pre-sized coords array."""
+        lines = [
+            _rmsf_atom_line(1, "CA", "ALA", "A", 1, 0.0, 0.0, 0.0),
+            _rmsf_atom_line(2, "CA", "ALA", "B", 1, 1.0, 0.0, 0.0),
+            _rmsf_atom_line(3, "CA", "ALA", "C", 1, 2.0, 0.0, 0.0),
+        ]
+        alignment_pdb = tmp_path / "alignment.pdb"
+        alignment_pdb.write_text("\n".join(lines) + "\n")
+        structure_maps = [{0: 0}, {0: 0}, {0: 0}]
+
+        coords = RMSDAnalyzer._parse_ca_coords(
+            alignment_pdb, structure_maps, alignment_length=1, num_structures=2
+        )
+
+        assert coords[0][0] is not None
+        assert coords[0][1] is not None
+
+    def test_chains_beyond_structure_maps_are_skipped(self, tmp_path):
+        """A chain with no corresponding entry in structure_maps (fewer
+        parsed FASTA sequences than PDB chains) is skipped rather than
+        raising an IndexError, as long as the FASTA's own structure count
+        still permits it."""
+        lines = [
+            _rmsf_atom_line(1, "CA", "ALA", "A", 1, 0.0, 0.0, 0.0),
+            _rmsf_atom_line(2, "CA", "ALA", "B", 1, 1.0, 0.0, 0.0),
+            _rmsf_atom_line(3, "CA", "ALA", "C", 1, 2.0, 0.0, 0.0),
+        ]
+        alignment_pdb = tmp_path / "alignment.pdb"
+        alignment_pdb.write_text("\n".join(lines) + "\n")
+        structure_maps = [{0: 0}, {0: 0}]
+
+        coords = RMSDAnalyzer._parse_ca_coords(
+            alignment_pdb, structure_maps, alignment_length=1, num_structures=3
+        )
+
+        assert coords[0][0] is not None
+        assert coords[0][1] is not None
+        assert coords[0][2] is None
+
+    def test_non_ca_atom_lines_are_ignored(self, tmp_path):
+        lines = [
+            _rmsf_atom_line(1, "N", "ALA", "A", 1, 9.0, 9.0, 9.0),
+            _rmsf_atom_line(2, "CA", "ALA", "A", 1, 0.0, 0.0, 0.0),
+        ]
+        alignment_pdb = tmp_path / "alignment.pdb"
+        alignment_pdb.write_text("\n".join(lines) + "\n")
+        structure_maps = [{0: 0}]
+
+        coords = RMSDAnalyzer._parse_ca_coords(
+            alignment_pdb, structure_maps, alignment_length=1, num_structures=1
+        )
+
+        assert coords[0][0] is not None
+        assert list(coords[0][0]) == [0.0, 0.0, 0.0]
+
+    def test_residue_not_in_structure_map_is_skipped(self, tmp_path):
+        """A residue index the alignment-column map doesn't know about
+        (e.g. a trailing residue Mustang's alignment step itself dropped)
+        must be skipped rather than raise a KeyError."""
+        lines = [_rmsf_atom_line(1, "CA", "ALA", "A", 1, 0.0, 0.0, 0.0)]
+        alignment_pdb = tmp_path / "alignment.pdb"
+        alignment_pdb.write_text("\n".join(lines) + "\n")
+        structure_maps = [{}]
+
+        coords = RMSDAnalyzer._parse_ca_coords(
+            alignment_pdb, structure_maps, alignment_length=1, num_structures=1
+        )
+
+        assert coords[0][0] is None

@@ -329,3 +329,44 @@ def test_run_discovery_pipeline_does_not_save_to_history_on_failure(
 
     assert success is False
     mock_history_db_save.assert_not_called()
+
+
+def test_run_discovery_pipeline_reports_a_genuinely_unexpected_exception(
+    mock_config, tmp_path, mock_history_db_save
+):
+    """The outer try/except in run_discovery_pipeline is a last-resort
+    safety net for failures no earlier, more specific branch anticipated
+    (e.g. history persistence itself blowing up right after a successful
+    search) - it must still report a clean (False, message, None) tuple
+    rather than letting the exception propagate to the caller."""
+    structure_path = tmp_path / "af-p01541-f1.pdb"
+    structure_path.write_text("ATOM")
+
+    with patch(
+        "src.backend.discovery_coordinator.PDBManager.download_pdb",
+        new_callable=AsyncMock,
+    ) as mock_download, patch(
+        "src.backend.discovery_coordinator.FoldseekClient.search",
+        new_callable=AsyncMock,
+    ) as mock_search, patch(
+        "src.backend.discovery_coordinator.AnnotationAggregator.aggregate_for_hits",
+        new_callable=AsyncMock,
+    ) as mock_aggregate:
+        mock_download.return_value = (True, "ok", structure_path)
+        mock_search.return_value = {"alignments": [{"target": "AF-P01541-F1-model_v6"}]}
+        mock_aggregate.return_value = {
+            "neighbors_considered": 1,
+            "annotated_neighbor_count": 1,
+            "unannotated_neighbor_count": 0,
+            "top_domains": [],
+            "top_go_terms": [],
+            "per_neighbor": [],
+        }
+        mock_history_db_save.side_effect = RuntimeError("disk full")
+
+        coordinator = DiscoveryCoordinator(mock_config)
+        success, msg, results = coordinator.run_discovery_pipeline("AF-P01541-F1")
+
+        assert success is False
+        assert "disk full" in msg
+        assert results is None
