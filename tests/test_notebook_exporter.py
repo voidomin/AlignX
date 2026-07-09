@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import plotly.graph_objects as go
 
 from src.backend.notebook_exporter import NotebookExporter
@@ -81,6 +83,42 @@ class TestNotebookExporterExport:
         output_path = exporter.export(results)
 
         assert output_path is None
+
+    def test_ligand_analysis_with_no_actual_ligands_renders_without_a_table(
+        self, tmp_path
+    ):
+        """A run that has ligand analysis but found zero ligands across
+        every structure (empty per-structure lists) must render cleanly
+        without a ligand table, not an empty/broken one."""
+        results = {
+            "stats": {"mean_rmsd": 1.0},
+            "ligand_analysis": {"4RLT": []},
+            "result_dir": tmp_path,
+        }
+
+        exporter = NotebookExporter()
+        output_path = exporter.export(results)
+
+        assert output_path is not None
+
+    def test_read_failure_on_bundled_3dmoljs_does_not_break_export(self, tmp_path):
+        """A read failure on the bundled 3Dmol.js asset (present on disk in
+        this repo, but the read itself could still fail, e.g. a permissions
+        issue) must not break notebook export - the 3D viewer script tag
+        just ends up empty rather than embedding the library."""
+        results = {"stats": {"mean_rmsd": 1.0}, "result_dir": tmp_path}
+        real_open = open
+
+        def selective_open(path, *args, **kwargs):
+            if "3Dmol-min.js" in str(path):
+                raise OSError("permission denied")
+            return real_open(path, *args, **kwargs)
+
+        exporter = NotebookExporter()
+        with patch("builtins.open", side_effect=selective_open):
+            output_path = exporter.export(results)
+
+        assert output_path is not None
 
 
 class TestTemplateStrFallback:

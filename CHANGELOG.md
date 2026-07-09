@@ -2,6 +2,18 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.80.0]
+
+Twenty-sixth batch of the `new_coverage` push - v3.79.0 landed at 79.96%, agonizingly close (~0.04 points / 1-2 lines) to the 80% Quality Gate threshold. Closed `notebook_exporter.py`'s remaining 4 lines and `pdb_manager.py`'s last (the mmCIF-format branch of `_get_structure`, skipped in v3.78.0 as not worth a fixture for one line - worth it now with the gate this close).
+
+### Added
+- **`tests/test_notebook_exporter.py`** (+2 tests): a ligand-analysis result with zero actual ligands across every structure rendering cleanly without a table (as opposed to the already-tested "no ligand_analysis key at all" case); a read failure on the bundled 3Dmol.js asset degrading to an empty embed rather than breaking the whole export. File coverage: 95% → 100%.
+- **`tests/test_pdb_manager.py`**: `_get_structure` routing to `MMCIFParser` for `.cif` files, against a hand-built minimal mmCIF fixture (verified directly against `Bio.PDB.MMCIFParser` before writing the assertion). File coverage: 99% → 100%.
+
+### Verified
+- Full backend suite: 879 tests passing, both locally and in a CI-matching Docker container.
+- `black`/`ruff` clean.
+
 ## [3.79.0]
 
 Twenty-fifth batch of the `new_coverage` push - after v3.78.0 landed at 79.86% (within ~0.14 points / ~9-10 lines of the 80% target), closed the smallest remaining per-file gaps: `discovery_coordinator.py` (3 new-code lines), `rmsd_analyzer.py` (2), and `report_generator.py` (part of 4).

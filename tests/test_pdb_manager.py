@@ -173,6 +173,47 @@ class TestPDBManager:
         assert len(info["chains"]) == 1
         assert info["chains"][0]["id"] == "A"
 
+    def test_analyze_structure_uses_mmcif_parser_for_cif_files(
+        self, mock_config, temp_workspace
+    ):
+        """AlphaFold structures are downloaded as .cif - _get_structure must
+        route to MMCIFParser for that extension rather than PDBParser, which
+        can't read mmCIF's field-tag format at all."""
+        manager = PDBManager(mock_config)
+
+        cif_content = (
+            "data_test\n"
+            "loop_\n"
+            "_atom_site.group_PDB\n"
+            "_atom_site.id\n"
+            "_atom_site.type_symbol\n"
+            "_atom_site.label_atom_id\n"
+            "_atom_site.label_alt_id\n"
+            "_atom_site.label_comp_id\n"
+            "_atom_site.label_asym_id\n"
+            "_atom_site.label_entity_id\n"
+            "_atom_site.label_seq_id\n"
+            "_atom_site.pdbx_PDB_ins_code\n"
+            "_atom_site.Cartn_x\n"
+            "_atom_site.Cartn_y\n"
+            "_atom_site.Cartn_z\n"
+            "_atom_site.occupancy\n"
+            "_atom_site.B_iso_or_equiv\n"
+            "_atom_site.pdbx_formal_charge\n"
+            "_atom_site.auth_seq_id\n"
+            "_atom_site.auth_asym_id\n"
+            "_atom_site.pdbx_PDB_model_num\n"
+            "ATOM 1 N N . ALA A 1 1 ? 11.104 13.203 7.334 1.00 20.00 ? 1 A 1\n"
+            "ATOM 2 C CA . ALA A 1 1 ? 12.104 14.203 8.334 1.00 20.00 ? 1 A 1\n"
+        )
+        p = temp_workspace["raw"] / "af-p12345-f1.cif"
+        p.write_text(cif_content)
+
+        info = manager.analyze_structure(p)
+
+        assert len(info["chains"]) == 1
+        assert info["chains"][0]["id"] == "A"
+
     def test_clean_pdb(self, mock_config, temp_workspace, dummy_pdb_content):
         """Test cleaning function."""
         manager = PDBManager(mock_config)
