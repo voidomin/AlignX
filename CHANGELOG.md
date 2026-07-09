@@ -12,6 +12,7 @@ Twentieth batch of the `new_coverage` push - more of `api.py`'s remaining gaps, 
 ### Verified
 - Full backend suite: 792 tests passing, both locally and in a CI-matching Docker container.
 - `black`/`ruff` clean.
+- Confirmed via re-analysis: `new_coverage` 78.46% → 78.58%.
 
 ## [3.72.0]
 
