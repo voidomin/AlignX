@@ -310,4 +310,21 @@ describe('api.js request-ID validation', () => {
         const { fetchLigands } = await import('./api.js');
         await expect(fetchLigands('4RLT', 'run_1783414603_2b797f99f0bee74f')).resolves.toBeDefined();
     });
+
+    it('getNewickUrl throws rather than building a URL from a malformed run_id', async () => {
+        const { getNewickUrl } = await import('./api.js');
+        expect(() => getNewickUrl('../../etc/passwd')).toThrow('Invalid runId');
+    });
+
+    it('fetchInterface rejects a malformed chain_a', async () => {
+        const { fetchInterface } = await import('./api.js');
+        await expect(fetchInterface('4RLT', '../evil', 'B', 'run_1')).rejects.toThrow('Invalid chainA');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchInterface rejects a pdbId that is not a recognized structure ID format', async () => {
+        const { fetchInterface } = await import('./api.js');
+        await expect(fetchInterface('../evil', 'A', 'B', 'run_1')).rejects.toThrow('Invalid pdbId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
 });

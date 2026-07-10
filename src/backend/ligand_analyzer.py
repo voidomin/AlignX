@@ -6,6 +6,7 @@ from typing import Dict, List, Any, Optional
 import numpy as np
 import pandas as pd
 
+from src.backend.interaction_geometry import classify_contact
 from src.utils.logger import sanitize_for_log
 
 logger = logging.getLogger(__name__)
@@ -172,9 +173,23 @@ class LigandAnalyzer:
                 self._interaction_record(res, target_atoms)
                 for res in interacting_residues
             ],
+            "pocket_sasa": self._pocket_sasa(structure, interacting_residues),
         }
         results["interactions"].sort(key=lambda x: x["distance"])
         return results
+
+    @staticmethod
+    def _pocket_sasa(structure, pocket_residues) -> float:
+        """Sums per-residue SASA (BioPython's ShrakeRupley, computed once on
+        the already-parsed structure) over just the pocket-lining residues -
+        how much surface those residues retain while still part of the full
+        bound complex, not their SASA in isolation."""
+        from Bio.PDB.SASA import ShrakeRupley
+
+        ShrakeRupley().compute(structure[0], level="R")
+        return round(
+            sum(getattr(res, "sasa", 0.0) or 0.0 for res in pocket_residues), 2
+        )
 
     @staticmethod
     def _find_ligand_and_search_atoms(
@@ -206,22 +221,16 @@ class LigandAnalyzer:
     def _min_distance(target_atoms, res_atoms) -> float:
         return min((la - ra for la in target_atoms for ra in res_atoms), default=999.9)
 
-    @staticmethod
-    def _interaction_type(resname: str) -> str:
-        hydrophobic = {"ALA", "VAL", "LEU", "ILE", "MET", "PHE", "TRP", "PRO"}
-        return "Hydrophobic" if resname in hydrophobic else "Polar/Charged"
-
     def _interaction_record(self, res, target_atoms) -> Dict[str, Any]:
         resname = res.get_resname()
+        res_atoms = list(res.get_atoms())
         return {
             "residue": resname,
             "resn": resname,
             "chain": res.get_parent().get_id(),
             "resi": res.get_id()[1],
-            "distance": round(
-                self._min_distance(target_atoms, list(res.get_atoms())), 2
-            ),
-            "type": self._interaction_type(resname),
+            "distance": round(self._min_distance(target_atoms, res_atoms), 2),
+            "type": classify_contact(resname, res_atoms, target_atoms),
         }
 
     def calculate_sasa(self, pdb_file: Path) -> Dict[str, Any]:

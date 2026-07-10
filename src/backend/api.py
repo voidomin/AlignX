@@ -33,6 +33,7 @@ from src.backend.discovery_coordinator import DiscoveryCoordinator
 from src.backend.foldseek_client import FoldseekClient, FoldseekError
 from src.backend.database import HistoryDatabase
 from src.backend.ligand_analyzer import LigandAnalyzer
+from src.backend.interface_analyzer import InterfaceAnalyzer
 from src.backend.pdb_manager import PDBManager
 from src.backend.rmsd_analyzer import RMSDAnalyzer
 from src.backend.result_manager import ResultManager
@@ -226,6 +227,7 @@ def _safe_segment(value: Optional[str], field_name: str) -> Optional[str]:
 # Initialize Backend Managers
 history_db = HistoryDatabase()
 ligand_analyzer = LigandAnalyzer(config)
+interface_analyzer = InterfaceAnalyzer()
 rmsd_analyzer = RMSDAnalyzer(config)
 
 
@@ -1100,6 +1102,42 @@ def _add_aligned_resi(
         logger.warning(f"Failed to build residue renumber map: {e}")
 
 
+@app.get(
+    "/api/interface",
+    responses={
+        400: {"description": "Invalid pdb_id, chain_a, chain_b, run_id, or session_id"},
+        404: {"description": "Structure PDB not found in the active workspace"},
+    },
+)
+def get_interface(
+    pdb_id: Annotated[str, Query(...)],
+    chain_a: Annotated[str, Query(...)],
+    chain_b: Annotated[str, Query(...)],
+    run_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Find contact residues between two chains of the same raw structure
+    (e.g. a protein-protein complex's interface) and estimate the buried
+    interface area.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(chain_a, "chain_a")
+    _safe_segment(chain_b, "chain_b")
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    pdb_path = _find_structure_pdb_path(pdb_id, run_id, session_id)
+    if not pdb_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Structure PDB for {pdb_id} not found in active workspace.",
+        )
+
+    interface = interface_analyzer.calculate_interface(pdb_path, chain_a, chain_b)
+    return {"pdb_id": pdb_id, "interface": sanitize_for_json(interface)}
+
+
 @app.get("/api/memory")
 def get_memory_stats():
     """
@@ -1618,6 +1656,41 @@ def get_heatmap_png(
         path=str(heatmap_path),
         media_type="image/png",
         filename=f"rmsd_heatmap_{run_id}.png",
+    )
+
+
+@app.get(
+    "/api/report/newick",
+    responses={
+        400: {"description": "Invalid run_id or session_id"},
+        404: {
+            "description": "Run not found, or its phylogenetic tree is missing on disk"
+        },
+    },
+)
+def get_newick_tree(
+    run_id: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """Download the run's phylogenetic tree in Newick format - already
+    saved to disk during the pipeline run (process_result_directory), just
+    never exposed via a direct download route until now."""
+    from fastapi.responses import FileResponse
+
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    _, res_dir = _lookup_run_and_result_dir(run_id, session_id)
+    newick_path = res_dir / "tree.newick"
+    if not newick_path.exists():
+        raise HTTPException(
+            status_code=404, detail=f"No phylogenetic tree found for run {run_id}."
+        )
+
+    return FileResponse(
+        path=str(newick_path),
+        media_type="text/plain",
+        filename=f"tree_{run_id}.newick",
     )
 
 

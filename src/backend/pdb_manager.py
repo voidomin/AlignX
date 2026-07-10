@@ -608,8 +608,8 @@ class PDBManager:
                 PDB.Atom.Atom(
                     atom.name,
                     atom.coord,
-                    atom.occupancy,
                     atom.bfactor,
+                    atom.occupancy,
                     atom.altloc,
                     atom.get_fullname(),  # Fix: fullname must be string
                     atom.serial_number,

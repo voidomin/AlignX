@@ -370,6 +370,27 @@ export function getReportZipUrl(runId) {
     return withApiKey(buildUrl('/api/report/zip', { run_id: runId }));
 }
 
+export function getNewickUrl(runId) {
+    runId = assertSafeSegment(runId, 'runId');
+    return withApiKey(buildUrl('/api/report/newick', { run_id: runId }));
+}
+
+export async function fetchInterface(pdbId, chainA, chainB, runId) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    chainA = assertSafeSegment(chainA, 'chainA');
+    chainB = assertSafeSegment(chainB, 'chainB');
+    runId = assertSafeSegment(runId, 'runId');
+    const res = await fetch(
+        buildUrl('/api/interface', { pdb_id: pdbId, chain_a: chainA, chain_b: chainB, run_id: runId }),
+        { headers: authHeaders() }
+    );
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Interface analysis fetch failed");
+    }
+    return res.json();
+}
+
 export async function fetchSettings() {
     const res = await fetch(buildUrl('/api/settings'), { headers: authHeaders() });
     if (!res.ok) throw new Error("Settings fetch failed");

@@ -229,6 +229,38 @@ class TestPDBManager:
         assert cleaned_path.exists()
         assert cleaned_path.parent == temp_workspace["cleaned"]
 
+    def test_clean_pdb_preserves_bfactor_not_swapped_with_occupancy(
+        self, mock_config, temp_workspace, dummy_pdb_content
+    ):
+        """Regression: _build_clean_residue previously passed occupancy and
+        bfactor to Bio.PDB.Atom.Atom() in the wrong order (bfactor comes
+        before occupancy in Atom's real constructor signature), silently
+        swapping the two - real per-atom bfactor values (e.g. AlphaFold's
+        pLDDT confidence) were replaced with occupancy (always 1.00 in this
+        fixture, and in practice for most crystal/predicted structures),
+        while occupancy became whatever bfactor happened to be. Caught via
+        live end-to-end verification of the pLDDT-coloring feature, not a
+        prior test."""
+        from Bio.PDB import PDBParser
+
+        manager = PDBManager(mock_config)
+        manager.cleaned_dir = temp_workspace["cleaned"]
+
+        raw_file = temp_workspace["raw"] / "1test.pdb"
+        raw_file.write_text(dummy_pdb_content)
+
+        success, _, cleaned_path = manager.clean_pdb(raw_file)
+        assert success is True
+
+        cleaned_structure = PDBParser(QUIET=True).get_structure("s", str(cleaned_path))
+        atoms = {a.get_name(): a for a in cleaned_structure.get_atoms()}
+
+        # Original bfactors from dummy_pdb_content: N=9.67, CA=10.38, C=9.62,
+        # O=12.10, CB=13.77; occupancy is 1.00 for every atom in the fixture.
+        assert atoms["N"].bfactor == pytest.approx(9.67)
+        assert atoms["CA"].bfactor == pytest.approx(10.38)
+        assert atoms["N"].occupancy == pytest.approx(1.00)
+
     def test_clean_pdb_reports_error_when_no_alpha_carbons_remain(
         self, mock_config, temp_workspace
     ):

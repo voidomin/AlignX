@@ -34,6 +34,7 @@ export class AnalyticsTab {
     ramachandranStats = null;
     rmsfValues = [];
     insights = [];
+    qualityMetrics = null;
     activeSubTab = 'quality';
 
     render() {
@@ -74,6 +75,19 @@ export class AnalyticsTab {
                         <div id="ramachandran-outliers-list" class="flex flex-wrap gap-1.5">
                             <!-- Outlier chips -->
                         </div>
+                    </div>
+                    <div id="quality-metrics-table-card" class="flex flex-col gap-2 hidden">
+                        <span class="font-label-sm text-label-sm text-secondary uppercase">Alignment quality (TM-score / GDT-TS)</span>
+                        <table class="w-full font-body-sm text-body-sm">
+                            <thead>
+                                <tr class="text-secondary text-left border-b border-border-subtle">
+                                    <th class="font-normal py-1">Structure</th>
+                                    <th class="font-normal py-1">TM-score</th>
+                                    <th class="font-normal py-1">GDT-TS</th>
+                                </tr>
+                            </thead>
+                            <tbody id="quality-metrics-table-body"></tbody>
+                        </table>
                     </div>
                 </div>
 
@@ -153,13 +167,14 @@ export class AnalyticsTab {
         });
     }
 
-    updateResults(runId, heatmapFig, treeFig, ramachandranStats, rmsfValues, insights) {
+    updateResults(runId, heatmapFig, treeFig, ramachandranStats, rmsfValues, insights, qualityMetrics) {
         this.currentRunId = runId;
         this.heatmapFig = heatmapFig;
         this.treeFig = treeFig;
         this.ramachandranStats = ramachandranStats;
         this.rmsfValues = rmsfValues || [];
         this.insights = insights || [];
+        this.qualityMetrics = qualityMetrics || null;
         this.renderVisuals();
     }
 
@@ -192,6 +207,38 @@ export class AnalyticsTab {
             score.innerText = "--";
             outliers.innerText = "--";
             listCard.classList.add('hidden');
+        }
+
+        // 1b. Alignment quality (TM-score / GDT-TS) table
+        const qualityCard = this.element.querySelector('#quality-metrics-table-card');
+        const qualityBody = this.element.querySelector('#quality-metrics-table-body');
+        const qualityEntries = this.qualityMetrics ? Object.entries(this.qualityMetrics) : [];
+        if (qualityEntries.length > 0) {
+            qualityCard.classList.remove('hidden');
+            qualityBody.innerHTML = "";
+            qualityEntries.forEach(([pdbId, metrics]) => {
+                const row = document.createElement('tr');
+                row.className = "border-b border-border-subtle last:border-0";
+
+                const idCell = document.createElement('td');
+                idCell.className = "py-1 font-mono text-primary";
+                idCell.textContent = pdbId;
+
+                const tmCell = document.createElement('td');
+                tmCell.className = "py-1 text-primary";
+                tmCell.textContent = metrics?.tm_score != null ? metrics.tm_score.toFixed(3) : '--';
+
+                const gdtCell = document.createElement('td');
+                gdtCell.className = "py-1 text-primary";
+                gdtCell.textContent = metrics?.gdt_ts != null ? metrics.gdt_ts.toFixed(3) : '--';
+
+                row.appendChild(idCell);
+                row.appendChild(tmCell);
+                row.appendChild(gdtCell);
+                qualityBody.appendChild(row);
+            });
+        } else {
+            qualityCard.classList.add('hidden');
         }
 
         // 2. Render Plotly RMSF Line Chart

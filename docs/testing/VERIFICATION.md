@@ -43,7 +43,7 @@ Run the test suite script:
 powershell -File scripts\run_tests.ps1
 ```
 *Expected Output:*
-- Pytest runs 920 items successfully and shows no errors.
+- Pytest runs 947 items successfully and shows no errors.
 - Verification scripts are executed automatically as part of the run.
 
 ---
@@ -106,7 +106,7 @@ Run the Vitest suite covering `api.js` and the JS components (auth headers, job 
 cd web-frontend
 npm test
 ```
-*Expected Output:* all test files pass (currently 171 tests across the suite, covering `api.js` and every tab/panel component, including `DiscoverTab.js` and `SettingsTab.js`).
+*Expected Output:* all test files pass (currently 182 tests across the suite, covering `api.js` and every tab/panel component, including `DiscoverTab.js` and `SettingsTab.js`).
 
 ---
 
@@ -132,8 +132,10 @@ Verify the Vite single page application (SPA).
    - On **Overview**, add at least two structures with a bound ligand — try `4HHB, 2HHB` (two hemoglobin variants) — mixing sources also works, e.g. a plain PDB ID (`4RLT`) alongside an `AF-`, `SM-`, or `ESM-` prefixed ID — and confirm each shows the correct source badge and metadata line.
    - Choose a chain per structure and click **Run Structural Alignment** — it should show an "Aligning..." state while the background job runs, then populate all tabs once complete.
    - In the 3D viewer, confirm each structure gets a distinct color and the HUD legend/pairwise RMSD list scale to however many structures were aligned (not just a fixed pair).
-   - On **Ligands**, switch the structure picker between the aligned structures and confirm the ligand list and interactions refresh for each. With a multi-ligand run (e.g. the hemoglobin example above), confirm the binding-pocket similarity heatmap renders below the interactions table.
-   - On **Sequence**, toggle the report-section checklist and confirm the "Download PDF" link's URL updates; confirm "View Notebook" opens a valid HTML file; confirm the new "Download CSV", "Download PNG", and "Download Everything" links each produce a real file. Enter a motif query (e.g. `G.K`) in the Sequence Motif Search box, confirm a match table appears, and click "Highlight Motif in 3D Viewer" to confirm the matched residues highlight in the 3D viewer.
+   - On **Ligands**, switch the structure picker between the aligned structures and confirm the ligand list and interactions refresh for each. With a multi-ligand run (e.g. the hemoglobin example above), confirm the binding-pocket similarity heatmap renders below the interactions table. Select a ligand and confirm the interaction table shows real geometry-based types (`Hydrogen Bond`, `Salt Bridge`, `Van der Waals`, `Polar Contact` — each with a distinct dot color) and that the SASA badge shows a real non-zero value. Confirm no "Volume" badge appears (removed — no pocket-volume computation exists). For a multi-chain structure (e.g. `4HHB` has chains A/B/C/D), confirm the "Protein-Protein Interfaces" section appears below with two chain dropdowns; pick two different chains, click "Analyze Interface", and confirm contact-residue tables for both chains plus a plausible buried-interface-area number render (same real interaction types as above).
+   - On **Sequence**, toggle the report-section checklist and confirm the "Download PDF" link's URL updates; confirm "View Notebook" opens a valid HTML file; confirm the new "Download CSV", "Download PNG", "Download Tree" (Newick), and "Download Everything" links each produce a real file. Enter a motif query (e.g. `G.K`) in the Sequence Motif Search box, confirm a match table appears, and click "Highlight Motif in 3D Viewer" to confirm the matched residues highlight in the 3D viewer.
+   - On **Analytics**' Quality sub-tab, confirm the "Alignment quality (TM-score / GDT-TS)" table renders one row per structure below the Ramachandran stats.
+   - Run an alignment including an `AF-` or `ESM-` structure (e.g. `AF-P69905-F1` with `4HHB`); in the 3D viewer header, confirm the new confidence-coloring toggle button is enabled (it stays disabled/greyed out for runs with no predicted structures) and clicking it recolors the AlphaFold/ESM structure by a real red-to-blue pLDDT confidence gradient (not a flat color); clicking it again reverts to identity coloring.
    - Run a second alignment with different structures, then check the **Compare** tab to diff it against the first run.
    - On **History**, confirm past runs list and reloading one restores its full state (3D view, stats, tabs); confirm a single run can be deleted (with a confirmation prompt) and disappears from the list; confirm "Clear All History" (also confirmation-gated) empties the list.
    - On **Settings**, confirm the form loads real current values, change one (e.g. the heatmap colormap), click "Save Changes", reload the page, and confirm the change persisted; click "Restore Defaults" and confirm it reverts to the documented defaults (`auto`/600s/20/500MB/viridis/cartoon).

@@ -58,6 +58,34 @@ describe('AnalyticsTab', () => {
         expect(empty.textContent).toContain('No automated insights available');
     });
 
+    it('renders a TM-score/GDT-TS row per structure when quality_metrics is present', () => {
+        const tab = makeTab();
+        tab.render();
+
+        tab.updateResults('run_1', null, null, null, [], [], {
+            '4RLT': { tm_score: 0.912, gdt_ts: 0.874 },
+            '3UG9': { tm_score: 0.885, gdt_ts: 0.831 },
+        });
+
+        const card = tab.element.querySelector('#quality-metrics-table-card');
+        expect(card.classList.contains('hidden')).toBe(false);
+        const rows = tab.element.querySelectorAll('#quality-metrics-table-body tr');
+        expect(rows).toHaveLength(2);
+        expect(rows[0].textContent).toContain('4RLT');
+        expect(rows[0].textContent).toContain('0.912');
+        expect(rows[0].textContent).toContain('0.874');
+    });
+
+    it('hides the quality-metrics table when no quality_metrics is given', () => {
+        const tab = makeTab();
+        tab.render();
+
+        tab.updateResults('run_1', null, null, null, [], []);
+
+        const card = tab.element.querySelector('#quality-metrics-table-card');
+        expect(card.classList.contains('hidden')).toBe(true);
+    });
+
     it('sub-tab switching still works, including the new insights sub-tab', () => {
         const tab = makeTab();
         tab.render();

@@ -1,4 +1,31 @@
-import { fetchInteractions, fetchLigands } from '../api';
+import { fetchInteractions, fetchLigands, fetchChains, fetchInterface } from '../api';
+
+// Functional data-encoding: dot color signals interaction type. Matches the
+// 4 real classifications LigandAnalyzer/InterfaceAnalyzer actually emit
+// (interaction_geometry.py's classify_contact) - not a guess at possible
+// labels, since PDB files carry no hydrogens/bond-order data, pi-stacking
+// and metal coordination aren't attempted at all (see interaction_geometry.py).
+function dotColorForType(type) {
+    switch (type) {
+        case 'Hydrogen Bond': return 'bg-accent';
+        case 'Salt Bridge': return 'bg-success';
+        case 'Van der Waals': return 'bg-muted';
+        default: return 'bg-secondary';
+    }
+}
+
+function buildContactRow(item) {
+    const tr = document.createElement('tr');
+    const resn = item.resn || item.residue || "UNK";
+    tr.innerHTML = `
+        <td class="px-0 py-2.5">${resn}</td>
+        <td class="px-3 py-2.5">${item.chain}</td>
+        <td class="px-3 py-2.5 text-right text-secondary group-hover:text-primary">${item.resi}</td>
+        <td class="px-3 py-2.5 text-right font-semibold">${item.distance.toFixed(1)}</td>
+        <td class="px-3 py-2.5"><span class="inline-flex items-center gap-1.5 text-secondary"><span class="w-1.5 h-1.5 rounded-full ${dotColorForType(item.type)}"></span>${item.type}</span></td>
+    `;
+    return tr;
+}
 
 export class LigandTab {
     constructor(props) {
@@ -11,6 +38,7 @@ export class LigandTab {
         this.selectedLigandId = "";
         this.currentStructureIndex = 0;
         this.pocketSimilarity = null;
+        this.availableChains = [];
     }
 
     render() {
@@ -38,7 +66,6 @@ export class LigandTab {
                     Perform an alignment and select a ligand from the list to analyze atomic interactions in the binding pocket.
                 </div>
                 <div class="flex gap-4">
-                    <span id="ligand-volume-badge" class="font-label-sm text-label-sm text-secondary hidden">Volume: -- Å³</span>
                     <span id="ligand-sasa-badge" class="font-label-sm text-label-sm text-secondary hidden">SASA: -- Å²</span>
                 </div>
 
@@ -72,6 +99,25 @@ export class LigandTab {
                     </div>
                     <div id="pocket-similarity-heatmap" class="w-full h-[320px]"></div>
                 </div>
+
+                <div id="interface-section" class="hidden flex-col gap-3 mt-2 pt-4 border-t border-border">
+                    <div class="flex items-baseline justify-between">
+                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Protein-protein interfaces</span>
+                        <span class="font-body-sm text-body-sm text-secondary">Contact residues between two chains</span>
+                    </div>
+                    <div class="flex items-end gap-3">
+                        <label class="flex flex-col gap-1">
+                            <span class="font-label-sm text-label-sm text-secondary">Chain A</span>
+                            <select id="interface-chain-a" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono"></select>
+                        </label>
+                        <label class="flex flex-col gap-1">
+                            <span class="font-label-sm text-label-sm text-secondary">Chain B</span>
+                            <select id="interface-chain-b" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono"></select>
+                        </label>
+                        <button id="interface-analyze-btn" class="px-3 py-1.5 rounded-md bg-accent-muted text-accent font-label-md text-label-md hover:bg-accent hover:text-white transition-colors">Analyze Interface</button>
+                    </div>
+                    <div id="interface-results" class="flex flex-col gap-3"></div>
+                </div>
             </div>
         `;
         this.element = div;
@@ -93,6 +139,9 @@ export class LigandTab {
         structureSelect.addEventListener('change', async (e) => {
             await this.switchStructure(Number.parseInt(e.target.value, 10));
         });
+
+        const analyzeBtn = this.element.querySelector('#interface-analyze-btn');
+        analyzeBtn.addEventListener('click', () => this.analyzeInterface());
     }
 
     populateStructurePicker() {
@@ -126,6 +175,7 @@ export class LigandTab {
             this.ligandsList = [];
         }
         this.populateDropdown();
+        await this.loadAvailableChains();
     }
 
     updateLigands(ligands, runId, selectedPDBs, pocketSimilarity = null) {
@@ -139,6 +189,142 @@ export class LigandTab {
         this.populateDropdown();
         this.clearTable();
         this.renderPocketSimilarity();
+        this.loadAvailableChains();
+    }
+
+    async loadAvailableChains() {
+        if (!this.element) return;
+        const pdbId = this.selectedPDBs[this.currentStructureIndex];
+        if (!pdbId) {
+            this.availableChains = [];
+            this.renderInterfaceSection();
+            return;
+        }
+        try {
+            const data = await fetchChains([pdbId]);
+            const info = data.chains?.[pdbId];
+            this.availableChains = (info?.chains || []).map(c => c.id);
+        } catch (err) {
+            console.error("Failed to load chain list for interface analysis:", err);
+            this.availableChains = [];
+        }
+        this.renderInterfaceSection();
+    }
+
+    renderInterfaceSection() {
+        if (!this.element) return;
+        const section = this.element.querySelector('#interface-section');
+        const chainASelect = this.element.querySelector('#interface-chain-a');
+        const chainBSelect = this.element.querySelector('#interface-chain-b');
+        const results = this.element.querySelector('#interface-results');
+        results.innerHTML = "";
+
+        if (this.availableChains.length < 2) {
+            section.classList.add('hidden');
+            section.classList.remove('flex');
+            return;
+        }
+        section.classList.remove('hidden');
+        section.classList.add('flex');
+
+        const buildOptions = (select, defaultIndex) => {
+            select.innerHTML = "";
+            this.availableChains.forEach((chainId, i) => {
+                const opt = document.createElement('option');
+                opt.value = chainId;
+                opt.textContent = chainId;
+                if (i === defaultIndex) opt.selected = true;
+                select.appendChild(opt);
+            });
+        };
+        buildOptions(chainASelect, 0);
+        buildOptions(chainBSelect, 1);
+    }
+
+    async analyzeInterface() {
+        if (!this.element) return;
+        const chainA = this.element.querySelector('#interface-chain-a').value;
+        const chainB = this.element.querySelector('#interface-chain-b').value;
+        const results = this.element.querySelector('#interface-results');
+
+        if (!chainA || !chainB || chainA === chainB) {
+            results.innerHTML = `<div class="font-body-sm text-body-sm text-secondary py-2">Select two different chains.</div>`;
+            return;
+        }
+
+        results.innerHTML = `
+            <div class="font-body-sm text-body-sm text-secondary py-2">
+                <span class="animate-spin material-symbols-outlined text-[18px]">sync</span> Analyzing interface...
+            </div>
+        `;
+
+        try {
+            const pdbId = this.selectedPDBs[this.currentStructureIndex];
+            const data = await fetchInterface(pdbId, chainA, chainB, this.currentRunId);
+            this.renderInterfaceResults(data.interface);
+        } catch (err) {
+            console.error("Failed to analyze interface:", err);
+            results.innerHTML = `<div class="font-body-sm text-body-sm text-secondary py-2">Failed to analyze interface.</div>`;
+        }
+    }
+
+    renderInterfaceResults(interfaceData) {
+        const results = this.element.querySelector('#interface-results');
+        results.innerHTML = "";
+
+        if (!interfaceData || interfaceData.error) {
+            const msg = document.createElement('div');
+            msg.className = "font-body-sm text-body-sm text-secondary py-2";
+            msg.textContent = interfaceData?.error || "No interface data returned.";
+            results.appendChild(msg);
+            return;
+        }
+
+        const buriedBadge = document.createElement('span');
+        buriedBadge.className = "font-label-sm text-label-sm text-secondary";
+        buriedBadge.textContent = `Buried interface area: ${interfaceData.buried_area?.toFixed(1) ?? '--'} Å²`;
+        results.appendChild(buriedBadge);
+
+        const buildContactTable = (title, contacts) => {
+            const wrapper = document.createElement('div');
+            wrapper.className = "flex flex-col gap-1.5";
+
+            const heading = document.createElement('span');
+            heading.className = "font-label-sm text-label-sm text-secondary uppercase";
+            heading.textContent = title;
+            wrapper.appendChild(heading);
+
+            if (!contacts || contacts.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = "font-body-sm text-body-sm text-secondary py-1";
+                empty.textContent = "No contact residues found.";
+                wrapper.appendChild(empty);
+                return wrapper;
+            }
+
+            const table = document.createElement('table');
+            table.className = "w-full text-left border-collapse";
+            table.innerHTML = `
+                <thead class="font-label-sm text-label-sm text-secondary">
+                    <tr>
+                        <th class="px-0 py-1.5 border-b border-border font-medium">Residue</th>
+                        <th class="px-3 py-1.5 border-b border-border font-medium">Chain</th>
+                        <th class="px-3 py-1.5 border-b border-border font-medium text-right">Resi</th>
+                        <th class="px-3 py-1.5 border-b border-border font-medium text-right">Dist (Å)</th>
+                        <th class="px-3 py-1.5 border-b border-border font-medium">Type</th>
+                    </tr>
+                </thead>
+            `;
+            const tbody = document.createElement('tbody');
+            tbody.className = "font-body-sm text-body-sm text-primary font-mono divide-y divide-border-subtle";
+            contacts.forEach(item => tbody.appendChild(buildContactRow(item)));
+            table.appendChild(tbody);
+            wrapper.appendChild(table);
+            return wrapper;
+        };
+
+        results.appendChild(buildContactTable(`Chain ${interfaceData.chain_a} contacts`, interfaceData.chain_a_contacts));
+        results.appendChild(buildContactTable(`Chain ${interfaceData.chain_b} contacts`, interfaceData.chain_b_contacts));
     }
 
     renderPocketSimilarity() {
@@ -213,7 +399,6 @@ export class LigandTab {
         const desc = this.element.querySelector('#ligand-pocket-desc');
         desc.innerText = "Perform an alignment and select a ligand from the list to analyze atomic interactions in the binding pocket.";
         
-        this.element.querySelector('#ligand-volume-badge').classList.add('hidden');
         this.element.querySelector('#ligand-sasa-badge').classList.add('hidden');
         this.element.querySelector('#interaction-count').innerText = "0 Found";
         
@@ -232,7 +417,6 @@ export class LigandTab {
         const tableBody = this.element.querySelector('#interactions-table-body');
         const desc = this.element.querySelector('#ligand-pocket-desc');
         const countBadge = this.element.querySelector('#interaction-count');
-        const volBadge = this.element.querySelector('#ligand-volume-badge');
         const sasaBadge = this.element.querySelector('#ligand-sasa-badge');
 
         if (!ligandId) {
@@ -260,13 +444,6 @@ export class LigandTab {
             this.onLigandSelected(this.currentStructureIndex, ligandId, contacts);
 
             desc.innerText = `Conserved catalytic pocket near ligand ${metadata.ligand}. Stable hydrophobic cluster showing coordinated interactions.`;
-            
-            if (metadata.pocket_volume) {
-                volBadge.innerText = `Volume: ${metadata.pocket_volume.toFixed(1)} Å³`;
-                volBadge.classList.remove('hidden');
-            } else {
-                volBadge.classList.add('hidden');
-            }
 
             if (metadata.pocket_sasa) {
                 sasaBadge.innerText = `SASA: ${metadata.pocket_sasa.toFixed(1)} Å²`;
@@ -287,30 +464,9 @@ export class LigandTab {
                     </tr>
                 `;
             } else {
-                contacts.forEach((item, index) => {
-                    const tr = document.createElement('tr');
+                contacts.forEach((item) => {
+                    const tr = buildContactRow(item);
                     tr.className = "hover:bg-surface-raised transition-colors cursor-pointer group";
-
-                    // Functional data-encoding: dot color signals interaction type
-                    let dotColor = "bg-muted";
-                    if (item.type.toLowerCase().includes("h-bond")) {
-                        dotColor = "bg-accent";
-                    } else if (item.type.toLowerCase().includes("pi")) {
-                        dotColor = "bg-[#8B5CF6]";
-                    } else if (item.type.toLowerCase().includes("salt")) {
-                        dotColor = "bg-success";
-                    } else if (item.type.toLowerCase().includes("metal")) {
-                        dotColor = "bg-warning";
-                    }
-
-                    const resn = item.resn || item.residue || "UNK";
-                    tr.innerHTML = `
-                        <td class="px-0 py-2.5">${resn}</td>
-                        <td class="px-3 py-2.5">${item.chain}</td>
-                        <td class="px-3 py-2.5 text-right text-secondary group-hover:text-primary">${item.resi}</td>
-                        <td class="px-3 py-2.5 text-right font-semibold">${item.distance.toFixed(1)}</td>
-                        <td class="px-3 py-2.5"><span class="inline-flex items-center gap-1.5 text-secondary"><span class="w-1.5 h-1.5 rounded-full ${dotColor}"></span>${item.type}</span></td>
-                    `;
 
                     tr.addEventListener('click', () => {
                         // Highlight table row

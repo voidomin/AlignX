@@ -72,8 +72,9 @@ class TestCalculateInteractions:
         residues = {i["residue"] for i in result["interactions"]}
         assert residues == {"ALA"}
         entry = result["interactions"][0]
-        assert entry["type"] == "Hydrophobic"
+        assert entry["type"] == "Van der Waals"
         assert entry["distance"] < 5.0
+        assert result["pocket_sasa"] >= 0
 
     def test_invalid_ligand_id_format_reports_error(self, fixture_pdb):
         analyzer = LigandAnalyzer()

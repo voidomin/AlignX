@@ -21,6 +21,7 @@ export class Viewer3D {
     // original source chain. sourceChain is only for HUD display text.
     structures = [];
     rmsdDf = null;
+    confidenceColoringEnabled = false;
 
     render() {
         const div = document.createElement('div');
@@ -30,6 +31,9 @@ export class Viewer3D {
             <div class="px-4 py-3 border-b border-border flex justify-between items-center">
                 <h3 class="font-body-md text-body-md font-semibold text-primary">Superposition Viewer</h3>
                 <div class="flex gap-2">
+                    <button id="btn-toggle-confidence" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-secondary" title="Toggle pLDDT Confidence Coloring (AlphaFold/ESM structures)" disabled>
+                        <span class="material-symbols-outlined text-[18px]">gradient</span>
+                    </button>
                     <button id="btn-toggle-surface" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Surface">
                         <span class="material-symbols-outlined text-[18px]">blur_on</span>
                     </button>
@@ -78,8 +82,13 @@ export class Viewer3D {
     }
 
     setupEventListeners() {
+        const toggleConfidenceBtn = this.element.querySelector('#btn-toggle-confidence');
         const toggleSurfaceBtn = this.element.querySelector('#btn-toggle-surface');
         const resetViewBtn = this.element.querySelector('#btn-reset-view');
+
+        toggleConfidenceBtn.addEventListener('click', () => {
+            this.colorByConfidence(!this.confidenceColoringEnabled);
+        });
 
         toggleSurfaceBtn.addEventListener('click', () => {
             if (!this.viewer) return;
@@ -207,9 +216,73 @@ export class Viewer3D {
             this.viewer.zoomTo();
             this.viewer.render();
             this.isSurfaceVisible = false;
+            this.confidenceColoringEnabled = false;
+            this._updateConfidenceButtonState();
         } catch (err) {
             console.error("Error loading superposition coordinate data:", err);
         }
+    }
+
+    // AlphaFold ("AF-") and ESM Atlas ("ESM-") structures encode per-residue
+    // pLDDT confidence in the B-factor column - mirrors the backend's own
+    // is_plddt_model check (pdb_manager.py). Mustang's alignment output
+    // preserves B-factor unmodified (confirmed by reading Mustang's own
+    // source), so the loaded model already carries real pLDDT values with
+    // no extra backend plumbing needed.
+    _isPlddtStructure(pdbId) {
+        const upper = (pdbId || '').toUpperCase();
+        return upper.startsWith('AF-') || upper.startsWith('ESM-');
+    }
+
+    hasPlddtStructures() {
+        return this.structures.some(s => this._isPlddtStructure(s.pdbId));
+    }
+
+    _updateConfidenceButtonState() {
+        const btn = this.element?.querySelector('#btn-toggle-confidence');
+        if (!btn) return;
+        btn.disabled = !this.hasPlddtStructures();
+    }
+
+    // AlphaFold writes pLDDT on a 0-100 scale, ESM Atlas as a 0-1 fraction -
+    // rather than assuming either, this reads the real min/max B-factor
+    // already present on the loaded model's atoms for each structure, so
+    // the color gradient is correct regardless of which convention the
+    // file used.
+    colorByConfidence(enabled) {
+        if (!this.viewer) return;
+        this.confidenceColoringEnabled = enabled;
+
+        if (!enabled) {
+            this.resetCartoonStyles();
+            return;
+        }
+
+        const model = this.viewer.getModel();
+        if (!model) return;
+
+        this.structures.forEach(s => {
+            if (!this._isPlddtStructure(s.pdbId)) {
+                this.viewer.setStyle({ chain: s.mustangChain }, { cartoon: { color: s.color, opacity: 0.85 } });
+                return;
+            }
+
+            const atoms = model.selectedAtoms({ chain: s.mustangChain });
+            const values = atoms.map(a => a.b).filter(v => typeof v === 'number');
+            if (values.length === 0) {
+                this.viewer.setStyle({ chain: s.mustangChain }, { cartoon: { color: s.color, opacity: 0.85 } });
+                return;
+            }
+
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+            this.viewer.setStyle({ chain: s.mustangChain }, {
+                cartoon: { colorscheme: { prop: 'b', gradient: 'roygb', min, max } }
+            });
+        });
+
+        this.viewer.zoomTo();
+        this.viewer.render();
     }
 
     // Ligand atoms are never present in the aligned structure (Mustang only
@@ -329,6 +402,7 @@ export class Viewer3D {
         this.structures = [];
         this.rmsdDf = null;
         this.currentRunId = null;
+        this.confidenceColoringEnabled = false;
         if (this.viewer) {
             this.viewer.clear();
             this.viewer.render();
@@ -336,6 +410,7 @@ export class Viewer3D {
         if (this.element) {
             this.element.querySelector("#ambient-placeholder").style.display = "flex";
             this._renderEmptyHUD();
+            this._updateConfidenceButtonState();
         }
     }
 }

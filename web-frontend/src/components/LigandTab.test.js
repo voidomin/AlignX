@@ -4,9 +4,11 @@ import { LigandTab } from './LigandTab.js';
 vi.mock('../api.js', () => ({
     fetchInteractions: vi.fn(),
     fetchLigands: vi.fn(),
+    fetchChains: vi.fn().mockResolvedValue({ chains: {} }),
+    fetchInterface: vi.fn(),
 }));
 
-import { fetchInteractions, fetchLigands } from '../api.js';
+import { fetchInteractions, fetchLigands, fetchChains, fetchInterface } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new LigandTab({
@@ -57,10 +59,9 @@ describe('LigandTab', () => {
         fetchInteractions.mockResolvedValue({
             interactions: {
                 ligand: 'RET_A_296',
-                pocket_volume: 123.4,
                 pocket_sasa: 56.7,
                 interactions: [
-                    { resn: 'TYR', chain: 'A', resi: 191, distance: 3.2, type: 'H-Bond' },
+                    { resn: 'TYR', chain: 'A', resi: 191, distance: 3.2, type: 'Hydrogen Bond' },
                 ],
             },
         });
@@ -74,13 +75,21 @@ describe('LigandTab', () => {
 
         expect(fetchInteractions).toHaveBeenCalledWith('4RLT', 'RET_A_296', 'run_1');
         expect(onLigandSelected).toHaveBeenCalledWith(0, 'RET_A_296', [
-            { resn: 'TYR', chain: 'A', resi: 191, distance: 3.2, type: 'H-Bond' },
+            { resn: 'TYR', chain: 'A', resi: 191, distance: 3.2, type: 'Hydrogen Bond' },
         ]);
         expect(tab.element.querySelector('#interaction-count').innerText).toBe('1 Found');
-        expect(tab.element.querySelector('#ligand-volume-badge').classList.contains('hidden')).toBe(false);
+        expect(tab.element.querySelector('#ligand-sasa-badge').classList.contains('hidden')).toBe(false);
+        expect(tab.element.querySelector('#ligand-sasa-badge').innerText).toBe('SASA: 56.7 Å²');
         const rows = tab.element.querySelectorAll('#interactions-table-body tr');
         expect(rows).toHaveLength(1);
         expect(rows[0].textContent).toContain('TYR');
+    });
+
+    it('does not render a Volume badge (removed - no pocket-volume computation exists)', () => {
+        const tab = makeTab();
+        tab.render();
+
+        expect(tab.element.querySelector('#ligand-volume-badge')).toBeNull();
     });
 
     it('clicking a contact row passes aligned_resi (the raw->aligned residue remap) to onResidueSelected', async () => {
@@ -88,7 +97,7 @@ describe('LigandTab', () => {
             interactions: {
                 ligand: 'RET_A_296',
                 interactions: [
-                    { resn: 'TYR', chain: 'A', resi: 191, aligned_resi: 42, distance: 3.2, type: 'H-Bond' },
+                    { resn: 'TYR', chain: 'A', resi: 191, aligned_resi: 42, distance: 3.2, type: 'Hydrogen Bond' },
                 ],
             },
         });
@@ -228,6 +237,94 @@ describe('LigandTab', () => {
             tab.updateLigands(tab.ligandsList, tab.currentRunId, tab.selectedPDBs, tab.pocketSimilarity);
 
             expect(tab.element.querySelector('#pocket-similarity-section').classList.contains('hidden')).toBe(false);
+        });
+    });
+
+    describe('protein-protein interface analysis', () => {
+        it('stays hidden when the structure has fewer than 2 chains', async () => {
+            fetchChains.mockResolvedValue({ chains: { '4RLT': { chains: [{ id: 'A', residue_count: 100 }] } } });
+            const tab = makeTab();
+            tab.render();
+
+            tab.updateLigands([], 'run_1', ['4RLT']);
+            await tab.loadAvailableChains();
+
+            expect(tab.element.querySelector('#interface-section').classList.contains('hidden')).toBe(true);
+        });
+
+        it('shows the section and populates chain dropdowns when the structure has 2+ chains', async () => {
+            fetchChains.mockResolvedValue({
+                chains: { '4HHB': { chains: [{ id: 'A' }, { id: 'B' }, { id: 'C' }, { id: 'D' }] } },
+            });
+            const tab = makeTab({ selectedPDBs: ['4HHB'] });
+            tab.render();
+
+            tab.updateLigands([], 'run_1', ['4HHB']);
+            await tab.loadAvailableChains();
+
+            const section = tab.element.querySelector('#interface-section');
+            expect(section.classList.contains('hidden')).toBe(false);
+            const chainAOptions = Array.from(tab.element.querySelector('#interface-chain-a').options).map(o => o.value);
+            const chainBOptions = Array.from(tab.element.querySelector('#interface-chain-b').options).map(o => o.value);
+            expect(chainAOptions).toEqual(['A', 'B', 'C', 'D']);
+            expect(chainBOptions).toEqual(['A', 'B', 'C', 'D']);
+        });
+
+        it('rejects analyzing when the same chain is selected twice', async () => {
+            fetchChains.mockResolvedValue({ chains: { '4HHB': { chains: [{ id: 'A' }, { id: 'B' }] } } });
+            const tab = makeTab({ selectedPDBs: ['4HHB'] });
+            tab.render();
+            tab.updateLigands([], 'run_1', ['4HHB']);
+            await tab.loadAvailableChains();
+
+            tab.element.querySelector('#interface-chain-a').value = 'A';
+            tab.element.querySelector('#interface-chain-b').value = 'A';
+            await tab.analyzeInterface();
+
+            expect(fetchInterface).not.toHaveBeenCalled();
+            expect(tab.element.querySelector('#interface-results').textContent).toContain('Select two different chains');
+        });
+
+        it('renders contact tables and buried area for a successful analysis', async () => {
+            fetchChains.mockResolvedValue({ chains: { '4HHB': { chains: [{ id: 'A' }, { id: 'B' }] } } });
+            fetchInterface.mockResolvedValue({
+                interface: {
+                    chain_a: 'A',
+                    chain_b: 'B',
+                    chain_a_contacts: [{ resn: 'HIS', chain: 'A', resi: 10, distance: 3.1, type: 'Salt Bridge' }],
+                    chain_b_contacts: [{ resn: 'ASP', chain: 'B', resi: 20, distance: 3.4, type: 'Hydrogen Bond' }],
+                    buried_area: 842.6,
+                },
+            });
+            const tab = makeTab({ selectedPDBs: ['4HHB'] });
+            tab.render();
+            tab.updateLigands([], 'run_1', ['4HHB']);
+            await tab.loadAvailableChains();
+
+            tab.element.querySelector('#interface-chain-a').value = 'A';
+            tab.element.querySelector('#interface-chain-b').value = 'B';
+            await tab.analyzeInterface();
+
+            expect(fetchInterface).toHaveBeenCalledWith('4HHB', 'A', 'B', 'run_1');
+            const results = tab.element.querySelector('#interface-results');
+            expect(results.textContent).toContain('842.6');
+            expect(results.textContent).toContain('HIS');
+            expect(results.textContent).toContain('ASP');
+        });
+
+        it('shows the backend error message when interface analysis fails server-side', async () => {
+            fetchChains.mockResolvedValue({ chains: { '4HHB': { chains: [{ id: 'A' }, { id: 'B' }] } } });
+            fetchInterface.mockResolvedValue({ interface: { error: 'Chain Z not found in structure' } });
+            const tab = makeTab({ selectedPDBs: ['4HHB'] });
+            tab.render();
+            tab.updateLigands([], 'run_1', ['4HHB']);
+            await tab.loadAvailableChains();
+
+            tab.element.querySelector('#interface-chain-a').value = 'A';
+            tab.element.querySelector('#interface-chain-b').value = 'B';
+            await tab.analyzeInterface();
+
+            expect(tab.element.querySelector('#interface-results').textContent).toContain('Chain Z not found in structure');
         });
     });
 });

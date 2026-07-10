@@ -1,4 +1,4 @@
-import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl, getAlignmentReportUrl, getLabNotebookUrl, getCitationsUrl, getRmsdCsvUrl, getHeatmapPngUrl, getReportZipUrl } from '../api';
+import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl, getAlignmentReportUrl, getLabNotebookUrl, getCitationsUrl, getRmsdCsvUrl, getHeatmapPngUrl, getReportZipUrl, getNewickUrl } from '../api';
 
 const REPORT_SECTIONS = [
     { key: 'summary', label: 'Summary' },
@@ -102,6 +102,10 @@ export class SequenceTab {
                     <div class="flex items-center justify-between py-2 border-b border-border-subtle">
                         <span class="font-body-sm text-body-sm text-primary font-mono">rmsd_heatmap.png</span>
                         <a id="download-heatmap-png-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download PNG</a>
+                    </div>
+                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
+                        <span class="font-body-sm text-body-sm text-primary font-mono">tree.newick</span>
+                        <a id="download-newick-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download Tree</a>
                     </div>
                     <div class="flex items-center justify-between py-2">
                         <span class="font-body-sm text-body-sm text-primary font-mono">everything.zip</span>
@@ -263,6 +267,7 @@ export class SequenceTab {
         const citationsLink = this.element.querySelector('#download-citations-link');
         const rmsdCsvLink = this.element.querySelector('#download-rmsd-csv-link');
         const heatmapPngLink = this.element.querySelector('#download-heatmap-png-link');
+        const newickLink = this.element.querySelector('#download-newick-link');
         const zipLink = this.element.querySelector('#download-zip-link');
         const motifBtn = this.element.querySelector('#motif-search-btn');
         motifBtn.disabled = !this.currentRunId;
@@ -285,6 +290,9 @@ export class SequenceTab {
 
             heatmapPngLink.href = getHeatmapPngUrl(this.currentRunId);
             heatmapPngLink.classList.remove('opacity-55', 'pointer-events-none');
+
+            newickLink.href = getNewickUrl(this.currentRunId);
+            newickLink.classList.remove('opacity-55', 'pointer-events-none');
 
             zipLink.href = getReportZipUrl(this.currentRunId);
             zipLink.classList.remove('opacity-55', 'pointer-events-none');
@@ -309,6 +317,9 @@ export class SequenceTab {
 
             heatmapPngLink.href = "#";
             heatmapPngLink.classList.add('opacity-55', 'pointer-events-none');
+
+            newickLink.href = "#";
+            newickLink.classList.add('opacity-55', 'pointer-events-none');
 
             zipLink.href = "#";
             zipLink.classList.add('opacity-55', 'pointer-events-none');

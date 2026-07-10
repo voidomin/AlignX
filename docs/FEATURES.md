@@ -36,6 +36,8 @@ for how to actually use each one.
 | 9 | Interactive phylogenetic tree (UPGMA) | Both | [§2.7](#27-phylogenetic-tree) |
 | 10 | Sequence identity / conservation view | Both | [§2.8](#28-sequence-view) |
 | 11 | Dashboard (aggregate stats, recent activity) | SPA | [§2.9](#29-dashboard) |
+| 11a | Alignment quality metrics (Ramachandran, TM-score/GDT-TS) | Both | [§2.10](#210-alignment-quality-metrics) |
+| 11b | Protein-protein interface analysis | SPA | [§2.11](#211-protein-protein-interfaces) |
 | 12 | Structure-to-function discovery ("Discover" mode) | SPA | [§3](#3-discover-mode-structure-to-function) |
 | 13 | Selectable Foldseek search databases (9 total) | SPA | [§3.1](#31-search-databases) |
 | 14 | Multi-source annotation aggregation (6 sources) | SPA | [§3.2](#32-annotation-sources) |
@@ -112,6 +114,14 @@ residue in the sequence view to highlight it in 3D. Drag to rotate, scroll to
 zoom, and the initial auto-rotate stops itself after a few seconds (or the moment
 you interact) so it never keeps spinning in the background.
 
+For AlphaFold- or ESM Atlas-sourced structures in the run, a **pLDDT confidence
+coloring** toggle recolors that structure by its real per-residue prediction
+confidence (a red-to-blue gradient, scaled to whatever range is actually present
+— AlphaFold's 0-100 scale and ESM Atlas's 0-1 fraction are both handled without
+needing to know which one you're looking at). The toggle is disabled when no
+structure in the run is a predicted model, since experimentally-determined
+structures don't carry this kind of per-residue confidence score.
+
 ### 2.3 RMSD Heatmap
 
 A Plotly-powered heatmap of pairwise RMSD values across every structure in the
@@ -135,8 +145,15 @@ current run, to see exactly how structural relationships shifted between the two
 
 For any structure in the run (not just the first), auto-detect bound ligands and
 their binding pockets, calculate cross-structure interaction similarity, and
-visualize SASA (Solvent Accessible Surface Area). Switch the structure picker to
-refresh the ligand list and interaction view for a different member of the run.
+visualize SASA (Solvent Accessible Surface Area) for the pocket-lining residues.
+Switch the structure picker to refresh the ligand list and interaction view for
+a different member of the run.
+
+Each contact residue is classified by real geometry — **Hydrogen Bond**,
+**Salt Bridge**, **Van der Waals**, or **Polar Contact** — based on
+donor/acceptor/charged-atom proximity (a heavy-atom-only heuristic, since PDB
+files carry no hydrogens; this doesn't attempt pi-stacking or metal
+coordination, both of which need chemistry data a PDB file doesn't provide).
 
 When a run has two or more detected ligands, an interactive **binding-pocket
 similarity matrix** (Jaccard index of pocket-residue composition) shows how
@@ -167,6 +184,27 @@ across all aligned structures at once.
 *(SPA only)* Aggregate stats across everything you've run — total runs, proteins
 analyzed, cache size — plus recent activity and one-click quick-start examples for
 getting oriented fast.
+
+### 2.10 Alignment Quality Metrics
+
+The Analytics tab's Quality panel reports two independent signals for how
+trustworthy an alignment is: a **Ramachandran score** (percentage of residues in
+favored phi/psi torsion regions, with an outlier list) computed per structure,
+and a **TM-score / GDT-TS table** — standard structural-alignment quality
+metrics (each structure's score averaged against every other structure in the
+run) that flag whether structures are a genuinely strong match or only loosely
+superposed despite a low RMSD.
+
+### 2.11 Protein-Protein Interfaces
+
+*(SPA only)* For any multi-chain structure in the run (e.g. a hemoglobin
+tetramer's four subunits), pick two chains and find every contact residue
+between them — the same real geometry-based classification Ligand Hunter uses
+(Hydrogen Bond / Salt Bridge / Van der Waals / Polar Contact) — plus a **buried
+interface area** (total ΔSASA: each chain's solvent-accessible surface area
+alone, minus the complex's, the standard way interface size is reported).
+Operates on the structure's original, pre-alignment file, so it works even
+though Mustang itself only ever aligns one chain per structure.
 
 ---
 
@@ -253,9 +291,11 @@ JSON — the same export parity Compare mode has always had.
 
 ### 4.4 Raw Data Exports
 
-Download the underlying RMSD matrix as a plain CSV, or the RMSD heatmap as a
-raw PNG image, directly — for pulling numbers into your own analysis or
-dropping a figure straight into a slide deck, without generating a full report.
+Download the underlying RMSD matrix as a plain CSV, the RMSD heatmap as a raw
+PNG image, or the phylogenetic tree as a standard Newick file — for pulling
+numbers into your own analysis, dropping a figure straight into a slide deck,
+or opening the tree in a dedicated phylogenetics tool, without generating a
+full report.
 
 ### 4.5 Download Everything
 

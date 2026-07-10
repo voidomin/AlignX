@@ -11,6 +11,7 @@ vi.mock('../api.js', () => ({
     getRmsdCsvUrl: vi.fn((runId) => `http://api/api/report/rmsd-csv?run_id=${runId}`),
     getHeatmapPngUrl: vi.fn((runId) => `http://api/api/report/heatmap-png?run_id=${runId}`),
     getReportZipUrl: vi.fn((runId) => `http://api/api/report/zip?run_id=${runId}`),
+    getNewickUrl: vi.fn((runId) => `http://api/api/report/newick?run_id=${runId}`),
 }));
 
 import { fetchSequence } from '../api.js';
@@ -58,6 +59,10 @@ describe('SequenceTab', () => {
         const zipLink = tab.element.querySelector('#download-zip-link');
         expect(zipLink.classList.contains('pointer-events-none')).toBe(false);
         expect(zipLink.href).toContain('run_123');
+
+        const newickLink = tab.element.querySelector('#download-newick-link');
+        expect(newickLink.classList.contains('pointer-events-none')).toBe(false);
+        expect(newickLink.href).toContain('run_123');
     });
 
     it('renders the sequence alignment grid with conservation-based coloring', async () => {

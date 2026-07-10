@@ -813,6 +813,40 @@ def test_interactions_endpoint_adds_aligned_resi_when_run_id_given():
         assert contacts[1]["aligned_resi"] is None
 
 
+def test_interface_endpoint():
+    with patch("src.backend.api.interface_analyzer") as mock_analyzer, patch(
+        "pathlib.Path.exists", return_value=True
+    ):
+        mock_analyzer.calculate_interface.return_value = {
+            "chain_a": "A",
+            "chain_b": "B",
+            "chain_a_contacts": [],
+            "chain_b_contacts": [],
+            "buried_area": 512.3,
+        }
+
+        response = client.get(
+            "/api/interface?pdb_id=4RLT&chain_a=A&chain_b=B&run_id=run_123"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["pdb_id"] == "4RLT"
+        assert data["interface"]["buried_area"] == 512.3
+        mock_analyzer.calculate_interface.assert_called_once()
+
+
+def test_interface_endpoint_404s_when_structure_not_found():
+    with patch("pathlib.Path.exists", return_value=False):
+        response = client.get("/api/interface?pdb_id=4RLT&chain_a=A&chain_b=B")
+    assert response.status_code == 404
+
+
+def test_interface_endpoint_400s_on_invalid_chain_param():
+    response = client.get("/api/interface?pdb_id=4RLT&chain_a=../etc&chain_b=B")
+    assert response.status_code == 400
+
+
 def test_sequence_endpoint():
     """Verify that the sequence alignment endpoint returns correct structure and calculations."""
     with patch(
@@ -1453,6 +1487,38 @@ def test_heatmap_png_endpoint_404s_when_file_missing_on_disk(tmp_path):
 def test_heatmap_png_endpoint_404s_for_unknown_run():
     with patch("src.backend.api.history_db.get_run", return_value=None):
         response = client.get("/api/report/heatmap-png?run_id=nope")
+        assert response.status_code == 404
+
+
+def test_newick_endpoint_returns_the_saved_file(tmp_path):
+    newick = tmp_path / "tree.newick"
+    newick.write_text("(4RLT:0.1,3UG9:0.2);")
+
+    with patch(
+        "src.backend.api._lookup_run_and_result_dir",
+        return_value=({"id": "run_123"}, tmp_path),
+    ):
+        response = client.get("/api/report/newick?run_id=run_123")
+
+        assert response.status_code == 200
+        assert "tree_run_123.newick" in response.headers["content-disposition"]
+        assert response.content == newick.read_bytes()
+
+
+def test_newick_endpoint_404s_when_file_missing_on_disk(tmp_path):
+    with patch(
+        "src.backend.api._lookup_run_and_result_dir",
+        return_value=({"id": "run_123"}, tmp_path),
+    ):
+        response = client.get("/api/report/newick?run_id=run_123")
+
+        assert response.status_code == 404
+        assert "No phylogenetic tree found" in response.json()["detail"]
+
+
+def test_newick_endpoint_404s_for_unknown_run():
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        response = client.get("/api/report/newick?run_id=nope")
         assert response.status_code == 404
 
 
