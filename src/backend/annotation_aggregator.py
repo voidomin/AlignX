@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
-from src.utils.logger import get_logger
+from src.utils.logger import get_logger, sanitize_for_log
 
 logger = get_logger()
 
@@ -191,7 +191,9 @@ class AnnotationAggregator:
                 if cached is not None:
                     return json.loads(cached)
             except Exception as e:
-                logger.warning(f"Annotation cache read failed for {cache_key}: {e}")
+                logger.warning(
+                    f"Annotation cache read failed for {sanitize_for_log(cache_key)}: {e}"
+                )
 
         result = await fetch_fn()
 
@@ -201,7 +203,9 @@ class AnnotationAggregator:
                     cache_key, service, json.dumps(result)
                 )
             except Exception as e:
-                logger.warning(f"Annotation cache write failed for {cache_key}: {e}")
+                logger.warning(
+                    f"Annotation cache write failed for {sanitize_for_log(cache_key)}: {e}"
+                )
 
         return result
 
@@ -296,7 +300,9 @@ class AnnotationAggregator:
                 entry = response.json().get(pdb_id.lower(), {})
                 return self._parse_sifts_chain_accessions(entry)
             except httpx.HTTPError as e:
-                logger.warning(f"SIFTS lookup failed for {pdb_id}: {e}")
+                logger.warning(
+                    f"SIFTS lookup failed for {sanitize_for_log(pdb_id)}: {e}"
+                )
                 return {}
 
         chain_accessions = await self._get_or_fetch(f"sifts:{pdb_id}", "sifts", _fetch)
@@ -369,7 +375,9 @@ class AnnotationAggregator:
                     )
                 return entries
             except httpx.HTTPError as e:
-                logger.warning(f"InterPro lookup failed for {accession}: {e}")
+                logger.warning(
+                    f"InterPro lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
                 return []
 
         return await self._get_or_fetch(f"interpro:{accession}", "interpro", _fetch)
@@ -401,7 +409,9 @@ class AnnotationAggregator:
                     if r.get("goId")
                 ]
             except httpx.HTTPError as e:
-                logger.warning(f"QuickGO lookup failed for {accession}: {e}")
+                logger.warning(
+                    f"QuickGO lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
                 return []
 
         return await self._get_or_fetch(f"quickgo:{accession}", "quickgo", _fetch)
@@ -453,7 +463,9 @@ class AnnotationAggregator:
                     if isinstance(r, dict) and r.get("preferredName_B")
                 ]
             except httpx.HTTPError as e:
-                logger.warning(f"STRING lookup failed for {accession}: {e}")
+                logger.warning(
+                    f"STRING lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
                 return []
 
         return await self._get_or_fetch(
@@ -480,7 +492,9 @@ class AnnotationAggregator:
                     if p.get("stId")
                 ][:limit]
             except httpx.HTTPError as e:
-                logger.warning(f"Reactome lookup failed for {accession}: {e}")
+                logger.warning(
+                    f"Reactome lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
                 return []
 
         return await self._get_or_fetch(f"reactome:{accession}", "reactome", _fetch)
@@ -517,7 +531,9 @@ class AnnotationAggregator:
                         )
                 return domains
             except httpx.HTTPError as e:
-                logger.warning(f"GMGC features lookup failed for {gene_id}: {e}")
+                logger.warning(
+                    f"GMGC features lookup failed for {sanitize_for_log(gene_id)}: {e}"
+                )
                 return []
 
         return await self._get_or_fetch(f"gmgc:{gene_id}", "gmgc", _fetch)

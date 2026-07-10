@@ -432,7 +432,9 @@ class HistoryDatabase:
                     return None
                 return payload
         except Exception:
-            logger.exception(f"Failed to read annotation cache for {cache_key}")
+            logger.exception(
+                f"Failed to read annotation cache for {sanitize_for_log(cache_key)}"
+            )
             return None
 
     def set_annotation_cache(self, cache_key: str, service: str, payload: str) -> bool:
@@ -453,5 +455,7 @@ class HistoryDatabase:
                 conn.commit()
             return True
         except Exception:
-            logger.exception(f"Failed to write annotation cache for {cache_key}")
+            logger.exception(
+                f"Failed to write annotation cache for {sanitize_for_log(cache_key)}"
+            )
             return False
