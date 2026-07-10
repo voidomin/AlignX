@@ -451,7 +451,7 @@ export class AnalyticsTab {
 
     renderRmsfChart() {
         const rmsfDiv = this.element.querySelector('#rmsf-plotly-chart');
-        if (!(this.rmsfValues?.length > 0)) {
+        if (!this.rmsfValues?.length) {
             if (this.currentRunId) {
                 rmsfDiv.innerHTML = `
                     <div class="flex items-center justify-center h-full text-secondary font-body-sm">
