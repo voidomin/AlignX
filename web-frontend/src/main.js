@@ -9,6 +9,7 @@ import { ClustersTab } from './components/ClustersTab';
 import { ComparisonTab } from './components/ComparisonTab';
 import { HistoryPanel } from './components/HistoryPanel';
 import { DashboardTab } from './components/DashboardTab';
+import { SettingsTab } from './components/SettingsTab';
 import { DiscoverTab } from './components/DiscoverTab';
 import { fetchChains, runAlignment, pollJobUntilDone, fetchLigands, getAlignmentReportUrl, isValidPdbId, uploadStructure as apiUploadStructure, fetchRun, setApiKeyOverride } from './api';
 
@@ -79,7 +80,9 @@ class App {
             }
         });
 
-        this.sequenceTab = new SequenceTab();
+        this.sequenceTab = new SequenceTab({
+            onHighlightResidues: (chainMapping) => this.viewer3D.highlightResidues(chainMapping)
+        });
         this.analyticsTab = new AnalyticsTab();
         this.clustersTab = new ClustersTab();
         this.comparisonTab = new ComparisonTab();
@@ -94,6 +97,7 @@ class App {
         });
 
         this.discoverTab = new DiscoverTab();
+        this.settingsTab = new SettingsTab();
     }
 
     render(rootElement) {
@@ -175,7 +179,7 @@ class App {
             pane.appendChild(this.discoverTab.render());
         } else if (this.activeTab === 'ligands') {
             pane.appendChild(this.ligandTab.render());
-            this.ligandTab.updateLigands(this.currentLigands, this.currentRunId, this.selectedPDBs);
+            this.ligandTab.updateLigands(this.currentLigands, this.currentRunId, this.selectedPDBs, this.ligandTab.pocketSimilarity);
         } else if (this.activeTab === 'sequence') {
             pane.appendChild(this.sequenceTab.render());
             this.sequenceTab.updateResults(this.currentRunId, this.sequenceTab.stats);
@@ -197,6 +201,8 @@ class App {
             this.comparisonTab.updateResults(this.currentRunId);
         } else if (this.activeTab === 'history') {
             pane.appendChild(this.historyPanel.render());
+        } else if (this.activeTab === 'settings') {
+            pane.appendChild(this.settingsTab.render());
         }
     }
 
@@ -338,7 +344,7 @@ class App {
             this.currentLigands = ligData.ligands || [];
 
             // Update tabs
-            this.ligandTab.updateLigands(this.currentLigands, results.id, this.selectedPDBs);
+            this.ligandTab.updateLigands(this.currentLigands, results.id, this.selectedPDBs, results.ligand_pocket_similarity);
             this.sequenceTab.updateResults(results.id, results.stats);
             this.analyticsTab.updateResults(results.id, this.heatmapFig, this.treeFig, this.ramachandranStats, results.rmsf_values, results.insights);
             this.clustersTab.updateResults(this.rmsdDf, this.pdbMetadata);
@@ -446,7 +452,12 @@ class App {
         }
 
         // Update tabs
-        this.ligandTab.updateLigands(this.currentLigands, run.id, this.selectedPDBs);
+        this.ligandTab.updateLigands(
+            this.currentLigands,
+            run.id,
+            this.selectedPDBs,
+            metadata.results ? metadata.results.ligand_pocket_similarity : null
+        );
         this.sequenceTab.updateResults(run.id, stats);
         this.analyticsTab.updateResults(
             run.id,

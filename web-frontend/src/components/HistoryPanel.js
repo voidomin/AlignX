@@ -1,4 +1,4 @@
-import { fetchHistory, getShareLink } from '../api';
+import { fetchHistory, getShareLink, deleteRun, clearAllHistory } from '../api';
 
 const PAGE_SIZE = 20;
 
@@ -21,6 +21,7 @@ export class HistoryPanel {
                     <span class="eyebrow">Table — Session History</span>
                     <h2 class="section-title">Past runs</h2>
                 </div>
+                <button id="history-clear-all-btn" class="font-label-sm text-label-sm text-secondary hover:text-error transition-colors underline decoration-dotted">Clear All History</button>
             </header>
 
             <div class="section-body">
@@ -33,8 +34,29 @@ export class HistoryPanel {
             </div>
         `;
         this.element = div;
+        this.element.querySelector('#history-clear-all-btn').addEventListener('click', () => this.clearAll());
         this.loadHistoryData();
         return div;
+    }
+
+    async clearAll() {
+        if (this.runsList.length === 0) return;
+        if (!confirm("Clear all run history? This cannot be undone.")) return;
+
+        try {
+            await clearAllHistory();
+            this.runsList = [];
+            this.total = 0;
+            const container = this.element.querySelector('#history-runs-list');
+            container.innerHTML = `
+                <div class="text-center py-12 text-secondary font-body-sm">
+                    No past alignment sessions found.
+                </div>
+            `;
+        } catch (err) {
+            console.error("Failed to clear history:", err);
+            alert(err.message || "Failed to clear history.");
+        }
     }
 
     async loadHistoryData() {
@@ -108,6 +130,7 @@ export class HistoryPanel {
                     <span class="text-[10px] font-medium capitalize text-success" data-field="status"></span>
                     <span class="font-label-sm text-[10px] text-secondary" data-field="time"></span>
                     <button class="share-run-btn font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Share</button>
+                    <button class="delete-run-btn font-label-sm text-label-sm text-secondary hover:text-error transition-colors underline decoration-dotted">Delete</button>
                 </div>
             `;
 
@@ -135,6 +158,31 @@ export class HistoryPanel {
                 const original = shareBtn.innerText;
                 shareBtn.innerText = 'Copied!';
                 setTimeout(() => { shareBtn.innerText = original; }, 1500);
+            });
+
+            const deleteBtn = div.querySelector('.delete-run-btn');
+            deleteBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                if (!confirm(`Delete run ${run.id}? This cannot be undone.`)) return;
+
+                try {
+                    await deleteRun(run.id);
+                    this.runsList = this.runsList.filter(r => r.id !== run.id);
+                    this.total = Math.max(0, this.total - 1);
+                    div.remove();
+                    if (this.runsList.length === 0) {
+                        container.innerHTML = `
+                            <div class="text-center py-12 text-secondary font-body-sm">
+                                No past alignment sessions found.
+                            </div>
+                        `;
+                    } else {
+                        this.renderLoadMoreControl();
+                    }
+                } catch (err) {
+                    console.error("Failed to delete run:", err);
+                    alert(err.message || "Failed to delete run.");
+                }
             });
 
             container.appendChild(div);

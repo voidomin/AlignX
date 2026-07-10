@@ -1,7 +1,13 @@
 import streamlit as st
 import pandas as pd
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any
 from src.frontend.tabs.common import render_learning_card
+from src.backend.sequence_viewer import (
+    find_motif_matches,
+    _aligned_cols_to_raw_residues,
+    _empty_chain_mapping,
+    _build_chain_mapping_from_matches,
+)
 
 _ALL_PROTEINS_LABEL = "All Proteins (Alignment Columns)"
 
@@ -107,78 +113,6 @@ def _selection_to_range_str(residues: List[int]) -> str:
     return ", ".join(ranges)
 
 
-def _raw_to_aligned_map(aligned_seq: str) -> Tuple[str, Dict[int, int]]:
-    """Strips gaps from an aligned sequence, returning the raw (ungapped)
-    sequence and a map from raw (0-indexed) position to aligned (1-indexed)
-    column - lets a match found in the raw sequence be reported at its real
-    alignment column."""
-    raw_chars = []
-    raw_to_aligned = {}
-    current_raw_idx = 0
-    for aligned_idx, char in enumerate(aligned_seq):
-        if char != "-":
-            raw_chars.append(char)
-            raw_to_aligned[current_raw_idx] = aligned_idx + 1
-            current_raw_idx += 1
-    return "".join(raw_chars).upper(), raw_to_aligned
-
-
-def _motif_matches_for_sequence(aligned_seq: str, pattern) -> List[int]:
-    raw_seq, raw_to_aligned = _raw_to_aligned_map(aligned_seq)
-    aligned_positions = []
-    for match in pattern.finditer(raw_seq):
-        start, end = match.span()  # [start, end)
-        for raw_pos in range(start, end):
-            if raw_pos in raw_to_aligned:
-                aligned_positions.append(raw_to_aligned[raw_pos])
-    return aligned_positions
-
-
-def find_motif_matches(sequences: Dict[str, str], query: str) -> Dict[str, List[int]]:
-    """
-    Find columns in the alignment matching a motif query.
-    Supports wildcards like 'X', '.', or '-' in the query.
-    Example: 'RYY' or 'G.G' or 'G-P'
-    """
-    import re
-
-    if not query.strip():
-        return {}
-
-    # Clean query: convert 'X' or 'x' or '-' to regex wildcard '.'
-    clean_query = query.upper().replace("X", ".").replace("-", ".").replace(" ", "")
-    try:
-        pattern = re.compile(clean_query)
-    except re.error:
-        return {}  # Invalid regex
-
-    matches_map = {}
-    for name, aligned_seq in sequences.items():
-        positions = _motif_matches_for_sequence(aligned_seq, pattern)
-        if positions:
-            matches_map[name] = positions
-    return matches_map
-
-
-def _aligned_cols_to_raw_residues(seq: str, aligned_cols) -> List[int]:
-    """Maps a set/list of 1-indexed aligned column numbers back to the
-    1-indexed raw (gap-stripped) residue numbers they correspond to in
-    this particular sequence."""
-    cols = set(aligned_cols)
-    raw_nums = []
-    current_res = 1
-    for i, char in enumerate(seq):
-        if char != "-":
-            if (i + 1) in cols:
-                raw_nums.append(current_res)
-            current_res += 1
-    return raw_nums
-
-
-def _empty_chain_mapping(sequences: Dict[str, str]) -> Dict[str, List[int]]:
-    return {chr(ord("A") + i): [] for i in range(len(sequences))}
-
-
 def _render_conservation_legend() -> None:
     st.markdown(
         """
@@ -242,19 +176,6 @@ def _build_motif_match_summary(
         for name, cols in matches.items()
     ]
     return pd.DataFrame(match_summary)
-
-
-def _build_chain_mapping_from_matches(
-    sequences: Dict[str, str], matches: Dict[str, list]
-) -> Dict[str, List[int]]:
-    all_headers = list(sequences.keys())
-    final_mapping = _empty_chain_mapping(sequences)
-    for name, cols in matches.items():
-        chain_id = chr(ord("A") + all_headers.index(name))
-        final_mapping[chain_id].extend(
-            _aligned_cols_to_raw_residues(sequences[name], cols)
-        )
-    return final_mapping
 
 
 def _render_motif_matches(sequences: Dict[str, str], matches: Dict[str, list]) -> None:

@@ -138,6 +138,12 @@ their binding pockets, calculate cross-structure interaction similarity, and
 visualize SASA (Solvent Accessible Surface Area). Switch the structure picker to
 refresh the ligand list and interaction view for a different member of the run.
 
+When a run has two or more detected ligands, an interactive **binding-pocket
+similarity matrix** (Jaccard index of pocket-residue composition) shows how
+alike each ligand's chemical environment is to every other one in the run —
+useful for spotting a conserved active site (or a surprisingly divergent one)
+across otherwise-similar structures.
+
 ### 2.7 Phylogenetic Tree
 
 An interactive structural phylogenetic tree (UPGMA/average-linkage) built from
@@ -149,6 +155,12 @@ evolutionarily/structurally.
 Aligned sequences with per-position conservation highlighting, so you can see at
 a glance which residues are conserved across every structure in the run versus
 which vary.
+
+**Motif search** lets you search the alignment for a specific residue pattern
+(e.g. `RYY`, `G.G`, `G-X-P` — `X`/`.`/`-` act as single-residue wildcards),
+see every match across every structure in a table, and jump straight to a
+**"Highlight Motif in 3D Viewer"** button that selects every matched residue
+across all aligned structures at once.
 
 ### 2.9 Dashboard
 
@@ -239,6 +251,18 @@ useful for sharing a result with someone who doesn't have StructScope running.
 *(SPA only)* Export a completed Discover run as a standalone HTML report or raw
 JSON — the same export parity Compare mode has always had.
 
+### 4.4 Raw Data Exports
+
+Download the underlying RMSD matrix as a plain CSV, or the RMSD heatmap as a
+raw PNG image, directly — for pulling numbers into your own analysis or
+dropping a figure straight into a slide deck, without generating a full report.
+
+### 4.5 Download Everything
+
+One button bundles every generated artifact for a run — the aligned PDB and
+FASTA, the RMSD matrix CSV, the heatmap PNG, and an auto-generated lab
+notebook HTML — into a single ZIP download.
+
 ---
 
 ## 5. History & Sessions
@@ -248,6 +272,9 @@ JSON — the same export parity Compare mode has always had.
 Every completed run (Compare or Discover) is saved and browsable from the History
 tab. Reopening a past run restores its full state — 3D view, stats, every tab —
 exactly as it was when the run finished.
+
+Delete a single run, or clear your entire history at once, directly from the
+History tab — both ask for confirmation first, and neither is undoable.
 
 *(SPA only)* Click **Share** on any run to copy a link to it. Anyone who opens that
 link — no account, no session, nothing else required — sees exactly that run's
@@ -278,6 +305,14 @@ unset by default so local development works with zero configuration.
 Job-submission endpoints (starting a new alignment or Discover search) are
 rate-limited per API key (or per IP if no key is set), so one client can't queue
 unlimited compute-heavy jobs and starve everyone else on a shared deployment.
+
+### 6.3 Settings
+
+*(SPA only)* A Settings tab lets you change the Mustang execution backend and
+timeout, the max proteins/file size limits, the default heatmap colormap, and
+the default 3D viewer style — no `config.yaml` editing or restart required.
+Changes apply immediately to every subsequent run, and affect every user of
+the deployment (this is a deployment-wide setting, not a per-session one).
 
 ---
 

@@ -107,3 +107,9 @@ commits.
   STRING, Reactome, GMGC) that this project doesn't control the security
   posture of - see `docs/deployment/DEPLOYMENT.md`'s Network Requirements
   section for the full list.
+- **The Settings page's changes are deployment-wide, not per-user.** Any
+  caller who can reach `/api/settings` (the same access every other
+  `/api/*` route already has) can change the Mustang backend/timeout,
+  resource limits, and default visualization settings for every user of
+  the deployment. Same access model as every other `/api/*` route - not a
+  new gap, just worth knowing before exposing this to untrusted callers.

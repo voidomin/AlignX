@@ -28,6 +28,23 @@ def sample_rmsd_df():
     return pd.DataFrame(data, index=labels, columns=labels)
 
 
+class TestRMSDAnalyzerColormapConfig:
+    def test_reads_heatmap_colormap_from_the_visualization_section(self, mock_config):
+        """Regression test: this used to read config["rmsd"]["heatmap_colormap"],
+        a section that never existed anywhere in config.yaml, so a user's
+        configured colormap was silently ignored and the hardcoded default
+        was always used instead - the real, validated key (matching
+        VisualizationConfig and config.yaml) is visualization.heatmap_colormap."""
+        mock_config["visualization"] = {"heatmap_colormap": "plasma"}
+        analyzer = RMSDAnalyzer(mock_config)
+        assert analyzer.colormap == "plasma"
+
+    def test_falls_back_to_default_when_unset(self, mock_config):
+        mock_config["visualization"] = {}
+        analyzer = RMSDAnalyzer(mock_config)
+        assert analyzer.colormap == "RdYlBu_r"
+
+
 class TestRMSDAnalyzerStatistics:
     """Tests for calculate_statistics."""
 

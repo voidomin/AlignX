@@ -4,9 +4,11 @@ import { HistoryPanel } from './HistoryPanel.js';
 vi.mock('../api.js', () => ({
     fetchHistory: vi.fn(),
     getShareLink: vi.fn((runId) => `http://localhost/?shared_run=${runId}`),
+    deleteRun: vi.fn(),
+    clearAllHistory: vi.fn(),
 }));
 
-import { fetchHistory, getShareLink } from '../api.js';
+import { fetchHistory, getShareLink, deleteRun, clearAllHistory } from '../api.js';
 
 function makeRun(id) {
     return { id, timestamp: '2026-01-01', pdb_ids: ['4RLT', '3UG9'], status: 'success' };
@@ -15,10 +17,13 @@ function makeRun(id) {
 describe('HistoryPanel', () => {
     afterEach(() => {
         vi.clearAllMocks();
+        vi.unstubAllGlobals();
     });
 
     beforeEach(() => {
         Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
+        vi.stubGlobal('confirm', vi.fn(() => true));
+        vi.stubGlobal('alert', vi.fn());
     });
 
     it('shows an empty state when there are no runs', async () => {
@@ -154,5 +159,97 @@ describe('HistoryPanel', () => {
         shareBtn.click();
 
         expect(shareBtn.innerText).toBe('Copied!');
+    });
+
+    it('deletes a run when Delete is clicked and confirmed, without triggering onReloadRun', async () => {
+        const onReloadRun = vi.fn();
+        deleteRun.mockResolvedValue({ deleted: 'run_1' });
+        fetchHistory.mockResolvedValue({
+            runs: [makeRun('run_1'), makeRun('run_2')],
+            total: 2,
+        });
+
+        const panel = new HistoryPanel({ onReloadRun, onClose: vi.fn() });
+        panel.render();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        panel.element.querySelector('.delete-run-btn').click();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(deleteRun).toHaveBeenCalledWith('run_1');
+        expect(onReloadRun).not.toHaveBeenCalled();
+        expect(panel.runsList.map(r => r.id)).toEqual(['run_2']);
+        expect(panel.element.querySelectorAll('#history-runs-list > div')).toHaveLength(1);
+    });
+
+    it('does not delete when the confirm dialog is cancelled', async () => {
+        vi.stubGlobal('confirm', vi.fn(() => false));
+        fetchHistory.mockResolvedValue({ runs: [makeRun('run_1')], total: 1 });
+
+        const panel = new HistoryPanel({ onReloadRun: vi.fn(), onClose: vi.fn() });
+        panel.render();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        panel.element.querySelector('.delete-run-btn').click();
+        await Promise.resolve();
+
+        expect(deleteRun).not.toHaveBeenCalled();
+        expect(panel.runsList).toHaveLength(1);
+    });
+
+    it('shows the empty state after deleting the last remaining run', async () => {
+        deleteRun.mockResolvedValue({ deleted: 'run_1' });
+        fetchHistory.mockResolvedValue({ runs: [makeRun('run_1')], total: 1 });
+
+        const panel = new HistoryPanel({ onReloadRun: vi.fn(), onClose: vi.fn() });
+        panel.render();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        panel.element.querySelector('.delete-run-btn').click();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(panel.element.querySelector('#history-runs-list').textContent)
+            .toContain('No past alignment sessions found.');
+    });
+
+    it('clears all history when "Clear All History" is clicked and confirmed', async () => {
+        clearAllHistory.mockResolvedValue({ cleared: 'all' });
+        fetchHistory.mockResolvedValue({
+            runs: [makeRun('run_1'), makeRun('run_2')],
+            total: 2,
+        });
+
+        const panel = new HistoryPanel({ onReloadRun: vi.fn(), onClose: vi.fn() });
+        panel.render();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        panel.element.querySelector('#history-clear-all-btn').click();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(clearAllHistory).toHaveBeenCalled();
+        expect(panel.runsList).toHaveLength(0);
+        expect(panel.element.querySelector('#history-runs-list').textContent)
+            .toContain('No past alignment sessions found.');
+    });
+
+    it('does not clear history when there are no runs to clear', async () => {
+        fetchHistory.mockResolvedValue({ runs: [], total: 0 });
+
+        const panel = new HistoryPanel({ onReloadRun: vi.fn(), onClose: vi.fn() });
+        panel.render();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        panel.element.querySelector('#history-clear-all-btn').click();
+        await Promise.resolve();
+
+        expect(clearAllHistory).not.toHaveBeenCalled();
     });
 });

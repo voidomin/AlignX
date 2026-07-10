@@ -281,15 +281,36 @@ export async function fetchHistory(limit = 20, offset = 0) {
     return res.json();
 }
 
+export async function deleteRun(runId) {
+    runId = assertSafeSegment(runId, 'runId');
+    const res = await fetch(buildUrl(`/api/history/${runId}`), { method: 'DELETE', headers: authHeaders() });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Failed to delete run");
+    }
+    return res.json();
+}
+
+export async function clearAllHistory() {
+    const res = await fetch(buildUrl('/api/history'), { method: 'DELETE', headers: authHeaders() });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Failed to clear history");
+    }
+    return res.json();
+}
+
 export async function fetchStats() {
     const res = await fetch(buildUrl('/api/stats'), { headers: authHeaders() });
     if (!res.ok) throw new Error("Stats fetch failed");
     return res.json();
 }
 
-export async function fetchSequence(runId) {
+export async function fetchSequence(runId, motif) {
     runId = assertSafeSegment(runId, 'runId');
-    const res = await fetch(buildUrl('/api/sequence', { run_id: runId }), { headers: authHeaders() });
+    const params = { run_id: runId };
+    if (motif) params.motif = motif;
+    const res = await fetch(buildUrl('/api/sequence', params), { headers: authHeaders() });
     if (!res.ok) throw new Error("Sequence alignment fetch failed");
     return res.json();
 }
@@ -332,6 +353,50 @@ export function getLabNotebookUrl(runId) {
 export function getCitationsUrl(runId) {
     runId = assertSafeSegment(runId, 'runId');
     return withApiKey(buildUrl('/api/report/citations', { run_id: runId }));
+}
+
+export function getRmsdCsvUrl(runId) {
+    runId = assertSafeSegment(runId, 'runId');
+    return withApiKey(buildUrl('/api/report/rmsd-csv', { run_id: runId }));
+}
+
+export function getHeatmapPngUrl(runId) {
+    runId = assertSafeSegment(runId, 'runId');
+    return withApiKey(buildUrl('/api/report/heatmap-png', { run_id: runId }));
+}
+
+export function getReportZipUrl(runId) {
+    runId = assertSafeSegment(runId, 'runId');
+    return withApiKey(buildUrl('/api/report/zip', { run_id: runId }));
+}
+
+export async function fetchSettings() {
+    const res = await fetch(buildUrl('/api/settings'), { headers: authHeaders() });
+    if (!res.ok) throw new Error("Settings fetch failed");
+    return res.json();
+}
+
+export async function saveSettings(settings) {
+    const res = await fetch(buildUrl('/api/settings'), {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(settings),
+    });
+    if (!res.ok) {
+        const errData = await res.json();
+        const detail = errData.detail;
+        throw new Error(typeof detail === 'string' ? detail : "Failed to save settings");
+    }
+    return res.json();
+}
+
+export async function resetSettings() {
+    const res = await fetch(buildUrl('/api/settings/reset'), {
+        method: 'POST',
+        headers: authHeaders(),
+    });
+    if (!res.ok) throw new Error("Failed to reset settings");
+    return res.json();
 }
 
 export function getDiscoveryReportUrl(runId) {

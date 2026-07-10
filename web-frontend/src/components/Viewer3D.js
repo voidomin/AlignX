@@ -283,6 +283,38 @@ export class Viewer3D {
         this.viewer.render();
     }
 
+    highlightResidues(chainMapping) {
+        // Highlights every residue in a {chain_id: [residue_numbers]} map at
+        // once (e.g. every motif match across all structures), unlike
+        // highlightResidue() above which only ever selects one residue in
+        // one structure at a time. Ghosts once, then adds a style per match,
+        // so the whole set stays visible together rather than each call
+        // re-ghosting and wiping out the previous match's highlight.
+        if (!this.viewer) return;
+
+        this.structures.forEach(s => {
+            this.viewer.setStyle({ chain: s.mustangChain }, { cartoon: { color: s.color, opacity: 0.35 } });
+        });
+
+        const selections = [];
+        Object.entries(chainMapping || {}).forEach(([chain, residues]) => {
+            if (!residues || residues.length === 0) return;
+            const selection = { chain, resi: residues };
+            this.viewer.addStyle(selection, {
+                stick: { color: '#F59E0B', radius: 0.35 },
+                cartoon: { color: '#F59E0B', opacity: 1.0 }
+            });
+            selections.push(selection);
+        });
+
+        if (selections.length === 0) {
+            this.viewer.zoomTo();
+        } else {
+            this.viewer.zoomTo({ or: selections });
+        }
+        this.viewer.render();
+    }
+
     resetCartoonStyles() {
         if (!this.viewer) return;
         this.viewer.removeAllSurfaces();

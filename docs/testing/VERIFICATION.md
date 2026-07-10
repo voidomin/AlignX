@@ -43,7 +43,7 @@ Run the test suite script:
 powershell -File scripts\run_tests.ps1
 ```
 *Expected Output:*
-- Pytest runs 893 items successfully and shows no errors.
+- Pytest runs 920 items successfully and shows no errors.
 - Verification scripts are executed automatically as part of the run.
 
 ---
@@ -106,7 +106,7 @@ Run the Vitest suite covering `api.js` and the JS components (auth headers, job 
 cd web-frontend
 npm test
 ```
-*Expected Output:* all test files pass (currently 150 tests across the suite, covering `api.js` and every tab/panel component, including `DiscoverTab.js`).
+*Expected Output:* all test files pass (currently 171 tests across the suite, covering `api.js` and every tab/panel component, including `DiscoverTab.js` and `SettingsTab.js`).
 
 ---
 
@@ -127,15 +127,16 @@ Verify the Vite single page application (SPA).
    Access the dev server at: `http://localhost:5173`.
 3. **Verify Full-Stack Single Port Execution (Recommended):**
    Once built using `scripts\build_frontend.ps1`, open `http://127.0.0.1:8000/` in your browser.
-   - Check the top bar's tab strip: **Dashboard, Overview, Ligands, Sequence, Analytics, Clusters, Compare, History**.
+   - Check the top bar's tab strip: **Dashboard, Overview, Ligands, Sequence, Analytics, Clusters, Compare, History, Settings**.
    - On **Dashboard**, confirm aggregate stats and recent activity populate (may take a few seconds on first load).
-   - On **Overview**, add at least two structures — try mixing sources, e.g. a plain PDB ID (`4RLT`) alongside an `AF-`, `SM-`, or `ESM-` prefixed ID — and confirm each shows the correct source badge and metadata line.
+   - On **Overview**, add at least two structures with a bound ligand — try `4HHB, 2HHB` (two hemoglobin variants) — mixing sources also works, e.g. a plain PDB ID (`4RLT`) alongside an `AF-`, `SM-`, or `ESM-` prefixed ID — and confirm each shows the correct source badge and metadata line.
    - Choose a chain per structure and click **Run Structural Alignment** — it should show an "Aligning..." state while the background job runs, then populate all tabs once complete.
    - In the 3D viewer, confirm each structure gets a distinct color and the HUD legend/pairwise RMSD list scale to however many structures were aligned (not just a fixed pair).
-   - On **Ligands**, switch the structure picker between the aligned structures and confirm the ligand list and interactions refresh for each.
-   - On **Sequence**, toggle the report-section checklist and confirm the "Download PDF" link's URL updates; confirm "View Notebook" opens a valid HTML file.
+   - On **Ligands**, switch the structure picker between the aligned structures and confirm the ligand list and interactions refresh for each. With a multi-ligand run (e.g. the hemoglobin example above), confirm the binding-pocket similarity heatmap renders below the interactions table.
+   - On **Sequence**, toggle the report-section checklist and confirm the "Download PDF" link's URL updates; confirm "View Notebook" opens a valid HTML file; confirm the new "Download CSV", "Download PNG", and "Download Everything" links each produce a real file. Enter a motif query (e.g. `G.K`) in the Sequence Motif Search box, confirm a match table appears, and click "Highlight Motif in 3D Viewer" to confirm the matched residues highlight in the 3D viewer.
    - Run a second alignment with different structures, then check the **Compare** tab to diff it against the first run.
-   - On **History**, confirm past runs list and reloading one restores its full state (3D view, stats, tabs).
+   - On **History**, confirm past runs list and reloading one restores its full state (3D view, stats, tabs); confirm a single run can be deleted (with a confirmation prompt) and disappears from the list; confirm "Clear All History" (also confirmation-gated) empties the list.
+   - On **Settings**, confirm the form loads real current values, change one (e.g. the heatmap colormap), click "Save Changes", reload the page, and confirm the change persisted; click "Restore Defaults" and confirm it reverts to the documented defaults (`auto`/600s/20/500MB/viridis/cartoon).
 
 ---
 

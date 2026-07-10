@@ -10,6 +10,7 @@ export class LigandTab {
         this.element = null;
         this.selectedLigandId = "";
         this.currentStructureIndex = 0;
+        this.pocketSimilarity = null;
     }
 
     render() {
@@ -63,6 +64,14 @@ export class LigandTab {
                         </tr>
                     </tbody>
                 </table>
+
+                <div id="pocket-similarity-section" class="hidden flex-col gap-2 mt-2 pt-4 border-t border-border">
+                    <div class="flex items-baseline justify-between">
+                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Binding pocket similarity</span>
+                        <span class="font-body-sm text-body-sm text-secondary">Jaccard index of pocket residue composition</span>
+                    </div>
+                    <div id="pocket-similarity-heatmap" class="w-full h-[320px]"></div>
+                </div>
             </div>
         `;
         this.element = div;
@@ -119,15 +128,58 @@ export class LigandTab {
         this.populateDropdown();
     }
 
-    updateLigands(ligands, runId, selectedPDBs) {
+    updateLigands(ligands, runId, selectedPDBs, pocketSimilarity = null) {
         this.ligandsList = ligands || [];
         this.currentRunId = runId;
         if (selectedPDBs) this.selectedPDBs = selectedPDBs;
         this.currentStructureIndex = 0;
         this.selectedLigandId = "";
+        this.pocketSimilarity = pocketSimilarity;
         this.populateStructurePicker();
         this.populateDropdown();
         this.clearTable();
+        this.renderPocketSimilarity();
+    }
+
+    renderPocketSimilarity() {
+        if (!this.element) return;
+        const section = this.element.querySelector('#pocket-similarity-section');
+        const heatmapDiv = this.element.querySelector('#pocket-similarity-heatmap');
+
+        const sim = this.pocketSimilarity;
+        if (!sim?.data?.length || sim.data.length < 2) {
+            section.classList.add('hidden');
+            return;
+        }
+        section.classList.remove('hidden');
+
+        // Namespaced as "{pdb_id}:{ligand_id}" (coordinator.py's _analyze_ligands) -
+        // split into a two-line label so the axis reads as structure + ligand
+        // rather than one long opaque string.
+        const splitLabel = (label) => {
+            const idx = label.indexOf(':');
+            return idx === -1 ? label : `${label.slice(0, idx)}<br>${label.slice(idx + 1)}`;
+        };
+        const labels = sim.columns.map(splitLabel);
+
+        const trace = {
+            z: sim.data,
+            x: labels,
+            y: labels,
+            type: 'heatmap',
+            colorscale: 'RdBu',
+            reversescale: true,
+            zmin: 0,
+            zmax: 1,
+        };
+        const layout = {
+            height: 320,
+            margin: { l: 90, r: 20, t: 10, b: 90 },
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            font: { family: "Segoe UI, sans-serif", size: 10, color: "#A79E8E" }
+        };
+        Plotly.newPlot(heatmapDiv, [trace], layout, { responsive: true, displayModeBar: false });
     }
 
     populateDropdown() {

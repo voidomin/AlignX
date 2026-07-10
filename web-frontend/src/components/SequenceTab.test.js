@@ -8,6 +8,9 @@ vi.mock('../api.js', () => ({
     getAlignmentReportUrl: vi.fn((runId, sections) => `http://api/api/report?run_id=${runId}${sections ? `&sections=${sections.join(',')}` : ''}`),
     getLabNotebookUrl: vi.fn((runId) => `http://api/api/notebook?run_id=${runId}`),
     getCitationsUrl: vi.fn((runId) => `http://api/api/report/citations?run_id=${runId}`),
+    getRmsdCsvUrl: vi.fn((runId) => `http://api/api/report/rmsd-csv?run_id=${runId}`),
+    getHeatmapPngUrl: vi.fn((runId) => `http://api/api/report/heatmap-png?run_id=${runId}`),
+    getReportZipUrl: vi.fn((runId) => `http://api/api/report/zip?run_id=${runId}`),
 }));
 
 import { fetchSequence } from '../api.js';
@@ -43,6 +46,18 @@ describe('SequenceTab', () => {
         const pdbLink = tab.element.querySelector('#download-pdb-link');
         expect(pdbLink.classList.contains('pointer-events-none')).toBe(false);
         expect(pdbLink.href).toContain('run_123');
+
+        const rmsdCsvLink = tab.element.querySelector('#download-rmsd-csv-link');
+        expect(rmsdCsvLink.classList.contains('pointer-events-none')).toBe(false);
+        expect(rmsdCsvLink.href).toContain('run_123');
+
+        const heatmapPngLink = tab.element.querySelector('#download-heatmap-png-link');
+        expect(heatmapPngLink.classList.contains('pointer-events-none')).toBe(false);
+        expect(heatmapPngLink.href).toContain('run_123');
+
+        const zipLink = tab.element.querySelector('#download-zip-link');
+        expect(zipLink.classList.contains('pointer-events-none')).toBe(false);
+        expect(zipLink.href).toContain('run_123');
     });
 
     it('renders the sequence alignment grid with conservation-based coloring', async () => {
@@ -131,5 +146,115 @@ describe('SequenceTab', () => {
 
         const reportLink = tab.element.querySelector('#download-report-link');
         expect(reportLink.classList.contains('pointer-events-none')).toBe(true);
+    });
+
+    describe('sequence motif search', () => {
+        it('disables the search button until a run is loaded', () => {
+            const tab = new SequenceTab();
+            tab.render();
+
+            expect(tab.element.querySelector('#motif-search-btn').disabled).toBe(true);
+        });
+
+        it('enables the search button once a run is set', () => {
+            fetchSequence.mockResolvedValue({ sequences: {}, conservation: [] });
+            const tab = new SequenceTab();
+            tab.render();
+            tab.updateResults('run_123', { rmsd: 1.0 });
+
+            expect(tab.element.querySelector('#motif-search-btn').disabled).toBe(false);
+        });
+
+        it('searches with the query and renders the match summary + table', async () => {
+            fetchSequence.mockResolvedValueOnce({ sequences: {}, conservation: [] });
+            const tab = new SequenceTab();
+            tab.render();
+            tab.updateResults('run_123', { rmsd: 1.0 });
+            await Promise.resolve();
+            await Promise.resolve();
+
+            fetchSequence.mockResolvedValueOnce({
+                sequences: {},
+                conservation: [],
+                motif_matches: { '4RLT': [4, 5, 6], '3UG9': [4, 5, 6] },
+                highlight_chains: { A: [3, 4, 5], B: [3, 4, 5] },
+            });
+            tab.element.querySelector('#motif-search-input').value = 'G.K';
+            tab.element.querySelector('#motif-search-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(fetchSequence).toHaveBeenLastCalledWith('run_123', 'G.K');
+            const container = tab.element.querySelector('#motif-results-container');
+            expect(container.textContent).toContain('Found 6 matching residue positions across 2 structures');
+            expect(container.textContent).toContain('4RLT');
+            expect(container.textContent).toContain('4, 5, 6');
+            expect(container.querySelector('button')).not.toBeNull();
+        });
+
+        it('shows a no-matches message when the motif search finds nothing', async () => {
+            fetchSequence.mockResolvedValueOnce({ sequences: {}, conservation: [] });
+            const tab = new SequenceTab();
+            tab.render();
+            tab.updateResults('run_123', { rmsd: 1.0 });
+            await Promise.resolve();
+            await Promise.resolve();
+
+            fetchSequence.mockResolvedValueOnce({
+                sequences: {},
+                conservation: [],
+                motif_matches: {},
+                highlight_chains: {},
+            });
+            tab.element.querySelector('#motif-search-input').value = 'ZZZZ';
+            tab.element.querySelector('#motif-search-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#motif-results-container').textContent)
+                .toContain('No matches found for this motif pattern.');
+        });
+
+        it('clicking "Highlight Motif in 3D Viewer" calls onHighlightResidues with the chain mapping', async () => {
+            fetchSequence.mockResolvedValueOnce({ sequences: {}, conservation: [] });
+            const onHighlightResidues = vi.fn();
+            const tab = new SequenceTab({ onHighlightResidues });
+            tab.render();
+            tab.updateResults('run_123', { rmsd: 1.0 });
+            await Promise.resolve();
+            await Promise.resolve();
+
+            fetchSequence.mockResolvedValueOnce({
+                sequences: {},
+                conservation: [],
+                motif_matches: { '4RLT': [4, 5, 6] },
+                highlight_chains: { A: [3, 4, 5] },
+            });
+            tab.element.querySelector('#motif-search-input').value = 'G.K';
+            tab.element.querySelector('#motif-search-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            tab.element.querySelector('#motif-results-container button').click();
+
+            expect(onHighlightResidues).toHaveBeenCalledWith({ A: [3, 4, 5] });
+        });
+
+        it('clears the motif input and results when a new run is loaded', async () => {
+            fetchSequence.mockResolvedValue({ sequences: {}, conservation: [] });
+            const tab = new SequenceTab();
+            tab.render();
+            tab.updateResults('run_123', { rmsd: 1.0 });
+            await Promise.resolve();
+
+            tab.motifMatches = { '4RLT': [1] };
+            tab.renderMotifResults();
+            tab.element.querySelector('#motif-search-input').value = 'RYY';
+
+            tab.updateResults('run_456', { rmsd: 2.0 });
+
+            expect(tab.element.querySelector('#motif-search-input').value).toBe('');
+            expect(tab.element.querySelector('#motif-results-container').innerHTML).toBe('');
+        });
     });
 });

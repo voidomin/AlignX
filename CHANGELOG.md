@@ -2,6 +2,28 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.82.0]
+
+Ports six Tier-1 capabilities from the legacy Streamlit app into the actively-developed SPA, identified by a full feature-inventory diff of both frontends. Everything here reuses backend logic that already existed - this was about exposing/wiring, not designing new algorithms.
+
+### Added
+- **Settings page**: new `GET`/`POST /api/settings` and `POST /api/settings/reset` endpoints, mirroring Streamlit's `pages/3_Settings.py` field set (Mustang backend/timeout, max proteins, max PDB file size, heatmap colormap, default 3D style). `config` is a single shared dict every request-scoped `AnalysisCoordinator`/`PDBManager`/etc. already reads from at construction time - `POST /api/settings` mutates its nested sections in place rather than introducing a parallel settings object, so every future request picks up the change automatically, no cache invalidation needed (unlike Streamlit, which has to explicitly drop a cached `MustangRunner`). New `web-frontend/src/components/SettingsTab.js` (10th SPA tab).
+- **Per-run delete + history management**: `HistoryDatabase.delete_run`/`clear_all_runs` existed but no endpoint ever called them. New `DELETE /api/history/{run_id}` (session-scoped - unlike every read-by-run_id endpoint, which is deliberately unscoped to support shareable run links, *deleting* someone else's shared run is a real risk a read isn't) and `DELETE /api/history` (new `HistoryDatabase.clear_runs_for_session`, falling back to a global `clear_all_runs()` wipe when no session_id is given, since the SPA doesn't track sessions client-side today - matching the single-user Streamlit app this is ported from). Delete/Clear All buttons in `HistoryPanel.js`.
+- **Sequence motif search + 3D highlight**: moved 4 pure functions (`find_motif_matches`, `_aligned_cols_to_raw_residues`, `_build_chain_mapping_from_matches`, `_raw_to_aligned_map`) from the Streamlit-only `src/frontend/tabs/sequence.py` into the shared `src/backend/sequence_viewer.py`, so both frontends use one implementation. `GET /api/sequence` gained an optional `motif` query param returning matched columns + a ready-to-use 3D highlight chain map. New `Viewer3D.highlightResidues()` (plural - highlights an entire match set across structures at once, unlike the existing single-residue `highlightResidue()`). Motif search UI + "Highlight in 3D Viewer" button in `SequenceTab.js`.
+- **Interactive ligand-pocket similarity matrix**: `results.ligand_pocket_similarity` (a Jaccard binding-pocket-similarity DataFrame, wired into the pipeline in the previous release) already reached the SPA - just never rendered as anything beyond a plain-language insight bullet. New Plotly heatmap section in `LigandTab.js`, splitting each `"{pdb_id}:{ligand_id}"` axis label into two lines for readability. No new backend work.
+- **Raw CSV/PNG exports**: new `GET /api/report/rmsd-csv` and `GET /api/report/heatmap-png` endpoints (the heatmap PNG was already saved to disk every run, just never had a direct download route) plus matching links in `SequenceTab.js`'s "Generated outputs" list.
+- **"Download Everything" ZIP**: new `GET /api/report/zip`, porting Streamlit's `generate_zip_package()` server-side - bundles alignment PDB/FASTA, the RMSD CSV, the heatmap PNG, and an auto-generated lab notebook HTML into one download, each included best-effort so a run missing one piece still produces a ZIP with everything else.
+
+### Fixed
+- **`RMSDAnalyzer` never actually read its configured heatmap colormap.** It read `config["rmsd"]["heatmap_colormap"]` - a section that has never existed anywhere in `config.yaml` - so it silently always fell back to the hardcoded default regardless of what a user configured. The real, validated key (matching `VisualizationConfig` and `config.yaml`) is `visualization.heatmap_colormap`. Found because the new Settings page would otherwise let users "change" a colormap that quietly did nothing.
+- **`/api/settings/reset`'s heatmap colormap default was `"RdYlBu_r"` instead of `"viridis"`** during development - copied from `VisualizationConfig`'s unrelated Pydantic field default instead of Streamlit's actual `DEFAULT_SETTINGS`. Caught via manual end-to-end verification before merge (a `curl` round-trip through save → reset showed the mismatch) and corrected to match Streamlit's real "Restore Defaults" behavior.
+
+### Verified
+- Full backend suite: 920 tests passing, both locally and in a CI-matching Docker container.
+- Frontend suite: 171 Vitest tests passing.
+- `black`/`ruff` clean.
+- Real end-to-end pass against a live local server for all six features: settings save/reset, deleting a run, a real motif search with 3D-viewer chain mapping, the pocket-similarity matrix on a real ligand-bearing run, and downloading the new CSV/PNG/ZIP artifacts (confirmed the ZIP's heatmap PNG opens correctly, and the CSV/PNG endpoints return real files, not just headers - an initial `curl -I` HEAD-request check was misleading here since FastAPI's `FileResponse` behaves differently for HEAD vs GET).
+
 ## [3.81.1]
 
 Fast-follow fix: SonarCloud flagged v3.81.0's new Insights sub-tab as a DOM XSS risk (`jssecurity:S5696`, BLOCKER) immediately after merge, failing the `new_security_rating` Quality Gate condition.

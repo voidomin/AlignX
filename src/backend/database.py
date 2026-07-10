@@ -308,6 +308,23 @@ class HistoryDatabase:
             logger.exception("Failed to clear all runs")
             return False
 
+    def clear_runs_for_session(self, session_id: str) -> bool:
+        """Clear only the runs belonging to one session - unlike
+        clear_all_runs (a global wipe, appropriate for a single-user
+        deployment), a shared multi-user deployment's "clear my history"
+        action must not delete every other user's runs too."""
+        try:
+            with sqlite3.connect(self.db_path, timeout=30) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM runs WHERE session_id = ?", (session_id,))
+                conn.commit()
+            return True
+        except Exception:
+            logger.exception(
+                f"Failed to clear runs for session {sanitize_for_log(session_id)}"
+            )
+            return False
+
     # -------------------------------------------------------------------------
     # CACHE MANAGEMENT METHODS
     # -------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl, getAlignmentReportUrl, getLabNotebookUrl, getCitationsUrl } from '../api';
+import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl, getAlignmentReportUrl, getLabNotebookUrl, getCitationsUrl, getRmsdCsvUrl, getHeatmapPngUrl, getReportZipUrl } from '../api';
 
 const REPORT_SECTIONS = [
     { key: 'summary', label: 'Summary' },
@@ -12,6 +12,12 @@ export class SequenceTab {
     currentRunId = null;
     element = null;
     stats = { rmsd: null, aligned_length: null, seq_identity: null, seq_similarity: null };
+    motifMatches = null;
+    highlightChains = null;
+
+    constructor(props = {}) {
+        this.onHighlightResidues = props.onHighlightResidues || (() => {});
+    }
 
     render() {
         const div = document.createElement('div');
@@ -55,6 +61,18 @@ export class SequenceTab {
                     </div>
                 </div>
 
+                <div class="flex flex-col gap-3 border-t border-border pt-6">
+                    <span class="eyebrow">Sequence motif search</span>
+                    <div class="section-caption">
+                        Search for a residue motif (e.g. <code>RYY</code>, <code>G.G</code>, <code>G-X-P</code> — <code>X</code>/<code>.</code>/<code>-</code> act as single-residue wildcards) and highlight every match in the 3D viewer.
+                    </div>
+                    <div class="flex gap-2">
+                        <input id="motif-search-input" type="text" placeholder="e.g. RYY or G.G" class="flex-1 bg-surface-raised border border-border rounded-md px-3 py-2 font-body-sm font-mono text-primary uppercase" />
+                        <button id="motif-search-btn" class="btn-primary py-2 px-4 rounded-md font-label-md text-label-md" disabled>Search</button>
+                    </div>
+                    <div id="motif-results-container"></div>
+                </div>
+
                 <div class="flex flex-col gap-2 border-t border-border pt-6">
                     <span class="eyebrow mb-2">Generated outputs</span>
                     <div class="flex items-center justify-between py-2 border-b border-border-subtle">
@@ -73,9 +91,21 @@ export class SequenceTab {
                         <span class="font-body-sm text-body-sm text-primary font-mono">mustang_report.pdf</span>
                         <a id="download-report-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download PDF</a>
                     </div>
-                    <div class="flex items-center justify-between py-2">
+                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
                         <span class="font-body-sm text-body-sm text-primary font-mono">citations.txt</span>
                         <a id="download-citations-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Export Citations</a>
+                    </div>
+                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
+                        <span class="font-body-sm text-body-sm text-primary font-mono">rmsd_matrix.csv</span>
+                        <a id="download-rmsd-csv-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download CSV</a>
+                    </div>
+                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
+                        <span class="font-body-sm text-body-sm text-primary font-mono">rmsd_heatmap.png</span>
+                        <a id="download-heatmap-png-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download PNG</a>
+                    </div>
+                    <div class="flex items-center justify-between py-2">
+                        <span class="font-body-sm text-body-sm text-primary font-mono">everything.zip</span>
+                        <a id="download-zip-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download Everything</a>
                     </div>
                     <div id="report-section-checklist" class="flex flex-wrap gap-x-4 gap-y-1.5 pt-2">
                         ${REPORT_SECTIONS.map(s => `
@@ -98,6 +128,88 @@ export class SequenceTab {
         this.element.querySelectorAll('.report-section-checkbox').forEach(cb => {
             cb.addEventListener('change', () => this.updateReportLink());
         });
+
+        const motifInput = this.element.querySelector('#motif-search-input');
+        const motifBtn = this.element.querySelector('#motif-search-btn');
+        motifBtn.addEventListener('click', () => this.searchMotif(motifInput.value));
+        motifInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this.searchMotif(motifInput.value);
+        });
+    }
+
+    async searchMotif(query) {
+        if (!this.currentRunId || !query || !query.trim()) return;
+
+        const resultsContainer = this.element.querySelector('#motif-results-container');
+        resultsContainer.innerHTML = `
+            <div class="text-center py-4 text-secondary font-body-sm">
+                <span class="animate-spin material-symbols-outlined text-[18px]">sync</span>
+                Searching...
+            </div>
+        `;
+
+        try {
+            const data = await fetchSequence(this.currentRunId, query.trim());
+            this.motifMatches = data.motif_matches || {};
+            this.highlightChains = data.highlight_chains || {};
+            this.renderMotifResults();
+        } catch (err) {
+            console.error("Motif search failed:", err);
+            resultsContainer.innerHTML = `
+                <div class="text-center py-4 text-error font-body-sm">
+                    Motif search failed.
+                </div>
+            `;
+        }
+    }
+
+    renderMotifResults() {
+        const resultsContainer = this.element.querySelector('#motif-results-container');
+        const matches = this.motifMatches || {};
+        const names = Object.keys(matches);
+
+        if (names.length === 0) {
+            resultsContainer.innerHTML = `
+                <div class="text-center py-4 text-secondary font-body-sm">
+                    No matches found for this motif pattern.
+                </div>
+            `;
+            return;
+        }
+
+        const totalHits = names.reduce((sum, name) => sum + matches[name].length, 0);
+
+        resultsContainer.innerHTML = "";
+
+        const summary = document.createElement('div');
+        summary.className = "text-success font-body-sm";
+        summary.textContent = `Found ${totalHits} matching residue position${totalHits === 1 ? '' : 's'} across ${names.length} structure${names.length === 1 ? '' : 's'}.`;
+        resultsContainer.appendChild(summary);
+
+        const table = document.createElement('table');
+        table.className = "w-full text-left border-collapse mt-2";
+        const tbody = document.createElement('tbody');
+        names.forEach(name => {
+            const tr = document.createElement('tr');
+            tr.className = "border-b border-border-subtle";
+            const nameCell = document.createElement('td');
+            nameCell.className = "py-1.5 pr-4 font-body-sm font-mono text-primary";
+            nameCell.textContent = name;
+            const colsCell = document.createElement('td');
+            colsCell.className = "py-1.5 font-body-sm font-mono text-secondary";
+            colsCell.textContent = matches[name].join(', ');
+            tr.appendChild(nameCell);
+            tr.appendChild(colsCell);
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        resultsContainer.appendChild(table);
+
+        const highlightBtn = document.createElement('button');
+        highlightBtn.className = "btn-primary py-2 px-4 rounded-md font-label-md text-label-md mt-3";
+        highlightBtn.textContent = "Highlight Motif in 3D Viewer";
+        highlightBtn.addEventListener('click', () => this.onHighlightResidues(this.highlightChains));
+        resultsContainer.appendChild(highlightBtn);
     }
 
     updateReportLink() {
@@ -121,8 +233,14 @@ export class SequenceTab {
     updateResults(runId, stats) {
         this.currentRunId = runId;
         this.stats = stats || {};
+        this.motifMatches = null;
+        this.highlightChains = null;
         this.refreshStats();
         this.loadSequenceGrid();
+        if (this.element) {
+            this.element.querySelector('#motif-search-input').value = "";
+            this.element.querySelector('#motif-results-container').innerHTML = "";
+        }
     }
 
     refreshStats() {
@@ -143,6 +261,11 @@ export class SequenceTab {
         const notebookLink = this.element.querySelector('#download-notebook-link');
         const reportLink = this.element.querySelector('#download-report-link');
         const citationsLink = this.element.querySelector('#download-citations-link');
+        const rmsdCsvLink = this.element.querySelector('#download-rmsd-csv-link');
+        const heatmapPngLink = this.element.querySelector('#download-heatmap-png-link');
+        const zipLink = this.element.querySelector('#download-zip-link');
+        const motifBtn = this.element.querySelector('#motif-search-btn');
+        motifBtn.disabled = !this.currentRunId;
 
         if (this.currentRunId) {
             pdbLink.href = getAlignmentPdbUrl(this.currentRunId);
@@ -156,6 +279,15 @@ export class SequenceTab {
 
             citationsLink.href = getCitationsUrl(this.currentRunId);
             citationsLink.classList.remove('opacity-55', 'pointer-events-none');
+
+            rmsdCsvLink.href = getRmsdCsvUrl(this.currentRunId);
+            rmsdCsvLink.classList.remove('opacity-55', 'pointer-events-none');
+
+            heatmapPngLink.href = getHeatmapPngUrl(this.currentRunId);
+            heatmapPngLink.classList.remove('opacity-55', 'pointer-events-none');
+
+            zipLink.href = getReportZipUrl(this.currentRunId);
+            zipLink.classList.remove('opacity-55', 'pointer-events-none');
 
             this.element.querySelectorAll('.report-section-checkbox').forEach(cb => { cb.checked = true; });
             this.updateReportLink();
@@ -171,6 +303,15 @@ export class SequenceTab {
 
             citationsLink.href = "#";
             citationsLink.classList.add('opacity-55', 'pointer-events-none');
+
+            rmsdCsvLink.href = "#";
+            rmsdCsvLink.classList.add('opacity-55', 'pointer-events-none');
+
+            heatmapPngLink.href = "#";
+            heatmapPngLink.classList.add('opacity-55', 'pointer-events-none');
+
+            zipLink.href = "#";
+            zipLink.classList.add('opacity-55', 'pointer-events-none');
 
             reportLink.href = "#";
             reportLink.classList.add('opacity-55', 'pointer-events-none');

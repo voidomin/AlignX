@@ -10,6 +10,7 @@ const TABS = [
     { key: 'clusters', label: 'Clusters' },
     { key: 'comparison', label: 'Compare' },
     { key: 'history', label: 'History' },
+    { key: 'settings', label: 'Settings' },
 ];
 
 export class TopBar {

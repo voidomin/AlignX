@@ -312,6 +312,68 @@ def test_get_run_by_id_rejects_path_traversal():
     assert response.status_code == 400
 
 
+def test_delete_history_run_removes_the_record():
+    with patch("src.backend.api.history_db") as mock_db:
+        mock_db.get_run.return_value = {"id": "run_1", "session_id": "sess_1"}
+        response = client.delete("/api/history/run_1?session_id=sess_1")
+
+        assert response.status_code == 200
+        assert response.json()["deleted"] == "run_1"
+        mock_db.delete_run.assert_called_once_with("run_1")
+
+
+def test_delete_history_run_404s_for_unknown_run():
+    with patch("src.backend.api.history_db") as mock_db:
+        mock_db.get_run.return_value = None
+        response = client.delete("/api/history/does_not_exist?session_id=sess_1")
+
+        assert response.status_code == 404
+        mock_db.delete_run.assert_not_called()
+
+
+def test_delete_history_run_403s_for_a_different_sessions_run():
+    with patch("src.backend.api.history_db") as mock_db:
+        mock_db.get_run.return_value = {"id": "run_1", "session_id": "someone_else"}
+        response = client.delete("/api/history/run_1?session_id=sess_1")
+
+        assert response.status_code == 403
+        mock_db.delete_run.assert_not_called()
+
+
+def test_delete_history_run_allows_deleting_a_legacy_run_with_no_session_id():
+    """A run predating session scoping has no session_id at all - it's
+    already unscoped for reads (get_run_by_id), so deletion shouldn't be
+    more restrictive than that."""
+    with patch("src.backend.api.history_db") as mock_db:
+        mock_db.get_run.return_value = {"id": "run_1", "session_id": None}
+        response = client.delete("/api/history/run_1?session_id=sess_1")
+
+        assert response.status_code == 200
+        mock_db.delete_run.assert_called_once_with("run_1")
+
+
+def test_clear_history_falls_back_to_a_global_wipe_without_a_session_id():
+    """The bundled SPA doesn't send session_id anywhere today, so omitting
+    it must still work (matching the single-user Streamlit app this is
+    ported from) rather than reject the request."""
+    with patch("src.backend.api.history_db") as mock_db:
+        response = client.delete("/api/history")
+
+        assert response.status_code == 200
+        assert response.json()["cleared"] == "all"
+        mock_db.clear_all_runs.assert_called_once()
+        mock_db.clear_runs_for_session.assert_not_called()
+
+
+def test_clear_history_clears_only_the_given_session():
+    with patch("src.backend.api.history_db") as mock_db:
+        response = client.delete("/api/history?session_id=sess_1")
+
+        assert response.status_code == 200
+        assert response.json()["cleared"] == "sess_1"
+        mock_db.clear_runs_for_session.assert_called_once_with("sess_1")
+
+
 def test_chains_endpoint():
     """Verify that PDB structure chain downloads and analyses execute successfully."""
     with patch(
@@ -395,6 +457,153 @@ def test_chains_endpoint_reports_download_failures():
 
         assert response.status_code == 400
         assert "9ZZZ" in response.json()["detail"]
+
+
+@pytest.fixture
+def restore_config():
+    """Settings endpoints mutate api_module.config in place (deliberately -
+    see update_settings' docstring) and persist to config.yaml on disk.
+    Snapshot and restore both around each test so these tests don't leak
+    state into the rest of the suite or overwrite the repo's real
+    config.yaml."""
+    import copy
+
+    original_config = copy.deepcopy(api_module.config)
+    original_yaml = Path("config.yaml").read_text()
+    yield
+    api_module.config.clear()
+    api_module.config.update(original_config)
+    Path("config.yaml").write_text(original_yaml)
+
+
+class TestSettingsEndpoints:
+    def test_get_settings_returns_the_current_config_subset(self, restore_config):
+        api_module.config["mustang"]["backend"] = "wsl"
+        api_module.config["visualization"]["heatmap_colormap"] = "plasma"
+
+        response = client.get("/api/settings")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["mustang_backend"] == "wsl"
+        assert data["heatmap_colormap"] == "plasma"
+
+    def test_post_settings_updates_the_shared_config_object_in_place(
+        self, restore_config
+    ):
+        with patch("src.backend.api.save_config"):
+            response = client.post(
+                "/api/settings",
+                json={
+                    "mustang_backend": "native",
+                    "mustang_timeout": 300,
+                    "max_proteins": 10,
+                    "max_file_size_mb": 200,
+                    "heatmap_colormap": "plasma",
+                    "viewer_default_style": "stick",
+                },
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["mustang_backend"] == "native"
+        assert data["max_proteins"] == 10
+        # The same dict object every AnalysisCoordinator(config)/PDBManager(config)
+        # call already references - confirms the in-place-mutation design
+        # actually took effect on the real shared object, not a copy.
+        assert api_module.config["mustang"]["backend"] == "native"
+        assert api_module.config["core"]["max_proteins"] == 10
+        assert api_module.config["pdb"]["max_file_size_mb"] == 200
+        assert api_module.config["visualization"]["heatmap_colormap"] == "plasma"
+        assert api_module.config["visualization"]["viewer_default_style"] == "stick"
+
+    def test_post_settings_persists_to_disk(self, restore_config):
+        response = client.post(
+            "/api/settings",
+            json={
+                "mustang_backend": "wsl",
+                "mustang_timeout": 600,
+                "max_proteins": 20,
+                "max_file_size_mb": 500,
+                "heatmap_colormap": "viridis",
+                "viewer_default_style": "cartoon",
+            },
+        )
+
+        assert response.status_code == 200
+        import yaml
+
+        on_disk = yaml.safe_load(Path("config.yaml").read_text())
+        assert on_disk["mustang"]["backend"] == "wsl"
+
+    def test_post_settings_rejects_an_invalid_mustang_backend(self, restore_config):
+        response = client.post(
+            "/api/settings",
+            json={
+                "mustang_backend": "not-a-real-backend",
+                "mustang_timeout": 600,
+                "max_proteins": 20,
+                "max_file_size_mb": 500,
+                "heatmap_colormap": "viridis",
+                "viewer_default_style": "cartoon",
+            },
+        )
+
+        assert response.status_code == 400
+
+    def test_post_settings_rejects_max_proteins_out_of_bounds(self, restore_config):
+        response = client.post(
+            "/api/settings",
+            json={
+                "mustang_backend": "auto",
+                "mustang_timeout": 600,
+                "max_proteins": 999,
+                "max_file_size_mb": 500,
+                "heatmap_colormap": "viridis",
+                "viewer_default_style": "cartoon",
+            },
+        )
+
+        assert response.status_code == 422
+
+    def test_post_settings_500s_when_save_to_disk_fails(self, restore_config):
+        with patch("src.backend.api.save_config", side_effect=OSError("disk full")):
+            response = client.post(
+                "/api/settings",
+                json={
+                    "mustang_backend": "auto",
+                    "mustang_timeout": 600,
+                    "max_proteins": 20,
+                    "max_file_size_mb": 500,
+                    "heatmap_colormap": "viridis",
+                    "viewer_default_style": "cartoon",
+                },
+            )
+
+        assert response.status_code == 500
+        assert "disk full" in response.json()["detail"]
+
+    def test_reset_settings_restores_hardcoded_defaults(self, restore_config):
+        with patch("src.backend.api.save_config"):
+            api_module.config["mustang"]["backend"] = "native"
+            api_module.config["core"]["max_proteins"] = 5
+            api_module.config["visualization"]["heatmap_colormap"] = "plasma"
+
+            response = client.post("/api/settings/reset")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["mustang_backend"] == "auto"
+        assert data["max_proteins"] == 20
+        # Regression test: these defaults must match Streamlit's own
+        # DEFAULT_SETTINGS (pages/3_Settings.py) - "viridis", not
+        # VisualizationConfig's unrelated Pydantic field default
+        # ("RdYlBu_r"), which "Restore Defaults" was briefly wired to by
+        # mistake and would have silently restored the wrong colormap.
+        assert data["heatmap_colormap"] == "viridis"
+        assert api_module.config["mustang"]["backend"] == "auto"
+        assert api_module.config["core"]["max_proteins"] == 20
+        assert api_module.config["visualization"]["heatmap_colormap"] == "viridis"
 
 
 class TestRateLimitClientKey:
@@ -627,6 +836,54 @@ def test_sequence_endpoint():
         assert "4RLT_A" in data["sequences"]
         assert data["identity"] == pytest.approx(66.67)
         assert len(data["conservation"]) == 6
+        assert "motif_matches" not in data
+        assert "highlight_chains" not in data
+
+
+def test_sequence_endpoint_with_motif_query_returns_matches_and_highlight_map():
+    with patch(
+        "src.backend.sequence_viewer.SequenceViewer.parse_afasta"
+    ) as mock_parse, patch(
+        "src.backend.sequence_viewer.SequenceViewer.calculate_conservation",
+        return_value=[1.0] * 6,
+    ), patch(
+        "src.backend.sequence_viewer.SequenceViewer.calculate_identity",
+        return_value=100.0,
+    ), patch(
+        "pathlib.Path.exists", return_value=True
+    ):
+        mock_parse.return_value = {"4RLT": "AC-GHK", "3UG9": "ACYGH-"}
+
+        response = client.get("/api/sequence?run_id=run_123&motif=G.K")
+
+        assert response.status_code == 200
+        data = response.json()
+        # "4RLT" raw (gap-stripped) = "ACGHK" -> "G.K" matches "GHK" at raw
+        # idx 2-4 -> aligned columns 4,5,6 (a gap sits at column 3).
+        assert data["motif_matches"] == {"4RLT": [4, 5, 6]}
+        assert data["highlight_chains"]["A"] == [3, 4, 5]
+
+
+def test_sequence_endpoint_motif_with_no_matches_returns_empty_maps():
+    with patch(
+        "src.backend.sequence_viewer.SequenceViewer.parse_afasta"
+    ) as mock_parse, patch(
+        "src.backend.sequence_viewer.SequenceViewer.calculate_conservation",
+        return_value=[1.0] * 4,
+    ), patch(
+        "src.backend.sequence_viewer.SequenceViewer.calculate_identity",
+        return_value=100.0,
+    ), patch(
+        "pathlib.Path.exists", return_value=True
+    ):
+        mock_parse.return_value = {"4RLT": "ACGT"}
+
+        response = client.get("/api/sequence?run_id=run_123&motif=ZZZZ")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["motif_matches"] == {}
+        assert data["highlight_chains"] == {"A": []}
 
 
 def test_comparison_endpoint_uses_upper_triangle_mean():
@@ -1125,6 +1382,162 @@ def test_notebook_endpoint_500s_on_unexpected_exporter_error():
 
         assert response.status_code == 500
         assert "disk full" in response.json()["detail"]
+
+
+def test_rmsd_csv_endpoint_returns_a_real_csv():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run:
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "metadata": {
+                "results": {
+                    "rmsd_df": {
+                        "index": ["4RLT", "3UG9"],
+                        "columns": ["4RLT", "3UG9"],
+                        "data": [[0.0, 1.5], [1.5, 0.0]],
+                    }
+                }
+            },
+        }
+
+        response = client.get("/api/report/rmsd-csv?run_id=run_123")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/csv")
+        assert "attachment" in response.headers["content-disposition"]
+        assert "rmsd_matrix_run_123.csv" in response.headers["content-disposition"]
+        assert "4RLT" in response.text
+        assert "1.5" in response.text
+
+
+def test_rmsd_csv_endpoint_404s_for_unknown_run():
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        response = client.get("/api/report/rmsd-csv?run_id=nope")
+        assert response.status_code == 404
+
+
+def test_rmsd_csv_endpoint_404s_when_no_rmsd_matrix_stored():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run:
+        mock_get_run.return_value = {"id": "run_123", "metadata": {"results": {}}}
+        response = client.get("/api/report/rmsd-csv?run_id=run_123")
+        assert response.status_code == 404
+        assert "No stored RMSD matrix" in response.json()["detail"]
+
+
+def test_heatmap_png_endpoint_returns_the_saved_file(tmp_path):
+    heatmap = tmp_path / "rmsd_heatmap.png"
+    heatmap.write_bytes(b"\x89PNG\r\n\x1a\ndummy png bytes")
+
+    with patch(
+        "src.backend.api._lookup_run_and_result_dir",
+        return_value=({"id": "run_123"}, tmp_path),
+    ):
+        response = client.get("/api/report/heatmap-png?run_id=run_123")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+        assert "rmsd_heatmap_run_123.png" in response.headers["content-disposition"]
+        assert response.content == heatmap.read_bytes()
+
+
+def test_heatmap_png_endpoint_404s_when_file_missing_on_disk(tmp_path):
+    with patch(
+        "src.backend.api._lookup_run_and_result_dir",
+        return_value=({"id": "run_123"}, tmp_path),
+    ):
+        response = client.get("/api/report/heatmap-png?run_id=run_123")
+
+        assert response.status_code == 404
+        assert "No heatmap image found" in response.json()["detail"]
+
+
+def test_heatmap_png_endpoint_404s_for_unknown_run():
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        response = client.get("/api/report/heatmap-png?run_id=nope")
+        assert response.status_code == 404
+
+
+def test_report_zip_endpoint_bundles_every_available_artifact(tmp_path):
+    import zipfile
+    import io
+
+    (tmp_path / "alignment.pdb").write_text("ATOM dummy pdb")
+    (tmp_path / "alignment.afasta").write_text(">a\nAAA\n")
+    (tmp_path / "rmsd_heatmap.png").write_bytes(b"\x89PNG\r\n\x1a\ndummy")
+
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "src.backend.notebook_exporter.NotebookExporter.export"
+    ) as mock_export:
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT", "3UG9"],
+            "metadata": {
+                "results": {
+                    "stats": {"mean_rmsd": 1.5},
+                    "id": "run_123",
+                    "rmsd_df": {
+                        "index": ["4RLT", "3UG9"],
+                        "columns": ["4RLT", "3UG9"],
+                        "data": [[0.0, 1.5], [1.5, 0.0]],
+                    },
+                }
+            },
+        }
+        notebook_path = tmp_path / "lab_notebook.html"
+        notebook_path.write_text("<html>notebook</html>")
+        mock_export.return_value = notebook_path
+
+        with patch(
+            "src.backend.api._lookup_run_and_result_dir",
+            return_value=(mock_get_run.return_value, tmp_path),
+        ):
+            response = client.get("/api/report/zip?run_id=run_123")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert "structscope_run_123.zip" in response.headers["content-disposition"]
+
+    with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+        names = zf.namelist()
+        assert "alignment_run_123.pdb" in names
+        assert "alignment_run_123.afasta" in names
+        assert "rmsd_matrix_run_123.csv" in names
+        assert "rmsd_heatmap_run_123.png" in names
+        assert "lab_notebook_run_123.html" in names
+        assert "4RLT" in zf.read("rmsd_matrix_run_123.csv").decode()
+
+
+def test_report_zip_endpoint_skips_missing_pieces_without_failing(tmp_path):
+    """A run with no heatmap (e.g. it failed before that stage) or no
+    lab-notebook-exportable data still produces a ZIP with whatever is
+    actually available, not a 500."""
+    import zipfile
+    import io
+
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "src.backend.notebook_exporter.NotebookExporter.export",
+        side_effect=RuntimeError("no rmsd_df to render"),
+    ):
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT"],
+            "metadata": {"results": {"stats": {}, "id": "run_123"}},
+        }
+
+        with patch(
+            "src.backend.api._lookup_run_and_result_dir",
+            return_value=(mock_get_run.return_value, tmp_path),
+        ):
+            response = client.get("/api/report/zip?run_id=run_123")
+
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+        assert zf.namelist() == []
+
+
+def test_report_zip_endpoint_404s_for_unknown_run():
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        response = client.get("/api/report/zip?run_id=nope")
+        assert response.status_code == 404
 
 
 def _discover_run(run_id="discover_123", results_overrides=None):

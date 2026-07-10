@@ -6,7 +6,7 @@ import secrets
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, List, Dict, Any, Optional
+from typing import Annotated, List, Dict, Any, Optional, Tuple
 
 import matplotlib
 
@@ -20,12 +20,13 @@ from fastapi import FastAPI, HTTPException, Query, Body, Request, UploadFile, Fi
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import JSONResponse
+from pydantic import BaseModel, Field, ValidationError
 
 # Ensure working directory is set to project root if run from subdirectories
 project_root = Path(__file__).parent.parent.parent.resolve()
 sys.path.insert(0, str(project_root))
 
-from src.utils.config_loader import load_config
+from src.utils.config_loader import load_config, save_config
 from src.utils.logger import get_logger
 from src.backend.coordinator import AnalysisCoordinator
 from src.backend.discovery_coordinator import DiscoveryCoordinator
@@ -238,6 +239,91 @@ def health_check():
         "mustang_installed": mustang_ok,
         "mustang_message": mustang_msg,
     }
+
+
+def _current_settings() -> Dict[str, Any]:
+    """The runtime-editable subset of `config` - mirrors the Streamlit
+    Settings page's exact field set (pages/3_Settings.py)."""
+    return {
+        "mustang_backend": config.get("mustang", {}).get("backend", "auto"),
+        "mustang_timeout": config.get("mustang", {}).get("timeout", 600),
+        "max_proteins": config.get("core", {}).get("max_proteins", 20),
+        "max_file_size_mb": config.get("pdb", {}).get("max_file_size_mb", 500),
+        "heatmap_colormap": config.get("visualization", {}).get(
+            "heatmap_colormap", "RdYlBu_r"
+        ),
+        "viewer_default_style": config.get("visualization", {}).get(
+            "viewer_default_style", "cartoon"
+        ),
+    }
+
+
+class SettingsUpdate(BaseModel):
+    """Field defaults here are deliberately Streamlit's own DEFAULT_SETTINGS
+    (pages/3_Settings.py), not VisualizationConfig's Pydantic defaults
+    (config_models.py) - the two disagree on heatmap_colormap ("viridis"
+    vs "RdYlBu_r"), and it's Streamlit's "Restore Defaults" button
+    behavior this class's un-set fields are meant to mirror."""
+
+    mustang_backend: str = "auto"
+    mustang_timeout: int = Field(600, ge=1)
+    max_proteins: int = Field(20, ge=2, le=100)
+    max_file_size_mb: int = Field(500, ge=1)
+    heatmap_colormap: str = "viridis"
+    viewer_default_style: str = "cartoon"
+
+
+@app.get("/api/settings")
+def get_settings():
+    """Read the runtime-editable subset of the pipeline config. There's no
+    settings page anywhere in the SPA today (the Streamlit app's
+    pages/3_Settings.py is the only place these are currently editable) -
+    this is the first step toward porting that."""
+    return _current_settings()
+
+
+@app.post("/api/settings", responses={400: {"description": "Invalid settings"}})
+def update_settings(update: SettingsUpdate):
+    """Apply and persist new settings. `config` is a single shared dict
+    every request-scoped coordinator/manager already reads from at
+    construction time (AnalysisCoordinator(config), PDBManager(config),
+    etc. all just store a reference, never a deep copy) - mutating its
+    nested sections in place, rather than introducing a second parallel
+    settings object, means every future request automatically picks up
+    the change with no extra wiring or cache invalidation needed (unlike
+    Streamlit, which caches a MustangRunner in session state and has to
+    explicitly drop it after a save)."""
+    from src.backend.config_models import MustangConfig
+
+    try:
+        MustangConfig(backend=update.mustang_backend, timeout=update.mustang_timeout)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    config.setdefault("mustang", {})["backend"] = update.mustang_backend.lower()
+    config["mustang"]["timeout"] = update.mustang_timeout
+    config.setdefault("core", {})["max_proteins"] = update.max_proteins
+    config.setdefault("pdb", {})["max_file_size_mb"] = update.max_file_size_mb
+    config.setdefault("visualization", {})["heatmap_colormap"] = update.heatmap_colormap
+    config["visualization"]["viewer_default_style"] = update.viewer_default_style
+
+    try:
+        save_config(config)
+    except Exception as e:
+        logger.warning(f"Failed to persist settings to config.yaml: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save settings: {str(e)}"
+        )
+
+    return _current_settings()
+
+
+@app.post("/api/settings/reset")
+def reset_settings():
+    """Restore the same hardcoded defaults Streamlit's "Restore Defaults"
+    button uses (pages/3_Settings.py's DEFAULT_SETTINGS)."""
+    defaults = SettingsUpdate()
+    return update_settings(defaults)
 
 
 @app.get("/api/suggest")
@@ -1095,6 +1181,65 @@ def get_history(
     }
 
 
+@app.delete(
+    "/api/history/{run_id}",
+    responses={
+        400: {"description": "Invalid run_id"},
+        403: {"description": "Run belongs to a different session"},
+        404: {"description": "Run not found in the history database"},
+    },
+)
+def delete_history_run(
+    run_id: str, session_id: Annotated[Optional[str], Query()] = None
+):
+    """
+    Delete a single run's history record. Unlike every read endpoint keyed
+    on run_id (get_run_by_id, get_pdf_report, etc.), which deliberately
+    have no ownership check to support shareable run links, deletion is
+    scoped to the run's own session: anyone with a shared-run link could
+    otherwise delete a run they don't own. A run with no session_id at all
+    (a legacy/anonymous run predating session scoping) can still be
+    deleted by anyone, matching its already-unscoped read access.
+    """
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    run = history_db.get_run(run_id)
+    if not run:
+        raise HTTPException(
+            status_code=404, detail=f"Run {run_id} not found in history database."
+        )
+    if run.get("session_id") and run["session_id"] != session_id:
+        raise HTTPException(
+            status_code=403, detail="This run belongs to a different session."
+        )
+
+    history_db.delete_run(run_id)
+    return {"deleted": run_id}
+
+
+@app.delete("/api/history")
+def clear_history(session_id: Annotated[Optional[str], Query()] = None):
+    """
+    Clear run history. When session_id is given, scopes the wipe to that
+    session only (`clear_runs_for_session`) - the safe choice for a
+    multi-tenant deployment that actually tracks sessions per caller.
+    The bundled SPA doesn't send session_id anywhere today (no client-side
+    session tracking exists yet - a separate, larger feature of its own),
+    so omitting it falls back to `clear_all_runs()`, a global wipe -
+    matching the single-user Streamlit app this is ported from, and
+    matching every run created by the SPA today having no session_id set
+    in the first place.
+    """
+    if session_id:
+        _safe_segment(session_id, "session_id")
+        history_db.clear_runs_for_session(session_id)
+        return {"cleared": session_id}
+
+    history_db.clear_all_runs()
+    return {"cleared": "all"}
+
+
 @app.get(
     "/api/runs/{run_id}",
     responses={
@@ -1142,12 +1287,22 @@ def get_aggregate_stats(session_id: Annotated[Optional[str], Query()] = None):
 def get_sequence(
     run_id: Annotated[str, Query(...)],
     session_id: Annotated[Optional[str], Query()] = None,
+    motif: Annotated[
+        Optional[str],
+        Query(
+            description="Optional sequence motif query (e.g. 'RYY', 'G.G', 'G-X-P' - 'X'/'.'/'-' act as single-residue wildcards). When given, the response also includes motif_matches (per-structure matched alignment columns) and highlight_chains (a ready-to-use {chain_id: [residue_numbers]} map for the 3D viewer)."
+        ),
+    ] = None,
 ):
     """
     Parse the alignment FASTA for a run and return sequences,
     conservation scores, and identity percentage.
     """
-    from src.backend.sequence_viewer import SequenceViewer
+    from src.backend.sequence_viewer import (
+        SequenceViewer,
+        find_motif_matches,
+        _build_chain_mapping_from_matches,
+    )
 
     _safe_segment(run_id, "run_id")
     _safe_segment(session_id, "session_id")
@@ -1172,14 +1327,21 @@ def get_sequence(
     conservation = viewer.calculate_conservation(sequences)
     identity = viewer.calculate_identity(sequences)
 
-    return sanitize_for_json(
-        {
-            "run_id": run_id,
-            "sequences": sequences,
-            "conservation": conservation,
-            "identity": round(identity, 2),
-        }
-    )
+    response = {
+        "run_id": run_id,
+        "sequences": sequences,
+        "conservation": conservation,
+        "identity": round(identity, 2),
+    }
+
+    if motif:
+        matches = find_motif_matches(sequences, motif)
+        response["motif_matches"] = matches
+        response["highlight_chains"] = _build_chain_mapping_from_matches(
+            sequences, matches
+        )
+
+    return sanitize_for_json(response)
 
 
 @app.get(
@@ -1356,6 +1518,176 @@ def get_lab_notebook(
         raise HTTPException(
             status_code=500, detail=f"Failed to generate lab notebook: {str(e)}"
         )
+
+
+def _lookup_run_and_result_dir(
+    run_id: str, session_id: Optional[str]
+) -> Tuple[Dict[str, Any], Path]:
+    """Shared lookup for the raw-export endpoints below (CSV/PNG/ZIP): finds
+    the run, 404s if missing, and resolves its results/<run_id> directory -
+    the same two steps get_pdf_report/get_lab_notebook each inline
+    separately; factored out here since a third+ caller would otherwise
+    triplicate it."""
+    run = history_db.get_run(run_id)
+    if not run:
+        raise HTTPException(
+            status_code=404, detail=f"Run {run_id} not found in history database."
+        )
+    res_dir = project_root / "results"
+    if session_id:
+        res_dir = res_dir / session_id
+    res_dir = res_dir / run_id
+    return run, res_dir
+
+
+def _reconstruct_rmsd_df(run: Dict[str, Any]) -> Optional[pd.DataFrame]:
+    """metadata.results.rmsd_df has been through sanitize_for_json
+    ({index, columns, data} dict) - rebuild the real DataFrame, matching
+    get_pdf_report's own reconstruction of the same field."""
+    results = run.get("metadata", {}).get("results") or {}
+    rmsd_dict = results.get("rmsd_df")
+    if not isinstance(rmsd_dict, dict):
+        return None
+    return pd.DataFrame(
+        data=rmsd_dict.get("data"),
+        index=rmsd_dict.get("index"),
+        columns=rmsd_dict.get("columns"),
+    )
+
+
+@app.get(
+    "/api/report/rmsd-csv",
+    responses={
+        400: {"description": "Invalid run_id or session_id"},
+        404: {"description": "Run not found, or has no stored RMSD matrix"},
+    },
+)
+def get_rmsd_csv(
+    run_id: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """Download the run's pairwise RMSD matrix as a raw CSV file."""
+    from fastapi.responses import PlainTextResponse
+
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    run, _ = _lookup_run_and_result_dir(run_id, session_id)
+    rmsd_df = _reconstruct_rmsd_df(run)
+    if rmsd_df is None:
+        raise HTTPException(
+            status_code=404, detail=f"No stored RMSD matrix for run {run_id}."
+        )
+
+    return PlainTextResponse(
+        content=rmsd_df.to_csv(),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="rmsd_matrix_{run_id}.csv"'
+        },
+    )
+
+
+@app.get(
+    "/api/report/heatmap-png",
+    responses={
+        400: {"description": "Invalid run_id or session_id"},
+        404: {"description": "Run not found, or its heatmap image is missing on disk"},
+    },
+)
+def get_heatmap_png(
+    run_id: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """Download the run's RMSD heatmap as a raw PNG file - already saved
+    to disk during the pipeline run (process_result_directory), just
+    never exposed via a direct download route until now."""
+    from fastapi.responses import FileResponse
+
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    _, res_dir = _lookup_run_and_result_dir(run_id, session_id)
+    heatmap_path = res_dir / "rmsd_heatmap.png"
+    if not heatmap_path.exists():
+        raise HTTPException(
+            status_code=404, detail=f"No heatmap image found for run {run_id}."
+        )
+
+    return FileResponse(
+        path=str(heatmap_path),
+        media_type="image/png",
+        filename=f"rmsd_heatmap_{run_id}.png",
+    )
+
+
+@app.get(
+    "/api/report/zip",
+    responses={400: {"description": "Invalid run_id or session_id"}},
+)
+def get_report_zip(
+    run_id: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """Bundle every generated artifact for a run into one ZIP: alignment
+    PDB/FASTA, the RMSD matrix CSV, the heatmap PNG, and an auto-generated
+    lab notebook HTML - each included on a best-effort basis (a run
+    missing one piece, e.g. no heatmap for a single-structure run, still
+    gets a ZIP with everything else rather than a 404 for the whole
+    bundle)."""
+    import io
+    import zipfile
+
+    from fastapi.responses import StreamingResponse
+    from src.backend.notebook_exporter import NotebookExporter
+
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    run, res_dir = _lookup_run_and_result_dir(run_id, session_id)
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+        alignment_pdb = res_dir / "alignment.pdb"
+        if alignment_pdb.exists():
+            zip_file.write(alignment_pdb, arcname=f"alignment_{run_id}.pdb")
+
+        alignment_afasta = res_dir / "alignment.afasta"
+        if alignment_afasta.exists():
+            zip_file.write(alignment_afasta, arcname=f"alignment_{run_id}.afasta")
+
+        rmsd_df = _reconstruct_rmsd_df(run)
+        if rmsd_df is not None:
+            zip_file.writestr(f"rmsd_matrix_{run_id}.csv", rmsd_df.to_csv())
+
+        heatmap_path = res_dir / "rmsd_heatmap.png"
+        if heatmap_path.exists():
+            zip_file.write(heatmap_path, arcname=f"rmsd_heatmap_{run_id}.png")
+
+        try:
+            metadata = run.get("metadata", {})
+            results = metadata.get("results") or {
+                "stats": metadata.get("stats", {}),
+                "id": run_id,
+                "pdb_ids": run.get("pdb_ids", []),
+            }
+            results = dict(results)
+            results["result_dir"] = res_dir
+            results["alignment_pdb"] = alignment_pdb
+            notebook_path = NotebookExporter().export(results)
+            if notebook_path and notebook_path.exists():
+                zip_file.write(notebook_path, arcname=f"lab_notebook_{run_id}.html")
+        except Exception as e:
+            logger.warning(f"Skipping lab notebook in ZIP for {run_id}: {e}")
+
+    zip_buffer.seek(0)
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="structscope_{run_id}.zip"'
+        },
+    )
 
 
 @app.get(

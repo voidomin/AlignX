@@ -306,6 +306,19 @@ class TestRunCrud:
         assert db.clear_all_runs() is True
         assert db.count_runs() == 0
 
+    def test_clear_runs_for_session_only_deletes_that_sessions_runs(self, db):
+        db.save_run(
+            "run_1", "Run 1", ["4RLT"], Path("results/run_1"), session_id="sess-A"
+        )
+        db.save_run(
+            "run_2", "Run 2", ["3UG9"], Path("results/run_2"), session_id="sess-B"
+        )
+
+        assert db.clear_runs_for_session("sess-A") is True
+
+        assert db.get_run("run_1") is None
+        assert db.get_run("run_2") is not None
+
 
 class TestCacheManagementMethods:
     def test_register_and_retrieve_cache_item(self, db):

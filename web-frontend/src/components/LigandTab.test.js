@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { LigandTab } from './LigandTab.js';
 
 vi.mock('../api.js', () => ({
@@ -19,8 +19,13 @@ function makeTab(overrides = {}) {
 }
 
 describe('LigandTab', () => {
+    beforeEach(() => {
+        global.Plotly = { newPlot: vi.fn() };
+    });
+
     afterEach(() => {
         vi.clearAllMocks();
+        delete global.Plotly;
     });
 
     it('shows "No Ligands Loaded" when there are no ligands', () => {
@@ -165,5 +170,64 @@ describe('LigandTab', () => {
         await tab.loadInteractions('ZN_B_50');
 
         expect(fetchInteractions).toHaveBeenCalledWith('3UG9', 'ZN_B_50', 'run_1');
+    });
+
+    describe('binding pocket similarity matrix', () => {
+        it('renders a heatmap with split "pdb_id / ligand_id" axis labels when >=2 ligands were compared', () => {
+            const tab = makeTab();
+            tab.render();
+
+            tab.updateLigands([], 'run_1', undefined, {
+                index: ['4HHB:HEM_A_142', '2HHB:HEM_A_142'],
+                columns: ['4HHB:HEM_A_142', '2HHB:HEM_A_142'],
+                data: [[1.0, 0.75], [0.75, 1.0]],
+            });
+
+            const section = tab.element.querySelector('#pocket-similarity-section');
+            expect(section.classList.contains('hidden')).toBe(false);
+            expect(global.Plotly.newPlot).toHaveBeenCalled();
+            const [, traces] = global.Plotly.newPlot.mock.calls[0];
+            expect(traces[0].x).toEqual(['4HHB<br>HEM_A_142', '2HHB<br>HEM_A_142']);
+            expect(traces[0].z).toEqual([[1.0, 0.75], [0.75, 1.0]]);
+        });
+
+        it('stays hidden when there is no similarity data', () => {
+            const tab = makeTab();
+            tab.render();
+
+            tab.updateLigands([], 'run_1', undefined, null);
+
+            expect(tab.element.querySelector('#pocket-similarity-section').classList.contains('hidden')).toBe(true);
+            expect(global.Plotly.newPlot).not.toHaveBeenCalled();
+        });
+
+        it('stays hidden when only a single ligand was found (nothing to compare)', () => {
+            const tab = makeTab();
+            tab.render();
+
+            tab.updateLigands([], 'run_1', undefined, {
+                index: ['4HHB:HEM_A_142'],
+                columns: ['4HHB:HEM_A_142'],
+                data: [[1.0]],
+            });
+
+            expect(tab.element.querySelector('#pocket-similarity-section').classList.contains('hidden')).toBe(true);
+            expect(global.Plotly.newPlot).not.toHaveBeenCalled();
+        });
+
+        it('re-renders the matrix against a fresh DOM element after a tab switch (render() called again)', () => {
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([], 'run_1', undefined, {
+                index: ['4HHB:HEM_A_142', '2HHB:HEM_A_142'],
+                columns: ['4HHB:HEM_A_142', '2HHB:HEM_A_142'],
+                data: [[1.0, 0.75], [0.75, 1.0]],
+            });
+
+            tab.render(); // simulates main.js re-rendering the pane on tab switch
+            tab.updateLigands(tab.ligandsList, tab.currentRunId, tab.selectedPDBs, tab.pocketSimilarity);
+
+            expect(tab.element.querySelector('#pocket-similarity-section').classList.contains('hidden')).toBe(false);
+        });
     });
 });
