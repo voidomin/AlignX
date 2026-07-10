@@ -585,6 +585,101 @@ class AnnotationAggregator:
             names.update(await self._fetch_go_term_names_chunk(chunk, client))
         return names
 
+    async def _resolve_structure_accession(
+        self,
+        pdb_id: str,
+        chain: Optional[str],
+        source: str,
+        client: httpx.AsyncClient,
+        pdb_cache: Optional[Dict[str, Dict[str, Optional[str]]]],
+    ) -> Optional[str]:
+        """Resolves a Compare-mode structure ID (not a Foldseek hit) to a
+        UniProt accession, by source database (see
+        PDBManager.detect_source()). "alphafold" IDs are the exact same
+        "AF-{uniprot}-F{n}" format Foldseek's own AFDB hits use, so the
+        existing free-regex extractor applies unmodified. "swissmodel" IDs
+        embed the accession directly ("SM-{uniprot}"), same one-line parse
+        PDBManager._fetch_swissmodel_metadata already does for its own
+        metadata fetch. "pdb" (plain 4-char) IDs need the chain and a real
+        SIFTS lookup, same as a Foldseek pdb100/cath50 hit. "esmfold"
+        (ESM Atlas) structures have no UniProt mapping at all - metagenomic,
+        uncharacterized sequences - so no lookup is attempted."""
+        if source == "alphafold":
+            return self.extract_uniprot_accession(pdb_id)
+        if source == "swissmodel":
+            parts = pdb_id.split("-", 1)
+            return parts[1].upper() if len(parts) == 2 and parts[1] else None
+        if source == "pdb" and chain:
+            return await self.resolve_pdb_uniprot_accession(
+                pdb_id, chain, client, pdb_cache
+            )
+        return None
+
+    async def aggregate_for_structure(
+        self,
+        pdb_id: str,
+        chain: Optional[str],
+        source: str,
+        client: httpx.AsyncClient,
+        pdb_cache: Optional[Dict[str, Dict[str, Optional[str]]]] = None,
+    ) -> Dict[str, Any]:
+        """Fetches functional annotation (InterPro domains, QuickGO terms,
+        Reactome pathways) for one Compare-mode structure. Unlike
+        aggregate_for_hits(), there is no Foldseek-style confidence gating
+        here - a structure you explicitly chose to align isn't a
+        probabilistic structural-neighbor match, it's just itself, so
+        every accession that resolves gets annotated the same way. STRING
+        interaction partners are out of scope (Compare mode has no taxon_id
+        source the way a Foldseek hit's own taxId gives Discover mode one
+        for free)."""
+        accession = await self._resolve_structure_accession(
+            pdb_id, chain, source, client, pdb_cache
+        )
+
+        result: Dict[str, Any] = {
+            "pdb_id": pdb_id,
+            "chain": chain,
+            "accession": accession,
+            "domains": [],
+            "go_terms": [],
+            "reactome_pathways": [],
+        }
+        if not accession:
+            return result
+
+        domains, quickgo_terms, reactome_pathways = await asyncio.gather(
+            self.fetch_interpro_entries(accession, client),
+            self.fetch_quickgo_annotations(accession, client),
+            self.fetch_reactome_pathways(accession, client),
+        )
+
+        go_ids = [g["id"] for g in quickgo_terms if g.get("id")]
+        names = await self.resolve_go_term_names(go_ids, client)
+        for term in quickgo_terms:
+            term["name"] = names.get(term.get("id"))
+
+        result["domains"] = domains
+        # QuickGO's annotation-search returns one row per curated evidence
+        # code, so a well-studied protein's common GO terms (e.g. "protein
+        # binding") routinely appear many times over - real duplicate
+        # records, not a bug in the fetch. Discover mode never surfaces
+        # this raw list directly (only a neighbor-frequency-deduplicated
+        # summary), but a single structure's own annotation has no
+        # frequency dimension to dedupe by, so it's deduplicated by GO id
+        # here instead, keeping the first (evidence-code-agnostic for
+        # display purposes) occurrence of each.
+        seen_go_ids = set()
+        deduped_terms = []
+        for term in quickgo_terms:
+            gid = term.get("id")
+            if gid in seen_go_ids:
+                continue
+            seen_go_ids.add(gid)
+            deduped_terms.append(term)
+        result["go_terms"] = deduped_terms
+        result["reactome_pathways"] = reactome_pathways
+        return result
+
     @staticmethod
     def _hit_sort_key(hit: Dict[str, Any]) -> float:
         try:

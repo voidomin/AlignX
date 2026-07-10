@@ -43,7 +43,7 @@ Run the test suite script:
 powershell -File scripts\run_tests.ps1
 ```
 *Expected Output:*
-- Pytest runs 947 items successfully and shows no errors.
+- Pytest runs 959 items successfully and shows no errors.
 - Verification scripts are executed automatically as part of the run.
 
 ---
@@ -106,7 +106,7 @@ Run the Vitest suite covering `api.js` and the JS components (auth headers, job 
 cd web-frontend
 npm test
 ```
-*Expected Output:* all test files pass (currently 182 tests across the suite, covering `api.js` and every tab/panel component, including `DiscoverTab.js` and `SettingsTab.js`).
+*Expected Output:* all test files pass (currently 200 tests across the suite, covering `api.js` and every tab/panel component, including `DiscoverTab.js` and `SettingsTab.js`).
 
 ---
 
@@ -136,6 +136,7 @@ Verify the Vite single page application (SPA).
    - On **Sequence**, toggle the report-section checklist and confirm the "Download PDF" link's URL updates; confirm "View Notebook" opens a valid HTML file; confirm the new "Download CSV", "Download PNG", "Download Tree" (Newick), and "Download Everything" links each produce a real file. Enter a motif query (e.g. `G.K`) in the Sequence Motif Search box, confirm a match table appears, and click "Highlight Motif in 3D Viewer" to confirm the matched residues highlight in the 3D viewer.
    - On **Analytics**' Quality sub-tab, confirm the "Alignment quality (TM-score / GDT-TS)" table renders one row per structure below the Ramachandran stats.
    - Run an alignment including an `AF-` or `ESM-` structure (e.g. `AF-P69905-F1` with `4HHB`); in the 3D viewer header, confirm the new confidence-coloring toggle button is enabled (it stays disabled/greyed out for runs with no predicted structures) and clicking it recolors the AlphaFold/ESM structure by a real red-to-blue pLDDT confidence gradient (not a flat color); clicking it again reverts to identity coloring.
+   - On **Analytics**' Annotations sub-tab (using the `AF-P69905-F1` + `4HHB` run above — both resolve to the same real UniProt accession, P69905), confirm it resolves and displays real InterPro domains (e.g. "Globin") and GO terms (e.g. "oxygen carrier activity") for each structure via the picker, confirm a "Shared across all structures" section appears listing the domains/terms both structures have in common, and confirm switching to an `ESM-` structure shows a graceful "no UniProt accession could be resolved" message rather than an error.
    - Run a second alignment with different structures, then check the **Compare** tab to diff it against the first run.
    - On **History**, confirm past runs list and reloading one restores its full state (3D view, stats, tabs); confirm a single run can be deleted (with a confirmation prompt) and disappears from the list; confirm "Clear All History" (also confirmation-gated) empties the list.
    - On **Settings**, confirm the form loads real current values, change one (e.g. the heatmap colormap), click "Save Changes", reload the page, and confirm the change persisted; click "Restore Defaults" and confirm it reverts to the documented defaults (`auto`/600s/20/500MB/viridis/cartoon).

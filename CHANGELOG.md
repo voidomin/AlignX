@@ -2,6 +2,23 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.84.0]
+
+Extends functional annotation (InterPro domains, GO terms, Reactome pathways) to Compare mode - previously only Discover mode's Foldseek structural-neighbor search got this, even though a plain Compare run of well-known PDB IDs never did, despite the same `AnnotationAggregator` machinery already existing.
+
+### Added
+- **Functional annotation for Compare-mode structures**: new `AnnotationAggregator.aggregate_for_structure()`, deliberately separate from Discover's `aggregate_for_hits()` since Discover's confidence-gating (structural-match probability thresholds) has no Compare-mode equivalent - a structure you explicitly chose to align isn't a fuzzy match, it's just itself. Resolves each structure's UniProt accession by source (a real PDBe SIFTS lookup for plain PDB IDs, a free regex for AlphaFold IDs - identical to Foldseek's own AFDB hit format - a one-line parse for SWISS-MODEL IDs; ESM Atlas structures have no UniProt mapping and are skipped gracefully). New `GET /api/annotations` endpoint, reusing the same 30-day SQLite annotation cache Discover mode already writes to (a Compare-mode lookup for a PDB ID Discover has already annotated gets a free cache hit). New "Annotations" sub-tab in the Analytics tab: a structure picker, per-structure domains/GO terms/pathways, and (once every structure in the run has resolved) a "shared across all structures" summary computed client-side from what's already been fetched. Deliberately out of scope: STRING interaction partners, since Compare mode has no taxon-ID source the way a Foldseek hit's own `taxId` gives Discover mode one for free.
+- Extracted `DiscoverTab.js`'s domain/GO-term list renderers into a new shared `web-frontend/src/utils/annotationRenderers.js`, since the new Annotations sub-tab needed the exact same rendering (both take a plain array now, with an optional heading override - Discover kept its existing "Common domains / families" wording via that override rather than the change altering already-shipped copy).
+
+### Fixed
+- **QuickGO's raw annotation-search response isn't deduplicated by GO term** - a well-annotated protein's common terms (e.g. "protein binding") appear once per curated evidence code, which showed up as the same term repeated 6+ times in a row in the new per-structure Annotations view. Discover mode never hit this since it only ever surfaces a neighbor-frequency-*aggregated* summary, never the raw per-neighbor list directly - a single Compare-mode structure has no frequency dimension to aggregate by, so `aggregate_for_structure()` now deduplicates by GO id directly. Caught via live manual verification against a real hemoglobin alignment, not a unit test (the mocked test fixtures used a single term per call, which never exercised the duplicate-row case real QuickGO data has).
+
+### Verified
+- Full backend suite: 959 tests passing, both locally and in a CI-matching Docker container.
+- Frontend suite: 200 Vitest tests passing.
+- `black`/`ruff` clean.
+- Real end-to-end pass against a live local server: aligned `4HHB` (plain PDB) with `AF-P69905-F1` (AlphaFold) - both real hemoglobin alpha structures - and confirmed both resolve to the identical real UniProt accession (P69905) via two different resolution paths (live SIFTS lookup vs. free regex), both show real InterPro domains ("Globin", "Hemoglobin, alpha-type") and GO terms ("oxygen carrier activity", "heme binding"), the "shared across all structures" summary correctly lists every domain/term both share, an `ESM-` structure shows the graceful no-accession message, and a second lookup of the same PDB ID is a real cache hit (confirmed directly against the `annotation_cache` SQLite table, not just inferred from response time) - via a headless-browser (Playwright) pass, which is also what caught the GO-term duplication bug above.
+
 ## [3.83.0]
 
 Beyond Streamlit-parity: a code-verified inventory found real dormant capabilities (data computed but never surfaced, or a frontend field the backend never populated) plus a genuine credibility gap in ligand-interaction analysis - a crude Hydrophobic/Polar-Charged binary, with dead frontend color-coding logic for H-bond/salt-bridge/pi/metal labels that could never fire. Fixes the dormant capabilities and replaces the binary with real geometry-based classification; adds protein-protein interface analysis as new capability, reusing the same classification and the raw multi-chain structure file already read for ligand analysis.

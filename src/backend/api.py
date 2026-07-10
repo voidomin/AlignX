@@ -14,6 +14,7 @@ matplotlib.use("Agg")
 
 import json
 import re
+import httpx
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query, Body, Request, UploadFile, File
@@ -30,6 +31,7 @@ from src.utils.config_loader import load_config, save_config
 from src.utils.logger import get_logger, sanitize_for_log
 from src.backend.coordinator import AnalysisCoordinator
 from src.backend.discovery_coordinator import DiscoveryCoordinator
+from src.backend.annotation_aggregator import AnnotationAggregator
 from src.backend.foldseek_client import FoldseekClient, FoldseekError
 from src.backend.database import HistoryDatabase
 from src.backend.ligand_analyzer import LigandAnalyzer
@@ -228,6 +230,7 @@ def _safe_segment(value: Optional[str], field_name: str) -> Optional[str]:
 history_db = HistoryDatabase()
 ligand_analyzer = LigandAnalyzer(config)
 interface_analyzer = InterfaceAnalyzer()
+annotation_aggregator = AnnotationAggregator(config, cache_db=history_db)
 rmsd_analyzer = RMSDAnalyzer(config)
 
 
@@ -1136,6 +1139,32 @@ def get_interface(
 
     interface = interface_analyzer.calculate_interface(pdb_path, chain_a, chain_b)
     return {"pdb_id": pdb_id, "interface": sanitize_for_json(interface)}
+
+
+@app.get(
+    "/api/annotations",
+    responses={400: {"description": "Invalid pdb_id or chain"}},
+)
+async def get_annotations(
+    pdb_id: Annotated[str, Query(...)],
+    chain: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Fetch functional annotation (InterPro domains, QuickGO terms, Reactome
+    pathways) for one Compare-mode structure, resolved to a UniProt
+    accession by its source database (PDBManager.detect_source()). Not
+    tied to a downloaded structure file - resolution and annotation both
+    work from the ID/chain alone, unlike /api/ligands or /api/interface.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(chain, "chain")
+
+    source = PDBManager.detect_source(pdb_id)
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        annotation = await annotation_aggregator.aggregate_for_structure(
+            pdb_id, chain, source, client
+        )
+    return {"pdb_id": pdb_id, "annotation": sanitize_for_json(annotation)}
 
 
 @app.get("/api/memory")

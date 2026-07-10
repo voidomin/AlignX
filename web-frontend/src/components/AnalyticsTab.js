@@ -1,3 +1,6 @@
+import { fetchAnnotations } from '../api';
+import { renderDomainList, renderGoTermList } from '../utils/annotationRenderers';
+
 // Renders one insight string's markdown-lite **bold** segments as real
 // <strong> DOM nodes, built via createElement/createTextNode rather than
 // any HTML-string sink (innerHTML/insertAdjacentHTML) - this is what
@@ -24,6 +27,7 @@ const SUB_TABS = [
     { key: 'rmsd', label: 'RMSD Matrix' },
     { key: 'phylo', label: 'Phylogeny' },
     { key: 'insights', label: 'Insights' },
+    { key: 'annotations', label: 'Annotations' },
 ];
 
 export class AnalyticsTab {
@@ -36,6 +40,13 @@ export class AnalyticsTab {
     insights = [];
     qualityMetrics = null;
     activeSubTab = 'quality';
+    // One entry per aligned structure: { pdbId, chain }. chain is only
+    // needed for plain PDB IDs (a real SIFTS lookup); AlphaFold/SWISS-
+    // MODEL IDs resolve their UniProt accession from the ID string alone.
+    structures = [];
+    annotationsCache = {};
+    annotationsLoadedForRunId = null;
+    annotationsLoading = false;
 
     render() {
         const div = document.createElement('div');
@@ -125,11 +136,29 @@ export class AnalyticsTab {
                         Run alignment to display automated insights.
                     </div>
                 </div>
+
+                <!-- Functional Annotation (InterPro domains / GO terms / Reactome pathways) -->
+                <div data-panel="annotations" class="border border-border rounded-lg p-4 shrink-0 min-h-[320px] flex flex-col gap-4">
+                    <div class="flex items-center justify-between">
+                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Functional annotation</span>
+                        <select id="annotations-structure-select" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[160px]"></select>
+                    </div>
+                    <div id="annotations-content" class="flex flex-col gap-3">
+                        <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                            Run alignment to display functional annotation.
+                        </div>
+                    </div>
+                    <div id="annotations-shared-section" class="hidden flex-col gap-3 pt-3 border-t border-border-subtle">
+                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Shared across all structures</span>
+                        <div id="annotations-shared-content"></div>
+                    </div>
+                </div>
             </div>
         `;
 
         this.element = div;
         this.setupSubTabs();
+        this.setupAnnotationsPicker();
         this.renderVisuals();
         return div;
     }
@@ -139,6 +168,11 @@ export class AnalyticsTab {
             btn.addEventListener('click', () => this.switchSubTab(btn.dataset.subtab));
         });
         this.updateSubTabView();
+    }
+
+    setupAnnotationsPicker() {
+        const select = this.element.querySelector('#annotations-structure-select');
+        select.addEventListener('change', () => this.renderAnnotationsPanel());
     }
 
     switchSubTab(key) {
@@ -155,6 +189,14 @@ export class AnalyticsTab {
                 Plotly.Plots.resize(chartDiv);
             }
         }
+
+        // Annotation lookups are real network calls (InterPro/QuickGO/
+        // Reactome/SIFTS) - fetched lazily on first visit to this sub-tab,
+        // not for every run whether or not anyone looks, and only once per
+        // run (annotationsLoadedForRunId guards a re-fetch on every click).
+        if (key === 'annotations' && this.currentRunId && this.annotationsLoadedForRunId !== this.currentRunId) {
+            this.loadAllAnnotations();
+        }
     }
 
     updateSubTabView() {
@@ -167,7 +209,14 @@ export class AnalyticsTab {
         });
     }
 
-    updateResults(runId, heatmapFig, treeFig, ramachandranStats, rmsfValues, insights, qualityMetrics) {
+    updateResults(runId, heatmapFig, treeFig, ramachandranStats, rmsfValues, insights, qualityMetrics, selectedPDBs, chainSelections) {
+        if (runId !== this.currentRunId) {
+            // A different (or cleared) run - any cached annotations belong
+            // to a run that's no longer showing, so they'd be wrong to
+            // reuse; the next Annotations-tab visit re-fetches for real.
+            this.annotationsCache = {};
+            this.annotationsLoadedForRunId = null;
+        }
         this.currentRunId = runId;
         this.heatmapFig = heatmapFig;
         this.treeFig = treeFig;
@@ -175,7 +224,143 @@ export class AnalyticsTab {
         this.rmsfValues = rmsfValues || [];
         this.insights = insights || [];
         this.qualityMetrics = qualityMetrics || null;
+        this.structures = (selectedPDBs || []).map(pdbId => ({
+            pdbId,
+            chain: (chainSelections || {})[pdbId],
+        }));
         this.renderVisuals();
+    }
+
+    async loadAllAnnotations() {
+        if (!this.element || this.structures.length === 0) return;
+        this.annotationsLoading = true;
+        this.renderAnnotationsPanel();
+
+        const runIdAtStart = this.currentRunId;
+        const results = await Promise.all(
+            this.structures.map(async ({ pdbId, chain }) => {
+                try {
+                    const data = await fetchAnnotations(pdbId, chain);
+                    return [pdbId, data.annotation];
+                } catch (err) {
+                    console.error(`Failed to load annotation for ${pdbId}:`, err);
+                    return [pdbId, null];
+                }
+            })
+        );
+
+        // The run may have changed (or been reset) while these were in
+        // flight - don't clobber a newer run's state with a stale response.
+        if (runIdAtStart !== this.currentRunId) return;
+
+        this.annotationsCache = Object.fromEntries(results);
+        this.annotationsLoadedForRunId = this.currentRunId;
+        this.annotationsLoading = false;
+        this.populateAnnotationsPicker();
+        this.renderAnnotationsPanel();
+    }
+
+    populateAnnotationsPicker() {
+        const select = this.element.querySelector('#annotations-structure-select');
+        const previousValue = select.value;
+        select.innerHTML = "";
+        this.structures.forEach(({ pdbId }) => {
+            const opt = document.createElement('option');
+            opt.value = pdbId;
+            opt.textContent = pdbId;
+            select.appendChild(opt);
+        });
+        if (this.structures.some(s => s.pdbId === previousValue)) {
+            select.value = previousValue;
+        }
+    }
+
+    renderAnnotationsPanel() {
+        if (!this.element) return;
+        const content = this.element.querySelector('#annotations-content');
+        const sharedSection = this.element.querySelector('#annotations-shared-section');
+        const sharedContent = this.element.querySelector('#annotations-shared-content');
+
+        if (!this.currentRunId) {
+            content.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Run alignment to display functional annotation.</div>`;
+            sharedSection.classList.add('hidden');
+            sharedSection.classList.remove('flex');
+            return;
+        }
+        if (this.annotationsLoading) {
+            content.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm"><span class="animate-spin material-symbols-outlined text-[18px]">sync</span> Resolving functional annotation…</div>`;
+            sharedSection.classList.add('hidden');
+            sharedSection.classList.remove('flex');
+            return;
+        }
+
+        const select = this.element.querySelector('#annotations-structure-select');
+        const selectedPdbId = select.value || this.structures[0]?.pdbId;
+        const annotation = this.annotationsCache[selectedPdbId];
+
+        if (!annotation) {
+            content.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Switch to this tab to load functional annotation.</div>`;
+        } else if (!annotation.accession) {
+            content.innerHTML = `<div class="font-body-sm text-secondary py-4">No UniProt accession could be resolved for ${selectedPdbId} - no functional annotation available.</div>`;
+        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length) {
+            content.innerHTML = `<div class="font-body-sm text-secondary py-4">Resolved to UniProt ${annotation.accession}, but no curated domains, GO terms, or pathways were found.</div>`;
+        } else {
+            content.innerHTML = `
+                <div class="font-body-sm text-secondary">Resolved to UniProt <span class="font-mono text-primary">${annotation.accession}</span></div>
+                ${renderDomainList(annotation.domains)}
+                ${renderGoTermList(annotation.go_terms)}
+                ${this.renderReactomePathways(annotation.reactome_pathways)}
+            `;
+        }
+
+        this.renderSharedAnnotations(sharedSection, sharedContent);
+    }
+
+    renderReactomePathways(pathways) {
+        if (!pathways || !pathways.length) return '';
+        return `
+            <div class="flex flex-col gap-2">
+                <span class="eyebrow">Reactome pathways</span>
+                ${pathways.map(p => `
+                    <div class="flex items-center py-1.5 border-b border-border-subtle">
+                        <span class="font-body-sm">${p.name}</span>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    // A domain/GO term counts as "shared" when every structure that
+    // resolved an accession also carries it - a plain name intersection,
+    // computed client-side since each structure's annotation is already in
+    // hand once loadAllAnnotations() settles (no new backend call needed).
+    renderSharedAnnotations(sharedSection, sharedContent) {
+        const annotated = Object.values(this.annotationsCache).filter(a => a?.accession);
+        if (annotated.length < 2) {
+            sharedSection.classList.add('hidden');
+            sharedSection.classList.remove('flex');
+            return;
+        }
+
+        const domainNameSets = annotated.map(a => new Set((a.domains || []).map(d => d.name)));
+        const sharedDomainNames = [...domainNameSets[0]].filter(name => domainNameSets.every(s => s.has(name)));
+
+        const goNameSets = annotated.map(a => new Set((a.go_terms || []).map(g => g.name || g.id)));
+        const sharedGoNames = [...goNameSets[0]].filter(name => goNameSets.every(s => s.has(name)));
+
+        if (sharedDomainNames.length === 0 && sharedGoNames.length === 0) {
+            sharedSection.classList.add('hidden');
+            sharedSection.classList.remove('flex');
+            sharedContent.innerHTML = '';
+            return;
+        }
+
+        sharedSection.classList.remove('hidden');
+        sharedSection.classList.add('flex');
+        sharedContent.innerHTML = `
+            ${renderDomainList(sharedDomainNames.map(name => ({ name, type: 'domain' })))}
+            ${renderGoTermList(sharedGoNames.map(name => ({ name })))}
+        `;
     }
 
     renderVisuals() {
@@ -359,5 +544,12 @@ export class AnalyticsTab {
             insightsEmpty.textContent = "Run alignment to display automated insights.";
             insightsEmpty.classList.remove('hidden');
         }
+
+        // 6. Annotations sub-tab - repopulate the structure picker for this
+        // run and re-render from whatever's already cached (a fresh
+        // network fetch only happens on first visit to this sub-tab, see
+        // switchSubTab()).
+        this.populateAnnotationsPicker();
+        this.renderAnnotationsPanel();
     }
 }

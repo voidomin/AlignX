@@ -1,4 +1,5 @@
 import { submitDiscoveryJob, pollJobUntilDone, isValidPdbId, getDiscoveryReportUrl, getDiscoveryExportUrl, getDiscoveryCitationsUrl } from '../api';
+import { renderDomainList, renderGoTermList } from '../utils/annotationRenderers';
 
 const SOURCE_LABELS = {
     pdb: 'PDB',
@@ -412,8 +413,8 @@ export class DiscoverTab {
                     annotations at high enough structural confidence (Foldseek probability &ge; ${ann.min_confident_probability}).</p>
                     ${consensusParagraph}
                 </div>
-                ${this.renderDomainList(ann, ann.high_confidence_top_domains)}
-                ${this.renderGoTermList(ann, ann.high_confidence_top_go_terms)}
+                ${renderDomainList(ann.high_confidence_top_domains, 'Common domains / families')}
+                ${renderGoTermList(ann.high_confidence_top_go_terms, 'Common GO terms')}
             </div>
         `;
     }
@@ -432,8 +433,8 @@ export class DiscoverTab {
                     <div class="stat-row"><span class="stat-key">With Reactome pathways</span><span class="stat-value">${ann.neighbors_with_pathways_count}</span></div>
                     <div class="stat-row"><span class="stat-key">High-confidence (prob &ge; ${ann.min_confident_probability})</span><span class="stat-value">${ann.high_confidence_annotated_count} / ${ann.annotated_neighbor_count}</span></div>
                 </div>
-                ${this.renderDomainList(ann)}
-                ${this.renderGoTermList(ann)}
+                ${renderDomainList(ann.top_domains, 'Common domains / families')}
+                ${renderGoTermList(ann.top_go_terms, 'Common GO terms')}
                 ${this.renderInteractionsAndPathways(ann)}
                 ${this.renderHitTable(this.results.hits)}
             </div>
@@ -453,36 +454,6 @@ export class DiscoverTab {
                         <span class="font-mono text-[11px] text-secondary">${(n.target || '').slice(0, 60)}</span>
                         ${n.string_partners.length ? `<span class="font-body-sm text-[12px]">STRING partners: ${n.string_partners.map(p => p.partner_name).join(', ')}</span>` : ''}
                         ${n.reactome_pathways.length ? `<span class="font-body-sm text-[12px]">Reactome pathways: ${n.reactome_pathways.map(p => p.name).join(', ')}</span>` : ''}
-                    </div>
-                `).join('')}
-            </div>
-        `;
-    }
-
-    renderDomainList(ann, domains = ann.top_domains) {
-        if (!domains.length) return '';
-        return `
-            <div class="flex flex-col gap-2">
-                <span class="eyebrow">Common domains / families</span>
-                ${domains.map(d => `
-                    <div class="flex justify-between items-center py-1.5 border-b border-border-subtle">
-                        <span class="font-body-sm">${d.name} <span class="text-secondary text-[11px]">(${d.type})</span></span>
-                        <span class="font-mono text-[11px] text-secondary">${d.neighbor_count} neighbors</span>
-                    </div>
-                `).join('')}
-            </div>
-        `;
-    }
-
-    renderGoTermList(ann, goTerms = ann.top_go_terms) {
-        if (!goTerms.length) return '';
-        return `
-            <div class="flex flex-col gap-2">
-                <span class="eyebrow">Common GO terms</span>
-                ${goTerms.map(g => `
-                    <div class="flex justify-between items-center py-1.5 border-b border-border-subtle">
-                        <span class="font-body-sm">${g.name || g.id} <span class="text-secondary text-[11px]">(${g.aspect || 'n/a'})</span></span>
-                        <span class="font-mono text-[11px] text-secondary">${g.neighbor_count} neighbors</span>
                     </div>
                 `).join('')}
             </div>

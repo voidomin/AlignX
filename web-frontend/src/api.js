@@ -375,6 +375,15 @@ export function getNewickUrl(runId) {
     return withApiKey(buildUrl('/api/report/newick', { run_id: runId }));
 }
 
+export async function fetchAnnotations(pdbId, chain) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const params = { pdb_id: pdbId };
+    if (chain) params.chain = assertSafeSegment(chain, 'chain');
+    const res = await fetch(buildUrl('/api/annotations', params), { headers: authHeaders() });
+    if (!res.ok) throw new Error("Annotation fetch failed");
+    return res.json();
+}
+
 export async function fetchInterface(pdbId, chainA, chainB, runId) {
     pdbId = assertValidPdbId(pdbId, 'pdbId');
     chainA = assertSafeSegment(chainA, 'chainA');

@@ -847,6 +847,58 @@ def test_interface_endpoint_400s_on_invalid_chain_param():
     assert response.status_code == 400
 
 
+def test_annotations_endpoint():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.aggregate_for_structure = AsyncMock(
+            return_value={
+                "pdb_id": "AF-P69905-F1",
+                "chain": None,
+                "accession": "P69905",
+                "domains": [{"name": "Globin", "type": "domain"}],
+                "go_terms": [{"id": "GO:0005344", "name": "oxygen carrier activity"}],
+                "reactome_pathways": [],
+            }
+        )
+
+        response = client.get("/api/annotations?pdb_id=AF-P69905-F1")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["pdb_id"] == "AF-P69905-F1"
+        assert data["annotation"]["accession"] == "P69905"
+        assert data["annotation"]["domains"][0]["name"] == "Globin"
+        mock_aggregator.aggregate_for_structure.assert_called_once()
+        call_args = mock_aggregator.aggregate_for_structure.call_args
+        assert call_args.args[0] == "AF-P69905-F1"
+        assert call_args.args[2] == "alphafold"
+
+
+def test_annotations_endpoint_with_a_chain_for_a_plain_pdb_id():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.aggregate_for_structure = AsyncMock(
+            return_value={
+                "pdb_id": "4HHB",
+                "chain": "A",
+                "accession": None,
+                "domains": [],
+                "go_terms": [],
+                "reactome_pathways": [],
+            }
+        )
+
+        response = client.get("/api/annotations?pdb_id=4HHB&chain=A")
+
+        assert response.status_code == 200
+        call_args = mock_aggregator.aggregate_for_structure.call_args
+        assert call_args.args[1] == "A"
+        assert call_args.args[2] == "pdb"
+
+
+def test_annotations_endpoint_400s_on_invalid_chain_param():
+    response = client.get("/api/annotations?pdb_id=4HHB&chain=../etc")
+    assert response.status_code == 400
+
+
 def test_sequence_endpoint():
     """Verify that the sequence alignment endpoint returns correct structure and calculations."""
     with patch(

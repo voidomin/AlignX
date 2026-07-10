@@ -192,7 +192,9 @@ class App {
                 this.ramachandranStats,
                 this.analyticsTab.rmsfValues,
                 this.analyticsTab.insights,
-                this.analyticsTab.qualityMetrics
+                this.analyticsTab.qualityMetrics,
+                this.selectedPDBs,
+                this.chainSelections
             );
         } else if (this.activeTab === 'clusters') {
             pane.appendChild(this.clustersTab.render());
@@ -347,7 +349,7 @@ class App {
             // Update tabs
             this.ligandTab.updateLigands(this.currentLigands, results.id, this.selectedPDBs, results.ligand_pocket_similarity);
             this.sequenceTab.updateResults(results.id, results.stats);
-            this.analyticsTab.updateResults(results.id, this.heatmapFig, this.treeFig, this.ramachandranStats, results.rmsf_values, results.insights, results.quality_metrics);
+            this.analyticsTab.updateResults(results.id, this.heatmapFig, this.treeFig, this.ramachandranStats, results.rmsf_values, results.insights, results.quality_metrics, this.selectedPDBs, this.chainSelections);
             this.clustersTab.updateResults(this.rmsdDf, this.pdbMetadata);
 
             // Switch to Sequence tab
@@ -467,7 +469,9 @@ class App {
             this.ramachandranStats,
             metadata.results ? metadata.results.rmsf_values : null,
             metadata.results ? metadata.results.insights : null,
-            metadata.results ? metadata.results.quality_metrics : null
+            metadata.results ? metadata.results.quality_metrics : null,
+            this.selectedPDBs,
+            this.chainSelections
         );
         this.clustersTab.updateResults(this.rmsdDf, this.pdbMetadata);
 
@@ -491,7 +495,7 @@ class App {
             this.overviewTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
             this.ligandTab.updateLigands([], null, this.selectedPDBs);
             this.sequenceTab.updateResults(null, null);
-            this.analyticsTab.updateResults(null, null, null, null, null, null, null);
+            this.analyticsTab.updateResults(null, null, null, null, null, null, null, [], {});
             this.clustersTab.updateResults(null, null);
             this.comparisonTab.updateResults(null);
             this.viewer3D.reset();

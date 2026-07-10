@@ -327,4 +327,22 @@ describe('api.js request-ID validation', () => {
         await expect(fetchInterface('../evil', 'A', 'B', 'run_1')).rejects.toThrow('Invalid pdbId');
         expect(global.fetch).not.toHaveBeenCalled();
     });
+
+    it('fetchAnnotations rejects a pdbId that is not a recognized structure ID format', async () => {
+        const { fetchAnnotations } = await import('./api.js');
+        await expect(fetchAnnotations('../evil', 'A')).rejects.toThrow('Invalid pdbId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchAnnotations rejects a malformed chain', async () => {
+        const { fetchAnnotations } = await import('./api.js');
+        await expect(fetchAnnotations('4RLT', '../etc')).rejects.toThrow('Invalid chain');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchAnnotations works with no chain given (AlphaFold/SWISS-MODEL structures)', async () => {
+        mockFetchOnce({ annotation: {} });
+        const { fetchAnnotations } = await import('./api.js');
+        await expect(fetchAnnotations('AF-P69905-F1')).resolves.toBeDefined();
+    });
 });

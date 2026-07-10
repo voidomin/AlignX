@@ -38,6 +38,7 @@ for how to actually use each one.
 | 11 | Dashboard (aggregate stats, recent activity) | SPA | [§2.9](#29-dashboard) |
 | 11a | Alignment quality metrics (Ramachandran, TM-score/GDT-TS) | Both | [§2.10](#210-alignment-quality-metrics) |
 | 11b | Protein-protein interface analysis | SPA | [§2.11](#211-protein-protein-interfaces) |
+| 11c | Functional annotation for Compare-mode structures | SPA | [§2.12](#212-functional-annotation) |
 | 12 | Structure-to-function discovery ("Discover" mode) | SPA | [§3](#3-discover-mode-structure-to-function) |
 | 13 | Selectable Foldseek search databases (9 total) | SPA | [§3.1](#31-search-databases) |
 | 14 | Multi-source annotation aggregation (6 sources) | SPA | [§3.2](#32-annotation-sources) |
@@ -205,6 +206,22 @@ interface area** (total ΔSASA: each chain's solvent-accessible surface area
 alone, minus the complex's, the standard way interface size is reported).
 Operates on the structure's original, pre-alignment file, so it works even
 though Mustang itself only ever aligns one chain per structure.
+
+### 2.12 Functional Annotation
+
+*(SPA only)* Real InterPro domains, GO terms, and Reactome pathways for any
+structure in a Compare-mode run — the same annotation sources Discover mode
+already surfaces for structural neighbors, now available for the structures
+you explicitly chose to align. Resolves each structure to a UniProt accession
+by its source database (a live PDBe SIFTS lookup for a plain PDB ID; free for
+AlphaFold/SWISS-MODEL IDs, which embed the accession directly) — ESM Atlas
+structures have no UniProt mapping (uncharacterized, metagenomic) and show a
+plain "no annotation available" message rather than an error. When 2 or more
+structures in the run resolve an accession, a **shared across all structures**
+summary lists exactly which domains/terms every one of them has in common —
+useful for confirming a shared function isn't just a shared fold. STRING
+interaction partners are not included (no source for the taxon ID this needs,
+unlike Discover mode which gets one free from each Foldseek hit).
 
 ---
 

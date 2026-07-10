@@ -1,11 +1,21 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { AnalyticsTab } from './AnalyticsTab.js';
+
+vi.mock('../api.js', () => ({
+    fetchAnnotations: vi.fn(),
+}));
+
+import { fetchAnnotations } from '../api.js';
 
 function makeTab() {
     return new AnalyticsTab();
 }
 
 describe('AnalyticsTab', () => {
+    afterEach(() => {
+        vi.clearAllMocks();
+    });
+
     it('shows the pre-run placeholder for insights before any run', () => {
         const tab = makeTab();
         tab.render();
@@ -97,5 +107,120 @@ describe('AnalyticsTab', () => {
         tab.switchSubTab('rmsf');
         expect(tab.element.querySelector('[data-panel="rmsf"]').classList.contains('hidden')).toBe(false);
         expect(tab.element.querySelector('[data-panel="insights"]').classList.contains('hidden')).toBe(true);
+    });
+
+    describe('functional annotation sub-tab', () => {
+        it('populates the structure picker from selectedPDBs', () => {
+            const tab = makeTab();
+            tab.render();
+
+            tab.updateResults('run_1', null, null, null, [], [], null, ['4HHB', 'AF-P69905-F1'], { '4HHB': 'A' });
+
+            const options = Array.from(tab.element.querySelector('#annotations-structure-select').options).map(o => o.value);
+            expect(options).toEqual(['4HHB', 'AF-P69905-F1']);
+        });
+
+        it('fetches annotation per structure with its chain and renders domains/GO terms', async () => {
+            fetchAnnotations.mockImplementation(async (pdbId) => {
+                if (pdbId === '4HHB') {
+                    return {
+                        annotation: {
+                            pdb_id: '4HHB', chain: 'A', accession: 'P69905',
+                            domains: [{ name: 'Globin', type: 'domain' }],
+                            go_terms: [{ id: 'GO:0005344', name: 'oxygen carrier activity', aspect: 'F' }],
+                            reactome_pathways: [],
+                        },
+                    };
+                }
+                return {
+                    annotation: {
+                        pdb_id: 'AF-P69905-F1', chain: null, accession: 'P69905',
+                        domains: [{ name: 'Globin', type: 'domain' }],
+                        go_terms: [],
+                        reactome_pathways: [],
+                    },
+                };
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, null, [], [], null, ['4HHB', 'AF-P69905-F1'], { '4HHB': 'A' });
+
+            await tab.loadAllAnnotations();
+
+            expect(fetchAnnotations).toHaveBeenCalledWith('4HHB', 'A');
+            expect(fetchAnnotations).toHaveBeenCalledWith('AF-P69905-F1', undefined);
+            const content = tab.element.querySelector('#annotations-content');
+            expect(content.textContent).toContain('P69905');
+            expect(content.textContent).toContain('Globin');
+            expect(content.textContent).toContain('oxygen carrier activity');
+        });
+
+        it('shows a graceful message when no accession resolves (e.g. an ESM Atlas structure)', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: { pdb_id: 'ESM-MGYP1', chain: null, accession: null, domains: [], go_terms: [], reactome_pathways: [] },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, null, [], [], null, ['ESM-MGYP1'], {});
+
+            await tab.loadAllAnnotations();
+
+            expect(tab.element.querySelector('#annotations-content').textContent).toContain('No UniProt accession could be resolved');
+        });
+
+        it('computes a shared-domains summary across structures that share one', async () => {
+            fetchAnnotations.mockImplementation(async (pdbId) => ({
+                annotation: {
+                    pdb_id: pdbId, chain: null, accession: `ACC_${pdbId}`,
+                    domains: [{ name: 'Globin', type: 'domain' }],
+                    go_terms: [{ id: 'GO:0005344', name: 'oxygen carrier activity', aspect: 'F' }],
+                    reactome_pathways: [],
+                },
+            }));
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, null, [], [], null, ['4HHB', '2HHB'], {});
+
+            await tab.loadAllAnnotations();
+
+            const sharedSection = tab.element.querySelector('#annotations-shared-section');
+            expect(sharedSection.classList.contains('hidden')).toBe(false);
+            expect(sharedSection.textContent).toContain('Globin');
+            expect(sharedSection.textContent).toContain('oxygen carrier activity');
+        });
+
+        it('hides the shared-domains summary for a single-structure run', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: { pdb_id: '4HHB', chain: 'A', accession: 'P69905', domains: [{ name: 'Globin', type: 'domain' }], go_terms: [], reactome_pathways: [] },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, null, [], [], null, ['4HHB'], { '4HHB': 'A' });
+
+            await tab.loadAllAnnotations();
+
+            expect(tab.element.querySelector('#annotations-shared-section').classList.contains('hidden')).toBe(true);
+        });
+
+        it('does not re-fetch when switching back to an already-loaded run', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: { pdb_id: '4HHB', chain: 'A', accession: 'P69905', domains: [], go_terms: [], reactome_pathways: [] },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, null, [], [], null, ['4HHB'], { '4HHB': 'A' });
+            await tab.loadAllAnnotations();
+            fetchAnnotations.mockClear();
+
+            tab.switchSubTab('quality');
+            tab.switchSubTab('annotations');
+
+            expect(fetchAnnotations).not.toHaveBeenCalled();
+        });
     });
 });

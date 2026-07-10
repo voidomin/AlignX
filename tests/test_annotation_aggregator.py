@@ -957,6 +957,189 @@ class TestResolveGoTermNames:
         assert "GO:0002" in requested_ids
 
 
+class TestResolveStructureAccession:
+    @pytest.mark.asyncio
+    async def test_alphafold_source_uses_the_free_regex_no_http_call(self):
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            accession = await aggregator._resolve_structure_accession(
+                "AF-P69905-F1", None, "alphafold", client, None
+            )
+        assert accession == "P69905"
+
+    @pytest.mark.asyncio
+    async def test_swissmodel_source_splits_the_id_no_http_call(self):
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            accession = await aggregator._resolve_structure_accession(
+                "SM-P12345", None, "swissmodel", client, None
+            )
+        assert accession == "P12345"
+
+    @pytest.mark.asyncio
+    async def test_esmfold_source_returns_none_no_http_call(self):
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            accession = await aggregator._resolve_structure_accession(
+                "ESM-MGYP002537940442", "A", "esmfold", client, None
+            )
+        assert accession is None
+
+    @pytest.mark.asyncio
+    async def test_pdb_source_without_a_chain_returns_none(self):
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            accession = await aggregator._resolve_structure_accession(
+                "1CRN", None, "pdb", client, None
+            )
+        assert accession is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_pdb_source_with_a_chain_does_a_real_sifts_lookup(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "1crn": {
+                    "UniProt": {
+                        "P01542": {"mappings": [{"chain_id": "A"}]},
+                    }
+                }
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            accession = await aggregator._resolve_structure_accession(
+                "1CRN", "A", "pdb", client, None
+            )
+        assert accession == "P01542"
+        mock_get.assert_called_once()
+
+
+class TestAggregateForStructure:
+    @pytest.mark.asyncio
+    async def test_unresolvable_accession_returns_empty_annotation_no_fetch_calls(self):
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.aggregate_for_structure(
+                "ESM-MGYP002537940442", "A", "esmfold", client
+            )
+        assert result == {
+            "pdb_id": "ESM-MGYP002537940442",
+            "chain": "A",
+            "accession": None,
+            "domains": [],
+            "go_terms": [],
+            "reactome_pathways": [],
+        }
+
+    @pytest.mark.asyncio
+    async def test_resolved_accession_fetches_domains_go_terms_and_pathways(self):
+        aggregator = AnnotationAggregator()
+        with patch.object(
+            aggregator, "_resolve_structure_accession", AsyncMock(return_value="P69905")
+        ), patch.object(
+            aggregator,
+            "fetch_interpro_entries",
+            AsyncMock(
+                return_value=[
+                    {
+                        "accession": "IPR000971",
+                        "name": "Globin",
+                        "type": "domain",
+                        "go_terms": [],
+                    }
+                ]
+            ),
+        ), patch.object(
+            aggregator,
+            "fetch_quickgo_annotations",
+            AsyncMock(
+                return_value=[
+                    {
+                        "id": "GO:0005344",
+                        "aspect": "F",
+                        "qualifier": None,
+                        "evidence": "IDA",
+                    }
+                ]
+            ),
+        ), patch.object(
+            aggregator,
+            "fetch_reactome_pathways",
+            AsyncMock(
+                return_value=[
+                    {"id": "R-HSA-1247673", "name": "Erythrocytes take up oxygen"}
+                ]
+            ),
+        ), patch.object(
+            aggregator,
+            "resolve_go_term_names",
+            AsyncMock(return_value={"GO:0005344": "oxygen carrier activity"}),
+        ):
+            async with httpx.AsyncClient() as client:
+                result = await aggregator.aggregate_for_structure(
+                    "AF-P69905-F1", None, "alphafold", client
+                )
+
+        assert result["accession"] == "P69905"
+        assert result["domains"][0]["name"] == "Globin"
+        assert result["go_terms"][0]["name"] == "oxygen carrier activity"
+        assert result["reactome_pathways"][0]["name"] == "Erythrocytes take up oxygen"
+
+    @pytest.mark.asyncio
+    async def test_pdb_id_and_chain_pass_through_to_the_result(self):
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.aggregate_for_structure(
+                "4HHB", "A", "pdb", client
+            )
+        assert result["pdb_id"] == "4HHB"
+        assert result["chain"] == "A"
+
+    @pytest.mark.asyncio
+    async def test_go_terms_are_deduplicated_by_id(self):
+        """Regression: QuickGO's annotation-search returns one row per
+        curated evidence code, so a common term like "protein binding" can
+        appear many times for the same accession - real duplicate records,
+        not a fetch bug. Caught via live manual verification (a real
+        hemoglobin lookup showed "protein binding" six times in a row)."""
+        aggregator = AnnotationAggregator()
+        with patch.object(
+            aggregator, "_resolve_structure_accession", AsyncMock(return_value="P69905")
+        ), patch.object(
+            aggregator, "fetch_interpro_entries", AsyncMock(return_value=[])
+        ), patch.object(
+            aggregator,
+            "fetch_quickgo_annotations",
+            AsyncMock(
+                return_value=[
+                    {"id": "GO:0005515", "aspect": "F", "evidence": "IPI"},
+                    {"id": "GO:0005515", "aspect": "F", "evidence": "IEA"},
+                    {"id": "GO:0005515", "aspect": "F", "evidence": "IBA"},
+                    {"id": "GO:0020037", "aspect": "F", "evidence": "IDA"},
+                ]
+            ),
+        ), patch.object(
+            aggregator, "fetch_reactome_pathways", AsyncMock(return_value=[])
+        ), patch.object(
+            aggregator,
+            "resolve_go_term_names",
+            AsyncMock(
+                return_value={
+                    "GO:0005515": "protein binding",
+                    "GO:0020037": "heme binding",
+                }
+            ),
+        ):
+            async with httpx.AsyncClient() as client:
+                result = await aggregator.aggregate_for_structure(
+                    "AF-P69905-F1", None, "alphafold", client
+                )
+
+        ids = [g["id"] for g in result["go_terms"]]
+        assert ids == ["GO:0005515", "GO:0020037"]
+
+
 class TestHitSortKey:
     def test_prefers_eval_key(self):
         assert AnnotationAggregator._hit_sort_key({"eval": "1e-10"}) == pytest.approx(
