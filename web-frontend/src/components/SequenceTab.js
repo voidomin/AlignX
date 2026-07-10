@@ -142,7 +142,7 @@ export class SequenceTab {
     }
 
     async searchMotif(query) {
-        if (!this.currentRunId || !query || !query.trim()) return;
+        if (!this.currentRunId || !query?.trim()) return;
 
         const resultsContainer = this.element.querySelector('#motif-results-container');
         resultsContainer.innerHTML = `

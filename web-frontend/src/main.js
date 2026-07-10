@@ -165,6 +165,13 @@ class App {
         }
     }
 
+    // AnalyticsTab.updateResults() takes structures as one { pdbId, chain }
+    // array (rather than selectedPDBs/chainSelections as two separate
+    // params) purely to stay under SonarCloud's max-parameter threshold.
+    buildAnalyticsStructures() {
+        return this.selectedPDBs.map(pdbId => ({ pdbId, chain: this.chainSelections[pdbId] }));
+    }
+
     updateTabContentPane() {
         const pane = document.getElementById('tab-content-pane');
         if (!pane) return;
@@ -187,14 +194,12 @@ class App {
             pane.appendChild(this.analyticsTab.render());
             this.analyticsTab.updateResults(
                 this.currentRunId,
-                this.heatmapFig,
-                this.treeFig,
+                { heatmap: this.heatmapFig, tree: this.treeFig },
                 this.ramachandranStats,
                 this.analyticsTab.rmsfValues,
                 this.analyticsTab.insights,
                 this.analyticsTab.qualityMetrics,
-                this.selectedPDBs,
-                this.chainSelections
+                this.buildAnalyticsStructures()
             );
         } else if (this.activeTab === 'clusters') {
             pane.appendChild(this.clustersTab.render());
@@ -349,7 +354,7 @@ class App {
             // Update tabs
             this.ligandTab.updateLigands(this.currentLigands, results.id, this.selectedPDBs, results.ligand_pocket_similarity);
             this.sequenceTab.updateResults(results.id, results.stats);
-            this.analyticsTab.updateResults(results.id, this.heatmapFig, this.treeFig, this.ramachandranStats, results.rmsf_values, results.insights, results.quality_metrics, this.selectedPDBs, this.chainSelections);
+            this.analyticsTab.updateResults(results.id, { heatmap: this.heatmapFig, tree: this.treeFig }, this.ramachandranStats, results.rmsf_values, results.insights, results.quality_metrics, this.buildAnalyticsStructures());
             this.clustersTab.updateResults(this.rmsdDf, this.pdbMetadata);
 
             // Switch to Sequence tab
@@ -464,14 +469,12 @@ class App {
         this.sequenceTab.updateResults(run.id, stats);
         this.analyticsTab.updateResults(
             run.id,
-            this.heatmapFig,
-            this.treeFig,
+            { heatmap: this.heatmapFig, tree: this.treeFig },
             this.ramachandranStats,
             metadata.results ? metadata.results.rmsf_values : null,
             metadata.results ? metadata.results.insights : null,
             metadata.results ? metadata.results.quality_metrics : null,
-            this.selectedPDBs,
-            this.chainSelections
+            this.buildAnalyticsStructures()
         );
         this.clustersTab.updateResults(this.rmsdDf, this.pdbMetadata);
 
@@ -495,7 +498,7 @@ class App {
             this.overviewTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
             this.ligandTab.updateLigands([], null, this.selectedPDBs);
             this.sequenceTab.updateResults(null, null);
-            this.analyticsTab.updateResults(null, null, null, null, null, null, null, [], {});
+            this.analyticsTab.updateResults(null, null, null, null, null, null, []);
             this.clustersTab.updateResults(null, null);
             this.comparisonTab.updateResults(null);
             this.viewer3D.reset();

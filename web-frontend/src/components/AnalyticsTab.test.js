@@ -11,6 +11,10 @@ function makeTab() {
     return new AnalyticsTab();
 }
 
+function structuresFor(pdbIds, chainSelections = {}) {
+    return pdbIds.map(pdbId => ({ pdbId, chain: chainSelections[pdbId] }));
+}
+
 describe('AnalyticsTab', () => {
     afterEach(() => {
         vi.clearAllMocks();
@@ -30,7 +34,7 @@ describe('AnalyticsTab', () => {
         const tab = makeTab();
         tab.render();
 
-        tab.updateResults('run_1', null, null, null, [], [
+        tab.updateResults('run_1', null, null, [], [
             '**Best Match**: `4RLT` and `3UG9` are nearly identical (0.42 Å).',
             'Plain insight with no markdown.',
         ]);
@@ -46,7 +50,7 @@ describe('AnalyticsTab', () => {
         const tab = makeTab();
         tab.render();
 
-        tab.updateResults('run_1', null, null, null, [], [
+        tab.updateResults('run_1', null, null, [], [
             '**Bold** <img src=x onerror=alert(1)>',
         ]);
 
@@ -60,7 +64,7 @@ describe('AnalyticsTab', () => {
         const tab = makeTab();
         tab.render();
 
-        tab.updateResults('run_1', null, null, null, [], []);
+        tab.updateResults('run_1', null, null, [], []);
 
         expect(tab.element.querySelectorAll('#analytics-insights-list li')).toHaveLength(0);
         const empty = tab.element.querySelector('#analytics-insights-empty');
@@ -72,7 +76,7 @@ describe('AnalyticsTab', () => {
         const tab = makeTab();
         tab.render();
 
-        tab.updateResults('run_1', null, null, null, [], [], {
+        tab.updateResults('run_1', null, null, [], [], {
             '4RLT': { tm_score: 0.912, gdt_ts: 0.874 },
             '3UG9': { tm_score: 0.885, gdt_ts: 0.831 },
         });
@@ -90,7 +94,7 @@ describe('AnalyticsTab', () => {
         const tab = makeTab();
         tab.render();
 
-        tab.updateResults('run_1', null, null, null, [], []);
+        tab.updateResults('run_1', null, null, [], []);
 
         const card = tab.element.querySelector('#quality-metrics-table-card');
         expect(card.classList.contains('hidden')).toBe(true);
@@ -114,7 +118,7 @@ describe('AnalyticsTab', () => {
             const tab = makeTab();
             tab.render();
 
-            tab.updateResults('run_1', null, null, null, [], [], null, ['4HHB', 'AF-P69905-F1'], { '4HHB': 'A' });
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB', 'AF-P69905-F1'], { '4HHB': 'A' }));
 
             const options = Array.from(tab.element.querySelector('#annotations-structure-select').options).map(o => o.value);
             expect(options).toEqual(['4HHB', 'AF-P69905-F1']);
@@ -144,7 +148,7 @@ describe('AnalyticsTab', () => {
 
             const tab = makeTab();
             tab.render();
-            tab.updateResults('run_1', null, null, null, [], [], null, ['4HHB', 'AF-P69905-F1'], { '4HHB': 'A' });
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB', 'AF-P69905-F1'], { '4HHB': 'A' }));
 
             await tab.loadAllAnnotations();
 
@@ -163,7 +167,7 @@ describe('AnalyticsTab', () => {
 
             const tab = makeTab();
             tab.render();
-            tab.updateResults('run_1', null, null, null, [], [], null, ['ESM-MGYP1'], {});
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['ESM-MGYP1']));
 
             await tab.loadAllAnnotations();
 
@@ -182,7 +186,7 @@ describe('AnalyticsTab', () => {
 
             const tab = makeTab();
             tab.render();
-            tab.updateResults('run_1', null, null, null, [], [], null, ['4HHB', '2HHB'], {});
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB', '2HHB']));
 
             await tab.loadAllAnnotations();
 
@@ -199,7 +203,7 @@ describe('AnalyticsTab', () => {
 
             const tab = makeTab();
             tab.render();
-            tab.updateResults('run_1', null, null, null, [], [], null, ['4HHB'], { '4HHB': 'A' });
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
 
             await tab.loadAllAnnotations();
 
@@ -213,7 +217,7 @@ describe('AnalyticsTab', () => {
 
             const tab = makeTab();
             tab.render();
-            tab.updateResults('run_1', null, null, null, [], [], null, ['4HHB'], { '4HHB': 'A' });
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
             await tab.loadAllAnnotations();
             fetchAnnotations.mockClear();
 

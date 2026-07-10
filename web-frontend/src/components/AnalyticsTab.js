@@ -209,7 +209,13 @@ export class AnalyticsTab {
         });
     }
 
-    updateResults(runId, heatmapFig, treeFig, ramachandranStats, rmsfValues, insights, qualityMetrics, selectedPDBs, chainSelections) {
+    // `figures` bundles { heatmap, tree } (previously two positional params)
+    // and `structures` is an array of { pdbId, chain } pairs the caller
+    // builds from its own selectedPDBs/chainSelections state (previously
+    // two more positional params) - both consolidations exist purely to
+    // keep this under SonarCloud's max-7-parameter threshold (S107), not
+    // for any behavioral reason.
+    updateResults(runId, figures, ramachandranStats, rmsfValues, insights, qualityMetrics, structures) {
         if (runId !== this.currentRunId) {
             // A different (or cleared) run - any cached annotations belong
             // to a run that's no longer showing, so they'd be wrong to
@@ -218,16 +224,13 @@ export class AnalyticsTab {
             this.annotationsLoadedForRunId = null;
         }
         this.currentRunId = runId;
-        this.heatmapFig = heatmapFig;
-        this.treeFig = treeFig;
+        this.heatmapFig = figures?.heatmap ?? null;
+        this.treeFig = figures?.tree ?? null;
         this.ramachandranStats = ramachandranStats;
         this.rmsfValues = rmsfValues || [];
         this.insights = insights || [];
         this.qualityMetrics = qualityMetrics || null;
-        this.structures = (selectedPDBs || []).map(pdbId => ({
-            pdbId,
-            chain: (chainSelections || {})[pdbId],
-        }));
+        this.structures = structures || [];
         this.renderVisuals();
     }
 
@@ -317,7 +320,7 @@ export class AnalyticsTab {
     }
 
     renderReactomePathways(pathways) {
-        if (!pathways || !pathways.length) return '';
+        if (!pathways?.length) return '';
         return `
             <div class="flex flex-col gap-2">
                 <span class="eyebrow">Reactome pathways</span>
@@ -366,169 +369,198 @@ export class AnalyticsTab {
     renderVisuals() {
         if (!this.element) return;
 
-        // 1. Update Torsion / Ramachandran metrics
+        this.renderRamachandranSection();
+        this.renderQualityMetricsTable();
+        this.renderRmsfChart();
+        this.renderRmsdHeatmap();
+        this.renderPhyloTree();
+        this.renderInsightsList();
+
+        // Annotations sub-tab - repopulate the structure picker for this
+        // run and re-render from whatever's already cached (a fresh
+        // network fetch only happens on first visit to this sub-tab, see
+        // switchSubTab()).
+        this.populateAnnotationsPicker();
+        this.renderAnnotationsPanel();
+    }
+
+    renderRamachandranSection() {
         const score = this.element.querySelector('#ramachandran-score');
         const outliers = this.element.querySelector('#ramachandran-outliers');
         const listCard = this.element.querySelector('#ramachandran-outliers-list-card');
         const listContainer = this.element.querySelector('#ramachandran-outliers-list');
 
-        if (this.ramachandranStats?.favored_percent != null) {
-            score.innerText = `${this.ramachandranStats.favored_percent.toFixed(1)}%`;
-            outliers.innerText = this.ramachandranStats.outlier_count;
-
-            if (this.ramachandranStats.outlier_count > 0 && this.ramachandranStats.outliers_list?.length > 0) {
-                listCard.classList.remove('hidden');
-                listContainer.innerHTML = "";
-                this.ramachandranStats.outliers_list.forEach(item => {
-                    const chip = document.createElement('span');
-                    chip.className = "px-1.5 py-0.5 rounded-md bg-surface-raised border border-border-subtle text-error font-mono text-[10px]";
-                    chip.innerText = item;
-                    listContainer.appendChild(chip);
-                });
-            } else {
-                listCard.classList.add('hidden');
-            }
-        } else {
+        if (this.ramachandranStats?.favored_percent == null) {
             score.innerText = "--";
             outliers.innerText = "--";
             listCard.classList.add('hidden');
+            return;
         }
 
-        // 1b. Alignment quality (TM-score / GDT-TS) table
+        score.innerText = `${this.ramachandranStats.favored_percent.toFixed(1)}%`;
+        outliers.innerText = this.ramachandranStats.outlier_count;
+
+        if (this.ramachandranStats.outlier_count > 0 && this.ramachandranStats.outliers_list?.length > 0) {
+            listCard.classList.remove('hidden');
+            listContainer.innerHTML = "";
+            this.ramachandranStats.outliers_list.forEach(item => {
+                const chip = document.createElement('span');
+                chip.className = "px-1.5 py-0.5 rounded-md bg-surface-raised border border-border-subtle text-error font-mono text-[10px]";
+                chip.innerText = item;
+                listContainer.appendChild(chip);
+            });
+        } else {
+            listCard.classList.add('hidden');
+        }
+    }
+
+    renderQualityMetricsTable() {
         const qualityCard = this.element.querySelector('#quality-metrics-table-card');
         const qualityBody = this.element.querySelector('#quality-metrics-table-body');
         const qualityEntries = this.qualityMetrics ? Object.entries(this.qualityMetrics) : [];
-        if (qualityEntries.length > 0) {
-            qualityCard.classList.remove('hidden');
-            qualityBody.innerHTML = "";
-            qualityEntries.forEach(([pdbId, metrics]) => {
-                const row = document.createElement('tr');
-                row.className = "border-b border-border-subtle last:border-0";
 
-                const idCell = document.createElement('td');
-                idCell.className = "py-1 font-mono text-primary";
-                idCell.textContent = pdbId;
-
-                const tmCell = document.createElement('td');
-                tmCell.className = "py-1 text-primary";
-                tmCell.textContent = metrics?.tm_score != null ? metrics.tm_score.toFixed(3) : '--';
-
-                const gdtCell = document.createElement('td');
-                gdtCell.className = "py-1 text-primary";
-                gdtCell.textContent = metrics?.gdt_ts != null ? metrics.gdt_ts.toFixed(3) : '--';
-
-                row.appendChild(idCell);
-                row.appendChild(tmCell);
-                row.appendChild(gdtCell);
-                qualityBody.appendChild(row);
-            });
-        } else {
+        if (qualityEntries.length === 0) {
             qualityCard.classList.add('hidden');
+            return;
         }
 
-        // 2. Render Plotly RMSF Line Chart
+        qualityCard.classList.remove('hidden');
+        qualityBody.innerHTML = "";
+        qualityEntries.forEach(([pdbId, metrics]) => {
+            const row = document.createElement('tr');
+            row.className = "border-b border-border-subtle last:border-0";
+
+            const idCell = document.createElement('td');
+            idCell.className = "py-1 font-mono text-primary";
+            idCell.textContent = pdbId;
+
+            const tmCell = document.createElement('td');
+            tmCell.className = "py-1 text-primary";
+            tmCell.textContent = metrics?.tm_score != null ? metrics.tm_score.toFixed(3) : '--';
+
+            const gdtCell = document.createElement('td');
+            gdtCell.className = "py-1 text-primary";
+            gdtCell.textContent = metrics?.gdt_ts != null ? metrics.gdt_ts.toFixed(3) : '--';
+
+            row.appendChild(idCell);
+            row.appendChild(tmCell);
+            row.appendChild(gdtCell);
+            qualityBody.appendChild(row);
+        });
+    }
+
+    renderRmsfChart() {
         const rmsfDiv = this.element.querySelector('#rmsf-plotly-chart');
-        if (this.rmsfValues?.length > 0) {
-            rmsfDiv.innerHTML = "";
-
-            // X-axis: 1-indexed positions
-            const xData = Array.from({ length: this.rmsfValues.length }, (_, i) => i + 1);
-
-            const trace = {
-                x: xData,
-                y: this.rmsfValues,
-                type: 'scatter',
-                mode: 'lines',
-                line: {
-                    color: '#E2846A',
-                    width: 2.5,
-                    shape: 'spline'
-                },
-                fill: 'tozeroy',
-                fillcolor: 'rgba(226, 132, 106, 0.1)',
-                hoverinfo: 'x+y',
-                name: 'RMSF'
-            };
-
-            const layout = {
-                xaxis: {
-                    title: 'Alignment Position',
-                    gridcolor: '#2C2620',
-                    zeroline: false
-                },
-                yaxis: {
-                    title: 'RMSF (Å)',
-                    gridcolor: '#2C2620',
-                    zeroline: false
-                },
-                margin: { l: 50, r: 20, t: 20, b: 40 },
-                paper_bgcolor: 'rgba(0,0,0,0)',
-                plot_bgcolor: 'rgba(0,0,0,0)',
-                height: 280,
-                font: { family: "Segoe UI, sans-serif", size: 10, color: "#A79E8E" }
-            };
-
-            Plotly.newPlot(rmsfDiv, [trace], layout, { responsive: true, displayModeBar: false });
-        } else if (this.currentRunId) {
-            rmsfDiv.innerHTML = `
-                <div class="flex items-center justify-center h-full text-secondary font-body-sm">
-                    No residue fluctuation data available.
-                </div>
-            `;
+        if (!(this.rmsfValues?.length > 0)) {
+            if (this.currentRunId) {
+                rmsfDiv.innerHTML = `
+                    <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                        No residue fluctuation data available.
+                    </div>
+                `;
+            }
+            return;
         }
 
-        // 3. Render Plotly Heatmap
+        rmsfDiv.innerHTML = "";
+
+        // X-axis: 1-indexed positions
+        const xData = Array.from({ length: this.rmsfValues.length }, (_, i) => i + 1);
+
+        const trace = {
+            x: xData,
+            y: this.rmsfValues,
+            type: 'scatter',
+            mode: 'lines',
+            line: {
+                color: '#E2846A',
+                width: 2.5,
+                shape: 'spline'
+            },
+            fill: 'tozeroy',
+            fillcolor: 'rgba(226, 132, 106, 0.1)',
+            hoverinfo: 'x+y',
+            name: 'RMSF'
+        };
+
+        const layout = {
+            xaxis: {
+                title: 'Alignment Position',
+                gridcolor: '#2C2620',
+                zeroline: false
+            },
+            yaxis: {
+                title: 'RMSF (Å)',
+                gridcolor: '#2C2620',
+                zeroline: false
+            },
+            margin: { l: 50, r: 20, t: 20, b: 40 },
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            height: 280,
+            font: { family: "Segoe UI, sans-serif", size: 10, color: "#A79E8E" }
+        };
+
+        Plotly.newPlot(rmsfDiv, [trace], layout, { responsive: true, displayModeBar: false });
+    }
+
+    renderRmsdHeatmap() {
         const heatmapDiv = this.element.querySelector('#rmsd-plotly-heatmap');
-        if (this.heatmapFig?.data) {
-            heatmapDiv.innerHTML = "";
-
-            const layout = {
-                ...this.heatmapFig.layout,
-                width: undefined, // Responsive
-                height: 280,
-                margin: { l: 50, r: 20, t: 30, b: 50 },
-                paper_bgcolor: 'rgba(0,0,0,0)',
-                plot_bgcolor: 'rgba(0,0,0,0)',
-                font: { family: "Segoe UI, sans-serif", size: 10, color: "#A79E8E" }
-            };
-
-            Plotly.newPlot(heatmapDiv, this.heatmapFig.data, layout, { responsive: true, displayModeBar: false });
-        } else if (this.currentRunId) {
-            heatmapDiv.innerHTML = `
-                <div class="flex items-center justify-center h-full text-secondary font-body-sm">
-                    No pairwise heatmap figure available.
-                </div>
-            `;
+        if (!this.heatmapFig?.data) {
+            if (this.currentRunId) {
+                heatmapDiv.innerHTML = `
+                    <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                        No pairwise heatmap figure available.
+                    </div>
+                `;
+            }
+            return;
         }
 
-        // 4. Render Plotly Dendrogram
+        heatmapDiv.innerHTML = "";
+        const layout = {
+            ...this.heatmapFig.layout,
+            width: undefined, // Responsive
+            height: 280,
+            margin: { l: 50, r: 20, t: 30, b: 50 },
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            font: { family: "Segoe UI, sans-serif", size: 10, color: "#A79E8E" }
+        };
+        Plotly.newPlot(heatmapDiv, this.heatmapFig.data, layout, { responsive: true, displayModeBar: false });
+    }
+
+    renderPhyloTree() {
         const treeDiv = this.element.querySelector('#phylo-plotly-tree');
-        if (this.treeFig?.data) {
-            treeDiv.innerHTML = "";
-
-            const layout = {
-                ...this.treeFig.layout,
-                width: undefined, // Responsive
-                height: 280,
-                margin: { l: 60, r: 20, t: 30, b: 40 },
-                paper_bgcolor: 'rgba(0,0,0,0)',
-                plot_bgcolor: 'rgba(0,0,0,0)',
-                font: { family: "Segoe UI, sans-serif", size: 10, color: "#A79E8E" }
-            };
-
-            Plotly.newPlot(treeDiv, this.treeFig.data, layout, { responsive: true, displayModeBar: false });
-        } else if (this.currentRunId) {
-            treeDiv.innerHTML = `
-                <div class="flex items-center justify-center h-full text-secondary font-body-sm">
-                    No phylogenetic tree figure available.
-                </div>
-            `;
+        if (!this.treeFig?.data) {
+            if (this.currentRunId) {
+                treeDiv.innerHTML = `
+                    <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                        No phylogenetic tree figure available.
+                    </div>
+                `;
+            }
+            return;
         }
 
-        // 5. Render automated insights as a bullet list
+        treeDiv.innerHTML = "";
+        const layout = {
+            ...this.treeFig.layout,
+            width: undefined, // Responsive
+            height: 280,
+            margin: { l: 60, r: 20, t: 30, b: 40 },
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            font: { family: "Segoe UI, sans-serif", size: 10, color: "#A79E8E" }
+        };
+        Plotly.newPlot(treeDiv, this.treeFig.data, layout, { responsive: true, displayModeBar: false });
+    }
+
+    renderInsightsList() {
         const insightsList = this.element.querySelector('#analytics-insights-list');
         const insightsEmpty = this.element.querySelector('#analytics-insights-empty');
         insightsList.innerHTML = "";
+
         if (this.insights?.length > 0) {
             insightsEmpty.classList.add('hidden');
             this.insights.forEach(text => {
@@ -544,12 +576,5 @@ export class AnalyticsTab {
             insightsEmpty.textContent = "Run alignment to display automated insights.";
             insightsEmpty.classList.remove('hidden');
         }
-
-        // 6. Annotations sub-tab - repopulate the structure picker for this
-        // run and re-render from whatever's already cached (a fresh
-        // network fetch only happens on first visit to this sub-tab, see
-        // switchSubTab()).
-        this.populateAnnotationsPicker();
-        this.renderAnnotationsPanel();
     }
 }

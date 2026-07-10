@@ -210,6 +210,7 @@ app.mount("/results", StaticFiles(directory=str(results_dir)), name="results")
 app.mount("/raw", StaticFiles(directory=str(raw_dir)), name="raw")
 
 _SAFE_PATH_SEGMENT = re.compile(r"^[A-Za-z0-9_-]+$")
+_TEXT_PLAIN = "text/plain"
 
 
 def _safe_segment(value: Optional[str], field_name: str) -> Optional[str]:
@@ -1718,7 +1719,7 @@ def get_newick_tree(
 
     return FileResponse(
         path=str(newick_path),
-        media_type="text/plain",
+        media_type=_TEXT_PLAIN,
         filename=f"tree_{run_id}.newick",
     )
 
@@ -1834,7 +1835,7 @@ def get_compare_citations(
         citations_path = exporter.export(citation_ids, run_id, version=version)
         return FileResponse(
             path=str(citations_path),
-            media_type="text/plain",
+            media_type=_TEXT_PLAIN,
             filename=f"citations_{run_id}.txt",
         )
     except Exception as e:
@@ -1956,7 +1957,7 @@ def get_discover_citations(run_id: Annotated[str, Query(...)]):
         citations_path = exporter.export(citation_ids, run_id, version=version)
         return FileResponse(
             path=str(citations_path),
-            media_type="text/plain",
+            media_type=_TEXT_PLAIN,
             filename=f"discover_citations_{run_id}.txt",
         )
     except HTTPException:

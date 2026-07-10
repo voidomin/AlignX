@@ -5,7 +5,7 @@
 // shapes render identically except for that optional count badge.
 
 export function renderDomainList(domains, heading = 'Domains / families') {
-    if (!domains || !domains.length) return '';
+    if (!domains?.length) return '';
     return `
         <div class="flex flex-col gap-2">
             <span class="eyebrow">${heading}</span>
@@ -20,7 +20,7 @@ export function renderDomainList(domains, heading = 'Domains / families') {
 }
 
 export function renderGoTermList(goTerms, heading = 'GO terms') {
-    if (!goTerms || !goTerms.length) return '';
+    if (!goTerms?.length) return '';
     return `
         <div class="flex flex-col gap-2">
             <span class="eyebrow">${heading}</span>
