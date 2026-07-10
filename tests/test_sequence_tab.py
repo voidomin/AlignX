@@ -53,6 +53,22 @@ class TestFindMotifMatches:
         assert find_motif_matches({"s1": "ACGT"}, "AXG") == {"s1": [1, 2, 3]}
         assert find_motif_matches({"s1": "ACGT"}, "A-G") == {"s1": [1, 2, 3]}
 
+    def test_regex_metacharacters_in_the_query_are_treated_as_literal_text(self):
+        # A query is a residue motif, not a real regex - characters like
+        # parentheses/plus/dollar must match themselves (and thus find
+        # nothing in a plain amino-acid sequence), not be interpreted as
+        # regex syntax.
+        assert find_motif_matches({"s1": "ACGT"}, "(A+)+$") == {}
+        assert find_motif_matches({"s1": "AC(GT"}, "C(G") == {"s1": [2, 3, 4]}
+
+    def test_catastrophic_backtracking_pattern_does_not_hang(self):
+        # Regression for a ReDoS/regex-injection finding: this query would
+        # cause exponential backtracking if compiled as a real regex against
+        # a long non-matching sequence. Escaping it must keep this instant.
+        query = "(A+)+B"
+        sequence = "A" * 40 + "C"
+        assert find_motif_matches({"s1": sequence}, query) == {}
+
 
 class TestAlignedColsToRawResidues:
     def test_maps_columns_skipping_gaps(self):

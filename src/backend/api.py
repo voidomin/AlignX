@@ -27,7 +27,7 @@ project_root = Path(__file__).parent.parent.parent.resolve()
 sys.path.insert(0, str(project_root))
 
 from src.utils.config_loader import load_config, save_config
-from src.utils.logger import get_logger
+from src.utils.logger import get_logger, sanitize_for_log
 from src.backend.coordinator import AnalysisCoordinator
 from src.backend.discovery_coordinator import DiscoveryCoordinator
 from src.backend.foldseek_client import FoldseekClient, FoldseekError
@@ -1678,7 +1678,9 @@ def get_report_zip(
             if notebook_path and notebook_path.exists():
                 zip_file.write(notebook_path, arcname=f"lab_notebook_{run_id}.html")
         except Exception as e:
-            logger.warning(f"Skipping lab notebook in ZIP for {run_id}: {e}")
+            logger.warning(
+                f"Skipping lab notebook in ZIP for {sanitize_for_log(run_id)}: {e}"
+            )
 
     zip_buffer.seek(0)
     return StreamingResponse(

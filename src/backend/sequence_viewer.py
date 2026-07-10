@@ -267,10 +267,15 @@ def find_motif_matches(sequences: Dict[str, str], query: str) -> Dict[str, List[
     if not query.strip():
         return {}
 
-    # Clean query: convert 'X' or 'x' or '-' to regex wildcard '.'
-    clean_query = query.upper().replace("X", ".").replace("-", ".").replace(" ", "")
+    # Build the pattern character-by-character rather than compiling the
+    # query as a raw regex: 'X'/'.'/'-' become a wildcard, every other
+    # character is escaped literally. The query comes straight from an HTTP
+    # request, so treating it as a real regex would let a caller inject
+    # arbitrary regex syntax (catastrophic-backtracking quantifiers, etc.).
+    clean_query = query.upper().replace(" ", "")
+    pattern_str = "".join("." if ch in "X.-" else re.escape(ch) for ch in clean_query)
     try:
-        pattern = re.compile(clean_query)
+        pattern = re.compile(pattern_str)
     except re.error:
         return {}  # Invalid regex
 
