@@ -1,4 +1,7 @@
-const API_BASE = "http://127.0.0.1:8000";
+// VITE_API_BASE points the built SPA at a separately-hosted backend (e.g.
+// Vercel frontend + Render backend) - unset in local dev, where Vite's dev
+// server and the FastAPI backend are both on 127.0.0.1.
+const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 // Not const: a shared run link (getShareLink()) carries its own api_key as a
 // URL param when ALIGNX_API_KEY is set, since the recipient's build has no
 // way to know the deployment's key at build time - main.js calls

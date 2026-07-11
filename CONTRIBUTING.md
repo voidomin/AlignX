@@ -12,6 +12,18 @@ verified, and the conventions this codebase actually follows.
    `pytest-asyncio`, `pytest-cov`, `black`, `ruff`.
 3. For frontend work, see `web-frontend/README` (or run
    `scripts/build_frontend.ps1`) and `npm test` inside `web-frontend/`.
+4. Optional but recommended: `pip install pre-commit && pre-commit install`
+   runs ruff/black/ESLint on every commit, so formatting/lint issues surface
+   before you push rather than in CI. `.pre-commit-config.yaml` pins the
+   same ruff/black versions CI checks against.
+
+## Branching
+
+`main` is always deployable and should stay that way. Use short-lived
+`feat/*`/`fix/*` branches, open a PR into `main`, and squash-merge once CI is
+green - see `.github/workflows/ci.yml` for what runs. `streamlit-stable` is a
+separate, long-lived branch for whatever's actually live on Streamlit Cloud
+(see `docs/deployment/DEPLOYMENT.md`) - don't merge `main` into it wholesale.
 
 ## Before opening a PR
 
@@ -19,8 +31,9 @@ verified, and the conventions this codebase actually follows.
   `web-frontend/` for the SPA frontend. Every PR should keep the suite green
   - see `docs/testing/VERIFICATION.md` for the full protocol (setup checks,
   scientific-metric checks, API smoke tests, UI flow).
-- **Formatting and lint are clean.** `black --check .` and `ruff check .`
-  (both run in CI and will block the PR otherwise).
+- **Formatting and lint are clean.** `black --check .` and `ruff check .` for
+  the backend, `npm run lint` inside `web-frontend/` for the SPA (all three
+  run in CI and will block the PR otherwise).
 - **New code has real tests, not just "it imports."** This project has been
   through several test-coverage passes specifically because untested code
   paths hid real bugs. If you're adding a Streamlit UI function, see

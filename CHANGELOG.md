@@ -2,6 +2,24 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.86.0]
+
+Deployment and code-quality tooling, ahead of a first free-tier beta deploy for external feedback (scientists/early users). No user-facing app behavior changes.
+
+### Added
+- **Free-tier split deployment path**: `web-frontend/vercel.json` (Vercel static build config for the SPA) and `render.yaml` (a Render Blueprint that deploys the existing `Dockerfile` as-is for the FastAPI backend, with `MUSTANG_BACKEND=native` overriding `config.yaml`'s Windows-only `wsl` default). New `docs/deployment/DEPLOYMENT.md` section walks through both dashboards plus closing the CORS loop between them.
+- **`VITE_API_BASE` env var**: `web-frontend/src/api.js`'s previously hardcoded `http://127.0.0.1:8000` is now overridable at build time, matching the existing `VITE_ALIGNX_API_KEY` convention - needed once frontend and backend are two separately-hosted services instead of one container.
+- **ESLint for the frontend**: new flat-config `web-frontend/eslint.config.js` (`npm run lint`), wired into CI as a new step in the `Frontend (Vitest)` job. Found and fixed one real pre-existing issue (an unused captured promise in `DiscoverTab.test.js`) and required declaring `Plotly`/`$3Dmol` as known globals (loaded via `<script>` tags in `index.html`, not npm packages).
+- **`.pre-commit-config.yaml`**: ruff/black (pinned to the exact versions `requirements.txt` locks) and the new ESLint config run at commit time, plus basic hygiene hooks (trailing whitespace, merge-conflict markers) - catches formatting/lint issues before they reach CI, not just at push time.
+- **Dependabot** (`.github/dependabot.yml`): weekly grouped update PRs for `pip`, `npm` (`web-frontend/`), GitHub Actions, and the Dockerfile's base image.
+- **`CONTRIBUTING.md`** now documents the branching strategy (GitHub Flow - short-lived `feat/*`/`fix/*` branches, PR + squash-merge into an always-deployable `main`; `streamlit-stable` stays separate) and the optional `pre-commit install` step.
+
+### Verified
+- Full backend suite: 962 tests passing. `black`/`ruff` clean.
+- Frontend suite: 224 Vitest tests passing. `npm run lint` clean. `npm run build` still produces a working production bundle.
+- Docker CI-parity container run skipped locally again this batch (Docker Desktop wasn't running; nothing in `Dockerfile` or backend runtime code changed) - relying on GitHub Actions' Docker build+smoke test on push.
+- Branch protection on `main` and the Vercel/Render dashboard connections themselves are manual, one-time steps only the repo owner can do (documented in `docs/deployment/DEPLOYMENT.md`) - not something a code change can automate.
+
 ## [3.85.0]
 
 A full user-facing UX audit of the SPA (prompted by the user noticing Discover mode never showed the structure they searched) surfaced 16 findings; the 5 most severe are fixed here. A broader UI/UX flow redesign is intentionally deferred to a later, separate pass.

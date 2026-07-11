@@ -91,6 +91,9 @@ jobs:
       - name: Audit npm dependencies for known vulnerabilities
         run: npm audit --audit-level=high
 
+      - name: Lint with ESLint
+        run: npm run lint
+
       - name: Run Vitest
         run: npm test
 

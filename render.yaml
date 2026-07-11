@@ -1,0 +1,26 @@
+databases: []
+
+services:
+  - type: web
+    name: structscope-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      # config.yaml's committed mustang.backend is "wsl" (this project's
+      # Windows local-dev default) - the Docker image compiles a native Linux
+      # mustang binary instead (see Dockerfile), so this override is required
+      # here, not optional like the two below.
+      - key: MUSTANG_BACKEND
+        value: native
+      # Restrict CORS to the deployed frontend origin once known - defaults
+      # to "*" (see src/backend/api.py) which is fine for an initial free-tier
+      # trial deploy, but should be tightened before wider access.
+      - key: ALIGNX_CORS_ORIGINS
+        sync: false
+      # Leave unset for an open-access trial deploy; set to require an API
+      # key on every /api/* request (see src/backend/api.py).
+      - key: ALIGNX_API_KEY
+        sync: false

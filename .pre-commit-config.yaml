@@ -1,0 +1,34 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-merge-conflict
+
+  # Pinned to match requirements.txt's ruff/black versions exactly, so a
+  # pre-commit pass and CI's own `ruff check .`/`black --check .` never
+  # disagree about what's clean.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.19
+    hooks:
+      - id: ruff
+        args: [--fix]
+
+  - repo: https://github.com/psf/black
+    rev: 26.5.1
+    hooks:
+      - id: black
+
+  # Runs against the actual project config/deps rather than a separate
+  # mirror, since this repo's ESLint setup (flat config + browser globals)
+  # isn't easily expressed through a mirrored hook.
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint (web-frontend)
+        entry: bash -c 'cd web-frontend && npm run lint'
+        language: system
+        files: ^web-frontend/.*\.js$
+        pass_filenames: false

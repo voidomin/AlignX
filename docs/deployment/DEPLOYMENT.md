@@ -1,10 +1,86 @@
 # Deployment Guide for StructScope
 
-This guide covers deploying StructScope's two interfaces: the primary **Vite + FastAPI** full-stack app (via Docker), and the separately-deployed **Streamlit** app (via Streamlit Cloud / Hugging Face Spaces).
+This guide covers deploying StructScope's two interfaces: the primary **Vite + FastAPI** full-stack app (via a free Vercel + Render split, or via Docker for a real production deploy), and the separately-deployed **Streamlit** app (via Streamlit Cloud / Hugging Face Spaces).
 
 ---
 
-## 🐳 Option 1: Docker (Recommended — Vite + FastAPI)
+## 🆓 Option 1: Vercel + Render (Free-Tier Split Deploy)
+
+The current beta deployment path — getting the SPA in front of early
+reviewers/scientists for feedback before committing to a real production
+host. Frontend and backend deploy as two separate free services; Docker
+(Option 2 below) remains the recommended path once ready for a real launch,
+since these free tiers have real limits (see below).
+
+Steps marked **(manual)** require logging into a dashboard with your own
+account. Everything else here is already committed to the repo.
+
+### 1. Backend on Render
+
+Render's free web-service tier runs the existing `Dockerfile` as-is — no
+rewrite needed. `render.yaml` (repo root) is a Render "Blueprint" that
+pre-fills the service config.
+
+**(manual)**
+1. Go to [render.com](https://dashboard.render.com), sign in, **New +** →
+   **Blueprint**.
+2. Connect this GitHub repo. Render detects `render.yaml` and proposes a
+   `structscope-backend` web service on the free plan.
+3. It prompts for the two env vars declared in `render.yaml`:
+   - `ALIGNX_CORS_ORIGINS` — leave blank for now (step 3 below fills this in
+     once the frontend URL exists; blank defaults to `*`, fine for an
+     initial trial but not final).
+   - `ALIGNX_API_KEY` — leave unset for an open beta, or set a value to
+     require it on every `/api/*` request.
+4. Deploy. First build compiles Mustang from source, so expect several
+   minutes. Once live, note the URL Render gives you, e.g.
+   `https://structscope-backend.onrender.com`.
+5. Confirm it's up: `curl https://structscope-backend.onrender.com/health`.
+
+`render.yaml` already sets `MUSTANG_BACKEND=native` — the committed
+`config.yaml` defaults to `wsl` (this project's Windows local-dev
+convention), which would fail on Render's Linux container without this
+override.
+
+### 2. Frontend on Vercel
+
+`web-frontend/vercel.json` sets the build command/output dir and an SPA
+rewrite.
+
+**(manual)**
+1. Go to [vercel.com](https://vercel.com/new), sign in, **Import** this
+   repo.
+2. Set **Root Directory** to `web-frontend` (the SPA, not the repo root).
+   Vercel auto-detects Vite; `vercel.json` covers the rest.
+3. Add an environment variable: `VITE_API_BASE` = the Render URL from
+   step 1 (e.g. `https://structscope-backend.onrender.com`). If you set
+   `ALIGNX_API_KEY` on the backend, also add `VITE_ALIGNX_API_KEY` here with
+   the same value.
+4. Deploy. Note the resulting URL, e.g. `https://structscope.vercel.app`.
+
+### 3. Close the CORS loop
+
+**(manual)** Back in Render's dashboard, set `ALIGNX_CORS_ORIGINS` to the
+exact Vercel URL from step 2 (no trailing slash; comma-separate if you also
+want preview-deploy URLs allowed). Saving triggers an automatic redeploy.
+
+At this point the split deployment is live end-to-end: Vercel serves the
+SPA, which calls the Render-hosted API, which only accepts requests from
+that origin.
+
+### Known limitations of this free-tier setup
+
+- Render's free web service **sleeps after ~15 min idle** and takes 30-60s
+  to wake on the next request — fine for early reviewers who know to expect
+  it, not for a real launch.
+- Leaving `ALIGNX_CORS_ORIGINS` / `ALIGNX_API_KEY` open is a deliberate
+  choice for a small, trusted feedback round — tighten before wider access
+  (see `src/backend/api.py`'s own startup warning if these are
+  misconfigured together).
+
+---
+
+## 🐳 Option 2: Docker (Recommended for Production — Vite + FastAPI)
 
 This is the production path: a single container running the FastAPI backend, serving the pre-built Vite SPA as static files.
 
@@ -77,7 +153,7 @@ While investigating job-submission concurrency, the same test suite also caught 
 
 ---
 
-## ☁️ Option 2: Streamlit Community Cloud (Streamlit UI only)
+## ☁️ Option 3: Streamlit Community Cloud (Streamlit UI only)
 
 Deploys `app.py` (the Streamlit interface). Does **not** deploy the Vite SPA or FastAPI backend, so it doesn't include Discover mode (SPA-only, see README) — use this only if you specifically want the Streamlit experience hosted for free.
 
@@ -111,7 +187,7 @@ Streamlit Community Cloud uses ephemeral storage:
 
 ---
 
-## 🤗 Option 3: Hugging Face Spaces (Streamlit UI only)
+## 🤗 Option 4: Hugging Face Spaces (Streamlit UI only)
 
 Same caveat as above — Streamlit UI only.
 
@@ -123,6 +199,8 @@ Same caveat as above — Streamlit UI only.
 
 ## 🔒 Secrets
 
+- **Render**: Service → Environment (`ALIGNX_API_KEY`, `ALIGNX_CORS_ORIGINS`, `MUSTANG_BACKEND` — pre-filled by `render.yaml`).
+- **Vercel**: Project → Settings → Environment Variables (`VITE_API_BASE`, `VITE_ALIGNX_API_KEY`).
 - **Docker**: pass via `--env-file .env` or your orchestrator's secret manager (`ALIGNX_API_KEY`, `ALIGNX_CORS_ORIGINS`).
 - **Streamlit Cloud**: App Dashboard → Settings → Secrets.
 - **Hugging Face**: Space Settings → Repository secrets.

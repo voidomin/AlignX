@@ -98,7 +98,7 @@ describe('DiscoverTab', () => {
         tab.render();
         tab.element.querySelector('#discover-input').value = '1CRN';
 
-        const runPromise = tab.handleRun();
+        tab.handleRun();
         await Promise.resolve();
 
         const queuedText = tab.element.querySelector('#discover-status-text').textContent;
