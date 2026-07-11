@@ -50,6 +50,7 @@ export class DiscoverTab {
 
     constructor(props = {}) {
         this.onStructureLoaded = props.onStructureLoaded || (() => {});
+        this.onSwitchToOverview = props.onSwitchToOverview || (() => {});
     }
 
     render() {
@@ -76,7 +77,7 @@ export class DiscoverTab {
                 <div class="flex gap-2">
                     <input id="discover-input" type="text" placeholder="PDB ID, or AF-/SM-/ESM- accession"
                         class="flex-1 bg-surface border border-border rounded-sm px-3 py-2 text-body-sm font-mono focus:outline-none focus:border-accent" />
-                    <button id="discover-run-btn" class="btn-primary-hard px-5 py-2 rounded-sm font-label-md text-label-md flex items-center gap-2 whitespace-nowrap">
+                    <button id="discover-run-btn" class="btn-primary px-5 py-2 rounded-sm font-label-md text-label-md flex items-center gap-2 whitespace-nowrap">
                         <span class="material-symbols-outlined text-[18px]">travel_explore</span>
                         Discover
                     </button>
@@ -330,12 +331,17 @@ export class DiscoverTab {
                 ${downloadHTML}
                 ${bodyHTML}
                 <div id="discover-ligand-section" class="flex flex-col gap-3 border-t border-border-subtle pt-4"></div>
+                <div class="flex flex-col gap-2 p-3 rounded-md bg-surface-raised border border-border-subtle">
+                    <span class="font-body-sm text-body-sm text-secondary">Want to structurally align ${r.pdb_id} against another structure?</span>
+                    <button id="discover-switch-overview-btn" class="self-start font-label-sm text-label-sm text-accent hover:underline">Switch to Overview</button>
+                </div>
             </div>
         `;
 
         container.querySelectorAll('.detail-level-btn').forEach(btn => {
             btn.addEventListener('click', () => this.setDetailLevel(btn.dataset.level));
         });
+        container.querySelector('#discover-switch-overview-btn').addEventListener('click', () => this.onSwitchToOverview());
 
         this.loadLigandSection(r.pdb_id);
     }

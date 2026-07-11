@@ -25,7 +25,11 @@ export class Viewer3D {
 
     render() {
         const div = document.createElement('div');
-        div.className = "flex-1 card rounded-lg flex flex-col overflow-hidden relative";
+        // v4: the persistent viewer is the one "raised" surface in the shell
+        // (panel-raised + shadow-panel, see style.css/tailwind.config.js) -
+        // everything else stays flat, so this one soft lift reads as
+        // deliberate rather than the whole UI looking inconsistently boxy.
+        div.className = "flex-1 panel-raised shadow-panel rounded-lg flex flex-col overflow-hidden relative";
         div.innerHTML = `
             <!-- Viewport Header -->
             <div class="px-4 py-3 border-b border-border flex justify-between items-center">

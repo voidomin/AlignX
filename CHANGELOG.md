@@ -2,6 +2,31 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.87.0]
+
+A full visual + flow redesign (v4 of the "Editorial Instrument" design system), picked back up after being deliberately deferred during the earlier 5-issue UX batch. Two research passes catalogued the actual design-system drift and IA friction before touching any code; this evolves the existing distinctive identity rather than replacing it, and fixes every documented inconsistency found along the way.
+
+### Changed
+- **Nav grouped into three sections**: Explore (Overview, Discover), Results (Ligands, Sequence, Analytics, Clusters), Workspace (Diff Runs, History, Dashboard, Settings) - thin dividers make the "Results tabs only populate after a run" dependency legible instead of implicit, per the earlier audit's "is this broken?" finding.
+- **"Compare" nav tab renamed to "Diff Runs"**: resolved a real terminology collision - `docs/guides/GETTING_STARTED.md` informally calls the Overview alignment workflow a "Compare run," but the nav tab literally labeled "Compare" was a different feature (`ComparisonTab.js`, diffing the current run against a past one). The `COMPARE`/`DISCOVER` history badges are unaffected - they correctly label the alignment workflow, not the diffing tool, so no collision there.
+- **Reverse cross-link added**: a completed Discover result now shows a "Switch to Overview" nudge (mirroring Overview's existing "Switch to Discover mode" message for <2 structures) - previously the only cross-mode nudge was one-directional.
+- **Two-tier elevation**: the persistent 3D viewer panel now gets a soft `shadow-panel` lift (new `Viewer3D.js` styling) - the one deliberately "raised" surface in the shell, same restraint as the existing "exactly one hard-shadow button" rule.
+
+### Fixed
+- **Two `.btn-primary-hard` instances existed** (Overview's Run Alignment *and* Discover's Run button) against `docs/design/DESIGN.md`'s own "exactly one app-wide" rule - Discover's is now plain `.btn-primary`.
+- **Dead Montserrat font** (a v2.0 leftover, replaced by the Georgia serif stack in v3.0) was still being loaded from `index.html` - removed.
+- **Vestigial `sidebar-width` spacing token** (from the v2.0 sidebar layout, deleted in v3.0) was still sitting in `tailwind.config.js` - removed.
+- **An undocumented, off-palette gray (`#857C6D`)** had crept into `.section-caption`/`.stat-key` in `style.css` - replaced with the actual documented `secondary` token, which was already meant for exactly this role.
+- **5 stale "Segoe UI" font references** in Plotly chart configs (`AnalyticsTab.js` x3, `ComparisonTab.js`, `LigandTab.js`) - the actual sans-serif face has been Inter since `tailwind.config.js`'s `fontFamily` was written; these were never updated.
+- **`.card` was dead CSS** once `Viewer3D.js` (its only real user) moved to the new `.panel-raised` class - removed rather than left as unused cruft.
+- **`style.css`'s color values were hand-duplicated hex literals**, a second copy of the same values already in `tailwind.config.js` - now sourced via Tailwind's `theme()` function, so this class of drift (the off-palette gray above, for instance) can't recur silently.
+- **`docs/design/DESIGN.md`'s own component inventory was stale** (missing `DiscoverTab`/`DashboardTab`/`HistoryPanel`/`SettingsTab`, still describing "the 7-tab nav strip") - rewritten as v4 to list all 10 current components and reflect the actual current tab count/grouping.
+
+### Verified
+- Full frontend suite: 225 Vitest tests passing (1 new test for the Discover→Overview nudge). `npm run lint` clean. `npm run build` succeeds at every stage, confirming `theme()` calls resolve to real values in the compiled CSS (checked directly against `dist/assets/*.css`, not just inferred).
+- Backend unaffected - no backend changes this batch, so the full pytest/black/ruff suite wasn't re-run.
+- Real end-to-end pass against the local dev server (headless Playwright): confirmed the grouped/renamed nav, the "Diff Runs" label, the Overview→Discover and Discover→Overview nudges both firing and navigating correctly, and a real `4HHB` Discover run rendering in the (now visibly elevated) 3D viewer with its ligand section populated - each stage (tokens, nav, entry-point components, results components, workspace components, viewer elevation) was verified independently before the next began, not just at the end.
+
 ## [3.86.1]
 
 A real deploy attempt against Render (first use of the free-tier split-deploy path added in 3.86.0) caught a Docker build failure this project's own CI never could have: `RUN tar -xzf mustang.tgz` failed with `Cannot change ownership to uid 147382, gid 418: Invalid argument` - Render's build sandbox doesn't grant the `chown` capability GitHub Actions' Docker build runner has, and `mustang.tgz`'s archived entries carry their original archiver's uid/gid, which `tar` tries to restore on extraction by default.

@@ -97,7 +97,8 @@ class App {
         });
 
         this.discoverTab = new DiscoverTab({
-            onStructureLoaded: (pdbId) => this.viewer3D.loadSingleStructure(pdbId)
+            onStructureLoaded: (pdbId) => this.viewer3D.loadSingleStructure(pdbId),
+            onSwitchToOverview: () => this.switchTab('overview')
         });
         this.settingsTab = new SettingsTab();
     }

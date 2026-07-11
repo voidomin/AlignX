@@ -152,6 +152,23 @@ describe('DiscoverTab', () => {
         expect(onStructureLoaded).toHaveBeenCalledWith('1CRN');
     });
 
+    it('offers a Switch to Overview nudge once a run completes, calling onSwitchToOverview when clicked', async () => {
+        submitDiscoveryJob.mockResolvedValue({ job_id: 'job1', status: 'queued' });
+        pollJobUntilDone.mockResolvedValue({ status: 'completed', results: makeAnnotatedResults() });
+        const onSwitchToOverview = vi.fn();
+
+        const tab = new DiscoverTab({ onSwitchToOverview });
+        tab.render();
+        tab.element.querySelector('#discover-input').value = '1crn';
+
+        await tab.handleRun();
+
+        const nudgeBtn = tab.element.querySelector('#discover-switch-overview-btn');
+        expect(nudgeBtn.textContent).toContain('Switch to Overview');
+        nudgeBtn.click();
+        expect(onSwitchToOverview).toHaveBeenCalledTimes(1);
+    });
+
     describe('ligand/binding-site inspector', () => {
         it('shows "no bound ligands" when the structure has none', async () => {
             fetchLigands.mockResolvedValue({ ligands: [] });

@@ -1,16 +1,39 @@
 import { fetchMemoryStats, triggerClearMemory, fetchHealth } from '../api';
 
-const TABS = [
-    { key: 'dashboard', label: 'Dashboard' },
-    { key: 'overview', label: 'Overview' },
-    { key: 'discover', label: 'Discover' },
-    { key: 'ligands', label: 'Ligands' },
-    { key: 'sequence', label: 'Sequence' },
-    { key: 'analytics', label: 'Analytics' },
-    { key: 'clusters', label: 'Clusters' },
-    { key: 'comparison', label: 'Compare' },
-    { key: 'history', label: 'History' },
-    { key: 'settings', label: 'Settings' },
+// Grouped into three sections so the nav communicates structure instead of
+// 10 flat, equal-weight peers: Explore (pick a mode), Results (only
+// meaningful once a Compare/Overview alignment has actually run), Workspace
+// (meta - history, settings, and the past-run diffing tool). "Compare" was
+// renamed to "Diff Runs" here because it collided with a different meaning
+// of "Compare" used elsewhere (the Overview tab's alignment workflow is
+// informally called a "Compare run" in docs/guides/GETTING_STARTED.md) -
+// this tab specifically diffs the current run against a past one.
+const TAB_GROUPS = [
+    {
+        label: 'Explore',
+        tabs: [
+            { key: 'overview', label: 'Overview' },
+            { key: 'discover', label: 'Discover' },
+        ],
+    },
+    {
+        label: 'Results',
+        tabs: [
+            { key: 'ligands', label: 'Ligands' },
+            { key: 'sequence', label: 'Sequence' },
+            { key: 'analytics', label: 'Analytics' },
+            { key: 'clusters', label: 'Clusters' },
+        ],
+    },
+    {
+        label: 'Workspace',
+        tabs: [
+            { key: 'comparison', label: 'Diff Runs' },
+            { key: 'history', label: 'History' },
+            { key: 'dashboard', label: 'Dashboard' },
+            { key: 'settings', label: 'Settings' },
+        ],
+    },
 ];
 
 export class TopBar {
@@ -37,9 +60,12 @@ export class TopBar {
                     <button id="topbar-scroll-left" class="hidden shrink-0 w-5 h-7 items-center justify-center rounded-md bg-surface border border-border-subtle text-secondary hover:text-primary transition-colors mr-1" title="Scroll tabs left">
                         <span class="material-symbols-outlined text-[16px]">chevron_left</span>
                     </button>
-                    <nav id="topbar-tabs" class="flex gap-1 min-w-0 overflow-x-auto scroll-smooth">
-                        ${TABS.map(t => `
-                            <button data-tab="${t.key}" class="tab-trigger px-3 py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors">${t.label}</button>
+                    <nav id="topbar-tabs" class="flex items-center gap-1 min-w-0 overflow-x-auto scroll-smooth">
+                        ${TAB_GROUPS.map((group, i) => `
+                            ${i > 0 ? '<div class="w-px h-5 bg-border-subtle mx-1.5 shrink-0" aria-hidden="true"></div>' : ''}
+                            ${group.tabs.map(t => `
+                                <button data-tab="${t.key}" class="tab-trigger px-3 py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors">${t.label}</button>
+                            `).join('')}
                         `).join('')}
                     </nav>
                     <button id="topbar-scroll-right" class="hidden shrink-0 w-5 h-7 items-center justify-center rounded-md bg-surface border border-border-subtle text-secondary hover:text-primary transition-colors ml-1" title="Scroll tabs right">
