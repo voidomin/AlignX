@@ -8,9 +8,11 @@ vi.mock('../api.js', () => ({
     getDiscoveryReportUrl: vi.fn((runId) => `http://mock/api/discover/report?run_id=${runId}`),
     getDiscoveryExportUrl: vi.fn((runId) => `http://mock/api/discover/export?run_id=${runId}`),
     getDiscoveryCitationsUrl: vi.fn((runId) => `http://mock/api/discover/citations?run_id=${runId}`),
+    fetchLigands: vi.fn().mockResolvedValue({ ligands: [] }),
+    fetchInteractions: vi.fn(),
 }));
 
-import { submitDiscoveryJob, pollJobUntilDone } from '../api.js';
+import { submitDiscoveryJob, pollJobUntilDone, fetchLigands, fetchInteractions } from '../api.js';
 
 function makeAnnotatedResults(overrides = {}) {
     return {
@@ -134,6 +136,91 @@ describe('DiscoverTab', () => {
         expect(tab.results.pdb_id).toBe('1CRN');
         expect(tab.element.querySelector('#discover-results').textContent).toContain('1CRN');
         expect(tab.element.querySelector('#discover-error').classList.contains('hidden')).toBe(true);
+    });
+
+    it('calls onStructureLoaded with the query pdb_id once a run completes, so the 3D viewer can show it', async () => {
+        submitDiscoveryJob.mockResolvedValue({ job_id: 'job1', status: 'queued' });
+        pollJobUntilDone.mockResolvedValue({ status: 'completed', results: makeAnnotatedResults() });
+        const onStructureLoaded = vi.fn();
+
+        const tab = new DiscoverTab({ onStructureLoaded });
+        tab.render();
+        tab.element.querySelector('#discover-input').value = '1crn';
+
+        await tab.handleRun();
+
+        expect(onStructureLoaded).toHaveBeenCalledWith('1CRN');
+    });
+
+    describe('ligand/binding-site inspector', () => {
+        it('shows "no bound ligands" when the structure has none', async () => {
+            fetchLigands.mockResolvedValue({ ligands: [] });
+            submitDiscoveryJob.mockResolvedValue({ job_id: 'job1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({ status: 'completed', results: makeAnnotatedResults() });
+
+            const tab = new DiscoverTab();
+            tab.render();
+            tab.element.querySelector('#discover-input').value = '1CRN';
+            await tab.handleRun();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#discover-ligand-section').textContent)
+                .toContain('No bound ligands detected');
+        });
+
+        it('populates a ligand dropdown and renders a real interaction table on selection', async () => {
+            fetchLigands.mockResolvedValue({
+                ligands: [{ id: 'HEM_A_142', name: 'HEM', chain: 'A', resi: 142 }],
+            });
+            fetchInteractions.mockResolvedValue({
+                interactions: {
+                    ligand: 'HEM_A_142',
+                    interactions: [
+                        { resn: 'HIS', chain: 'A', resi: 87, distance: 2.14, type: 'Salt Bridge' },
+                    ],
+                },
+            });
+            submitDiscoveryJob.mockResolvedValue({ job_id: 'job1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({ status: 'completed', results: makeAnnotatedResults() });
+
+            const tab = new DiscoverTab();
+            tab.render();
+            tab.element.querySelector('#discover-input').value = '1CRN';
+            await tab.handleRun();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const select = tab.element.querySelector('#discover-ligand-select');
+            expect(select).toBeTruthy();
+            expect(select.options[1].value).toBe('HEM_A_142');
+
+            select.value = 'HEM_A_142';
+            select.dispatchEvent(new Event('change'));
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(fetchInteractions).toHaveBeenCalledWith('1CRN', 'HEM_A_142');
+            const resultsEl = tab.element.querySelector('#discover-ligand-results');
+            expect(resultsEl.textContent).toContain('HIS');
+            expect(resultsEl.textContent).toContain('Salt Bridge');
+        });
+
+        it('shows a graceful message when the ligand fetch fails', async () => {
+            fetchLigands.mockRejectedValue(new Error('boom'));
+            submitDiscoveryJob.mockResolvedValue({ job_id: 'job1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({ status: 'completed', results: makeAnnotatedResults() });
+
+            const tab = new DiscoverTab();
+            tab.render();
+            tab.element.querySelector('#discover-input').value = '1CRN';
+            await tab.handleRun();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#discover-ligand-section').textContent)
+                .toContain('Could not check for bound ligands');
+        });
     });
 
     it('surfaces a failed job as an error message', async () => {

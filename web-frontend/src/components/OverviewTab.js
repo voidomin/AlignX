@@ -87,6 +87,11 @@ export class OverviewTab {
                     <span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
                     Run Structural Alignment
                 </button>
+
+                <div id="overview-validation-message" class="hidden flex-col gap-2 p-3 rounded-md bg-surface-raised border border-border-subtle">
+                    <span id="overview-validation-text" class="font-body-sm text-body-sm text-secondary"></span>
+                    <button id="overview-validation-action" class="hidden self-start font-label-sm text-label-sm text-accent hover:underline"></button>
+                </div>
             </div>
         `;
         this.element = div;
@@ -349,6 +354,33 @@ export class OverviewTab {
             removeWater: this.element.querySelector('#param-remove-water').checked,
             removeHeteroatoms: this.element.querySelector('#param-remove-heteroatoms').checked
         };
+    }
+
+    // Used for in-app guidance that doesn't warrant a full page error (e.g.
+    // "you need 2+ structures") - a dismissible-by-navigation inline banner
+    // instead of a jarring native alert(), with an optional single action
+    // button (e.g. routing to Discover mode for a single structure).
+    showValidationMessage(text, actionLabel, onAction) {
+        const box = this.element.querySelector('#overview-validation-message');
+        const textEl = this.element.querySelector('#overview-validation-text');
+        const actionBtn = this.element.querySelector('#overview-validation-action');
+        textEl.textContent = text;
+        box.classList.remove('hidden');
+        box.classList.add('flex');
+        if (actionLabel && onAction) {
+            actionBtn.textContent = actionLabel;
+            actionBtn.classList.remove('hidden');
+            actionBtn.onclick = onAction;
+        } else {
+            actionBtn.classList.add('hidden');
+            actionBtn.onclick = null;
+        }
+    }
+
+    clearValidationMessage() {
+        const box = this.element.querySelector('#overview-validation-message');
+        box.classList.add('hidden');
+        box.classList.remove('flex');
     }
 
     setAligning(isAligning) {

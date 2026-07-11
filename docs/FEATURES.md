@@ -45,6 +45,8 @@ for how to actually use each one.
 | 15 | Confidence-gated function hypothesis | SPA | [§3.3](#33-confidence-gating) |
 | 16 | Public / Student / Researcher detail levels | SPA | [§3.4](#34-detail-levels) |
 | 17 | Self-hostable Foldseek backend | SPA | [§3.5](#35-self-hosted-search-backend) |
+| 17a | 3D viewer for the searched structure in Discover mode | SPA | [§3.6](#36-3d-structure-viewer) |
+| 17b | Ligand & binding-site inspector in Discover mode | SPA | [§3.7](#37-ligand--binding-site-inspector) |
 | 18 | Configurable PDF report export | Both | [§4.1](#41-pdf-report) |
 | 19 | Standalone HTML lab notebook export | Both | [§4.2](#42-html-notebook) |
 | 20 | Discover HTML report / raw JSON export | SPA | [§4.3](#43-discover-export) |
@@ -284,6 +286,22 @@ needed, just configuration.
 
 Discover runs are cached (annotation lookups default to a 30-day TTL) and appear
 in your Dashboard/History alongside Compare runs with a distinct `DISCOVER` badge.
+
+### 3.6 3D Structure Viewer
+
+As soon as a Discover search resolves your structure, it renders directly in the
+3D viewer — no need to also add it to Compare mode just to see what you searched.
+Unlike Compare mode's superposition view, this shows your one structure as-is
+(no re-alignment, no per-structure coloring scheme), so it also works for a
+structure with no Foldseek hits at all.
+
+### 3.7 Ligand & Binding-Site Inspector
+
+If your searched structure has a bound ligand, a "Ligands & Binding Sites"
+section lists it and shows the same real interaction-geometry classification
+Compare mode's Ligand Hunter uses (Hydrogen Bond / Salt Bridge / Van der Waals /
+Polar Contact per contact residue) — so a single unaligned structure gets real
+binding-site analysis without needing a second structure to compare against.
 
 ---
 

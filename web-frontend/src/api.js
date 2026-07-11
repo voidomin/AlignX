@@ -220,10 +220,14 @@ export async function fetchComparison(currentRunId, targetRunId) {
     return res.json();
 }
 
+// runId is optional (Discover-mode/uploaded structures reachable in the raw
+// download folder have no run at all) - the backend already treats it as
+// optional, resolving the raw folder first regardless.
 export async function fetchLigands(pdbId, runId) {
     pdbId = assertValidPdbId(pdbId, 'pdbId');
-    runId = assertSafeSegment(runId, 'runId');
-    const res = await fetch(buildUrl('/api/ligands', { pdb_id: pdbId, run_id: runId }), { headers: authHeaders() });
+    const params = { pdb_id: pdbId };
+    if (runId) params.run_id = assertSafeSegment(runId, 'runId');
+    const res = await fetch(buildUrl('/api/ligands', params), { headers: authHeaders() });
     if (!res.ok) throw new Error("Ligands fetch failed");
     return res.json();
 }
@@ -231,11 +235,9 @@ export async function fetchLigands(pdbId, runId) {
 export async function fetchInteractions(pdbId, ligandId, runId) {
     pdbId = assertValidPdbId(pdbId, 'pdbId');
     ligandId = assertSafeSegment(ligandId, 'ligandId');
-    runId = assertSafeSegment(runId, 'runId');
-    const res = await fetch(
-        buildUrl('/api/interactions', { pdb_id: pdbId, ligand_id: ligandId, run_id: runId }),
-        { headers: authHeaders() }
-    );
+    const params = { pdb_id: pdbId, ligand_id: ligandId };
+    if (runId) params.run_id = assertSafeSegment(runId, 'runId');
+    const res = await fetch(buildUrl('/api/interactions', params), { headers: authHeaders() });
     if (!res.ok) throw new Error("Interactions fetch failed");
     return res.json();
 }
@@ -325,6 +327,17 @@ export function getAlignmentFastaUrl(runId) {
     return withApiKey(buildUrl(`/results/${runId}/alignment.fasta`));
 }
 
+// Unlike getAlignmentPdbUrl (Mustang's alignment output, only exists for a
+// completed Compare-mode run), this resolves any downloaded structure by
+// id alone - e.g. a Discover-mode query structure that was never part of
+// an alignment - via the same backend lookup /api/ligands already uses.
+export function getStructureFileUrl(pdbId, sessionId) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const params = { pdb_id: pdbId };
+    if (sessionId) params.session_id = assertSafeSegment(sessionId, 'sessionId');
+    return withApiKey(buildUrl('/api/structure-file', params));
+}
+
 // The fixed set of report sections the backend understands - not free text,
 // so any value outside this allowlist is rejected rather than merely encoded.
 const VALID_REPORT_SECTIONS = new Set(['summary', 'insights', 'heatmap', 'tree', 'matrix']);
@@ -388,9 +401,10 @@ export async function fetchInterface(pdbId, chainA, chainB, runId) {
     pdbId = assertValidPdbId(pdbId, 'pdbId');
     chainA = assertSafeSegment(chainA, 'chainA');
     chainB = assertSafeSegment(chainB, 'chainB');
-    runId = assertSafeSegment(runId, 'runId');
+    const params = { pdb_id: pdbId, chain_a: chainA, chain_b: chainB };
+    if (runId) params.run_id = assertSafeSegment(runId, 'runId');
     const res = await fetch(
-        buildUrl('/api/interface', { pdb_id: pdbId, chain_a: chainA, chain_b: chainB, run_id: runId }),
+        buildUrl('/api/interface', params),
         { headers: authHeaders() }
     );
     if (!res.ok) {

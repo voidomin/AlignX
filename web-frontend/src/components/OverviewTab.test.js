@@ -52,6 +52,52 @@ describe('OverviewTab', () => {
         expect(tab.element.querySelector('#overview-quick-start')).toBeNull();
     });
 
+    describe('showValidationMessage', () => {
+        it('is hidden by default', () => {
+            const tab = makeTab();
+            tab.render();
+
+            expect(tab.element.querySelector('#overview-validation-message').classList.contains('hidden')).toBe(true);
+        });
+
+        it('shows the message text and an action button when both are given', () => {
+            const onAction = vi.fn();
+            const tab = makeTab();
+            tab.render();
+
+            tab.showValidationMessage('You have 1 structure selected.', 'Switch to Discover mode', onAction);
+
+            const box = tab.element.querySelector('#overview-validation-message');
+            expect(box.classList.contains('hidden')).toBe(false);
+            expect(tab.element.querySelector('#overview-validation-text').textContent).toBe('You have 1 structure selected.');
+            const actionBtn = tab.element.querySelector('#overview-validation-action');
+            expect(actionBtn.classList.contains('hidden')).toBe(false);
+            expect(actionBtn.textContent).toBe('Switch to Discover mode');
+
+            actionBtn.click();
+            expect(onAction).toHaveBeenCalledOnce();
+        });
+
+        it('shows just the message with no action button when none is given', () => {
+            const tab = makeTab();
+            tab.render();
+
+            tab.showValidationMessage('Something happened.');
+
+            expect(tab.element.querySelector('#overview-validation-action').classList.contains('hidden')).toBe(true);
+        });
+
+        it('clearValidationMessage hides the banner again', () => {
+            const tab = makeTab();
+            tab.render();
+            tab.showValidationMessage('You have 1 structure selected.');
+
+            tab.clearValidationMessage();
+
+            expect(tab.element.querySelector('#overview-validation-message').classList.contains('hidden')).toBe(true);
+        });
+    });
+
     it('calls onAddPDB with the uppercased 4-char input on Add click, and clears the input', () => {
         const onAddPDB = vi.fn();
         const tab = makeTab({ onAddPDB });

@@ -17,8 +17,8 @@ class App {
     static MAX_PROTEINS = 20; // matches config.yaml's core.max_proteins default
 
     constructor() {
-        this.selectedPDBs = ["4RLT", "3UG9"];
-        this.chainSelections = { "4RLT": "A", "3UG9": "A" };
+        this.selectedPDBs = [];
+        this.chainSelections = {};
         this.pdbMetadata = {};
         this.currentRunId = null;
         this.activeTab = 'overview'; // 'dashboard' | 'overview' | 'discover' | 'ligands' | 'sequence' | 'analytics' | 'clusters' | 'comparison' | 'history'
@@ -96,7 +96,9 @@ class App {
             onQuickStart: (pdbIds) => this.loadQuickStart(pdbIds)
         });
 
-        this.discoverTab = new DiscoverTab();
+        this.discoverTab = new DiscoverTab({
+            onStructureLoaded: (pdbId) => this.viewer3D.loadSingleStructure(pdbId)
+        });
         this.settingsTab = new SettingsTab();
     }
 
@@ -301,8 +303,13 @@ class App {
     }
 
     async executeAlignment() {
+        this.overviewTab.clearValidationMessage();
         if (this.selectedPDBs.length < 2) {
-            alert("At least 2 PDB structures are required for structural alignment.");
+            this.overviewTab.showValidationMessage(
+                `You have ${this.selectedPDBs.length} structure${this.selectedPDBs.length === 1 ? '' : 's'} selected — structural alignment needs 2 or more. Looking to explore a single structure on its own?`,
+                'Switch to Discover mode',
+                () => this.switchTab('discover')
+            );
             return;
         }
         if (this.overviewTab.isLoadingChains) {
@@ -484,8 +491,9 @@ class App {
 
     resetWorkspace() {
         if (confirm("Reset current workspace and clear selected structures?")) {
-            this.selectedPDBs = ["4RLT", "3UG9"];
-            this.chainSelections = { "4RLT": "A", "3UG9": "A" };
+            this.selectedPDBs = [];
+            this.chainSelections = {};
+            this.pdbMetadata = {};
             this.currentRunId = null;
             this.currentLigands = [];
             this.activeTab = 'overview';
@@ -494,7 +502,11 @@ class App {
             this.ramachandranStats = null;
             this.rmsdDf = null;
 
-            // Reload defaults
+            // Reload to a true empty state, not a re-seeded example pair -
+            // "New Workspace" means new/empty, and this is also what
+            // resurfaces the quick-start prompt (OverviewTab's own
+            // empty-state rendering) instead of leaving the user staring
+            // at unexplained pre-loaded data.
             this.overviewTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
             this.ligandTab.updateLigands([], null, this.selectedPDBs);
             this.sequenceTab.updateResults(null, null);

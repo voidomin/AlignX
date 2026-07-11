@@ -2,6 +2,27 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.85.0]
+
+A full user-facing UX audit of the SPA (prompted by the user noticing Discover mode never showed the structure they searched) surfaced 16 findings; the 5 most severe are fixed here. A broader UI/UX flow redesign is intentionally deferred to a later, separate pass.
+
+### Added
+- **Discover mode now shows the structure you searched**: new `GET /api/structure-file?pdb_id=&session_id=` reuses the same `_find_structure_pdb_path` resolution `/api/ligands`/`/api/interactions`/`/api/interface` already use, so it works for any downloaded structure, not just ones that went through a Compare-mode alignment. New `Viewer3D.loadSingleStructure()` renders it as-is (no re-alignment, no Mustang chain-relettering assumption) with a minimal single-structure HUD.
+- **Ligand & binding-site inspector in Discover mode**: a new section fetches and displays real ligand interactions (the same Hydrogen Bond/Salt Bridge/Van der Waals/Polar Contact classification Compare mode's Ligand Hunter uses) for a single searched structure - unblocked by relaxing `fetchLigands`/`fetchInteractions`/`fetchInterface` in `api.js` to treat `runId` as optional (matching `fetchAnnotations`'s existing convention), since the backend already resolved these without one.
+- **Nav bar scroll affordance**: `‹`/`›` buttons appear at the tab strip's edges when tabs overflow the available width, and switching to any tab now auto-scrolls it into view. Previously the strip silently overflowed with no visible way to reach or confirm which tab was active, so a click near the edge (e.g. intending "Compare") could land on the wrong tab (e.g. "New Workspace") with no visual explanation.
+- **Inline validation for single-structure alignment attempts**: trying to run alignment with fewer than 2 structures now shows an inline message next to the Run button (with a "Switch to Discover mode" action) instead of a native browser `alert()` that led nowhere.
+
+### Fixed
+- **Hardcoded `4RLT`/`3UG9` default hid the onboarding empty state**: every fresh session and every "New Workspace" click previously reseeded this specific pair rather than starting empty, hiding the existing "Add at least 2 PDB structures to align, or try an example" quick-start prompt and making "New Workspace" look like a no-op. Both the constructor and `resetWorkspace()` now start from an empty workspace.
+- **`resetWorkspace()` never cleared `pdbMetadata`**: found while fixing the above - stale per-structure metadata silently carried over across a workspace reset.
+
+### Verified
+- Full backend suite: 962 tests passing.
+- Frontend suite: 224 Vitest tests passing.
+- `black`/`ruff` clean.
+- Real end-to-end pass against a live local server (headless Playwright): confirmed the true empty state on a fresh load and after "New Workspace", the nav bar's scroll arrows appearing and all 10 tabs reachable at a 1400px viewport that previously reproduced the misdirected-click bug, the inline single-structure validation message and its working "Switch to Discover mode" action, a real 4HHB search rendering in Discover mode's 3D viewer, and the new ligand section finding and displaying real interactions for 4HHB's bound ligand.
+- Docker CI-parity container run skipped this batch (Docker Desktop wasn't running locally; no dependency changes) - relying on GitHub Actions' Docker build+smoke test on push instead.
+
 ## [3.84.0]
 
 Extends functional annotation (InterPro domains, GO terms, Reactome pathways) to Compare mode - previously only Discover mode's Foldseek structural-neighbor search got this, even though a plain Compare run of well-known PDB IDs never did, despite the same `AnnotationAggregator` machinery already existing.

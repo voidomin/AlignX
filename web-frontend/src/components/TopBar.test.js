@@ -23,6 +23,9 @@ describe('TopBar', () => {
         vi.useFakeTimers();
         fetchMemoryStats.mockResolvedValue({ ram_mb: 100 });
         fetchHealth.mockResolvedValue({ mustang_installed: true, mustang_message: 'Compiled Mustang found (WSL)' });
+        // jsdom doesn't implement these layout/scroll APIs at all.
+        Element.prototype.scrollIntoView = vi.fn();
+        Element.prototype.scrollBy = vi.fn();
     });
 
     afterEach(() => {
@@ -59,5 +62,36 @@ describe('TopBar', () => {
 
         await vi.advanceTimersByTimeAsync(30000);
         expect(fetchMemoryStats).not.toHaveBeenCalled();
+    });
+
+    describe('tab strip scroll affordance', () => {
+        it('renders 10 tabs and a scroll-left/scroll-right button pair, hidden by default', () => {
+            const bar = makeBar();
+            bar.render();
+
+            expect(bar.element.querySelectorAll('.tab-trigger')).toHaveLength(10);
+            expect(bar.element.querySelector('#topbar-scroll-left').classList.contains('hidden')).toBe(true);
+            expect(bar.element.querySelector('#topbar-scroll-right').classList.contains('hidden')).toBe(true);
+        });
+
+        it('scroll-right button scrolls the tab nav forward when clicked', () => {
+            const bar = makeBar();
+            bar.render();
+            const nav = bar.element.querySelector('#topbar-tabs');
+
+            bar.element.querySelector('#topbar-scroll-right').click();
+
+            expect(nav.scrollBy).toHaveBeenCalledWith(expect.objectContaining({ left: expect.any(Number) }));
+        });
+
+        it('switching the active tab scrolls it into view', () => {
+            const bar = makeBar();
+            bar.render();
+
+            bar.switchTab('settings');
+
+            const activeBtn = bar.element.querySelector('.tab-trigger[data-tab="settings"]');
+            expect(activeBtn.scrollIntoView).toHaveBeenCalled();
+        });
     });
 });

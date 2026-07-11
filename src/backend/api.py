@@ -1003,6 +1003,41 @@ def get_ligands(
     return {"pdb_id": pdb_id, "ligands": sanitize_for_json(ligands)}
 
 
+@app.get(
+    "/api/structure-file",
+    responses={
+        400: {"description": "Invalid pdb_id, run_id, or session_id"},
+        404: {"description": "Structure PDB not found in the active workspace"},
+    },
+)
+def get_structure_file(
+    pdb_id: Annotated[str, Query(...)],
+    run_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Download a structure's raw PDB file directly by id - unlike
+    /api/results/{run_id}/alignment.pdb, this works for any downloaded
+    structure (e.g. a Discover-mode query structure that was never part
+    of a Compare-mode alignment), since it resolves the same way
+    /api/ligands and /api/interactions already do.
+    """
+    from fastapi.responses import PlainTextResponse
+
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    pdb_path = _find_structure_pdb_path(pdb_id, run_id, session_id)
+    if not pdb_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Structure PDB for {pdb_id} not found in active workspace.",
+        )
+
+    return PlainTextResponse(content=pdb_path.read_text(), media_type=_TEXT_PLAIN)
+
+
 def _find_structure_pdb_path(
     pdb_id: str, run_id: Optional[str], session_id: Optional[str]
 ) -> Optional[Path]:

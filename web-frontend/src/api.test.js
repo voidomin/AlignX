@@ -316,6 +316,16 @@ describe('api.js request-ID validation', () => {
         expect(() => getNewickUrl('../../etc/passwd')).toThrow('Invalid runId');
     });
 
+    it('getStructureFileUrl throws rather than building a URL from a malformed pdbId', async () => {
+        const { getStructureFileUrl } = await import('./api.js');
+        expect(() => getStructureFileUrl('../evil')).toThrow('Invalid pdbId');
+    });
+
+    it('getStructureFileUrl works with just a pdbId, no session_id required', async () => {
+        const { getStructureFileUrl } = await import('./api.js');
+        expect(getStructureFileUrl('4RLT')).toContain('pdb_id=4RLT');
+    });
+
     it('fetchInterface rejects a malformed chain_a', async () => {
         const { fetchInterface } = await import('./api.js');
         await expect(fetchInterface('4RLT', '../evil', 'B', 'run_1')).rejects.toThrow('Invalid chainA');
@@ -326,6 +336,33 @@ describe('api.js request-ID validation', () => {
         const { fetchInterface } = await import('./api.js');
         await expect(fetchInterface('../evil', 'A', 'B', 'run_1')).rejects.toThrow('Invalid pdbId');
         expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchLigands works with no runId (a Discover-mode/uploaded structure has no run at all)', async () => {
+        mockFetchOnce({ ligands: [] });
+        const { fetchLigands } = await import('./api.js');
+        await expect(fetchLigands('4RLT')).resolves.toBeDefined();
+        expect(global.fetch.mock.calls[0][0]).not.toContain('run_id');
+    });
+
+    it('fetchLigands still rejects a malformed runId when one is actually given', async () => {
+        const { fetchLigands } = await import('./api.js');
+        await expect(fetchLigands('4RLT', '../evil')).rejects.toThrow('Invalid runId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchInteractions works with no runId', async () => {
+        mockFetchOnce({ interactions: { interactions: [] } });
+        const { fetchInteractions } = await import('./api.js');
+        await expect(fetchInteractions('4RLT', 'LIG_A_1')).resolves.toBeDefined();
+        expect(global.fetch.mock.calls[0][0]).not.toContain('run_id');
+    });
+
+    it('fetchInterface works with no runId', async () => {
+        mockFetchOnce({ interface: {} });
+        const { fetchInterface } = await import('./api.js');
+        await expect(fetchInterface('4RLT', 'A', 'B')).resolves.toBeDefined();
+        expect(global.fetch.mock.calls[0][0]).not.toContain('run_id');
     });
 
     it('fetchAnnotations rejects a pdbId that is not a recognized structure ID format', async () => {

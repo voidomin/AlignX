@@ -1,31 +1,5 @@
 import { fetchInteractions, fetchLigands, fetchChains, fetchInterface } from '../api';
-
-// Functional data-encoding: dot color signals interaction type. Matches the
-// 4 real classifications LigandAnalyzer/InterfaceAnalyzer actually emit
-// (interaction_geometry.py's classify_contact) - not a guess at possible
-// labels, since PDB files carry no hydrogens/bond-order data, pi-stacking
-// and metal coordination aren't attempted at all (see interaction_geometry.py).
-function dotColorForType(type) {
-    switch (type) {
-        case 'Hydrogen Bond': return 'bg-accent';
-        case 'Salt Bridge': return 'bg-success';
-        case 'Van der Waals': return 'bg-muted';
-        default: return 'bg-secondary';
-    }
-}
-
-function buildContactRow(item) {
-    const tr = document.createElement('tr');
-    const resn = item.resn || item.residue || "UNK";
-    tr.innerHTML = `
-        <td class="px-0 py-2.5">${resn}</td>
-        <td class="px-3 py-2.5">${item.chain}</td>
-        <td class="px-3 py-2.5 text-right text-secondary group-hover:text-primary">${item.resi}</td>
-        <td class="px-3 py-2.5 text-right font-semibold">${item.distance.toFixed(1)}</td>
-        <td class="px-3 py-2.5"><span class="inline-flex items-center gap-1.5 text-secondary"><span class="w-1.5 h-1.5 rounded-full ${dotColorForType(item.type)}"></span>${item.type}</span></td>
-    `;
-    return tr;
-}
+import { buildContactRow } from '../utils/interactionRenderers';
 
 export class LigandTab {
     constructor(props) {

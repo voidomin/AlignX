@@ -43,7 +43,7 @@ Run the test suite script:
 powershell -File scripts\run_tests.ps1
 ```
 *Expected Output:*
-- Pytest runs 959 items successfully and shows no errors.
+- Pytest runs 962 items successfully and shows no errors.
 - Verification scripts are executed automatically as part of the run.
 
 ---
@@ -106,7 +106,7 @@ Run the Vitest suite covering `api.js` and the JS components (auth headers, job 
 cd web-frontend
 npm test
 ```
-*Expected Output:* all test files pass (currently 200 tests across the suite, covering `api.js` and every tab/panel component, including `DiscoverTab.js` and `SettingsTab.js`).
+*Expected Output:* all test files pass (currently 224 tests across the suite, covering `api.js` and every tab/panel component, including `DiscoverTab.js` and `SettingsTab.js`).
 
 ---
 
@@ -127,9 +127,12 @@ Verify the Vite single page application (SPA).
    Access the dev server at: `http://localhost:5173`.
 3. **Verify Full-Stack Single Port Execution (Recommended):**
    Once built using `scripts\build_frontend.ps1`, open `http://127.0.0.1:8000/` in your browser.
-   - Check the top bar's tab strip: **Dashboard, Overview, Ligands, Sequence, Analytics, Clusters, Compare, History, Settings**.
+   - **Fresh session**: confirm the Overview tab shows a real empty state ("Add at least 2 PDB structures to align, or try an example:" with Kinase family/Hemoglobin variants/Trp-cage+AlphaFold quick-start buttons) — not any pre-loaded structures.
+   - Check the top bar's tab strip: **Dashboard, Overview, Discover, Ligands, Sequence, Analytics, Clusters, Compare, History, Settings**. At a normal window width, confirm small `‹`/`›` scroll buttons appear if not all 10 tabs fit, and that clicking any tab (including ones only reachable by scrolling) reliably navigates there — not to "New Workspace".
    - On **Dashboard**, confirm aggregate stats and recent activity populate (may take a few seconds on first load).
-   - On **Overview**, add at least two structures with a bound ligand — try `4HHB, 2HHB` (two hemoglobin variants) — mixing sources also works, e.g. a plain PDB ID (`4RLT`) alongside an `AF-`, `SM-`, or `ESM-` prefixed ID — and confirm each shows the correct source badge and metadata line.
+   - On **Overview**, add exactly one structure and click "Run Structural Alignment" — confirm an inline message appears (not a browser popup) explaining 2+ structures are needed, with a "Switch to Discover mode" button that actually navigates there.
+   - Add a second structure with a bound ligand — try `4HHB, 2HHB` (two hemoglobin variants) — mixing sources also works, e.g. a plain PDB ID (`4RLT`) alongside an `AF-`, `SM-`, or `ESM-` prefixed ID — and confirm each shows the correct source badge and metadata line.
+   - Click "New Workspace", confirm the dialog, and confirm the workspace clears to the real empty state (quick-start prompt) rather than reloading any structures.
    - Choose a chain per structure and click **Run Structural Alignment** — it should show an "Aligning..." state while the background job runs, then populate all tabs once complete.
    - In the 3D viewer, confirm each structure gets a distinct color and the HUD legend/pairwise RMSD list scale to however many structures were aligned (not just a fixed pair).
    - On **Ligands**, switch the structure picker between the aligned structures and confirm the ligand list and interactions refresh for each. With a multi-ligand run (e.g. the hemoglobin example above), confirm the binding-pocket similarity heatmap renders below the interactions table. Select a ligand and confirm the interaction table shows real geometry-based types (`Hydrogen Bond`, `Salt Bridge`, `Van der Waals`, `Polar Contact` — each with a distinct dot color) and that the SASA badge shows a real non-zero value. Confirm no "Volume" badge appears (removed — no pocket-volume computation exists). For a multi-chain structure (e.g. `4HHB` has chains A/B/C/D), confirm the "Protein-Protein Interfaces" section appears below with two chain dropdowns; pick two different chains, click "Analyze Interface", and confirm contact-residue tables for both chains plus a plausible buried-interface-area number render (same real interaction types as above).

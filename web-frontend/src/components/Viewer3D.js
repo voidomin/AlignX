@@ -1,4 +1,4 @@
-import { getAlignmentPdbUrl } from '../api';
+import { getAlignmentPdbUrl, getStructureFileUrl } from '../api';
 
 // Qualitative palette for N-structure identity coloring. Deliberately avoids
 // amber/#F59E0B (reserved for the residue-selection highlight) and the
@@ -223,6 +223,60 @@ export class Viewer3D {
         }
     }
 
+    // Discover mode's query structure: a raw, non-aligned single structure -
+    // no Mustang chain re-lettering exists for it, so (unlike
+    // loadSuperposition, which styles one lettered chain per structure)
+    // this styles every chain in the file with one color, and there is no
+    // RMSD to report. mustangChain is null on the single structures-entry
+    // since there's no aligned-chain concept to map residues into (residue
+    // highlighting isn't wired up for this mode).
+    async loadSingleStructure(pdbId) {
+        if (!this.viewer) {
+            this.init3Dmol();
+        }
+
+        this.currentRunId = null;
+        this.structures = [{ pdbId, mustangChain: null, sourceChain: null, color: colorForIndex(0) }];
+        this.rmsdDf = null;
+
+        this.element.querySelector("#ambient-placeholder").style.display = "none";
+        this._renderSingleStructureHUD(pdbId);
+
+        try {
+            const response = await fetch(getStructureFileUrl(pdbId));
+            if (!response.ok) {
+                throw new Error(`Failed to fetch structure file: ${response.statusText}`);
+            }
+            const pdbData = await response.text();
+
+            this.viewer.clear();
+            this.viewer.addModel(pdbData, "pdb");
+            this.viewer.setStyle({}, { cartoon: { color: colorForIndex(0), opacity: 0.85 } });
+
+            this.viewer.zoomTo();
+            this.viewer.render();
+            this.isSurfaceVisible = false;
+            this.confidenceColoringEnabled = false;
+            this._updateConfidenceButtonState();
+        } catch (err) {
+            console.error("Error loading single structure:", err);
+        }
+    }
+
+    _renderSingleStructureHUD(pdbId) {
+        const legend = this.element.querySelector('#hud-structure-legend');
+        const rmsdBox = this.element.querySelector('#hud-rmsd-container');
+        if (legend) legend.innerHTML = `
+            <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full shrink-0" style="background-color: ${colorForIndex(0)};"></div>
+                <span class="font-label-sm text-label-sm text-primary font-mono truncate">${pdbId}</span>
+            </div>
+        `;
+        if (rmsdBox) rmsdBox.innerHTML = `
+            <span class="font-label-sm text-label-sm text-secondary uppercase">Single Structure</span>
+        `;
+    }
+
     // AlphaFold ("AF-") and ESM Atlas ("ESM-") structures encode per-residue
     // pLDDT confidence in the B-factor column - mirrors the backend's own
     // is_plddt_model check (pdb_manager.py). Mustang's alignment output
@@ -249,6 +303,13 @@ export class Viewer3D {
     // already present on the loaded model's atoms for each structure, so
     // the color gradient is correct regardless of which convention the
     // file used.
+    // A structure with no mustangChain (Discover mode's single, non-aligned
+    // structure - see loadSingleStructure) has no per-structure chain
+    // lettering to select by, so it's styled as the whole model instead.
+    _selectorFor(structure) {
+        return structure.mustangChain ? { chain: structure.mustangChain } : {};
+    }
+
     colorByConfidence(enabled) {
         if (!this.viewer) return;
         this.confidenceColoringEnabled = enabled;
@@ -262,21 +323,22 @@ export class Viewer3D {
         if (!model) return;
 
         this.structures.forEach(s => {
+            const selector = this._selectorFor(s);
             if (!this._isPlddtStructure(s.pdbId)) {
-                this.viewer.setStyle({ chain: s.mustangChain }, { cartoon: { color: s.color, opacity: 0.85 } });
+                this.viewer.setStyle(selector, { cartoon: { color: s.color, opacity: 0.85 } });
                 return;
             }
 
-            const atoms = model.selectedAtoms({ chain: s.mustangChain });
+            const atoms = model.selectedAtoms(selector);
             const values = atoms.map(a => a.b).filter(v => typeof v === 'number');
             if (values.length === 0) {
-                this.viewer.setStyle({ chain: s.mustangChain }, { cartoon: { color: s.color, opacity: 0.85 } });
+                this.viewer.setStyle(selector, { cartoon: { color: s.color, opacity: 0.85 } });
                 return;
             }
 
             const min = Math.min(...values);
             const max = Math.max(...values);
-            this.viewer.setStyle({ chain: s.mustangChain }, {
+            this.viewer.setStyle(selector, {
                 cartoon: { colorscheme: { prop: 'b', gradient: 'roygb', min, max } }
             });
         });
@@ -392,7 +454,7 @@ export class Viewer3D {
         if (!this.viewer) return;
         this.viewer.removeAllSurfaces();
         this.structures.forEach(s => {
-            this.viewer.setStyle({chain: s.mustangChain}, {cartoon: {color: s.color, opacity: 0.85}});
+            this.viewer.setStyle(this._selectorFor(s), {cartoon: {color: s.color, opacity: 0.85}});
         });
         this.viewer.zoomTo();
         this.viewer.render();

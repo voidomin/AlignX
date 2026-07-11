@@ -1032,6 +1032,28 @@ def test_ligands_endpoint_404s_when_structure_not_found():
     assert response.status_code == 404
 
 
+def test_structure_file_endpoint_returns_the_raw_pdb(tmp_path):
+    pdb_file = tmp_path / "4rlt.pdb"
+    pdb_file.write_text("ATOM      1  N   MET A   1      27.340  24.430   2.614\n")
+
+    with patch("src.backend.api._find_structure_pdb_path", return_value=pdb_file):
+        response = client.get("/api/structure-file?pdb_id=4RLT")
+
+    assert response.status_code == 200
+    assert response.text == pdb_file.read_text()
+
+
+def test_structure_file_endpoint_404s_when_structure_not_found():
+    with patch("src.backend.api._find_structure_pdb_path", return_value=None):
+        response = client.get("/api/structure-file?pdb_id=4RLT")
+    assert response.status_code == 404
+
+
+def test_structure_file_endpoint_400s_on_invalid_pdb_id():
+    response = client.get("/api/structure-file?pdb_id=../etc")
+    assert response.status_code == 400
+
+
 def test_list_comparison_runs_excludes_given_run_id():
     with patch("src.backend.api.ResultManager.list_runs") as mock_list_runs:
         mock_list_runs.return_value = [

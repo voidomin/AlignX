@@ -33,11 +33,19 @@ export class TopBar {
                     <span class="font-headline-md text-headline-md font-bold text-primary">StructScope</span>
                 </div>
 
-                <nav id="topbar-tabs" class="flex gap-1 flex-1 overflow-x-auto">
-                    ${TABS.map(t => `
-                        <button data-tab="${t.key}" class="tab-trigger px-4 py-2 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors">${t.label}</button>
-                    `).join('')}
-                </nav>
+                <div id="topbar-tabs-wrapper" class="flex items-center flex-1 min-w-0">
+                    <button id="topbar-scroll-left" class="hidden shrink-0 w-5 h-7 items-center justify-center rounded-md bg-surface border border-border-subtle text-secondary hover:text-primary transition-colors mr-1" title="Scroll tabs left">
+                        <span class="material-symbols-outlined text-[16px]">chevron_left</span>
+                    </button>
+                    <nav id="topbar-tabs" class="flex gap-1 min-w-0 overflow-x-auto scroll-smooth">
+                        ${TABS.map(t => `
+                            <button data-tab="${t.key}" class="tab-trigger px-3 py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors">${t.label}</button>
+                        `).join('')}
+                    </nav>
+                    <button id="topbar-scroll-right" class="hidden shrink-0 w-5 h-7 items-center justify-center rounded-md bg-surface border border-border-subtle text-secondary hover:text-primary transition-colors ml-1" title="Scroll tabs right">
+                        <span class="material-symbols-outlined text-[16px]">chevron_right</span>
+                    </button>
+                </div>
 
                 <div class="flex items-center gap-4 shrink-0 font-mono text-label-sm">
                     <button id="topbar-new-ws-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">New Workspace</button>
@@ -53,8 +61,40 @@ export class TopBar {
         this.element = header;
         this.updateTabStyles();
         this.setupEventListeners();
+        this.setupTabScrollAffordance();
         this.startMemoryTracking();
         return header;
+    }
+
+    // The tab strip has always scrolled horizontally when it doesn't fit
+    // (overflow-x-auto), but with no visible affordance - at 10 tabs a
+    // real content width can clip the last few with nothing telling the
+    // user there's more to see. These two buttons only appear when there's
+    // actually somewhere to scroll (checked via scrollLeft/scrollWidth),
+    // and the active tab auto-scrolls into view on every switch so
+    // switching to an off-screen tab never leaves the active state hidden.
+    setupTabScrollAffordance() {
+        const nav = this.element.querySelector('#topbar-tabs');
+        const leftBtn = this.element.querySelector('#topbar-scroll-left');
+        const rightBtn = this.element.querySelector('#topbar-scroll-right');
+        const SCROLL_STEP = 150;
+
+        const updateArrows = () => {
+            const canScrollLeft = nav.scrollLeft > 2;
+            const canScrollRight = nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 2;
+            leftBtn.classList.toggle('hidden', !canScrollLeft);
+            leftBtn.classList.toggle('flex', canScrollLeft);
+            rightBtn.classList.toggle('hidden', !canScrollRight);
+            rightBtn.classList.toggle('flex', canScrollRight);
+        };
+
+        leftBtn.addEventListener('click', () => nav.scrollBy({ left: -SCROLL_STEP, behavior: 'smooth' }));
+        rightBtn.addEventListener('click', () => nav.scrollBy({ left: SCROLL_STEP, behavior: 'smooth' }));
+        nav.addEventListener('scroll', updateArrows);
+        window.addEventListener('resize', updateArrows);
+
+        this._updateScrollArrows = updateArrows;
+        requestAnimationFrame(updateArrows);
     }
 
     setupEventListeners() {
@@ -93,8 +133,16 @@ export class TopBar {
     updateTabStyles() {
         this.element.querySelectorAll('.tab-trigger').forEach(btn => {
             const isActive = btn.dataset.tab === this.activeTab;
-            btn.className = `tab-trigger px-4 py-2 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors ${isActive ? 'bg-accent-muted text-accent' : 'text-secondary hover:text-primary'}`;
+            btn.className = `tab-trigger px-3 py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors ${isActive ? 'bg-accent-muted text-accent' : 'text-secondary hover:text-primary'}`;
+            if (isActive) {
+                btn.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+            }
         });
+        // Scrolling into view may change what's scrollable in either
+        // direction - refresh the arrow affordance once the scroll settles.
+        if (this._updateScrollArrows) {
+            requestAnimationFrame(this._updateScrollArrows);
+        }
     }
 
     startMemoryTracking() {

@@ -1,5 +1,6 @@
-import { submitDiscoveryJob, pollJobUntilDone, isValidPdbId, getDiscoveryReportUrl, getDiscoveryExportUrl, getDiscoveryCitationsUrl } from '../api';
+import { submitDiscoveryJob, pollJobUntilDone, isValidPdbId, getDiscoveryReportUrl, getDiscoveryExportUrl, getDiscoveryCitationsUrl, fetchLigands, fetchInteractions } from '../api';
 import { renderDomainList, renderGoTermList } from '../utils/annotationRenderers';
+import { buildContactRow } from '../utils/interactionRenderers';
 
 const SOURCE_LABELS = {
     pdb: 'PDB',
@@ -46,6 +47,10 @@ export class DiscoverTab {
     detailLevel = 'student';
     results = null;
     selectedDatabases = new Set(DATABASE_OPTIONS.filter(d => d.default).map(d => d.key));
+
+    constructor(props = {}) {
+        this.onStructureLoaded = props.onStructureLoaded || (() => {});
+    }
 
     render() {
         const div = document.createElement('div');
@@ -138,6 +143,7 @@ export class DiscoverTab {
             this.element.querySelector('#discover-input').value = this.results.pdb_id;
             this.syncDbCheckboxes(this.results.databases_searched);
             this.renderResults();
+            this.onStructureLoaded(this.results.pdb_id);
         }
         return div;
     }
@@ -237,6 +243,7 @@ export class DiscoverTab {
             this.results = job.results;
             this.setStatus(null);
             this.renderResults();
+            this.onStructureLoaded(this.results.pdb_id);
         } catch (err) {
             console.error('Discovery run failed:', err);
             this.setError(err.message);
@@ -265,6 +272,7 @@ export class DiscoverTab {
             this.setError(null);
             this.setStatus(null);
             this.renderResults();
+            if (results) this.onStructureLoaded(results.pdb_id);
         }
     }
 
@@ -321,12 +329,100 @@ export class DiscoverTab {
                 </div>
                 ${downloadHTML}
                 ${bodyHTML}
+                <div id="discover-ligand-section" class="flex flex-col gap-3 border-t border-border-subtle pt-4"></div>
             </div>
         `;
 
         container.querySelectorAll('.detail-level-btn').forEach(btn => {
             btn.addEventListener('click', () => this.setDetailLevel(btn.dataset.level));
         });
+
+        this.loadLigandSection(r.pdb_id);
+    }
+
+    // The searched structure's own ligands/binding sites - independent of
+    // the neighbor-search annotation above, and independent of any
+    // Compare-mode alignment (fetchLigands/fetchInteractions work from a
+    // bare pdb_id; no ligand-pocket-similarity matrix here, since that's
+    // inherently a multi-structure comparison that doesn't apply to one
+    // searched structure).
+    async loadLigandSection(pdbId) {
+        const section = this.element.querySelector('#discover-ligand-section');
+        if (!section) return;
+        section.innerHTML = `<span class="font-body-sm text-secondary"><span class="animate-spin material-symbols-outlined text-[16px] align-middle">sync</span> Checking for bound ligands...</span>`;
+
+        let ligands;
+        try {
+            const data = await fetchLigands(pdbId);
+            ligands = data.ligands || [];
+        } catch (err) {
+            console.error('Failed to load ligands for Discover structure:', err);
+            section.innerHTML = `<span class="font-body-sm text-secondary">Could not check for bound ligands.</span>`;
+            return;
+        }
+
+        if (ligands.length === 0) {
+            section.innerHTML = `<span class="font-body-sm text-secondary">No bound ligands detected in this structure.</span>`;
+            return;
+        }
+
+        section.innerHTML = `
+            <div class="flex items-center justify-between">
+                <span class="eyebrow">Bound ligands</span>
+                <select id="discover-ligand-select" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[240px]">
+                    <option value="">Select a ligand</option>
+                    ${ligands.map(l => `<option value="${l.id}">${l.name} (Chain ${l.chain}, Resi ${l.resi})</option>`).join('')}
+                </select>
+            </div>
+            <div id="discover-ligand-results"></div>
+        `;
+        section.querySelector('#discover-ligand-select').addEventListener('change', (e) => {
+            this.loadLigandInteractions(pdbId, e.target.value);
+        });
+    }
+
+    async loadLigandInteractions(pdbId, ligandId) {
+        const results = this.element.querySelector('#discover-ligand-results');
+        if (!results) return;
+        if (!ligandId) {
+            results.innerHTML = '';
+            return;
+        }
+
+        results.innerHTML = `<div class="py-2 font-body-sm text-secondary"><span class="animate-spin material-symbols-outlined text-[16px] align-middle">sync</span> Analyzing binding site...</div>`;
+
+        try {
+            const data = await fetchInteractions(pdbId, ligandId);
+            const contacts = data.interactions.interactions || [];
+            if (contacts.length === 0) {
+                results.innerHTML = `<div class="py-2 font-body-sm text-secondary">No specific interaction contacts found.</div>`;
+                return;
+            }
+
+            const table = document.createElement('table');
+            table.className = "w-full text-left border-collapse mt-2";
+            table.innerHTML = `
+                <thead class="font-label-sm text-label-sm text-secondary">
+                    <tr>
+                        <th class="px-0 py-2 border-b border-border font-medium">Residue</th>
+                        <th class="px-3 py-2 border-b border-border font-medium">Chain</th>
+                        <th class="px-3 py-2 border-b border-border font-medium text-right">Resi</th>
+                        <th class="px-3 py-2 border-b border-border font-medium text-right">Dist (Å)</th>
+                        <th class="px-3 py-2 border-b border-border font-medium">Type</th>
+                    </tr>
+                </thead>
+            `;
+            const tbody = document.createElement('tbody');
+            tbody.className = "font-body-sm text-body-sm text-primary font-mono divide-y divide-border-subtle";
+            contacts.forEach(item => tbody.appendChild(buildContactRow(item)));
+            table.appendChild(tbody);
+
+            results.innerHTML = '';
+            results.appendChild(table);
+        } catch (err) {
+            console.error('Failed to load ligand interactions:', err);
+            results.innerHTML = `<div class="py-2 font-body-sm text-secondary">Failed to analyze binding site.</div>`;
+        }
     }
 
     // Researcher always sees whatever data exists (its own empty-state
