@@ -18,9 +18,15 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Mustang from local source
+# --no-same-owner: mustang.tgz's entries carry the uid/gid of whoever
+# archived it - GitHub Actions' Docker build has the root capability to
+# `chown` to that during extraction, but Render's build sandbox doesn't
+# (fails with "Cannot change ownership ...: Invalid argument"), so this
+# tells tar to just own the extracted files as whoever's running the build
+# instead, which is all this step needs.
 COPY mustang.tgz /tmp/
 WORKDIR /tmp
-RUN tar -xzf mustang.tgz \
+RUN tar -xzf mustang.tgz --no-same-owner \
     && cd MUSTANG_v3.2.3 \
     && make \
     && cp bin/mustang-3.2.3 /usr/local/bin/mustang \

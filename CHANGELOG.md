@@ -2,6 +2,17 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.86.1]
+
+A real deploy attempt against Render (first use of the free-tier split-deploy path added in 3.86.0) caught a Docker build failure this project's own CI never could have: `RUN tar -xzf mustang.tgz` failed with `Cannot change ownership to uid 147382, gid 418: Invalid argument` - Render's build sandbox doesn't grant the `chown` capability GitHub Actions' Docker build runner has, and `mustang.tgz`'s archived entries carry their original archiver's uid/gid, which `tar` tries to restore on extraction by default.
+
+### Fixed
+- **`Dockerfile`'s Mustang extraction step now passes `tar --no-same-owner`**, so it owns extracted files as whoever's running the build instead of trying (and failing, outside a root/privileged build context) to restore the archive's original ownership. No behavior change in GitHub Actions' own Docker build (already running as root, so ownership ends up identical either way) - this only fixes the previously-untested case of a build sandbox without that privilege.
+
+### Verified
+- GitHub Actions' `Docker build + smoke test` job (identical `Dockerfile`) still passes after this change.
+- Docker Desktop wasn't available locally to reproduce the Render-specific failure directly; confirmation this actually fixes the Render deploy is pending the next sync there.
+
 ## [3.86.0]
 
 Deployment and code-quality tooling, ahead of a first free-tier beta deploy for external feedback (scientists/early users). No user-facing app behavior changes.
