@@ -26,7 +26,16 @@ class LigandAnalyzer:
             config: Optional configuration dictionary
         """
         self.config = config or {}
-        # Common ions and solvents to ignore by default
+        # Water, crystallization buffer/cryoprotectant components, and
+        # non-catalytic monatomic ions - none of these are ever biologically
+        # meaningful ligands, so they're excluded outright. Catalytic/
+        # structural metal cofactors (MG, CA, ZN, MN, FE, CU, NI, CO, CD, MO)
+        # are deliberately NOT in this set (v3.87.0 fix) - a zinc-finger's
+        # Zn, a kinase's Mg, or a heme's Fe is exactly the kind of ligand a
+        # structural biologist would want interaction analysis for, so they
+        # now pass through as real ligands instead of being silently dropped
+        # alongside solvent noise. classify_contact() (interaction_geometry.py)
+        # gives them their own "Metal Coordination" contact type.
         self.ignored_residues = {
             "HOH",
             "WAT",
@@ -34,17 +43,13 @@ class LigandAnalyzer:
             "SOL",  # Water
             "NA",
             "CL",
-            "K",
-            "MG",
-            "CA",
-            "ZN",
-            "MN",
-            "FE",  # Common Ions
+            "K",  # Non-catalytic monatomic ions
             "SO4",
             "PO4",
             "ACT",
             "EDO",
-            "GOL",  # Common crystallization additives
+            "GOL",
+            "DMS",  # Common crystallization additives
         }
 
     def get_ligands(self, pdb_file: Path) -> List[Dict[str, Any]]:
@@ -74,10 +79,14 @@ class LigandAnalyzer:
             logger.exception(f"Failed to parse {pdb_file}")
             return []
 
+        # Model 0 only - a multi-model (NMR ensemble) file would otherwise
+        # return the same ligand once per model (duplicated N times), which
+        # doesn't match calculate_sasa()/_pocket_sasa() below, both of which
+        # already only ever look at structure[0]. See PDBManager.analyze_
+        # structure()'s is_nmr flag for surfacing that an ensemble exists.
         ligands = [
             ligand_info
-            for model in structure
-            for chain in model
+            for chain in structure[0]
             for ligand_info in (
                 self._ligand_info_from_residue(residue, chain) for residue in chain
             )
@@ -198,23 +207,25 @@ class LigandAnalyzer:
         """Locates the target ligand residue and separates the rest of the
         structure's standard-residue atoms into a NeighborSearch candidate
         pool (excludes solvent/ions, id[0] != " ", from being "interacting
-        partners")."""
+        partners"). Model 0 only, consistent with get_ligands()/
+        calculate_sasa() - a multi-model NMR file would otherwise pool
+        atoms from every model into one neighbor search, mixing conformers
+        together instead of analyzing a single consistent one."""
         target_ligand = None
         target_atoms = []
         search_atoms = []
-        for model in structure:
-            for chain in model:
-                for residue in chain:
-                    is_target = (
-                        chain.get_id() == l_chain
-                        and residue.get_id()[1] == l_resi
-                        and residue.get_resname().strip() == l_name
-                    )
-                    if is_target:
-                        target_ligand = residue
-                        target_atoms = list(residue.get_atoms())
-                    elif residue.get_id()[0] == " ":
-                        search_atoms.extend(residue.get_atoms())
+        for chain in structure[0]:
+            for residue in chain:
+                is_target = (
+                    chain.get_id() == l_chain
+                    and residue.get_id()[1] == l_resi
+                    and residue.get_resname().strip() == l_name
+                )
+                if is_target:
+                    target_ligand = residue
+                    target_atoms = list(residue.get_atoms())
+                elif residue.get_id()[0] == " ":
+                    search_atoms.extend(residue.get_atoms())
         return target_ligand, target_atoms, search_atoms
 
     @staticmethod

@@ -7,8 +7,16 @@ PDB files carry no hydrogens, so this doesn't attempt true H-bond geometry
 heavy-atom-only structures: distance between a residue's known polar/charged
 atom and any heteroatom (N/O/S) on the other side. This is deliberately
 scoped to what's derivable from atomic coordinates alone - it does not
-attempt pi-stacking (no ligand bond-order/aromaticity data in a PDB file) or
-metal coordination (metal ions are filtered out upstream as noise).
+attempt pi-stacking (no ligand bond-order/aromaticity data in a PDB file).
+
+Metal coordination (v3.87.0) is a special case, not the general N/O/S
+heteroatom path above: a catalytic/structural metal ion (Zn, Mg, Ca, Mn, Fe,
+Cu, Ni, Co, Cd, Mo - `ligand_analyzer.py`'s `ignored_residues` no longer
+filters these out) has an element outside {N, O, S}, so it would otherwise
+silently never match `_heteroatoms()` and fall through to a meaningless
+default. Real metal-ligand bond lengths (~1.8-2.6 Å) are also much shorter
+than the salt-bridge/H-bond cutoffs below, which are tuned for ionic/
+hydrogen-bond geometry, not a coordinate covalent bond.
 """
 
 from typing import Dict, List, Set
@@ -50,6 +58,21 @@ HETEROATOM_ELEMENTS = {"N", "O", "S"}
 SALT_BRIDGE_CUTOFF = 4.0
 HYDROGEN_BOND_CUTOFF = 3.6
 
+# Common catalytic/structural metal cofactors - matches ligand_analyzer.py's
+# recognized (no longer filtered-out) metal ion resnames, which for a
+# monatomic ion equal the element symbol (e.g. a "ZN" residue's one atom
+# has element "ZN").
+METAL_ELEMENTS = {"ZN", "MG", "CA", "MN", "FE", "CU", "NI", "CO", "CD", "MO"}
+# Generous across different metals' real coordination geometries (Zn-N/O/S
+# ~1.9-2.4 Å, Ca often up to ~2.6 Å) without reaching into salt-bridge
+# territory (SALT_BRIDGE_CUTOFF above is 4.0 Å, tuned for ionic interactions
+# between two full residues, not a direct coordinate bond to a bare ion).
+METAL_COORDINATION_CUTOFF = 2.8
+
+
+def _is_single_metal_ion(atoms: List) -> bool:
+    return len(atoms) == 1 and atoms[0].element in METAL_ELEMENTS
+
 
 def _donor_acceptor_atoms(resname: str) -> Set[str]:
     return (
@@ -65,9 +88,19 @@ def _heteroatoms(atoms) -> List:
 
 def classify_contact(resname: str, res_atoms: List, target_atoms: List) -> str:
     """Classifies one residue's contact with a target atom group (a ligand's
-    atoms, or another chain's atoms) as "Salt Bridge", "Hydrogen Bond", "Van
-    der Waals", or "Polar Contact" (the catch-all for a polar/charged residue
-    with no atom pair close enough to qualify as either of the above)."""
+    atoms, or another chain's atoms) as "Metal Coordination" (a bare metal-
+    ion target only), "Salt Bridge", "Hydrogen Bond", "Van der Waals", or
+    "Polar Contact" (the catch-all for a polar/charged residue with no atom
+    pair close enough to qualify as either of the above)."""
+    if _is_single_metal_ion(target_atoms):
+        coordinating_atoms = _heteroatoms(res_atoms)
+        if (
+            _min_pair_distance(coordinating_atoms, target_atoms)
+            <= METAL_COORDINATION_CUTOFF
+        ):
+            return "Metal Coordination"
+        return "Van der Waals" if resname in HYDROPHOBIC_RESIDUES else "Polar Contact"
+
     target_hetero = _heteroatoms(target_atoms)
 
     if target_hetero:

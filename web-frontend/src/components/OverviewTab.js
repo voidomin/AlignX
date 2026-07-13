@@ -320,6 +320,16 @@ export class OverviewTab {
                 metaParts.push(escapeHtml(meta.original_filename));
             }
 
+            // NMR ensembles only ever have model 1 analyzed (Mustang/RMSD/
+            // ligand analysis all need one consistent conformer, not a
+            // silently-arbitrary mix of several) - surfacing that plainly
+            // beats leaving it invisible, which is what happened before.
+            const gapChains = (meta?.chains || []).filter(c => c.gaps?.length > 0);
+            const gapCount = gapChains.reduce((sum, c) => sum + c.gaps.length, 0);
+            const gapTooltip = gapChains
+                .flatMap(c => c.gaps.map(g => `Chain ${c.id}: residues ${g.after + 1}-${g.before - 1} missing`))
+                .join('; ');
+
             div.innerHTML = `
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-2">
@@ -334,6 +344,8 @@ export class OverviewTab {
                     </button>
                 </div>
                 ${metaParts.length > 0 ? `<span class="pdb-meta-line font-body-sm text-[11px] text-secondary pl-0.5">${metaParts.join(' · ')}</span>` : ''}
+                ${meta?.is_nmr ? `<span class="pdb-nmr-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="Showing model 1 of ${meta.num_models} - other conformers in this NMR ensemble aren't analyzed.">NMR · ${meta.num_models} models (model 1 shown)</span>` : ''}
+                ${gapCount > 0 ? `<span class="pdb-gaps-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="${escapeHtml(gapTooltip)}">${gapCount} disordered region${gapCount > 1 ? 's' : ''}</span>` : ''}
             `;
 
             // Bind events
