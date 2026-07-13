@@ -1,4 +1,4 @@
-import { submitDiscoveryJob, pollJobUntilDone, isValidPdbId, getDiscoveryReportUrl, getDiscoveryExportUrl, getDiscoveryCitationsUrl, fetchLigands, fetchInteractions } from '../api';
+import { submitDiscoveryJob, pollJobUntilDone, isValidPdbId, getDiscoveryReportUrl, getDiscoveryExportUrl, getDiscoveryCitationsUrl, fetchLigands, fetchInteractions, fetchPockets } from '../api';
 import { renderDomainList, renderGoTermList } from '../utils/annotationRenderers';
 import { buildContactRow } from '../utils/interactionRenderers';
 
@@ -51,6 +51,7 @@ export class DiscoverTab {
     constructor(props = {}) {
         this.onStructureLoaded = props.onStructureLoaded || (() => {});
         this.onSwitchToOverview = props.onSwitchToOverview || (() => {});
+        this.onHighlightResidues = props.onHighlightResidues || (() => {});
     }
 
     render() {
@@ -368,7 +369,7 @@ export class DiscoverTab {
         }
 
         if (ligands.length === 0) {
-            section.innerHTML = `<span class="font-body-sm text-secondary">No bound ligands detected in this structure.</span>`;
+            await this.renderCandidatePockets(section, pdbId);
             return;
         }
 
@@ -384,6 +385,52 @@ export class DiscoverTab {
         `;
         section.querySelector('#discover-ligand-select').addEventListener('change', (e) => {
             this.loadLigandInteractions(pdbId, e.target.value);
+        });
+    }
+
+    // Discover mode's flagship inputs (AlphaFold/ESM Atlas predictions)
+    // essentially never have a co-crystallized ligand, so "no bound
+    // ligands" would otherwise be the end of the story here. Offers a
+    // heuristic candidate-pocket search instead (see
+    // ligand_analyzer.py's find_candidate_pockets) - explicitly labeled as
+    // a computational prediction, not a validated result like fpocket.
+    async renderCandidatePockets(section, pdbId) {
+        let pockets;
+        try {
+            const data = await fetchPockets(pdbId);
+            pockets = data.pockets || [];
+        } catch (err) {
+            console.error('Failed to search for candidate pockets:', err);
+            section.innerHTML = `<span class="font-body-sm text-secondary">No bound ligands detected in this structure.</span>`;
+            return;
+        }
+
+        if (pockets.length === 0) {
+            section.innerHTML = `<span class="font-body-sm text-secondary">No bound ligands detected, and no candidate binding pockets found.</span>`;
+            return;
+        }
+
+        section.innerHTML = `
+            <div class="flex flex-col gap-1">
+                <span class="eyebrow">Predicted binding pockets (no bound ligand found)</span>
+                <span class="font-body-sm text-[11px] text-secondary">Computational prediction from surface geometry, not an experimentally validated pocket - unlike the real ligand interactions above.</span>
+            </div>
+            <div class="flex flex-col gap-2">
+                ${pockets.map((p, i) => `
+                    <div class="flex items-center justify-between py-1.5 border-b border-border-subtle">
+                        <span class="font-body-sm text-body-sm">Pocket ${p.rank} <span class="text-secondary text-[11px]">(${p.residues.length} residues: ${p.residues.map(r => `${r.resn}${r.resi}`).join(', ')})</span></span>
+                        <button type="button" class="pocket-highlight-btn font-label-sm text-label-sm text-accent hover:underline" data-pocket-index="${i}">Highlight in 3D</button>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        section.querySelectorAll('.pocket-highlight-btn').forEach(btn => {
+            const pocket = pockets[Number(btn.dataset.pocketIndex)];
+            const chainMap = {};
+            pocket.residues.forEach(r => {
+                (chainMap[r.chain] ||= []).push(r.resi);
+            });
+            btn.addEventListener('click', () => this.onHighlightResidues(chainMap));
         });
     }
 

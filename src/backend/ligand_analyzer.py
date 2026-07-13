@@ -312,6 +312,137 @@ class LigandAnalyzer:
             "residues": residue_data,
         }
 
+    # Real binding pockets are commonly hydrophobic/aromatic-enriched - a
+    # simple, defensible secondary signal for ranking candidate clusters,
+    # separate from HYDROPHOBIC_RESIDUES in interaction_geometry.py (that
+    # set serves a different purpose - H-bond/salt-bridge classification -
+    # and deliberately excludes aromatic-but-polar TYR).
+    _POCKET_LINING_RESIDUES = {
+        "ALA",
+        "VAL",
+        "LEU",
+        "ILE",
+        "MET",
+        "PHE",
+        "TRP",
+        "PRO",
+        "TYR",
+        "CYS",
+    }
+    _SURFACE_SASA_THRESHOLD = 15.0
+    _POCKET_CLUSTER_RADIUS = 10.0
+    _POCKET_SEQUENCE_GAP = 5
+    _MIN_CLUSTER_NEIGHBORS = 3
+
+    def find_candidate_pockets(
+        self, pdb_file: Path, top_n: int = 3
+    ) -> List[Dict[str, Any]]:
+        """Heuristic candidate binding-pocket finder for a ligand-free
+        structure (e.g. most AlphaFold/ESM Atlas Discover-mode queries,
+        which essentially never have a co-crystallized ligand). This is
+        NOT a validated geometric cavity detector (fpocket-equivalent) -
+        re-implementing that algorithm is out of scope here. Instead it
+        proxies "pocket-like" with two real, defensible signals: surface-
+        exposed residues (real per-residue SASA, reusing the same
+        ShrakeRupley computation as calculate_sasa()) that cluster
+        spatially with residues from a distant part of the sequence (the
+        standard signature of a fold packing together to form a concave
+        wall, not just an alpha helix's own adjacent turns), ranked by
+        cluster size plus hydrophobic/aromatic content (pockets are
+        commonly enriched in both). Every result is explicitly labeled
+        "heuristic": True - a computational prediction, not an
+        experimentally validated pocket.
+        """
+        from Bio.PDB import PDBParser, NeighborSearch
+        from Bio.PDB.PDBExceptions import PDBConstructionWarning
+        from Bio.PDB.SASA import ShrakeRupley
+
+        pdb_file = Path(pdb_file)
+        parser = PDBParser(QUIET=True)
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", PDBConstructionWarning)
+                structure = parser.get_structure("struct", str(pdb_file))
+        except Exception:
+            logger.exception(f"Pocket detection: failed to parse {pdb_file}")
+            return []
+
+        model = structure[0]
+        ShrakeRupley().compute(model, level="R")
+
+        surface_residues = [
+            residue
+            for chain in model
+            for residue in chain
+            if residue.get_id()[0] == " "
+            and "CA" in residue
+            and (getattr(residue, "sasa", 0.0) or 0.0) >= self._SURFACE_SASA_THRESHOLD
+        ]
+        if not surface_residues:
+            return []
+
+        ns = NeighborSearch([r["CA"] for r in surface_residues])
+
+        candidates = []
+        for residue in surface_residues:
+            neighbors = ns.search(
+                residue["CA"].get_coord(), self._POCKET_CLUSTER_RADIUS, level="R"
+            )
+            distant_neighbors = [
+                n
+                for n in neighbors
+                if n is not residue
+                and n.get_parent().get_id() == residue.get_parent().get_id()
+                and abs(n.get_id()[1] - residue.get_id()[1]) > self._POCKET_SEQUENCE_GAP
+            ]
+            if len(distant_neighbors) < self._MIN_CLUSTER_NEIGHBORS:
+                continue
+
+            cluster = [residue] + distant_neighbors
+            hydrophobic_count = sum(
+                1
+                for r in cluster
+                if r.get_resname().strip() in self._POCKET_LINING_RESIDUES
+            )
+            score = len(distant_neighbors) + hydrophobic_count
+            center = np.mean([r["CA"].get_coord() for r in cluster], axis=0).tolist()
+            candidates.append({"residues": cluster, "score": score, "center": center})
+
+        # Greedily keep the highest-scoring clusters that don't share a
+        # residue with an already-selected one, so top_n candidates read as
+        # distinct pockets rather than N near-duplicates of the same site.
+        candidates.sort(key=lambda c: c["score"], reverse=True)
+        selected = []
+        used = set()
+        for candidate in candidates:
+            keys = {
+                (r.get_parent().get_id(), r.get_id()[1]) for r in candidate["residues"]
+            }
+            if keys & used:
+                continue
+            used |= keys
+            selected.append(candidate)
+            if len(selected) >= top_n:
+                break
+
+        return [
+            {
+                "rank": i + 1,
+                "residues": [
+                    {
+                        "chain": r.get_parent().get_id(),
+                        "resi": r.get_id()[1],
+                        "resn": r.get_resname().strip(),
+                    }
+                    for r in c["residues"]
+                ],
+                "center": c["center"],
+                "score": round(c["score"], 2),
+                "heuristic": True,
+            }
+            for i, c in enumerate(selected)
+        ]
+
     def calculate_interaction_similarity(
         self, all_interactions: List[Dict[str, Any]]
     ) -> pd.DataFrame:

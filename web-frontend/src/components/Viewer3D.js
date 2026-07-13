@@ -431,8 +431,13 @@ export class Viewer3D {
         // re-ghosting and wiping out the previous match's highlight.
         if (!this.viewer) return;
 
+        // _selectorFor(), not a bare {chain: s.mustangChain} - a Discover-
+        // mode single structure has mustangChain: null (no Mustang re-
+        // lettering to key off of), and 3Dmol's selection syntax needs an
+        // empty selector ({}, "everything") there rather than a literal
+        // null chain value, which wouldn't reliably match anything.
         this.structures.forEach(s => {
-            this.viewer.setStyle({ chain: s.mustangChain }, { cartoon: { color: s.color, opacity: 0.35 } });
+            this.viewer.setStyle(this._selectorFor(s), { cartoon: { color: s.color, opacity: 0.35 } });
         });
 
         const selections = [];

@@ -172,6 +172,93 @@ class TestCalculateSasa:
         assert "error" in result
 
 
+def _residue_lines(start_serial, resname, chain, resi, center):
+    """A minimal backbone+CB residue (enough atoms for BioPython's
+    ShrakeRupley to compute a real, non-zero SASA) placed around a given
+    center coordinate."""
+    x, y, z = center
+    return [
+        _atom_line(start_serial, "N", resname, chain, resi, x, y + 1.0, z),
+        _atom_line(start_serial + 1, "CA", resname, chain, resi, x, y, z),
+        _atom_line(start_serial + 2, "C", resname, chain, resi, x + 1.0, y, z),
+        _atom_line(start_serial + 3, "O", resname, chain, resi, x + 1.5, y - 1.0, z),
+        _atom_line(start_serial + 4, "CB", resname, chain, resi, x - 1.0, y - 1.0, z),
+    ]
+
+
+class TestFindCandidatePockets:
+    def test_finds_a_spatial_cluster_of_sequence_distant_surface_residues(
+        self, tmp_path
+    ):
+        # 4 residues far apart in sequence (1, 50, 100, 150 - all > the 5-
+        # residue sequence-gap threshold from one another) but placed
+        # within a few Angstroms of each other in 3D and otherwise
+        # isolated (so they're fully solvent-exposed, real non-zero SASA)
+        # - exactly the "fold packs together from distant sequence
+        # regions" signature this heuristic looks for.
+        lines = []
+        lines += _residue_lines(1, "LEU", "A", 1, (0.0, 0.0, 0.0))
+        lines += _residue_lines(6, "PHE", "A", 50, (4.0, 0.0, 0.0))
+        lines += _residue_lines(11, "TRP", "A", 100, (0.0, 4.0, 0.0))
+        lines += _residue_lines(16, "TYR", "A", 150, (0.0, 0.0, 4.0))
+        lines.append("TER")
+        pdb_file = tmp_path / "pocket.pdb"
+        pdb_file.write_text("\n".join(lines) + "\n")
+        analyzer = LigandAnalyzer()
+
+        pockets = analyzer.find_candidate_pockets(pdb_file)
+
+        assert len(pockets) >= 1
+        top = pockets[0]
+        assert top["rank"] == 1
+        assert top["heuristic"] is True
+        assert len(top["residues"]) >= 4
+        found_resi = {r["resi"] for r in top["residues"]}
+        assert found_resi.issubset({1, 50, 100, 150})
+        assert len(top["center"]) == 3
+
+    def test_no_surface_residues_returns_empty_list(self, fixture_pdb):
+        # fixture_pdb's ALA/GLY pair is too small/isolated a residue set to
+        # register a real cluster (needs MIN_CLUSTER_NEIGHBORS=3 distant
+        # neighbors within range, which 2 residues total can never reach).
+        analyzer = LigandAnalyzer()
+        assert analyzer.find_candidate_pockets(fixture_pdb) == []
+
+    def test_returns_empty_list_on_parse_failure(self, tmp_path):
+        analyzer = LigandAnalyzer()
+        assert analyzer.find_candidate_pockets(tmp_path) == []
+
+    def test_selected_pockets_never_share_a_residue(self, tmp_path):
+        # Two well-separated 4-residue clusters (>20 A apart) should come
+        # back as two distinct, non-overlapping candidates - the greedy
+        # dedup-by-residue step should never let the same residue appear
+        # in two returned pockets.
+        lines = []
+        lines += _residue_lines(1, "LEU", "A", 1, (0.0, 0.0, 0.0))
+        lines += _residue_lines(6, "PHE", "A", 50, (4.0, 0.0, 0.0))
+        lines += _residue_lines(11, "TRP", "A", 100, (0.0, 4.0, 0.0))
+        lines += _residue_lines(16, "TYR", "A", 150, (0.0, 0.0, 4.0))
+        lines += _residue_lines(21, "MET", "A", 200, (50.0, 50.0, 50.0))
+        lines += _residue_lines(26, "ILE", "A", 250, (54.0, 50.0, 50.0))
+        lines += _residue_lines(31, "VAL", "A", 300, (50.0, 54.0, 50.0))
+        lines += _residue_lines(36, "CYS", "A", 350, (50.0, 50.0, 54.0))
+        lines.append("TER")
+        pdb_file = tmp_path / "two_pockets.pdb"
+        pdb_file.write_text("\n".join(lines) + "\n")
+        analyzer = LigandAnalyzer()
+
+        pockets = analyzer.find_candidate_pockets(pdb_file, top_n=5)
+
+        all_residue_keys = [
+            (p["rank"], r["resi"]) for p in pockets for r in p["residues"]
+        ]
+        seen = set()
+        for rank, resi in all_residue_keys:
+            key = resi
+            assert key not in seen, "a residue appeared in more than one pocket"
+            seen.add(key)
+
+
 class TestCalculateInteractionSimilarity:
     def test_empty_input_returns_empty_dataframe(self):
         analyzer = LigandAnalyzer()

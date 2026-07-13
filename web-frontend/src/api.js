@@ -235,6 +235,19 @@ export async function fetchLigands(pdbId, runId) {
     return res.json();
 }
 
+// Heuristic candidate-pocket detection for a structure with no real bound
+// ligand (see src/backend/ligand_analyzer.py's find_candidate_pockets) -
+// not a validated tool-grade result, so callers should only reach for this
+// once fetchLigands() has already come back empty.
+export async function fetchPockets(pdbId, runId) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const params = { pdb_id: pdbId };
+    if (runId) params.run_id = assertSafeSegment(runId, 'runId');
+    const res = await fetch(buildUrl('/api/pockets', params), { headers: authHeaders() });
+    if (!res.ok) throw new Error("Pocket detection failed");
+    return res.json();
+}
+
 export async function fetchInteractions(pdbId, ligandId, runId) {
     pdbId = assertValidPdbId(pdbId, 'pdbId');
     ligandId = assertSafeSegment(ligandId, 'ligandId');

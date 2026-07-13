@@ -100,7 +100,8 @@ class App {
 
         this.discoverTab = new DiscoverTab({
             onStructureLoaded: (pdbId) => this.viewer3D.loadSingleStructure(pdbId),
-            onSwitchToOverview: () => this.switchTab('overview')
+            onSwitchToOverview: () => this.switchTab('overview'),
+            onHighlightResidues: (chainMapping) => this.viewer3D.highlightResidues(chainMapping)
         });
         this.settingsTab = new SettingsTab();
     }

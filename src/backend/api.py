@@ -1004,6 +1004,43 @@ def get_ligands(
 
 
 @app.get(
+    "/api/pockets",
+    responses={
+        400: {"description": "Invalid pdb_id, run_id, or session_id"},
+        404: {"description": "Structure PDB not found in the active workspace"},
+    },
+)
+def get_pockets(
+    pdb_id: Annotated[str, Query(...)],
+    run_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Heuristic candidate binding-pocket detection for a structure with no
+    bound ligand (see LigandAnalyzer.find_candidate_pockets - a real
+    geometric cavity detector like fpocket is out of scope; every result
+    here is a labeled computational prediction, not a validated pocket).
+    Meant to be called only once /api/ligands has already confirmed the
+    structure has no real ligands - this endpoint doesn't check that
+    itself, so a structure with real ligands would just get pocket
+    candidates alongside them.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    pdb_path = _find_structure_pdb_path(pdb_id, run_id, session_id)
+    if not pdb_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Structure PDB for {pdb_id} not found in active workspace.",
+        )
+
+    pockets = ligand_analyzer.find_candidate_pockets(pdb_path)
+    return {"pdb_id": pdb_id, "pockets": sanitize_for_json(pockets)}
+
+
+@app.get(
     "/api/structure-file",
     responses={
         400: {"description": "Invalid pdb_id, run_id, or session_id"},
