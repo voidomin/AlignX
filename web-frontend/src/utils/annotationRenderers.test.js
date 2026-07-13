@@ -30,6 +30,19 @@ describe('annotationRenderers', () => {
             const html = renderDomainList([{ name: 'Globin', type: 'domain' }], 'Common domains / families');
             expect(html).toContain('Common domains / families');
         });
+
+        it('shows a "Highlight in 3D" button when a domain has highlight_chains', () => {
+            const html = renderDomainList([
+                { name: 'Globin', type: 'domain', highlight_chains: { A: [2, 3, 4] } },
+            ]);
+            expect(html).toContain('Highlight in 3D');
+            expect(html).toContain('data-domain-index="0"');
+        });
+
+        it('omits the button when highlight_chains is absent (Discover neighbor domains)', () => {
+            const html = renderDomainList([{ name: 'Globin', type: 'domain', neighbor_count: 4 }]);
+            expect(html).not.toContain('Highlight in 3D');
+        });
     });
 
     describe('renderGoTermList', () => {

@@ -371,6 +371,20 @@ class AnnotationAggregator:
                                 }
                                 for g in meta.get("go_terms") or []
                             ],
+                            # Residue positions (UniProt sequence numbering)
+                            # this domain occupies - see aggregate_for_
+                            # structure() for why these are only usable as
+                            # structure residue numbers for AlphaFold-
+                            # sourced structures specifically, not any PDB
+                            # entry's own author numbering.
+                            "locations": [
+                                {"start": frag["start"], "end": frag["end"]}
+                                for protein in item.get("proteins") or []
+                                for loc in protein.get("entry_protein_locations") or []
+                                for frag in loc.get("fragments") or []
+                                if frag.get("start") is not None
+                                and frag.get("end") is not None
+                            ],
                         }
                     )
                 return entries
@@ -673,6 +687,28 @@ class AnnotationAggregator:
         names = await self.resolve_go_term_names(go_ids, client)
         for term in quickgo_terms:
             term["name"] = names.get(term.get("id"))
+
+        # AlphaFold models are numbered 1..N to exactly match their source
+        # UniProt sequence, by construction - so InterPro's UniProt-numbered
+        # domain locations can be used directly as this structure's own
+        # residue numbers. That's NOT true for a real PDB entry (author
+        # numbering routinely differs from UniProt numbering - crystallization
+        # constructs, non-1-start numbering, tags - which would need real
+        # SIFTS segment-mapping to translate correctly, out of scope here),
+        # so this only ever runs for source == "alphafold".
+        if source == "alphafold" and chain:
+            for domain in domains:
+                residues = sorted(
+                    {
+                        r
+                        for loc in domain.get("locations") or []
+                        for r in range(loc["start"], loc["end"] + 1)
+                    }
+                )
+                domain["highlight_chains"] = {chain: residues} if residues else None
+        else:
+            for domain in domains:
+                domain["highlight_chains"] = None
 
         result["domains"] = domains
         # QuickGO's annotation-search returns one row per curated evidence

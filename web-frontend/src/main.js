@@ -83,7 +83,9 @@ class App {
         this.sequenceTab = new SequenceTab({
             onHighlightResidues: (chainMapping) => this.viewer3D.highlightResidues(chainMapping)
         });
-        this.analyticsTab = new AnalyticsTab();
+        this.analyticsTab = new AnalyticsTab({
+            onHighlightResidues: (chainMapping) => this.viewer3D.highlightResidues(chainMapping)
+        });
         this.clustersTab = new ClustersTab();
         this.comparisonTab = new ComparisonTab();
 

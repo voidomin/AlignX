@@ -48,6 +48,10 @@ export class AnalyticsTab {
     annotationsLoadedForRunId = null;
     annotationsLoading = false;
 
+    constructor(props = {}) {
+        this.onHighlightResidues = props.onHighlightResidues || (() => {});
+    }
+
     render() {
         const div = document.createElement('div');
         div.className = "editorial-section";
@@ -314,6 +318,12 @@ export class AnalyticsTab {
                 ${renderGoTermList(annotation.go_terms)}
                 ${this.renderReactomePathways(annotation.reactome_pathways)}
             `;
+            content.querySelectorAll('.domain-highlight-btn').forEach(btn => {
+                const domain = annotation.domains[Number(btn.dataset.domainIndex)];
+                if (domain?.highlight_chains) {
+                    btn.addEventListener('click', () => this.onHighlightResidues(domain.highlight_chains));
+                }
+            });
         }
 
         this.renderSharedAnnotations(sharedSection, sharedContent);

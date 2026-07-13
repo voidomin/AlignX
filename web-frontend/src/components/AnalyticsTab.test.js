@@ -7,8 +7,8 @@ vi.mock('../api.js', () => ({
 
 import { fetchAnnotations } from '../api.js';
 
-function makeTab() {
-    return new AnalyticsTab();
+function makeTab(overrides = {}) {
+    return new AnalyticsTab(overrides);
 }
 
 function structuresFor(pdbIds, chainSelections = {}) {
@@ -208,6 +208,44 @@ describe('AnalyticsTab', () => {
             await tab.loadAllAnnotations();
 
             expect(tab.element.querySelector('#annotations-shared-section').classList.contains('hidden')).toBe(true);
+        });
+
+        it('shows a "Highlight in 3D" button for a domain with highlight_chains and calls onHighlightResidues when clicked', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: 'AF-P69905-F1', chain: 'A', accession: 'P69905',
+                    domains: [{ name: 'Globin', type: 'domain', highlight_chains: { A: [2, 3, 4, 5] } }],
+                    go_terms: [], reactome_pathways: [],
+                },
+            });
+            const onHighlightResidues = vi.fn();
+            const tab = makeTab({ onHighlightResidues });
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['AF-P69905-F1'], { 'AF-P69905-F1': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            const btn = tab.element.querySelector('.domain-highlight-btn');
+            expect(btn.textContent).toContain('Highlight in 3D');
+            btn.click();
+            expect(onHighlightResidues).toHaveBeenCalledWith({ A: [2, 3, 4, 5] });
+        });
+
+        it('omits the "Highlight in 3D" button for a domain with no highlight_chains (e.g. a plain PDB structure)', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P69905',
+                    domains: [{ name: 'Globin', type: 'domain', highlight_chains: null }],
+                    go_terms: [], reactome_pathways: [],
+                },
+            });
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            expect(tab.element.querySelector('.domain-highlight-btn')).toBeNull();
         });
 
         it('does not re-fetch when switching back to an already-loaded run', async () => {
