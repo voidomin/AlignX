@@ -94,7 +94,7 @@ export class HistoryPanel {
             const div = document.createElement('div');
             div.className = "flex justify-between items-center py-3 border-b border-border-subtle hover:bg-surface-raised transition-colors cursor-pointer group px-2 -mx-2 rounded-md";
 
-            let pids = [];
+            let pids;
             try {
                 pids = typeof run.pdb_ids === 'string' ? JSON.parse(run.pdb_ids) : run.pdb_ids;
             } catch {

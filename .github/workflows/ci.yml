@@ -114,6 +114,17 @@ jobs:
     name: SonarQube Cloud scan
     runs-on: ubuntu-latest
     needs: [build, frontend-tests]
+    # Dependabot-authored PRs never get repository secrets injected into the
+    # workflow run (a GitHub platform security restriction, not something
+    # this repo controls) - SONAR_TOKEN is empty there, so the scan always
+    # failed with "sonar-scanner exit code 3" regardless of what the actual
+    # dependency bump changed. A job skipped via this condition counts as
+    # "not applicable" for a required status check, not a failure, so it no
+    # longer blocks every single Dependabot PR from merging. (`secrets` isn't
+    # a valid context for a job-level `if:`, so this checks the actor instead
+    # - equivalent here, since Dependabot is the only trigger that lacks
+    # secrets access.)
+    if: github.actor != 'dependabot[bot]'
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

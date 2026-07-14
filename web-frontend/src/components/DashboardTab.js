@@ -101,7 +101,7 @@ export class DashboardTab {
 
             recentContainer.innerHTML = "";
             runs.forEach(run => {
-                let pids = [];
+                let pids;
                 try {
                     pids = typeof run.pdb_ids === 'string' ? JSON.parse(run.pdb_ids) : run.pdb_ids;
                 } catch {
