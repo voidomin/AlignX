@@ -418,7 +418,7 @@ class App {
 
         this.currentRunId = run.id;
 
-        let pids = [];
+        let pids;
         try {
             pids = typeof run.pdb_ids === 'string' ? JSON.parse(run.pdb_ids) : run.pdb_ids;
         } catch {
@@ -430,7 +430,7 @@ class App {
         this.chainSelections = metadata.chain_selection || {};
         
         // Cache figures and quality stats from past run
-        let stats = {};
+        let stats;
         if (metadata.results) {
             stats = metadata.results.stats || {};
             this.heatmapFig = metadata.results.heatmap_fig || null;
