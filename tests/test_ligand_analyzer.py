@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 
 from src.backend.ligand_analyzer import LigandAnalyzer
+from tests.conftest import MINIMAL_CIF_HEADER
 
 
 def _atom_line(serial, name, resname, chain, resi, x, y, z, hetatm=False, element=None):
@@ -44,31 +45,10 @@ def fixture_pdb(tmp_path):
 
 def _minimal_cif_text():
     # Same minimal atom_site loop shape as a real AlphaFold-sourced download
-    # (see tests/test_pdb_manager.py's cif_content) - group_PDB HETATM for
+    # (see tests/conftest.py's MINIMAL_CIF_HEADER) - group_PDB HETATM for
     # the ZN row, so this also exercises get_ligands() finding a real
     # metal-cofactor ligand through the mmCIF parsing path, not just PDB.
-    return (
-        "data_test\n"
-        "loop_\n"
-        "_atom_site.group_PDB\n"
-        "_atom_site.id\n"
-        "_atom_site.type_symbol\n"
-        "_atom_site.label_atom_id\n"
-        "_atom_site.label_alt_id\n"
-        "_atom_site.label_comp_id\n"
-        "_atom_site.label_asym_id\n"
-        "_atom_site.label_entity_id\n"
-        "_atom_site.label_seq_id\n"
-        "_atom_site.pdbx_PDB_ins_code\n"
-        "_atom_site.Cartn_x\n"
-        "_atom_site.Cartn_y\n"
-        "_atom_site.Cartn_z\n"
-        "_atom_site.occupancy\n"
-        "_atom_site.B_iso_or_equiv\n"
-        "_atom_site.pdbx_formal_charge\n"
-        "_atom_site.auth_seq_id\n"
-        "_atom_site.auth_asym_id\n"
-        "_atom_site.pdbx_PDB_model_num\n"
+    return MINIMAL_CIF_HEADER + (
         "ATOM 1 N N . ALA A 1 1 ? 11.104 13.203 7.334 1.00 20.00 ? 1 A 1\n"
         "ATOM 2 C CA . ALA A 1 1 ? 12.104 14.203 8.334 1.00 20.00 ? 1 A 1\n"
         "HETATM 3 ZN ZN . ZN A 2 . ? 13.604 14.703 8.834 1.00 20.00 ? 100 A 1\n"
