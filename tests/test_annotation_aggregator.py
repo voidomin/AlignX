@@ -1153,13 +1153,26 @@ class TestAggregateForStructure:
         assert result["reactome_pathways"][0]["name"] == "Erythrocytes take up oxygen"
 
     @pytest.mark.asyncio
-    async def test_alphafold_structure_gets_highlight_chains_from_domain_locations(
-        self,
+    @pytest.mark.parametrize(
+        "pdb_id,source,expected_highlight_chains",
+        [
+            # AlphaFold models are numbered 1..N matching their UniProt
+            # sequence exactly, by construction - so InterPro's UniProt-
+            # numbered domain locations are usable directly as this
+            # structure's own residue numbers.
+            ("AF-P69905-F1", "alphafold", {"A": [2, 3, 4, 5]}),
+            # A real PDB entry's author residue numbering commonly differs
+            # from UniProt numbering (constructs, tags, non-1-start
+            # numbering) - without real SIFTS segment-mapping (out of scope
+            # here), using InterPro's UniProt-numbered locations directly
+            # would silently highlight the wrong residues, so this must
+            # stay None for non-AlphaFold sources.
+            ("4HHB", "pdb", None),
+        ],
+    )
+    async def test_highlight_chains_only_populated_for_alphafold_structures(
+        self, pdb_id, source, expected_highlight_chains
     ):
-        """AlphaFold models are numbered 1..N matching their UniProt
-        sequence exactly, by construction - so InterPro's UniProt-numbered
-        domain locations are usable directly as this structure's own
-        residue numbers, unlike a real PDB entry's author numbering."""
         aggregator = AnnotationAggregator()
         with patch.object(
             aggregator, "_resolve_structure_accession", AsyncMock(return_value="P69905")
@@ -1186,49 +1199,10 @@ class TestAggregateForStructure:
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
-                    "AF-P69905-F1", "A", "alphafold", client
+                    pdb_id, "A", source, client
                 )
 
-        assert result["domains"][0]["highlight_chains"] == {"A": [2, 3, 4, 5]}
-
-    @pytest.mark.asyncio
-    async def test_pdb_structure_does_not_get_highlight_chains(self):
-        """A real PDB entry's author residue numbering commonly differs
-        from UniProt numbering (constructs, tags, non-1-start numbering) -
-        without real SIFTS segment-mapping (out of scope here), using
-        InterPro's UniProt-numbered locations directly would silently
-        highlight the wrong residues, so this must stay None for non-
-        AlphaFold sources."""
-        aggregator = AnnotationAggregator()
-        with patch.object(
-            aggregator, "_resolve_structure_accession", AsyncMock(return_value="P69905")
-        ), patch.object(
-            aggregator,
-            "fetch_interpro_entries",
-            AsyncMock(
-                return_value=[
-                    {
-                        "accession": "IPR000971",
-                        "name": "Globin",
-                        "type": "domain",
-                        "go_terms": [],
-                        "locations": [{"start": 2, "end": 5}],
-                    }
-                ]
-            ),
-        ), patch.object(
-            aggregator, "fetch_quickgo_annotations", AsyncMock(return_value=[])
-        ), patch.object(
-            aggregator, "fetch_reactome_pathways", AsyncMock(return_value=[])
-        ), patch.object(
-            aggregator, "resolve_go_term_names", AsyncMock(return_value={})
-        ):
-            async with httpx.AsyncClient() as client:
-                result = await aggregator.aggregate_for_structure(
-                    "4HHB", "A", "pdb", client
-                )
-
-        assert result["domains"][0]["highlight_chains"] is None
+        assert result["domains"][0]["highlight_chains"] == expected_highlight_chains
 
     @pytest.mark.asyncio
     async def test_pdb_id_and_chain_pass_through_to_the_result(self):

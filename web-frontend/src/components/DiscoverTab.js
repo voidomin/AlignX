@@ -428,7 +428,10 @@ export class DiscoverTab {
             const pocket = pockets[Number(btn.dataset.pocketIndex)];
             const chainMap = {};
             pocket.residues.forEach(r => {
-                (chainMap[r.chain] ||= []).push(r.resi);
+                if (!chainMap[r.chain]) {
+                    chainMap[r.chain] = [];
+                }
+                chainMap[r.chain].push(r.resi);
             });
             btn.addEventListener('click', () => this.onHighlightResidues(chainMap));
         });

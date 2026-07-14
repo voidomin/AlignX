@@ -7,33 +7,20 @@ import { fetchMemoryStats, triggerClearMemory, fetchHealth } from '../api';
 // renamed to "Diff Runs" here because it collided with a different meaning
 // of "Compare" used elsewhere (the Overview tab's alignment workflow is
 // informally called a "Compare run" in docs/guides/GETTING_STARTED.md) -
-// this tab specifically diffs the current run against a past one.
-const TAB_GROUPS = [
-    {
-        label: 'Explore',
-        tabs: [
-            { key: 'overview', label: 'Overview' },
-            { key: 'discover', label: 'Discover' },
-        ],
-    },
-    {
-        label: 'Results',
-        tabs: [
-            { key: 'ligands', label: 'Ligands' },
-            { key: 'sequence', label: 'Sequence' },
-            { key: 'analytics', label: 'Analytics' },
-            { key: 'clusters', label: 'Clusters' },
-        ],
-    },
-    {
-        label: 'Workspace',
-        tabs: [
-            { key: 'comparison', label: 'Diff Runs' },
-            { key: 'history', label: 'History' },
-            { key: 'dashboard', label: 'Dashboard' },
-            { key: 'settings', label: 'Settings' },
-        ],
-    },
+// this tab specifically diffs the current run against a past one. A flat
+// array (group per entry) rather than nested {label, tabs: [...]} groups -
+// the render loop below inserts a divider whenever `group` changes.
+const TABS = [
+    { key: 'overview', label: 'Overview', group: 'Explore' },
+    { key: 'discover', label: 'Discover', group: 'Explore' },
+    { key: 'ligands', label: 'Ligands', group: 'Results' },
+    { key: 'sequence', label: 'Sequence', group: 'Results' },
+    { key: 'analytics', label: 'Analytics', group: 'Results' },
+    { key: 'clusters', label: 'Clusters', group: 'Results' },
+    { key: 'comparison', label: 'Diff Runs', group: 'Workspace' },
+    { key: 'history', label: 'History', group: 'Workspace' },
+    { key: 'dashboard', label: 'Dashboard', group: 'Workspace' },
+    { key: 'settings', label: 'Settings', group: 'Workspace' },
 ];
 
 export class TopBar {
@@ -61,11 +48,9 @@ export class TopBar {
                         <span class="material-symbols-outlined text-[16px]">chevron_left</span>
                     </button>
                     <nav id="topbar-tabs" class="flex items-center gap-1 min-w-0 overflow-x-auto scroll-smooth">
-                        ${TAB_GROUPS.map((group, i) => `
-                            ${i > 0 ? '<div class="w-px h-5 bg-border-subtle mx-1.5 shrink-0" aria-hidden="true"></div>' : ''}
-                            ${group.tabs.map(t => `
-                                <button data-tab="${t.key}" class="tab-trigger px-3 py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors">${t.label}</button>
-                            `).join('')}
+                        ${TABS.map((t, i) => `
+                            ${i > 0 && t.group !== TABS[i - 1].group ? '<div class="w-px h-5 bg-border-subtle mx-1.5 shrink-0" aria-hidden="true"></div>' : ''}
+                            <button data-tab="${t.key}" class="tab-trigger px-3 py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors">${t.label}</button>
                         `).join('')}
                     </nav>
                     <button id="topbar-scroll-right" class="hidden shrink-0 w-5 h-7 items-center justify-center rounded-md bg-surface border border-border-subtle text-secondary hover:text-primary transition-colors ml-1" title="Scroll tabs right">

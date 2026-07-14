@@ -329,6 +329,7 @@ export class OverviewTab {
             const gapTooltip = gapChains
                 .flatMap(c => c.gaps.map(g => `Chain ${c.id}: residues ${g.after + 1}-${g.before - 1} missing`))
                 .join('; ');
+            const gapLabel = gapCount === 1 ? 'region' : 'regions';
 
             div.innerHTML = `
                 <div class="flex items-center justify-between">
@@ -345,7 +346,7 @@ export class OverviewTab {
                 </div>
                 ${metaParts.length > 0 ? `<span class="pdb-meta-line font-body-sm text-[11px] text-secondary pl-0.5">${metaParts.join(' · ')}</span>` : ''}
                 ${meta?.is_nmr ? `<span class="pdb-nmr-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="Showing model 1 of ${meta.num_models} - other conformers in this NMR ensemble aren't analyzed.">NMR · ${meta.num_models} models (model 1 shown)</span>` : ''}
-                ${gapCount > 0 ? `<span class="pdb-gaps-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="${escapeHtml(gapTooltip)}">${gapCount} disordered region${gapCount > 1 ? 's' : ''}</span>` : ''}
+                ${gapCount > 0 ? `<span class="pdb-gaps-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="${escapeHtml(gapTooltip)}">${gapCount} disordered ${gapLabel}</span>` : ''}
             `;
 
             // Bind events
