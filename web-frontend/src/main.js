@@ -83,7 +83,9 @@ class App {
         this.sequenceTab = new SequenceTab({
             onHighlightResidues: (chainMapping) => this.viewer3D.highlightResidues(chainMapping)
         });
-        this.analyticsTab = new AnalyticsTab();
+        this.analyticsTab = new AnalyticsTab({
+            onHighlightResidues: (chainMapping) => this.viewer3D.highlightResidues(chainMapping)
+        });
         this.clustersTab = new ClustersTab();
         this.comparisonTab = new ComparisonTab();
 
@@ -97,7 +99,9 @@ class App {
         });
 
         this.discoverTab = new DiscoverTab({
-            onStructureLoaded: (pdbId) => this.viewer3D.loadSingleStructure(pdbId)
+            onStructureLoaded: (pdbId) => this.viewer3D.loadSingleStructure(pdbId),
+            onSwitchToOverview: () => this.switchTab('overview'),
+            onHighlightResidues: (chainMapping) => this.viewer3D.highlightResidues(chainMapping)
         });
         this.settingsTab = new SettingsTab();
     }
@@ -414,7 +418,7 @@ class App {
 
         this.currentRunId = run.id;
 
-        let pids = [];
+        let pids;
         try {
             pids = typeof run.pdb_ids === 'string' ? JSON.parse(run.pdb_ids) : run.pdb_ids;
         } catch {
@@ -426,7 +430,7 @@ class App {
         this.chainSelections = metadata.chain_selection || {};
         
         // Cache figures and quality stats from past run
-        let stats = {};
+        let stats;
         if (metadata.results) {
             stats = metadata.results.stats || {};
             this.heatmapFig = metadata.results.heatmap_fig || null;

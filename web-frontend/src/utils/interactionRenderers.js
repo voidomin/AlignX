@@ -5,15 +5,19 @@
 // (interaction_geometry.py's classify_contact).
 
 // Functional data-encoding: dot color signals interaction type. Matches the
-// 4 real classifications LigandAnalyzer/InterfaceAnalyzer actually emit -
+// 5 real classifications LigandAnalyzer/InterfaceAnalyzer actually emit -
 // not a guess at possible labels, since PDB files carry no hydrogens/bond-
-// order data, pi-stacking and metal coordination aren't attempted at all
-// (see interaction_geometry.py).
+// order data, so pi-stacking still isn't attempted (see
+// interaction_geometry.py). Metal Coordination (v3.87.0) is the one
+// exception to that - a bare recognized metal-ion ligand gets real
+// coordination-geometry classification now that ligand_analyzer.py no
+// longer filters metals out as noise.
 export function dotColorForType(type) {
     switch (type) {
         case 'Hydrogen Bond': return 'bg-accent';
         case 'Salt Bridge': return 'bg-success';
         case 'Van der Waals': return 'bg-muted';
+        case 'Metal Coordination': return 'bg-error';
         default: return 'bg-secondary';
     }
 }

@@ -48,6 +48,10 @@ export class AnalyticsTab {
     annotationsLoadedForRunId = null;
     annotationsLoading = false;
 
+    constructor(props = {}) {
+        this.onHighlightResidues = props.onHighlightResidues || (() => {});
+    }
+
     render() {
         const div = document.createElement('div');
         div.className = "editorial-section";
@@ -314,6 +318,12 @@ export class AnalyticsTab {
                 ${renderGoTermList(annotation.go_terms)}
                 ${this.renderReactomePathways(annotation.reactome_pathways)}
             `;
+            content.querySelectorAll('.domain-highlight-btn').forEach(btn => {
+                const domain = annotation.domains[Number(btn.dataset.domainIndex)];
+                if (domain?.highlight_chains) {
+                    btn.addEventListener('click', () => this.onHighlightResidues(domain.highlight_chains));
+                }
+            });
         }
 
         this.renderSharedAnnotations(sharedSection, sharedContent);
@@ -498,7 +508,7 @@ export class AnalyticsTab {
             paper_bgcolor: 'rgba(0,0,0,0)',
             plot_bgcolor: 'rgba(0,0,0,0)',
             height: 280,
-            font: { family: "Segoe UI, sans-serif", size: 10, color: "#A79E8E" }
+            font: { family: "Inter, sans-serif", size: 10, color: "#A79E8E" }
         };
 
         Plotly.newPlot(rmsfDiv, [trace], layout, { responsive: true, displayModeBar: false });
@@ -525,7 +535,7 @@ export class AnalyticsTab {
             margin: { l: 50, r: 20, t: 30, b: 50 },
             paper_bgcolor: 'rgba(0,0,0,0)',
             plot_bgcolor: 'rgba(0,0,0,0)',
-            font: { family: "Segoe UI, sans-serif", size: 10, color: "#A79E8E" }
+            font: { family: "Inter, sans-serif", size: 10, color: "#A79E8E" }
         };
         Plotly.newPlot(heatmapDiv, this.heatmapFig.data, layout, { responsive: true, displayModeBar: false });
     }
@@ -551,7 +561,7 @@ export class AnalyticsTab {
             margin: { l: 60, r: 20, t: 30, b: 40 },
             paper_bgcolor: 'rgba(0,0,0,0)',
             plot_bgcolor: 'rgba(0,0,0,0)',
-            font: { family: "Segoe UI, sans-serif", size: 10, color: "#A79E8E" }
+            font: { family: "Inter, sans-serif", size: 10, color: "#A79E8E" }
         };
         Plotly.newPlot(treeDiv, this.treeFig.data, layout, { responsive: true, displayModeBar: false });
     }

@@ -210,6 +210,66 @@ describe('OverviewTab', () => {
             .toBe('Predicted (AF2) · pLDDT Scored · Homo sapiens');
     });
 
+    it('shows an NMR badge when the structure is a multi-model ensemble', () => {
+        const tab = makeTab({
+            selectedPDBs: ['1AJU'],
+            pdbMetadata: {
+                '1AJU': {
+                    chains: [{ id: 'A', residue_count: 40, gaps: [] }],
+                    is_nmr: true,
+                    num_models: 20,
+                },
+            },
+        });
+        tab.render();
+
+        const row = tab.element.querySelector('#pdb-list-container > div');
+        expect(row.querySelector('.pdb-nmr-badge').textContent).toBe('NMR · 20 models (model 1 shown)');
+    });
+
+    it('omits the NMR badge for a single-model structure', () => {
+        const tab = makeTab({
+            selectedPDBs: ['4RLT'],
+            pdbMetadata: {
+                '4RLT': { chains: [{ id: 'A', residue_count: 100, gaps: [] }], is_nmr: false, num_models: 1 },
+            },
+        });
+        tab.render();
+
+        expect(tab.element.querySelector('.pdb-nmr-badge')).toBeNull();
+    });
+
+    it('shows a disordered-region badge when a chain has residue-numbering gaps', () => {
+        const tab = makeTab({
+            selectedPDBs: ['4RLT'],
+            pdbMetadata: {
+                '4RLT': {
+                    chains: [
+                        { id: 'A', residue_count: 100, gaps: [{ after: 20, before: 25 }] },
+                    ],
+                },
+            },
+        });
+        tab.render();
+
+        const row = tab.element.querySelector('#pdb-list-container > div');
+        const badge = row.querySelector('.pdb-gaps-badge');
+        expect(badge.textContent).toBe('1 disordered region');
+        expect(badge.title).toContain('residues 21-24 missing');
+    });
+
+    it('omits the disordered-region badge when there are no gaps', () => {
+        const tab = makeTab({
+            selectedPDBs: ['4RLT'],
+            pdbMetadata: {
+                '4RLT': { chains: [{ id: 'A', residue_count: 100, gaps: [] }] },
+            },
+        });
+        tab.render();
+
+        expect(tab.element.querySelector('.pdb-gaps-badge')).toBeNull();
+    });
+
     it('defaults to a "PDB" badge and omits the metadata line while metadata has not loaded yet', () => {
         const tab = makeTab({ selectedPDBs: ['4RLT'] });
         tab.render();

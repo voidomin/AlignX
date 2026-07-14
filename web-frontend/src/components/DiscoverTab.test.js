@@ -10,9 +10,10 @@ vi.mock('../api.js', () => ({
     getDiscoveryCitationsUrl: vi.fn((runId) => `http://mock/api/discover/citations?run_id=${runId}`),
     fetchLigands: vi.fn().mockResolvedValue({ ligands: [] }),
     fetchInteractions: vi.fn(),
+    fetchPockets: vi.fn().mockResolvedValue({ pockets: [] }),
 }));
 
-import { submitDiscoveryJob, pollJobUntilDone, fetchLigands, fetchInteractions } from '../api.js';
+import { submitDiscoveryJob, pollJobUntilDone, fetchLigands, fetchInteractions, fetchPockets } from '../api.js';
 
 function makeAnnotatedResults(overrides = {}) {
     return {
@@ -152,6 +153,23 @@ describe('DiscoverTab', () => {
         expect(onStructureLoaded).toHaveBeenCalledWith('1CRN');
     });
 
+    it('offers a Switch to Overview nudge once a run completes, calling onSwitchToOverview when clicked', async () => {
+        submitDiscoveryJob.mockResolvedValue({ job_id: 'job1', status: 'queued' });
+        pollJobUntilDone.mockResolvedValue({ status: 'completed', results: makeAnnotatedResults() });
+        const onSwitchToOverview = vi.fn();
+
+        const tab = new DiscoverTab({ onSwitchToOverview });
+        tab.render();
+        tab.element.querySelector('#discover-input').value = '1crn';
+
+        await tab.handleRun();
+
+        const nudgeBtn = tab.element.querySelector('#discover-switch-overview-btn');
+        expect(nudgeBtn.textContent).toContain('Switch to Overview');
+        nudgeBtn.click();
+        expect(onSwitchToOverview).toHaveBeenCalledTimes(1);
+    });
+
     describe('ligand/binding-site inspector', () => {
         it('shows "no bound ligands" when the structure has none', async () => {
             fetchLigands.mockResolvedValue({ ligands: [] });
@@ -204,6 +222,59 @@ describe('DiscoverTab', () => {
             const resultsEl = tab.element.querySelector('#discover-ligand-results');
             expect(resultsEl.textContent).toContain('HIS');
             expect(resultsEl.textContent).toContain('Salt Bridge');
+        });
+
+        it('shows heuristic candidate pockets when there are no bound ligands', async () => {
+            fetchLigands.mockResolvedValue({ ligands: [] });
+            fetchPockets.mockResolvedValue({
+                pockets: [
+                    {
+                        rank: 1,
+                        residues: [
+                            { chain: 'A', resi: 10, resn: 'LEU' },
+                            { chain: 'A', resi: 55, resn: 'PHE' },
+                        ],
+                        center: [0, 0, 0],
+                        score: 5,
+                        heuristic: true,
+                    },
+                ],
+            });
+            submitDiscoveryJob.mockResolvedValue({ job_id: 'job1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({ status: 'completed', results: makeAnnotatedResults() });
+            const onHighlightResidues = vi.fn();
+
+            const tab = new DiscoverTab({ onHighlightResidues });
+            tab.render();
+            tab.element.querySelector('#discover-input').value = '1CRN';
+            await tab.handleRun();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const section = tab.element.querySelector('#discover-ligand-section');
+            expect(section.textContent).toContain('Predicted binding pockets');
+            expect(section.textContent).toContain('Computational prediction');
+            expect(section.textContent).toContain('Pocket 1');
+
+            section.querySelector('.pocket-highlight-btn').click();
+            expect(onHighlightResidues).toHaveBeenCalledWith({ A: [10, 55] });
+        });
+
+        it('shows a graceful message when no candidate pockets are found either', async () => {
+            fetchLigands.mockResolvedValue({ ligands: [] });
+            fetchPockets.mockResolvedValue({ pockets: [] });
+            submitDiscoveryJob.mockResolvedValue({ job_id: 'job1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({ status: 'completed', results: makeAnnotatedResults() });
+
+            const tab = new DiscoverTab();
+            tab.render();
+            tab.element.querySelector('#discover-input').value = '1CRN';
+            await tab.handleRun();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#discover-ligand-section').textContent)
+                .toContain('no candidate binding pockets found');
         });
 
         it('shows a graceful message when the ligand fetch fails', async () => {
