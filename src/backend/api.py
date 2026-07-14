@@ -1004,6 +1004,43 @@ def get_ligands(
 
 
 @app.get(
+    "/api/pockets",
+    responses={
+        400: {"description": "Invalid pdb_id, run_id, or session_id"},
+        404: {"description": "Structure PDB not found in the active workspace"},
+    },
+)
+def get_pockets(
+    pdb_id: Annotated[str, Query(...)],
+    run_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Heuristic candidate binding-pocket detection for a structure with no
+    bound ligand (see LigandAnalyzer.find_candidate_pockets - a real
+    geometric cavity detector like fpocket is out of scope; every result
+    here is a labeled computational prediction, not a validated pocket).
+    Meant to be called only once /api/ligands has already confirmed the
+    structure has no real ligands - this endpoint doesn't check that
+    itself, so a structure with real ligands would just get pocket
+    candidates alongside them.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    pdb_path = _find_structure_pdb_path(pdb_id, run_id, session_id)
+    if not pdb_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Structure PDB for {pdb_id} not found in active workspace.",
+        )
+
+    pockets = ligand_analyzer.find_candidate_pockets(pdb_path)
+    return {"pdb_id": pdb_id, "pockets": sanitize_for_json(pockets)}
+
+
+@app.get(
     "/api/structure-file",
     responses={
         400: {"description": "Invalid pdb_id, run_id, or session_id"},
@@ -1041,12 +1078,20 @@ def get_structure_file(
 def _find_structure_pdb_path(
     pdb_id: str, run_id: Optional[str], session_id: Optional[str]
 ) -> Optional[Path]:
-    """Locates a previously-downloaded structure's PDB file: first in the
+    """Locates a previously-downloaded structure's file: first in the
     session's raw-download folder, then (if a run_id is given) that run's
     own results folder, trying the id's as-given/lowercase/uppercase
-    filename in each. Shared by /api/ligands and /api/interactions, which
-    both need a structure's PDB file by id rather than by run."""
-    possible_names = [f"{pdb_id}.pdb", f"{pdb_id.lower()}.pdb", f"{pdb_id.upper()}.pdb"]
+    filename (both .pdb and .cif - PDBManager._resolve_output_file() saves
+    AlphaFold-sourced downloads as .cif, everything else as .pdb) in each.
+    Shared by /api/ligands, /api/interactions, /api/pockets, and
+    /api/structure-file - this previously only ever tried .pdb, silently
+    404ing for every AlphaFold-sourced structure regardless of which of
+    those endpoints was called."""
+    possible_names = [
+        f"{base}{ext}"
+        for base in (pdb_id, pdb_id.lower(), pdb_id.upper())
+        for ext in (".pdb", ".cif")
+    ]
 
     raw_dir = project_root / "data" / "raw"
     if session_id:

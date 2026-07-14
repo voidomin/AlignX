@@ -30,6 +30,50 @@ def _write_bytes(path: Path, content: bytes) -> None:
         f.write(content)
 
 
+def parse_structure_file(file_path: Path) -> Any:
+    """Hybrid parser for PDB and mmCIF formats, dispatched by file
+    extension - AlphaFold-sourced downloads are saved as .cif
+    (_resolve_output_file below), everything else as .pdb. Shared with
+    ligand_analyzer.py/interface_analyzer.py (v3.87.0 fix): both
+    previously hardcoded Bio.PDB.PDBParser unconditionally, which throws
+    KeyError: 0 on structure[0] for a real .cif file - PDBParser can't
+    parse mmCIF syntax at all, so it silently produces zero models - a
+    real bug that broke ligand/interaction/SASA/interface analysis for
+    every AlphaFold-sourced structure, only caught by live end-to-end
+    testing since no test fixture anywhere used a real .cif file.
+
+    Also centralizes PDBConstructionWarning suppression (every caller used
+    to wrap its own near-identical warnings.catch_warnings() block around
+    this exact parse call) so callers only need their own try/except for
+    what to return on a genuine parse failure."""
+    import warnings
+    from Bio.PDB import MMCIFParser, PDBParser
+    from Bio.PDB.PDBExceptions import PDBConstructionWarning
+
+    if file_path.suffix.lower() == ".cif":
+        parser = MMCIFParser(QUIET=True)
+    else:
+        parser = PDBParser(QUIET=True)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", PDBConstructionWarning)
+        return parser.get_structure("protein", str(file_path))
+
+
+def _detect_residue_gaps(residues: List[Any]) -> List[Dict[str, int]]:
+    """Flags jumps in a chain's original author residue numbering (e.g.
+    ...,10,11,12,45,46,...) - the standard signature of a disordered/missing
+    region never resolved in the deposited structure. This has nothing to do
+    with clean_pdb()'s own renumbering (which starts every kept residue at 1
+    and would erase this signal) - it must run on the raw, as-deposited
+    residue IDs, before any cleaning happens."""
+    resseqs = sorted(r.get_id()[1] for r in residues)
+    gaps = []
+    for prev, curr in zip(resseqs, resseqs[1:]):
+        if curr - prev > 1:
+            gaps.append({"after": prev, "before": curr})
+    return gaps
+
+
 # Common non-standard residues clean_pdb() maps to their standard equivalent.
 _RESIDUE_NAME_MAPPING = {
     "HYP": "PRO",
@@ -525,29 +569,37 @@ class PDBManager:
 
     def _get_structure(self, file_path: Path) -> Any:
         """Hybrid parser for PDB and mmCIF formats."""
-        from Bio.PDB import MMCIFParser, PDBParser
-
-        if file_path.suffix.lower() == ".cif":
-            parser = MMCIFParser(QUIET=True)
-        else:
-            parser = PDBParser(QUIET=True)
-        return parser.get_structure("protein", str(file_path))
+        return parse_structure_file(file_path)
 
     def analyze_structure(self, pdb_file: Path) -> Dict:
         """
         Analyze structural file and return information.
         """
         structure = self._get_structure(pdb_file)
+        num_models = len(structure)
+
+        # Only model 0 - a multi-model (NMR ensemble) file previously had
+        # this loop walk every model, silently multiplying total_residues
+        # and duplicating each chain's entry once per model. Every other
+        # per-structure analysis (SASA, cleaning/alignment) already only
+        # ever looks at model 0 too - see is_nmr below, which surfaces the
+        # fact that models 2..N exist rather than silently ignoring them.
+        model = structure[0]
 
         chains = []
         total_residues = 0
 
-        for model in structure:
-            for chain in model:
-                chain_id = chain.id
-                residues = list(chain.get_residues())
-                chains.append({"id": chain_id, "residue_count": len(residues)})
-                total_residues += len(residues)
+        for chain in model:
+            chain_id = chain.id
+            residues = list(chain.get_residues())
+            chains.append(
+                {
+                    "id": chain_id,
+                    "residue_count": len(residues),
+                    "gaps": _detect_residue_gaps(residues),
+                }
+            )
+            total_residues += len(residues)
 
         file_size_mb = pdb_file.stat().st_size / (1024 * 1024)
 
@@ -555,7 +607,8 @@ class PDBManager:
             "file_size_mb": file_size_mb,
             "chains": chains,
             "total_residues": total_residues,
-            "num_models": len(structure),
+            "num_models": num_models,
+            "is_nmr": num_models > 1,
         }
 
     @staticmethod

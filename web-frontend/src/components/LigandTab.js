@@ -337,7 +337,7 @@ export class LigandTab {
             margin: { l: 90, r: 20, t: 10, b: 90 },
             paper_bgcolor: 'rgba(0,0,0,0)',
             plot_bgcolor: 'rgba(0,0,0,0)',
-            font: { family: "Segoe UI, sans-serif", size: 10, color: "#A79E8E" }
+            font: { family: "Inter, sans-serif", size: 10, color: "#A79E8E" }
         };
         Plotly.newPlot(heatmapDiv, [trace], layout, { responsive: true, displayModeBar: false });
     }

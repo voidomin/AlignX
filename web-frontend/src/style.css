@@ -1,20 +1,19 @@
 @import "tailwindcss";
 @config "../tailwind.config.js";
 
-body {
-    background-color: #100E0B;
-    color: #EDE7DC;
-}
+/* Every color below reads from tailwind.config.js via theme() rather than
+   repeating hex literals - one source of truth for the palette instead of
+   two copies that can silently drift (v3.0 had exactly that drift: this
+   file and tailwind.config.js each hand-duplicated the same values). */
 
-/* Flat card surface. */
-.card {
-    background-color: #171310;
-    border: 1px solid #2C2620;
+body {
+    background-color: theme(colors.bg);
+    color: theme(colors.primary);
 }
 
 .btn-primary {
-    background: #E2846A;
-    color: #100E0B;
+    background: theme(colors.accent);
+    color: theme(colors.bg);
     transition: background-color 0.15s ease;
 }
 
@@ -29,47 +28,60 @@ body {
 
 /* The one deliberate "brutalist" device in the whole system: a hard, non-blurred
    offset shadow instead of a soft box-shadow. Reserved for exactly one primary
-   action per screen (the Overview tab's Run Alignment button) — do not apply
-   this class anywhere else, or the "exactly one" rule stops meaning anything. */
+   action app-wide (the Overview tab's Run Alignment button) — do not apply
+   this class anywhere else, or the "exactly one" rule stops meaning anything.
+   (v4 fix: Discover's own Run button previously also used this class - see
+   DiscoverTab.js, now on plain .btn-primary instead.) */
 .btn-primary-hard {
-    background: #E2846A;
-    color: #100E0B;
-    border: 1.5px solid #100E0B;
-    box-shadow: 5px 5px 0 #35281F;
+    background: theme(colors.accent);
+    color: theme(colors.bg);
+    border: 1.5px solid theme(colors.bg);
+    box-shadow: 5px 5px 0 theme(colors.accent-muted);
     transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 
 .btn-primary-hard:hover {
     transform: translate(-2px, -2px);
-    box-shadow: 7px 7px 0 #35281F;
+    box-shadow: 7px 7px 0 theme(colors.accent-muted);
 }
 
 .btn-primary-hard:active {
     transform: translate(0, 0);
-    box-shadow: 2px 2px 0 #35281F;
+    box-shadow: 2px 2px 0 theme(colors.accent-muted);
 }
 
 .btn-secondary {
-    border: 1px solid #2C2620;
-    color: #EDE7DC;
+    border: 1px solid theme(colors.border);
+    color: theme(colors.primary);
     background: transparent;
     transition: background-color 0.15s ease;
 }
 
 .btn-secondary:hover {
-    background: #1E1813;
+    background: theme(colors.surface-raised);
 }
 
 .table-header {
-    background-color: #1E1813;
+    background-color: theme(colors.surface-raised);
 }
 
 /* Selection/highlight is a deliberate second semantic color (amber), distinct
    from the brand accent (coral) — used here and for selected residues in the
    3D viewer. Not a contradiction of the "one accent" rule. */
 .row-selected {
-    border: 1px solid #F59E0B;
-    background-color: rgba(245, 158, 11, 0.08);
+    border: 1px solid theme(colors.tertiary);
+    background-color: rgb(245 158 11 / 8%);
+}
+
+/* Two-tier elevation (v4): the persistent 3D viewer panel is the one element
+   that gets a soft lift (`shadow-panel`, tailwind.config.js) - everything
+   else (tab content, editorial-section blocks) stays flat/borderless. Keeps
+   exactly one "raised" surface in the whole shell, same spirit as the
+   exactly-one-hard-shadow-button rule above. */
+.panel-raised {
+    background-color: theme(colors.surface);
+    border: 1px solid theme(colors.border);
+    border-radius: theme(borderRadius.lg);
 }
 
 /* ---------------------------------------------------------------------
@@ -79,7 +91,7 @@ body {
    --------------------------------------------------------------------- */
 .editorial-section {
     padding: 56px 0;
-    border-bottom: 1px solid #221D18;
+    border-bottom: 1px solid theme(colors.border-subtle);
 }
 
 .editorial-section:first-child {
@@ -105,7 +117,7 @@ body {
     font-size: 11px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: #E2846A;
+    color: theme(colors.accent);
     font-weight: 600;
 }
 
@@ -114,13 +126,13 @@ body {
     font-weight: 400;
     font-size: 19px;
     letter-spacing: -0.01em;
-    color: #EDE7DC;
+    color: theme(colors.primary);
     margin: 6px 0 0;
 }
 
 .section-caption {
     font-size: 12.5px;
-    color: #857C6D;
+    color: theme(colors.secondary);
     line-height: 1.6;
     max-width: 34ch;
     text-align: right;
@@ -130,7 +142,7 @@ body {
    RMSD/identity/etc. stat readouts. First child gets the accent-colored rule
    to mark the primary number without adding a second color. */
 .stat-row {
-    border-top: 1.5px solid #2C2620;
+    border-top: 1.5px solid theme(colors.border);
     padding-top: 14px;
     display: flex;
     flex-direction: column;
@@ -138,14 +150,14 @@ body {
 }
 
 .stat-row.stat-primary {
-    border-top-color: #E2846A;
+    border-top-color: theme(colors.accent);
 }
 
 .stat-row .stat-key {
     font-size: 11px;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: #857C6D;
+    color: theme(colors.secondary);
 }
 
 .stat-row .stat-value {
@@ -153,10 +165,13 @@ body {
     font-size: 24px;
     font-weight: 500;
     letter-spacing: -0.01em;
-    color: #EDE7DC;
+    color: theme(colors.primary);
 }
 
-/* Custom scrollbar, warm-tinted to match the ground */
+/* Custom scrollbar, warm-tinted to match the ground. rgba() can't take a
+   theme() color directly (it needs comma-separated r,g,b, not a hex string),
+   so these stay as literal values - kept in sync with colors.primary
+   (#EDE7DC = rgb(237, 231, 220)) by convention, not by reference. */
 ::-webkit-scrollbar {
     width: 6px;
     height: 6px;

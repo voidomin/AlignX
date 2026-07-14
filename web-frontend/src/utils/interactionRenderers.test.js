@@ -7,6 +7,7 @@ describe('interactionRenderers', () => {
             ['Hydrogen Bond', 'bg-accent'],
             ['Salt Bridge', 'bg-success'],
             ['Van der Waals', 'bg-muted'],
+            ['Metal Coordination', 'bg-error'],
             ['Polar Contact', 'bg-secondary'],
             ['Something Unknown', 'bg-secondary'],
         ])('maps %s to %s', (type, expected) => {

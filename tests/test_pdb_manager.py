@@ -4,6 +4,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 import httpx
 import pytest
 from src.backend.pdb_manager import PDBManager
+from tests.conftest import MINIMAL_CIF_HEADER
 
 
 class TestPDBManager:
@@ -172,6 +173,62 @@ class TestPDBManager:
         assert info["num_models"] >= 1
         assert len(info["chains"]) == 1
         assert info["chains"][0]["id"] == "A"
+        assert info["is_nmr"] is False
+        assert info["chains"][0]["gaps"] == []
+
+    def test_analyze_structure_detects_residue_numbering_gaps(
+        self, mock_config, temp_workspace
+    ):
+        """A jump in author residue numbering (1, 2, then 10) is the
+        standard signature of a disordered/missing region never resolved
+        in the deposited structure - not something clean_pdb()'s own
+        renumbering can reveal, since it starts every kept residue at 1."""
+        manager = PDBManager(mock_config)
+        gapped_pdb = (
+            "ATOM      1  N   MET A   1      27.340  24.430   2.614  1.00  9.67           N  \n"
+            "ATOM      2  CA  MET A   1      26.266  25.413   2.842  1.00 10.38           C  \n"
+            "ATOM      3  N   ALA A   2      28.340  24.430   2.614  1.00  9.67           N  \n"
+            "ATOM      4  CA  ALA A   2      27.266  25.413   2.842  1.00 10.38           C  \n"
+            "ATOM      5  N   GLY A  10      29.340  24.430   2.614  1.00  9.67           N  \n"
+            "ATOM      6  CA  GLY A  10      28.266  25.413   2.842  1.00 10.38           C  \n"
+            "TER\n"
+        )
+        p = temp_workspace["raw"] / "gapped.pdb"
+        p.write_text(gapped_pdb)
+
+        info = manager.analyze_structure(p)
+
+        assert info["chains"][0]["gaps"] == [{"after": 2, "before": 10}]
+
+    def test_analyze_structure_detects_nmr_ensemble_and_only_analyzes_model_1(
+        self, mock_config, temp_workspace
+    ):
+        """A multi-MODEL file is a real NMR ensemble - is_nmr/num_models
+        must surface that rather than silently only reflecting model 1,
+        but total_residues/chains must still only reflect model 1 (not
+        every model's residues summed/duplicated together)."""
+        manager = PDBManager(mock_config)
+        nmr_pdb = (
+            "MODEL        1\n"
+            "ATOM      1  N   MET A   1      27.340  24.430   2.614  1.00  9.67           N  \n"
+            "ATOM      2  CA  MET A   1      26.266  25.413   2.842  1.00 10.38           C  \n"
+            "TER\n"
+            "ENDMDL\n"
+            "MODEL        2\n"
+            "ATOM      1  N   MET A   1      27.500  24.500   2.700  1.00  9.67           N  \n"
+            "ATOM      2  CA  MET A   1      26.400  25.500   2.900  1.00 10.38           C  \n"
+            "TER\n"
+            "ENDMDL\n"
+        )
+        p = temp_workspace["raw"] / "nmr.pdb"
+        p.write_text(nmr_pdb)
+
+        info = manager.analyze_structure(p)
+
+        assert info["num_models"] == 2
+        assert info["is_nmr"] is True
+        assert info["total_residues"] == 1
+        assert len(info["chains"]) == 1
 
     def test_analyze_structure_uses_mmcif_parser_for_cif_files(
         self, mock_config, temp_workspace
@@ -181,28 +238,7 @@ class TestPDBManager:
         can't read mmCIF's field-tag format at all."""
         manager = PDBManager(mock_config)
 
-        cif_content = (
-            "data_test\n"
-            "loop_\n"
-            "_atom_site.group_PDB\n"
-            "_atom_site.id\n"
-            "_atom_site.type_symbol\n"
-            "_atom_site.label_atom_id\n"
-            "_atom_site.label_alt_id\n"
-            "_atom_site.label_comp_id\n"
-            "_atom_site.label_asym_id\n"
-            "_atom_site.label_entity_id\n"
-            "_atom_site.label_seq_id\n"
-            "_atom_site.pdbx_PDB_ins_code\n"
-            "_atom_site.Cartn_x\n"
-            "_atom_site.Cartn_y\n"
-            "_atom_site.Cartn_z\n"
-            "_atom_site.occupancy\n"
-            "_atom_site.B_iso_or_equiv\n"
-            "_atom_site.pdbx_formal_charge\n"
-            "_atom_site.auth_seq_id\n"
-            "_atom_site.auth_asym_id\n"
-            "_atom_site.pdbx_PDB_model_num\n"
+        cif_content = MINIMAL_CIF_HEADER + (
             "ATOM 1 N N . ALA A 1 1 ? 11.104 13.203 7.334 1.00 20.00 ? 1 A 1\n"
             "ATOM 2 C CA . ALA A 1 1 ? 12.104 14.203 8.334 1.00 20.00 ? 1 A 1\n"
         )

@@ -1,5 +1,4 @@
 import logging
-import warnings
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
@@ -7,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from src.backend.interaction_geometry import classify_contact
+from src.backend.pdb_manager import parse_structure_file
 from src.utils.logger import sanitize_for_log
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,16 @@ class LigandAnalyzer:
             config: Optional configuration dictionary
         """
         self.config = config or {}
-        # Common ions and solvents to ignore by default
+        # Water, crystallization buffer/cryoprotectant components, and
+        # non-catalytic monatomic ions - none of these are ever biologically
+        # meaningful ligands, so they're excluded outright. Catalytic/
+        # structural metal cofactors (MG, CA, ZN, MN, FE, CU, NI, CO, CD, MO)
+        # are deliberately NOT in this set (v3.87.0 fix) - a zinc-finger's
+        # Zn, a kinase's Mg, or a heme's Fe is exactly the kind of ligand a
+        # structural biologist would want interaction analysis for, so they
+        # now pass through as real ligands instead of being silently dropped
+        # alongside solvent noise. classify_contact() (interaction_geometry.py)
+        # gives them their own "Metal Coordination" contact type.
         self.ignored_residues = {
             "HOH",
             "WAT",
@@ -34,17 +43,13 @@ class LigandAnalyzer:
             "SOL",  # Water
             "NA",
             "CL",
-            "K",
-            "MG",
-            "CA",
-            "ZN",
-            "MN",
-            "FE",  # Common Ions
+            "K",  # Non-catalytic monatomic ions
             "SO4",
             "PO4",
             "ACT",
             "EDO",
-            "GOL",  # Common crystallization additives
+            "GOL",
+            "DMS",  # Common crystallization additives
         }
 
     def get_ligands(self, pdb_file: Path) -> List[Dict[str, Any]]:
@@ -62,22 +67,20 @@ class LigandAnalyzer:
             logger.error(f"PDB file not found: {pdb_file}")
             return []
 
-        from Bio.PDB import PDBParser
-        from Bio.PDB.PDBExceptions import PDBConstructionWarning
-
-        parser = PDBParser(QUIET=True)
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", PDBConstructionWarning)
-                structure = parser.get_structure("struct", str(pdb_file))
+            structure = parse_structure_file(pdb_file)
         except Exception:
             logger.exception(f"Failed to parse {pdb_file}")
             return []
 
+        # Model 0 only - a multi-model (NMR ensemble) file would otherwise
+        # return the same ligand once per model (duplicated N times), which
+        # doesn't match calculate_sasa()/_pocket_sasa() below, both of which
+        # already only ever look at structure[0]. See PDBManager.analyze_
+        # structure()'s is_nmr flag for surfacing that an ensemble exists.
         ligands = [
             ligand_info
-            for model in structure
-            for chain in model
+            for chain in structure[0]
             for ligand_info in (
                 self._ligand_info_from_residue(residue, chain) for residue in chain
             )
@@ -127,14 +130,10 @@ class LigandAnalyzer:
         Returns:
             Dictionary with interaction details
         """
-        from Bio.PDB import PDBParser, NeighborSearch
-        from Bio.PDB.PDBExceptions import PDBConstructionWarning
+        from Bio.PDB import NeighborSearch
 
-        parser = PDBParser(QUIET=True)
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", PDBConstructionWarning)
-                structure = parser.get_structure("struct", str(pdb_file))
+            structure = parse_structure_file(Path(pdb_file))
         except Exception as e:
             return {"error": str(e)}
 
@@ -198,23 +197,25 @@ class LigandAnalyzer:
         """Locates the target ligand residue and separates the rest of the
         structure's standard-residue atoms into a NeighborSearch candidate
         pool (excludes solvent/ions, id[0] != " ", from being "interacting
-        partners")."""
+        partners"). Model 0 only, consistent with get_ligands()/
+        calculate_sasa() - a multi-model NMR file would otherwise pool
+        atoms from every model into one neighbor search, mixing conformers
+        together instead of analyzing a single consistent one."""
         target_ligand = None
         target_atoms = []
         search_atoms = []
-        for model in structure:
-            for chain in model:
-                for residue in chain:
-                    is_target = (
-                        chain.get_id() == l_chain
-                        and residue.get_id()[1] == l_resi
-                        and residue.get_resname().strip() == l_name
-                    )
-                    if is_target:
-                        target_ligand = residue
-                        target_atoms = list(residue.get_atoms())
-                    elif residue.get_id()[0] == " ":
-                        search_atoms.extend(residue.get_atoms())
+        for chain in structure[0]:
+            for residue in chain:
+                is_target = (
+                    chain.get_id() == l_chain
+                    and residue.get_id()[1] == l_resi
+                    and residue.get_resname().strip() == l_name
+                )
+                if is_target:
+                    target_ligand = residue
+                    target_atoms = list(residue.get_atoms())
+                elif residue.get_id()[0] == " ":
+                    search_atoms.extend(residue.get_atoms())
         return target_ligand, target_atoms, search_atoms
 
     @staticmethod
@@ -246,17 +247,12 @@ class LigandAnalyzer:
         Returns:
             Dictionary with total SASA, per-chain SASA, and per-residue breakdown.
         """
-        from Bio.PDB import PDBParser
-        from Bio.PDB.PDBExceptions import PDBConstructionWarning
         from Bio.PDB.SASA import ShrakeRupley
 
         pdb_file = Path(pdb_file)
-        parser = PDBParser(QUIET=True)
 
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", PDBConstructionWarning)
-                structure = parser.get_structure("struct", str(pdb_file))
+            structure = parse_structure_file(pdb_file)
         except Exception as e:
             logger.exception(f"SASA: Failed to parse {pdb_file}")
             return {"error": str(e)}
@@ -300,6 +296,133 @@ class LigandAnalyzer:
             "chain_sasa": chain_sasa,
             "residues": residue_data,
         }
+
+    # Real binding pockets are commonly hydrophobic/aromatic-enriched - a
+    # simple, defensible secondary signal for ranking candidate clusters,
+    # separate from HYDROPHOBIC_RESIDUES in interaction_geometry.py (that
+    # set serves a different purpose - H-bond/salt-bridge classification -
+    # and deliberately excludes aromatic-but-polar TYR).
+    _POCKET_LINING_RESIDUES = {
+        "ALA",
+        "VAL",
+        "LEU",
+        "ILE",
+        "MET",
+        "PHE",
+        "TRP",
+        "PRO",
+        "TYR",
+        "CYS",
+    }
+    _SURFACE_SASA_THRESHOLD = 15.0
+    _POCKET_CLUSTER_RADIUS = 10.0
+    _POCKET_SEQUENCE_GAP = 5
+    _MIN_CLUSTER_NEIGHBORS = 3
+
+    def find_candidate_pockets(
+        self, pdb_file: Path, top_n: int = 3
+    ) -> List[Dict[str, Any]]:
+        """Heuristic candidate binding-pocket finder for a ligand-free
+        structure (e.g. most AlphaFold/ESM Atlas Discover-mode queries,
+        which essentially never have a co-crystallized ligand). This is
+        NOT a validated geometric cavity detector (fpocket-equivalent) -
+        re-implementing that algorithm is out of scope here. Instead it
+        proxies "pocket-like" with two real, defensible signals: surface-
+        exposed residues (real per-residue SASA, reusing the same
+        ShrakeRupley computation as calculate_sasa()) that cluster
+        spatially with residues from a distant part of the sequence (the
+        standard signature of a fold packing together to form a concave
+        wall, not just an alpha helix's own adjacent turns), ranked by
+        cluster size plus hydrophobic/aromatic content (pockets are
+        commonly enriched in both). Every result is explicitly labeled
+        "heuristic": True - a computational prediction, not an
+        experimentally validated pocket.
+        """
+        from Bio.PDB import NeighborSearch
+        from Bio.PDB.SASA import ShrakeRupley
+
+        pdb_file = Path(pdb_file)
+        try:
+            structure = parse_structure_file(pdb_file)
+        except Exception:
+            logger.exception(f"Pocket detection: failed to parse {pdb_file}")
+            return []
+
+        model = structure[0]
+        ShrakeRupley().compute(model, level="R")
+
+        surface_residues = [
+            residue
+            for chain in model
+            for residue in chain
+            if residue.get_id()[0] == " "
+            and "CA" in residue
+            and (getattr(residue, "sasa", 0.0) or 0.0) >= self._SURFACE_SASA_THRESHOLD
+        ]
+        if not surface_residues:
+            return []
+
+        ns = NeighborSearch([r["CA"] for r in surface_residues])
+
+        candidates = []
+        for residue in surface_residues:
+            neighbors = ns.search(
+                residue["CA"].get_coord(), self._POCKET_CLUSTER_RADIUS, level="R"
+            )
+            distant_neighbors = [
+                n
+                for n in neighbors
+                if n is not residue
+                and n.get_parent().get_id() == residue.get_parent().get_id()
+                and abs(n.get_id()[1] - residue.get_id()[1]) > self._POCKET_SEQUENCE_GAP
+            ]
+            if len(distant_neighbors) < self._MIN_CLUSTER_NEIGHBORS:
+                continue
+
+            cluster = [residue] + distant_neighbors
+            hydrophobic_count = sum(
+                1
+                for r in cluster
+                if r.get_resname().strip() in self._POCKET_LINING_RESIDUES
+            )
+            score = len(distant_neighbors) + hydrophobic_count
+            center = np.mean([r["CA"].get_coord() for r in cluster], axis=0).tolist()
+            candidates.append({"residues": cluster, "score": score, "center": center})
+
+        # Greedily keep the highest-scoring clusters that don't share a
+        # residue with an already-selected one, so top_n candidates read as
+        # distinct pockets rather than N near-duplicates of the same site.
+        candidates.sort(key=lambda c: c["score"], reverse=True)
+        selected = []
+        used = set()
+        for candidate in candidates:
+            keys = {
+                (r.get_parent().get_id(), r.get_id()[1]) for r in candidate["residues"]
+            }
+            if keys & used:
+                continue
+            used |= keys
+            selected.append(candidate)
+            if len(selected) >= top_n:
+                break
+
+        return [
+            {
+                "rank": i + 1,
+                "residues": [
+                    {
+                        "chain": r.get_parent().get_id(),
+                        "resi": r.get_id()[1],
+                        "resn": r.get_resname().strip(),
+                    }
+                    for r in c["residues"]
+                ],
+                "center": c["center"],
+                "score": round(c["score"], 2),
+                "heuristic": True,
+            }
+            for i, c in enumerate(selected)
+        ]
 
     def calculate_interaction_similarity(
         self, all_interactions: List[Dict[str, Any]]

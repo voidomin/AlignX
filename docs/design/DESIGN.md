@@ -1,5 +1,5 @@
 ---
-version: "3.0"
+version: "4.0"
 theme: "Editorial Instrument"
 colors:
   bg: "#100E0B"
@@ -18,7 +18,7 @@ colors:
   warning: "#F59E0B"
 typography:
   font_heading: "Georgia, 'Iowan Old Style', 'Times New Roman', serif"
-  font_body: "Segoe UI, -apple-system, sans-serif"
+  font_body: "Inter, -apple-system, sans-serif"
   font_data: "ui-monospace, 'SF Mono', Consolas, monospace"
   size_base: "16px"
 ---
@@ -44,6 +44,8 @@ Everything else stays quiet: flat surfaces, one accent color, no gradients, no b
 > **N-structure chain palette** (`Viewer3D.js`): the viewer superimposes any number of input structures, not just two, so chain-identity color is a 6-color qualitative cycle — `#8B5CF6` (violet), `#06B6D4` (cyan), `#EC4899` (pink), `#A3E635` (lime), `#FB923C` (orange), `#2DD4BF` (teal) — assigned in input order and cycling by index modulo 6 beyond 6 structures. This palette deliberately avoids amber `#F59E0B` (reserved for the residue-selection highlight, `.row-selected`) and the coral brand accent (reserved for UI chrome), so the three semantic uses of color — chain identity, selection highlight, brand accent — never collide.
 >
 > **Conservation palette** (`SequenceTab.js`'s sequence alignment grid): per-residue background colors (`#ff4757` fully conserved, `#ffa502` high similarity, `#2f3542` gap, white glyph text) encode conservation degree, not brand or chain identity — a fourth intentional exception alongside the two above. Don't fold these into the semantic token set; the traffic-light meaning is the point.
+>
+> **v4 fixes** (this revision): v3.0 accumulated real drift between this doc and the code, corrected here rather than left to compound further. A second, undocumented off-palette gray (`#857C6D`) had crept into `.section-caption`/`.stat-key` in `style.css` — replaced with the actual `secondary` token, which was already the documented color for exactly that role. Montserrat (a v2.0 leftover) was still being loaded from `index.html` with zero active use — removed. `sidebar-width` (a spacing token for the sidebar v3.0 itself deleted) was still sitting in `tailwind.config.js` — removed. Two `.btn-primary-hard` instances existed (Overview's Run Alignment *and* Discover's Run button) against this doc's own "exactly one app-wide" rule — Discover's is now plain `.btn-primary`. `style.css`'s color values are now sourced from `tailwind.config.js` via Tailwind's `theme()` function instead of being hand-duplicated as a second copy of the same hex literals, so this class of drift can't recur silently.
 
 ---
 
@@ -79,8 +81,8 @@ Everything else stays quiet: flat surfaces, one accent color, no gradients, no b
 
 ## 📐 Layout — no sidebar, persistent viewer, sectioned tab content
 
-- **Shell**: a single sticky top bar (`TopBar.js`) containing the brand, the 7 tab pills (6 analysis tabs + History), workspace actions (New Workspace, Export), and a slim system-status strip (engine health + RAM + Free RAM). There is **no persistent left sidebar** — that was v2.0's structure; v2.0's nav links, reset button, and health strip all now live in the top bar.
-- **Below the top bar**: two columns. Left = the active tab's content (scrollable). Right = the 3D structure viewer, **persistent across all 7 tabs** (rendered once, never re-rendered by tab switching) — this is what lets you switch to Ligands and watch a binding site highlight live in 3D without losing the model.
+- **Shell**: a single sticky top bar (`TopBar.js`) containing the brand, 10 tab pills (Dashboard, Overview, Discover, Ligands, Sequence, Analytics, Clusters, Compare, History, Settings — grown from the original 7 as Discover mode and Settings/Dashboard shipped), workspace actions (New Workspace, Export), and a slim system-status strip (engine health + RAM + Free RAM). There is **no persistent left sidebar** — that was v2.0's structure; v2.0's nav links, reset button, and health strip all now live in the top bar.
+- **Below the top bar**: two columns. Left = the active tab's content (scrollable). Right = the 3D structure viewer, **persistent across all tabs** (rendered once, never re-rendered by tab switching) — this is what lets you switch to Ligands and watch a binding site highlight live in 3D without losing the model. It's the one `.panel-raised` surface in the shell (`shadow-panel`, `tailwind.config.js`) - a deliberate soft lift so it reads as a distinct instrument rather than just another column, the same "exactly one" restraint the hard-shadow button rule uses for buttons.
 - **History is a tab**, not an overlay panel. Clicking a past run reloads it and switches to the Sequence tab, same as before.
 - **Base Grid Unit**: `8px`, enforced concretely:
   - `gap-2` (8px) — within a tight cluster (chip groups)
@@ -92,7 +94,7 @@ Everything else stays quiet: flat surfaces, one accent color, no gradients, no b
 ## 📦 Component Styling
 
 ### 1. The section pattern (replaces "cards" as the primary content wrapper)
-Every tab body's outermost element is `.editorial-section`, not a boxed `.card`:
+Every tab body's outermost element is `.editorial-section`, not a boxed card:
 ```html
 <section class="editorial-section">
   <header class="section-head">
@@ -105,7 +107,7 @@ Every tab body's outermost element is `.editorial-section`, not a boxed `.card`:
   <div class="section-body"> ... </div>
 </section>
 ```
-`.card` still exists (`web-frontend/src/style.css`) and is used for the 3D viewer panel and truly boxed sub-elements, but it is no longer the default wrapper for tab content.
+`.panel-raised` (`web-frontend/src/style.css`, v4) is used for the 3D viewer panel - the one deliberately "raised" surface in the shell (paired with `shadow-panel`, `tailwind.config.js`) - but it is not the default wrapper for tab content. (v3.0's `.card` class filled this role; v4 removed it as dead code once the viewer panel became its only real user, replacing it with the more specific `.panel-raised` + `shadow-panel` pairing described in Layout above.)
 
 ### 2. Stat readouts — top-rule rows, not boxed cards
 Numbers (RMSD, identity, aligned length, etc.) use `.stat-row`: a top hairline + label + monospace value, not a bordered box. The primary/most-important stat in a group gets `.stat-primary`, which colors its top rule accent instead of the whole box — this marks it without adding a second color.
@@ -132,6 +134,25 @@ Unchanged from v2.0: icons are load-bearing (kept) only when they're the sole af
 
 ---
 
-## 🧩 Component Inventory (post-v3.0)
+## 🧩 Component Inventory (current, v4)
 
-`TopBar.js` replaces `TopNav.js` + `Sidebar.js` + `TabPanel.js` (all three deleted). It owns: brand, the 7-tab nav strip, New Workspace, Export, and the system-status strip. `Viewer3D.js`, `HistoryPanel.js`, and the six tab-body components (`OverviewTab`, `LigandTab`, `SequenceTab`, `AnalyticsTab`, `ClustersTab`, `ComparisonTab`) are unchanged in file identity, restyled internally to the section pattern. `main.js` owns the two-column shell and renders `Viewer3D` exactly once, outside the tab-switching logic, so it survives every tab change including History.
+`TopBar.js` replaces `TopNav.js` + `Sidebar.js` + `TabPanel.js` (all three deleted, v3.0). It owns: brand, the tab nav strip, New Workspace, Export, and the system-status strip. `main.js` owns the two-column shell and renders `Viewer3D` exactly once, outside the tab-switching logic, so it survives every tab change including History.
+
+All 10 tab-body components follow the section pattern (`.editorial-section` wrapper, not a boxed card):
+
+| Component | Tab |
+|---|---|
+| `DashboardTab.js` | Dashboard |
+| `OverviewTab.js` | Overview (the Compare-mode alignment workspace) |
+| `DiscoverTab.js` | Discover |
+| `LigandTab.js` | Ligands |
+| `SequenceTab.js` | Sequence |
+| `AnalyticsTab.js` | Analytics |
+| `ClustersTab.js` | Clusters |
+| `ComparisonTab.js` | Compare (past-run diffing - see note below) |
+| `HistoryPanel.js` | History |
+| `SettingsTab.js` | Settings |
+
+`Viewer3D.js` is separate from the tab-body list above - it's the persistent right-hand panel, not a tab.
+
+**Naming note**: the nav tab labeled "Compare" (`ComparisonTab.js`) diffs the current run against a past one - it is *not* the same thing as the Overview tab's multi-structure alignment workflow, which some docs (`GETTING_STARTED.md`) informally call a "Compare run." This is a known point of confusion being addressed as part of the broader v4 flow work, not a documentation error to fix in isolation.
