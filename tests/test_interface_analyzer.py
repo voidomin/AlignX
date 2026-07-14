@@ -1,6 +1,7 @@
 import pytest
 
 from src.backend.interface_analyzer import InterfaceAnalyzer
+from tests.conftest import MINIMAL_CIF_HEADER
 
 
 def _atom_line(serial, name, resname, chain, resi, x, y, z):
@@ -72,6 +73,27 @@ class TestCalculateInterface:
         result = analyzer.calculate_interface(fixture_pdb, "A", "B", cutoff=5.0)
 
         assert isinstance(result["buried_area"], float)
+
+    def test_parses_a_real_cif_file_without_crashing(self, tmp_path):
+        # Regression: calculate_interface() used to hardcode Bio.PDB.
+        # PDBParser regardless of file extension, which throws
+        # KeyError: 0 on structure[0] for a real AlphaFold-sourced .cif
+        # file (PDBParser can't parse mmCIF syntax at all) - broke
+        # interface analysis for every AlphaFold structure.
+        cif_text = MINIMAL_CIF_HEADER + (
+            "ATOM 1 N N . ALA A 1 1 ? 0.000 1.000 0.000 1.00 20.00 ? 1 A 1\n"
+            "ATOM 2 C CA . ALA A 1 1 ? 0.000 0.000 0.000 1.00 20.00 ? 1 A 1\n"
+            "ATOM 3 N N . ASP B 1 1 ? 3.000 0.000 0.000 1.00 20.00 ? 1 B 1\n"
+            "ATOM 4 C CA . ASP B 1 1 ? 4.000 0.000 0.000 1.00 20.00 ? 1 B 1\n"
+        )
+        cif_file = tmp_path / "af-test-f1.cif"
+        cif_file.write_text(cif_text)
+        analyzer = InterfaceAnalyzer()
+
+        result = analyzer.calculate_interface(cif_file, "A", "B", cutoff=10.0)
+
+        assert result["chain_a"] == "A"
+        assert "error" not in result
         assert result["buried_area"] > 0
 
     def test_same_chain_twice_reports_error(self, fixture_pdb):

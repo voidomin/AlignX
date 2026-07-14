@@ -387,6 +387,72 @@ class TestFetchInterproEntries:
         assert first == second
         assert mock_get.call_count == 1  # second call served entirely from cache
 
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_extracts_residue_locations_from_entry_protein_locations(
+        self, mock_get
+    ):
+        """Real shape confirmed via a live call to InterPro's own API
+        (entry.proteins[].entry_protein_locations[].fragments[].start/end),
+        not just assumed from documentation."""
+        mock_get.return_value = _mock_response(
+            json_data={
+                "results": [
+                    {
+                        "metadata": {
+                            "accession": "IPR000971",
+                            "name": "Globin",
+                            "type": "domain",
+                            "go_terms": [],
+                        },
+                        "proteins": [
+                            {
+                                "accession": "p69905",
+                                "entry_protein_locations": [
+                                    {
+                                        "fragments": [
+                                            {
+                                                "start": 2,
+                                                "end": 142,
+                                                "dc-status": "CONTINUOUS",
+                                            }
+                                        ]
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            entries = await aggregator.fetch_interpro_entries("P69905", client)
+
+        assert entries[0]["locations"] == [{"start": 2, "end": 142}]
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_missing_proteins_key_yields_empty_locations(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "results": [
+                    {
+                        "metadata": {
+                            "accession": "IPR000971",
+                            "name": "Globin",
+                            "type": "domain",
+                        }
+                    }
+                ]
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            entries = await aggregator.fetch_interpro_entries("P69905", client)
+
+        assert entries[0]["locations"] == []
+
 
 class TestFetchQuickgoAnnotations:
 
@@ -1085,6 +1151,58 @@ class TestAggregateForStructure:
         assert result["domains"][0]["name"] == "Globin"
         assert result["go_terms"][0]["name"] == "oxygen carrier activity"
         assert result["reactome_pathways"][0]["name"] == "Erythrocytes take up oxygen"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "pdb_id,source,expected_highlight_chains",
+        [
+            # AlphaFold models are numbered 1..N matching their UniProt
+            # sequence exactly, by construction - so InterPro's UniProt-
+            # numbered domain locations are usable directly as this
+            # structure's own residue numbers.
+            ("AF-P69905-F1", "alphafold", {"A": [2, 3, 4, 5]}),
+            # A real PDB entry's author residue numbering commonly differs
+            # from UniProt numbering (constructs, tags, non-1-start
+            # numbering) - without real SIFTS segment-mapping (out of scope
+            # here), using InterPro's UniProt-numbered locations directly
+            # would silently highlight the wrong residues, so this must
+            # stay None for non-AlphaFold sources.
+            ("4HHB", "pdb", None),
+        ],
+    )
+    async def test_highlight_chains_only_populated_for_alphafold_structures(
+        self, pdb_id, source, expected_highlight_chains
+    ):
+        aggregator = AnnotationAggregator()
+        with patch.object(
+            aggregator, "_resolve_structure_accession", AsyncMock(return_value="P69905")
+        ), patch.object(
+            aggregator,
+            "fetch_interpro_entries",
+            AsyncMock(
+                return_value=[
+                    {
+                        "accession": "IPR000971",
+                        "name": "Globin",
+                        "type": "domain",
+                        "go_terms": [],
+                        "locations": [{"start": 2, "end": 5}],
+                    }
+                ]
+            ),
+        ), patch.object(
+            aggregator, "fetch_quickgo_annotations", AsyncMock(return_value=[])
+        ), patch.object(
+            aggregator, "fetch_reactome_pathways", AsyncMock(return_value=[])
+        ), patch.object(
+            aggregator, "resolve_go_term_names", AsyncMock(return_value={})
+        ):
+            async with httpx.AsyncClient() as client:
+                result = await aggregator.aggregate_for_structure(
+                    pdb_id, "A", source, client
+                )
+
+        assert result["domains"][0]["highlight_chains"] == expected_highlight_chains
 
     @pytest.mark.asyncio
     async def test_pdb_id_and_chain_pass_through_to_the_result(self):

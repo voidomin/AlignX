@@ -83,7 +83,9 @@ class App {
         this.sequenceTab = new SequenceTab({
             onHighlightResidues: (chainMapping) => this.viewer3D.highlightResidues(chainMapping)
         });
-        this.analyticsTab = new AnalyticsTab();
+        this.analyticsTab = new AnalyticsTab({
+            onHighlightResidues: (chainMapping) => this.viewer3D.highlightResidues(chainMapping)
+        });
         this.clustersTab = new ClustersTab();
         this.comparisonTab = new ComparisonTab();
 
@@ -97,7 +99,9 @@ class App {
         });
 
         this.discoverTab = new DiscoverTab({
-            onStructureLoaded: (pdbId) => this.viewer3D.loadSingleStructure(pdbId)
+            onStructureLoaded: (pdbId) => this.viewer3D.loadSingleStructure(pdbId),
+            onSwitchToOverview: () => this.switchTab('overview'),
+            onHighlightResidues: (chainMapping) => this.viewer3D.highlightResidues(chainMapping)
         });
         this.settingsTab = new SettingsTab();
     }

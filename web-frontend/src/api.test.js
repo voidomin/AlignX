@@ -351,6 +351,25 @@ describe('api.js request-ID validation', () => {
         expect(global.fetch).not.toHaveBeenCalled();
     });
 
+    it('fetchPockets rejects a pdbId that is not a recognized structure ID format', async () => {
+        const { fetchPockets } = await import('./api.js');
+        await expect(fetchPockets('../evil')).rejects.toThrow('Invalid pdbId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchPockets works with no runId', async () => {
+        mockFetchOnce({ pockets: [] });
+        const { fetchPockets } = await import('./api.js');
+        await expect(fetchPockets('4RLT')).resolves.toBeDefined();
+        expect(global.fetch.mock.calls[0][0]).not.toContain('run_id');
+    });
+
+    it('fetchPockets still rejects a malformed runId when one is actually given', async () => {
+        const { fetchPockets } = await import('./api.js');
+        await expect(fetchPockets('4RLT', '../evil')).rejects.toThrow('Invalid runId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
     it('fetchInteractions works with no runId', async () => {
         mockFetchOnce({ interactions: { interactions: [] } });
         const { fetchInteractions } = await import('./api.js');

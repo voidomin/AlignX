@@ -55,6 +55,10 @@ for how to actually use each one.
 | 22 | Multi-user session isolation | Both | [§5.2](#52-session-isolation) |
 | 23 | API key access control | SPA | [§6.1](#61-api-key-access-control) |
 | 24 | Per-client job rate limiting | SPA | [§6.2](#62-rate-limiting) |
+| 25 | Metal cofactor ligand recognition + Metal Coordination classification | Both | [§2.6](#26-ligand-hunter) |
+| 26 | Heuristic candidate binding-pocket finder (no bound ligand needed) | Both | [§2.6](#26-ligand-hunter) |
+| 27 | AlphaFold domain "Highlight in 3D" | SPA | [§2.12](#212-functional-annotation) |
+| 28 | NMR ensemble / disordered-region metadata badges | SPA | [§1](#1-structure-input) |
 
 ---
 
@@ -75,6 +79,13 @@ resolution, organism) directly in the workspace list, so it's clear what you're
 about to analyze and how much confidence to place in it. After adding a structure,
 pick which chain to use if it has more than one — StructScope lists every chain
 with its residue count so you're not guessing.
+
+Two extra warning badges appear when relevant: an **"NMR · N models"** badge for
+a multi-model NMR ensemble (every analysis only ever looks at model 1 - the
+badge makes that explicit instead of silently doing it with no indication),
+and a **"N disordered regions"** badge when the deposited structure has gaps
+in its own residue numbering (a region never resolved in the crystal
+structure) — hover either for the specifics.
 
 *(SPA only for now — Streamlit currently only accepts plain RCSB PDB IDs.)*
 
@@ -153,16 +164,29 @@ Switch the structure picker to refresh the ligand list and interaction view for
 a different member of the run.
 
 Each contact residue is classified by real geometry — **Hydrogen Bond**,
-**Salt Bridge**, **Van der Waals**, or **Polar Contact** — based on
-donor/acceptor/charged-atom proximity (a heavy-atom-only heuristic, since PDB
-files carry no hydrogens; this doesn't attempt pi-stacking or metal
-coordination, both of which need chemistry data a PDB file doesn't provide).
+**Salt Bridge**, **Van der Waals**, **Polar Contact**, or **Metal
+Coordination** — based on donor/acceptor/charged-atom proximity (a
+heavy-atom-only heuristic, since PDB files carry no hydrogens; this doesn't
+attempt pi-stacking, which needs bond-order/aromaticity data a PDB file
+doesn't provide). Catalytic/structural metal cofactors (Zn, Mg, Ca, Mn, Fe,
+Cu, Ni, Co, Cd, Mo — e.g. a zinc-finger's Zn or a kinase's Mg) are recognized
+as real ligands, not filtered out as generic ionic noise, and get their own
+Metal Coordination classification at real coordination-bond distances.
 
 When a run has two or more detected ligands, an interactive **binding-pocket
 similarity matrix** (Jaccard index of pocket-residue composition) shows how
 alike each ligand's chemical environment is to every other one in the run —
 useful for spotting a conserved active site (or a surprisingly divergent one)
 across otherwise-similar structures.
+
+**No bound ligand?** A heuristic **candidate binding-pocket finder** looks for
+surface-exposed residues that spatially cluster with residues from a distant
+part of the sequence (the standard signature of a fold packing together to
+form a concave pocket wall), ranked by cluster size and hydrophobic/aromatic
+content. Every result is explicitly labeled a computational prediction, not a
+validated pocket (unlike a real geometric cavity detector such as fpocket,
+which this doesn't attempt to replicate) — useful for AlphaFold/ESM Atlas
+structures, which essentially never come with a co-crystallized ligand.
 
 ### 2.7 Phylogenetic Tree
 
@@ -224,6 +248,17 @@ summary lists exactly which domains/terms every one of them has in common —
 useful for confirming a shared function isn't just a shared fold. STRING
 interaction partners are not included (no source for the taxon ID this needs,
 unlike Discover mode which gets one free from each Foldseek hit).
+
+For an **AlphaFold-sourced structure**, each domain also gets a **"Highlight
+in 3D"** button that jumps straight to that domain's real residue range in
+the 3D viewer — safe here specifically because AlphaFold models are numbered
+1..N to exactly match their source UniProt sequence, so InterPro's
+UniProt-numbered domain positions are usable directly as real structure
+residue numbers. This deliberately isn't offered for a plain PDB entry (author
+numbering commonly differs from UniProt numbering and would need real SIFTS
+segment-mapping to translate correctly) or for Discover mode's neighbor-
+aggregated domains (a domain's position in a structurally similar neighbor
+protein says nothing about where it'd fall in the query's own numbering).
 
 ---
 
@@ -300,8 +335,15 @@ structure with no Foldseek hits at all.
 If your searched structure has a bound ligand, a "Ligands & Binding Sites"
 section lists it and shows the same real interaction-geometry classification
 Compare mode's Ligand Hunter uses (Hydrogen Bond / Salt Bridge / Van der Waals /
-Polar Contact per contact residue) — so a single unaligned structure gets real
-binding-site analysis without needing a second structure to compare against.
+Polar Contact / Metal Coordination per contact residue) — so a single
+unaligned structure gets real binding-site analysis without needing a second
+structure to compare against.
+
+If it has **no** bound ligand — the common case for AlphaFold/ESM Atlas
+predictions, which essentially never come with one — this section instead
+offers the same heuristic candidate binding-pocket finder described in
+§2.6, clearly labeled as a computational prediction rather than a validated
+result, each with a "Highlight in 3D" button.
 
 ---
 
