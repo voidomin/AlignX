@@ -1,5 +1,4 @@
 import logging
-import warnings
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
@@ -68,12 +67,8 @@ class LigandAnalyzer:
             logger.error(f"PDB file not found: {pdb_file}")
             return []
 
-        from Bio.PDB.PDBExceptions import PDBConstructionWarning
-
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", PDBConstructionWarning)
-                structure = parse_structure_file(pdb_file)
+            structure = parse_structure_file(pdb_file)
         except Exception:
             logger.exception(f"Failed to parse {pdb_file}")
             return []
@@ -136,12 +131,9 @@ class LigandAnalyzer:
             Dictionary with interaction details
         """
         from Bio.PDB import NeighborSearch
-        from Bio.PDB.PDBExceptions import PDBConstructionWarning
 
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", PDBConstructionWarning)
-                structure = parse_structure_file(Path(pdb_file))
+            structure = parse_structure_file(Path(pdb_file))
         except Exception as e:
             return {"error": str(e)}
 
@@ -255,15 +247,12 @@ class LigandAnalyzer:
         Returns:
             Dictionary with total SASA, per-chain SASA, and per-residue breakdown.
         """
-        from Bio.PDB.PDBExceptions import PDBConstructionWarning
         from Bio.PDB.SASA import ShrakeRupley
 
         pdb_file = Path(pdb_file)
 
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", PDBConstructionWarning)
-                structure = parse_structure_file(pdb_file)
+            structure = parse_structure_file(pdb_file)
         except Exception as e:
             logger.exception(f"SASA: Failed to parse {pdb_file}")
             return {"error": str(e)}
@@ -350,14 +339,11 @@ class LigandAnalyzer:
         experimentally validated pocket.
         """
         from Bio.PDB import NeighborSearch
-        from Bio.PDB.PDBExceptions import PDBConstructionWarning
         from Bio.PDB.SASA import ShrakeRupley
 
         pdb_file = Path(pdb_file)
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", PDBConstructionWarning)
-                structure = parse_structure_file(pdb_file)
+            structure = parse_structure_file(pdb_file)
         except Exception:
             logger.exception(f"Pocket detection: failed to parse {pdb_file}")
             return []

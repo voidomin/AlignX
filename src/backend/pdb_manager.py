@@ -40,14 +40,23 @@ def parse_structure_file(file_path: Path) -> Any:
     parse mmCIF syntax at all, so it silently produces zero models - a
     real bug that broke ligand/interaction/SASA/interface analysis for
     every AlphaFold-sourced structure, only caught by live end-to-end
-    testing since no test fixture anywhere used a real .cif file."""
+    testing since no test fixture anywhere used a real .cif file.
+
+    Also centralizes PDBConstructionWarning suppression (every caller used
+    to wrap its own near-identical warnings.catch_warnings() block around
+    this exact parse call) so callers only need their own try/except for
+    what to return on a genuine parse failure."""
+    import warnings
     from Bio.PDB import MMCIFParser, PDBParser
+    from Bio.PDB.PDBExceptions import PDBConstructionWarning
 
     if file_path.suffix.lower() == ".cif":
         parser = MMCIFParser(QUIET=True)
     else:
         parser = PDBParser(QUIET=True)
-    return parser.get_structure("protein", str(file_path))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", PDBConstructionWarning)
+        return parser.get_structure("protein", str(file_path))
 
 
 def _detect_residue_gaps(residues: List[Any]) -> List[Dict[str, int]]:

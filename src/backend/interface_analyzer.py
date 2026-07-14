@@ -1,6 +1,5 @@
 import copy
 import logging
-import warnings
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -26,12 +25,9 @@ class InterfaceAnalyzer:
             return {"error": "chain_a and chain_b must be different chains"}
 
         from Bio.PDB import NeighborSearch
-        from Bio.PDB.PDBExceptions import PDBConstructionWarning
 
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", PDBConstructionWarning)
-                structure = parse_structure_file(Path(pdb_file))
+            structure = parse_structure_file(Path(pdb_file))
         except Exception as e:
             return {"error": str(e)}
 
