@@ -72,6 +72,48 @@ class TestCalculateInterface:
         result = analyzer.calculate_interface(fixture_pdb, "A", "B", cutoff=5.0)
 
         assert isinstance(result["buried_area"], float)
+
+    def test_parses_a_real_cif_file_without_crashing(self, tmp_path):
+        # Regression: calculate_interface() used to hardcode Bio.PDB.
+        # PDBParser regardless of file extension, which throws
+        # KeyError: 0 on structure[0] for a real AlphaFold-sourced .cif
+        # file (PDBParser can't parse mmCIF syntax at all) - broke
+        # interface analysis for every AlphaFold structure.
+        cif_text = (
+            "data_test\n"
+            "loop_\n"
+            "_atom_site.group_PDB\n"
+            "_atom_site.id\n"
+            "_atom_site.type_symbol\n"
+            "_atom_site.label_atom_id\n"
+            "_atom_site.label_alt_id\n"
+            "_atom_site.label_comp_id\n"
+            "_atom_site.label_asym_id\n"
+            "_atom_site.label_entity_id\n"
+            "_atom_site.label_seq_id\n"
+            "_atom_site.pdbx_PDB_ins_code\n"
+            "_atom_site.Cartn_x\n"
+            "_atom_site.Cartn_y\n"
+            "_atom_site.Cartn_z\n"
+            "_atom_site.occupancy\n"
+            "_atom_site.B_iso_or_equiv\n"
+            "_atom_site.pdbx_formal_charge\n"
+            "_atom_site.auth_seq_id\n"
+            "_atom_site.auth_asym_id\n"
+            "_atom_site.pdbx_PDB_model_num\n"
+            "ATOM 1 N N . ALA A 1 1 ? 0.000 1.000 0.000 1.00 20.00 ? 1 A 1\n"
+            "ATOM 2 C CA . ALA A 1 1 ? 0.000 0.000 0.000 1.00 20.00 ? 1 A 1\n"
+            "ATOM 3 N N . ASP B 1 1 ? 3.000 0.000 0.000 1.00 20.00 ? 1 B 1\n"
+            "ATOM 4 C CA . ASP B 1 1 ? 4.000 0.000 0.000 1.00 20.00 ? 1 B 1\n"
+        )
+        cif_file = tmp_path / "af-test-f1.cif"
+        cif_file.write_text(cif_text)
+        analyzer = InterfaceAnalyzer()
+
+        result = analyzer.calculate_interface(cif_file, "A", "B", cutoff=10.0)
+
+        assert result["chain_a"] == "A"
+        assert "error" not in result
         assert result["buried_area"] > 0
 
     def test_same_chain_twice_reports_error(self, fixture_pdb):

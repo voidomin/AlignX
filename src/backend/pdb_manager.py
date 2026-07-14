@@ -30,6 +30,26 @@ def _write_bytes(path: Path, content: bytes) -> None:
         f.write(content)
 
 
+def parse_structure_file(file_path: Path) -> Any:
+    """Hybrid parser for PDB and mmCIF formats, dispatched by file
+    extension - AlphaFold-sourced downloads are saved as .cif
+    (_resolve_output_file below), everything else as .pdb. Shared with
+    ligand_analyzer.py/interface_analyzer.py (v3.87.0 fix): both
+    previously hardcoded Bio.PDB.PDBParser unconditionally, which throws
+    KeyError: 0 on structure[0] for a real .cif file - PDBParser can't
+    parse mmCIF syntax at all, so it silently produces zero models - a
+    real bug that broke ligand/interaction/SASA/interface analysis for
+    every AlphaFold-sourced structure, only caught by live end-to-end
+    testing since no test fixture anywhere used a real .cif file."""
+    from Bio.PDB import MMCIFParser, PDBParser
+
+    if file_path.suffix.lower() == ".cif":
+        parser = MMCIFParser(QUIET=True)
+    else:
+        parser = PDBParser(QUIET=True)
+    return parser.get_structure("protein", str(file_path))
+
+
 def _detect_residue_gaps(residues: List[Any]) -> List[Dict[str, int]]:
     """Flags jumps in a chain's original author residue numbering (e.g.
     ...,10,11,12,45,46,...) - the standard signature of a disordered/missing
@@ -540,13 +560,7 @@ class PDBManager:
 
     def _get_structure(self, file_path: Path) -> Any:
         """Hybrid parser for PDB and mmCIF formats."""
-        from Bio.PDB import MMCIFParser, PDBParser
-
-        if file_path.suffix.lower() == ".cif":
-            parser = MMCIFParser(QUIET=True)
-        else:
-            parser = PDBParser(QUIET=True)
-        return parser.get_structure("protein", str(file_path))
+        return parse_structure_file(file_path)
 
     def analyze_structure(self, pdb_file: Path) -> Dict:
         """

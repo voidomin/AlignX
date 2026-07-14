@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from src.backend.interaction_geometry import classify_contact
+from src.backend.pdb_manager import parse_structure_file
 from src.utils.logger import sanitize_for_log
 
 logger = logging.getLogger(__name__)
@@ -67,14 +68,12 @@ class LigandAnalyzer:
             logger.error(f"PDB file not found: {pdb_file}")
             return []
 
-        from Bio.PDB import PDBParser
         from Bio.PDB.PDBExceptions import PDBConstructionWarning
 
-        parser = PDBParser(QUIET=True)
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", PDBConstructionWarning)
-                structure = parser.get_structure("struct", str(pdb_file))
+                structure = parse_structure_file(pdb_file)
         except Exception:
             logger.exception(f"Failed to parse {pdb_file}")
             return []
@@ -136,14 +135,13 @@ class LigandAnalyzer:
         Returns:
             Dictionary with interaction details
         """
-        from Bio.PDB import PDBParser, NeighborSearch
+        from Bio.PDB import NeighborSearch
         from Bio.PDB.PDBExceptions import PDBConstructionWarning
 
-        parser = PDBParser(QUIET=True)
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", PDBConstructionWarning)
-                structure = parser.get_structure("struct", str(pdb_file))
+                structure = parse_structure_file(Path(pdb_file))
         except Exception as e:
             return {"error": str(e)}
 
@@ -257,17 +255,15 @@ class LigandAnalyzer:
         Returns:
             Dictionary with total SASA, per-chain SASA, and per-residue breakdown.
         """
-        from Bio.PDB import PDBParser
         from Bio.PDB.PDBExceptions import PDBConstructionWarning
         from Bio.PDB.SASA import ShrakeRupley
 
         pdb_file = Path(pdb_file)
-        parser = PDBParser(QUIET=True)
 
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", PDBConstructionWarning)
-                structure = parser.get_structure("struct", str(pdb_file))
+                structure = parse_structure_file(pdb_file)
         except Exception as e:
             logger.exception(f"SASA: Failed to parse {pdb_file}")
             return {"error": str(e)}
@@ -353,16 +349,15 @@ class LigandAnalyzer:
         "heuristic": True - a computational prediction, not an
         experimentally validated pocket.
         """
-        from Bio.PDB import PDBParser, NeighborSearch
+        from Bio.PDB import NeighborSearch
         from Bio.PDB.PDBExceptions import PDBConstructionWarning
         from Bio.PDB.SASA import ShrakeRupley
 
         pdb_file = Path(pdb_file)
-        parser = PDBParser(QUIET=True)
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", PDBConstructionWarning)
-                structure = parser.get_structure("struct", str(pdb_file))
+                structure = parse_structure_file(pdb_file)
         except Exception:
             logger.exception(f"Pocket detection: failed to parse {pdb_file}")
             return []

@@ -1078,12 +1078,20 @@ def get_structure_file(
 def _find_structure_pdb_path(
     pdb_id: str, run_id: Optional[str], session_id: Optional[str]
 ) -> Optional[Path]:
-    """Locates a previously-downloaded structure's PDB file: first in the
+    """Locates a previously-downloaded structure's file: first in the
     session's raw-download folder, then (if a run_id is given) that run's
     own results folder, trying the id's as-given/lowercase/uppercase
-    filename in each. Shared by /api/ligands and /api/interactions, which
-    both need a structure's PDB file by id rather than by run."""
-    possible_names = [f"{pdb_id}.pdb", f"{pdb_id.lower()}.pdb", f"{pdb_id.upper()}.pdb"]
+    filename (both .pdb and .cif - PDBManager._resolve_output_file() saves
+    AlphaFold-sourced downloads as .cif, everything else as .pdb) in each.
+    Shared by /api/ligands, /api/interactions, /api/pockets, and
+    /api/structure-file - this previously only ever tried .pdb, silently
+    404ing for every AlphaFold-sourced structure regardless of which of
+    those endpoints was called."""
+    possible_names = [
+        f"{base}{ext}"
+        for base in (pdb_id, pdb_id.lower(), pdb_id.upper())
+        for ext in (".pdb", ".cif")
+    ]
 
     raw_dir = project_root / "data" / "raw"
     if session_id:
