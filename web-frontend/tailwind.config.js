@@ -1,6 +1,7 @@
-// "Editorial Instrument" design system: warm dark ground, serif headings +
+// "Editorial Instrument" design system (v4): warm dark ground, serif headings +
 // sans UI + monospace data, one coral accent, exactly one hard-shadow
-// ("brutalist") primary button. See docs/design/DESIGN.md.
+// ("brutalist") primary button, a two-tier elevation system for the
+// persistent 3D viewer vs. flat tab content. See docs/design/DESIGN.md.
 //
 // Moved here from index.html's inline <script id="tailwind-config"> when the
 // SPA switched off the Tailwind Play CDN (browser-side JIT, not for
@@ -33,8 +34,14 @@ module.exports = {
                 gap: "24px",
                 "max-container": "1440px",
                 margin: "24px",
-                "sidebar-width": "280px",
                 base: "8px",
+            },
+            boxShadow: {
+                // Two-tier elevation: flat tab content stays borderless per the
+                // editorial-section pattern; the persistent 3D viewer panel gets
+                // a soft lift so it reads as a distinct, floating instrument
+                // rather than just another column.
+                panel: "0 1px 0 rgba(0, 0, 0, 0.35), 0 12px 32px -16px rgba(0, 0, 0, 0.55)",
             },
             fontFamily: {
                 "body-sm": ["Inter"],

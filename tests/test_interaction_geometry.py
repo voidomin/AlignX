@@ -86,3 +86,36 @@ class TestClassifyContact:
         res_atoms = [_FakeAtom(charged_atom_name, element, [0, 0, 0])]
         target_atoms = [_FakeAtom("N1", "N", [cutoff_dist, 0, 0])]
         assert classify_contact(resname, res_atoms, target_atoms) == "Salt Bridge"
+
+    def test_histidine_coordinating_a_zinc_ion_is_metal_coordination(self):
+        # A His ND1 2.1 A from a bare Zn2+ - real zinc-finger/catalytic
+        # coordination geometry, well inside METAL_COORDINATION_CUTOFF (2.8)
+        # and far tighter than the salt-bridge/H-bond cutoffs, which don't
+        # apply here at all since the target has only one atom whose
+        # element (ZN) isn't in HETEROATOM_ELEMENTS.
+        res_atoms = [_FakeAtom("ND1", "N", [0, 0, 0]), _FakeAtom("CB", "C", [5, 5, 5])]
+        target_atoms = [_FakeAtom("ZN", "ZN", [2.1, 0, 0])]
+        assert classify_contact("HIS", res_atoms, target_atoms) == "Metal Coordination"
+
+    def test_residue_far_from_metal_ion_is_not_metal_coordination(self):
+        # Same bare Zn2+ target, but 6 A away - real contact distance from
+        # the outer 5.0 A NeighborSearch radius, well past any real
+        # coordination bond - should fall back to the ordinary
+        # hydrophobic/polar classification, not be misclassified as
+        # coordinating the metal.
+        res_atoms = [_FakeAtom("CB", "C", [0, 0, 0])]
+        target_atoms = [_FakeAtom("ZN", "ZN", [6.0, 0, 0])]
+        assert classify_contact("LEU", res_atoms, target_atoms) == "Van der Waals"
+
+    def test_multi_atom_metal_containing_ligand_does_not_use_metal_path(self):
+        # A multi-atom ligand that happens to contain a metal (e.g. a heme
+        # group modeled as one HETATM residue with several atoms) isn't a
+        # "bare single metal ion" target - _is_single_metal_ion requires
+        # exactly one atom, so this should fall through to the ordinary
+        # heteroatom-based classification instead.
+        res_atoms = [_FakeAtom("OD1", "O", [0, 0, 0]), _FakeAtom("CB", "C", [5, 5, 5])]
+        target_atoms = [
+            _FakeAtom("FE", "FE", [2.0, 0, 0]),
+            _FakeAtom("N1", "N", [3.0, 0, 0]),
+        ]
+        assert classify_contact("ASP", res_atoms, target_atoms) == "Salt Bridge"

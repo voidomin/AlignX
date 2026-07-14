@@ -1032,6 +1032,44 @@ def test_ligands_endpoint_404s_when_structure_not_found():
     assert response.status_code == 404
 
 
+def test_pockets_endpoint_returns_heuristic_candidates(tmp_path):
+    pdb_file = tmp_path / "4rlt.pdb"
+    pdb_file.write_text("ATOM      1  N   MET A   1      27.340  24.430   2.614\n")
+    fake_pockets = [
+        {
+            "rank": 1,
+            "residues": [{"chain": "A", "resi": 10, "resn": "LEU"}],
+            "center": [0.0, 0.0, 0.0],
+            "score": 5.0,
+            "heuristic": True,
+        }
+    ]
+
+    with patch(
+        "src.backend.api._find_structure_pdb_path", return_value=pdb_file
+    ), patch(
+        "src.backend.api.ligand_analyzer.find_candidate_pockets",
+        return_value=fake_pockets,
+    ):
+        response = client.get("/api/pockets?pdb_id=4RLT")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["pdb_id"] == "4RLT"
+    assert body["pockets"] == fake_pockets
+
+
+def test_pockets_endpoint_404s_when_structure_not_found():
+    with patch("src.backend.api._find_structure_pdb_path", return_value=None):
+        response = client.get("/api/pockets?pdb_id=4RLT")
+    assert response.status_code == 404
+
+
+def test_pockets_endpoint_400s_on_invalid_pdb_id():
+    response = client.get("/api/pockets?pdb_id=../etc")
+    assert response.status_code == 400
+
+
 def test_structure_file_endpoint_returns_the_raw_pdb(tmp_path):
     pdb_file = tmp_path / "4rlt.pdb"
     pdb_file.write_text("ATOM      1  N   MET A   1      27.340  24.430   2.614\n")

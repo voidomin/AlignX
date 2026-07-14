@@ -1,10 +1,10 @@
 import copy
 import logging
-import warnings
 from pathlib import Path
 from typing import Any, Dict, List
 
 from src.backend.interaction_geometry import classify_contact
+from src.backend.pdb_manager import parse_structure_file
 from src.utils.logger import sanitize_for_log
 
 logger = logging.getLogger(__name__)
@@ -24,14 +24,10 @@ class InterfaceAnalyzer:
         if chain_a == chain_b:
             return {"error": "chain_a and chain_b must be different chains"}
 
-        from Bio.PDB import NeighborSearch, PDBParser
-        from Bio.PDB.PDBExceptions import PDBConstructionWarning
+        from Bio.PDB import NeighborSearch
 
-        parser = PDBParser(QUIET=True)
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", PDBConstructionWarning)
-                structure = parser.get_structure("struct", str(pdb_file))
+            structure = parse_structure_file(Path(pdb_file))
         except Exception as e:
             return {"error": str(e)}
 
