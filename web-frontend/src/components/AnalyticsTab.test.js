@@ -1,11 +1,13 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AnalyticsTab } from './AnalyticsTab.js';
 
 vi.mock('../api.js', () => ({
     fetchAnnotations: vi.fn(),
+    fetchContactMap: vi.fn(),
+    fetchDifferenceDistance: vi.fn(),
 }));
 
-import { fetchAnnotations } from '../api.js';
+import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new AnalyticsTab(overrides);
@@ -16,8 +18,13 @@ function structuresFor(pdbIds, chainSelections = {}) {
 }
 
 describe('AnalyticsTab', () => {
+    beforeEach(() => {
+        global.Plotly = { newPlot: vi.fn() };
+    });
+
     afterEach(() => {
         vi.clearAllMocks();
+        delete global.Plotly;
     });
 
     it('shows the pre-run placeholder for insights before any run', () => {
@@ -385,6 +392,120 @@ describe('AnalyticsTab', () => {
             tab.switchSubTab('annotations');
 
             expect(fetchAnnotations).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('contact map & difference-distance matrix', () => {
+        it('populates both selectors from the structure list', () => {
+            const tab = makeTab();
+            tab.render();
+
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB', '2HHB']));
+
+            const single = tab.element.querySelector('#contact-map-pdb-select');
+            expect(Array.from(single.options).map(o => o.value)).toEqual(['4HHB', '2HHB']);
+            const pairB = tab.element.querySelector('#diff-distance-pdb-b-select');
+            expect(pairB.value).toBe('2HHB');
+        });
+
+        it('loads and renders a dense contact map heatmap on button click', async () => {
+            fetchContactMap.mockResolvedValue({
+                pdb_id: '4HHB', residue_count: 2, capped: false,
+                matrix: [[0, 1], [1, 0]], contacts: null,
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB', '2HHB']));
+
+            tab.element.querySelector('#contact-map-load-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(fetchContactMap).toHaveBeenCalledWith('run_1', '4HHB');
+            expect(global.Plotly.newPlot).toHaveBeenCalled();
+        });
+
+        it('shows a message instead of a heatmap when the contact map is capped', async () => {
+            fetchContactMap.mockResolvedValue({
+                pdb_id: '4HHB', residue_count: 5000, capped: true,
+                matrix: null, contacts: [[0, 1], [2, 3]],
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB', '2HHB']));
+
+            tab.element.querySelector('#contact-map-load-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(global.Plotly.newPlot).not.toHaveBeenCalled();
+            expect(tab.element.querySelector('#contact-map-plotly').textContent).toContain('5000 residues');
+        });
+
+        it('shows a graceful message when the contact map fetch fails', async () => {
+            fetchContactMap.mockRejectedValue(new Error('boom'));
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB', '2HHB']));
+
+            tab.element.querySelector('#contact-map-load-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#contact-map-plotly').textContent).toContain('Failed to load contact map.');
+        });
+
+        it('loads and renders a dense difference-distance heatmap on button click', async () => {
+            fetchDifferenceDistance.mockResolvedValue({
+                pdb_id_a: '4HHB', pdb_id_b: '2HHB', column_count: 2, capped: false,
+                matrix: [[0, 1.2], [1.2, 0]], differences: null,
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB', '2HHB']));
+
+            tab.element.querySelector('#diff-distance-load-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(fetchDifferenceDistance).toHaveBeenCalledWith('run_1', '4HHB', '2HHB');
+            expect(global.Plotly.newPlot).toHaveBeenCalled();
+        });
+
+        it('refuses to load a difference-distance matrix for the same structure twice', async () => {
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB', '2HHB']));
+            tab.element.querySelector('#diff-distance-pdb-b-select').value = '4HHB';
+
+            tab.element.querySelector('#diff-distance-load-btn').click();
+            await Promise.resolve();
+
+            expect(fetchDifferenceDistance).not.toHaveBeenCalled();
+            expect(tab.element.querySelector('#diff-distance-plotly').textContent)
+                .toContain('Select two different structures.');
+        });
+
+        it('shows a message instead of a heatmap when the difference-distance matrix is capped', async () => {
+            fetchDifferenceDistance.mockResolvedValue({
+                pdb_id_a: '4HHB', pdb_id_b: '2HHB', column_count: 5000, capped: true,
+                matrix: null, differences: [[0, 1, 4.2]],
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB', '2HHB']));
+
+            tab.element.querySelector('#diff-distance-load-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(global.Plotly.newPlot).not.toHaveBeenCalled();
+            expect(tab.element.querySelector('#diff-distance-plotly').textContent).toContain('5000 aligned columns');
         });
     });
 });

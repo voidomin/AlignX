@@ -1,4 +1,4 @@
-import { fetchAnnotations } from '../api';
+import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance } from '../api';
 import { renderDomainList, renderGoTermList, renderFeatureList } from '../utils/annotationRenderers';
 
 // Renders one insight string's markdown-lite **bold** segments as real
@@ -145,10 +145,37 @@ export class AnalyticsTab {
                 </div>
 
                 <!-- Pairwise RMSD Matrix (Plotly Heatmap) -->
-                <div data-panel="rmsd" class="border border-border rounded-lg p-4 shrink-0 min-h-[320px]">
+                <div data-panel="rmsd" class="border border-border rounded-lg p-4 shrink-0 min-h-[320px] flex flex-col gap-4">
                     <div id="rmsd-plotly-heatmap" class="w-full h-[280px]">
                         <div class="flex items-center justify-center h-full text-secondary font-body-sm">
                             Run alignment to display interactive heatmap.
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col gap-2 border-t border-border-subtle pt-4">
+                        <span class="font-label-sm text-label-sm text-secondary uppercase">Contact map (CA-CA, 8&Aring; default)</span>
+                        <div class="flex gap-2 items-center">
+                            <select id="contact-map-pdb-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm"></select>
+                            <button id="contact-map-load-btn" class="px-3 py-1 rounded-md bg-accent-muted text-accent font-label-sm text-label-sm">Load</button>
+                        </div>
+                        <div id="contact-map-plotly" class="w-full h-[240px]">
+                            <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                                Select a structure and load to view its contact map.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col gap-2 border-t border-border-subtle pt-4">
+                        <span class="font-label-sm text-label-sm text-secondary uppercase">Difference-distance matrix</span>
+                        <div class="flex gap-2 items-center">
+                            <select id="diff-distance-pdb-a-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm"></select>
+                            <select id="diff-distance-pdb-b-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm"></select>
+                            <button id="diff-distance-load-btn" class="px-3 py-1 rounded-md bg-accent-muted text-accent font-label-sm text-label-sm">Load</button>
+                        </div>
+                        <div id="diff-distance-plotly" class="w-full h-[240px]">
+                            <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                                Select two structures and load to view their difference-distance matrix.
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -192,8 +219,14 @@ export class AnalyticsTab {
         this.element = div;
         this.setupSubTabs();
         this.setupAnnotationsPicker();
+        this.setupContactMapControls();
         this.renderVisuals();
         return div;
+    }
+
+    setupContactMapControls() {
+        this.element.querySelector('#contact-map-load-btn').addEventListener('click', () => this.loadContactMap());
+        this.element.querySelector('#diff-distance-load-btn').addEventListener('click', () => this.loadDifferenceDistance());
     }
 
     setupSubTabs() {
@@ -437,6 +470,7 @@ export class AnalyticsTab {
         this.renderPairwiseTmScoreTable();
         this.renderRmsfChart();
         this.renderRmsdHeatmap();
+        this.populateContactMapSelectors();
         this.renderPhyloTree();
         this.renderInsightsList();
 
@@ -635,6 +669,133 @@ export class AnalyticsTab {
             font: { family: "Inter, sans-serif", size: 10, color: "#A79E8E" }
         };
         Plotly.newPlot(heatmapDiv, this.heatmapFig.data, layout, { responsive: true, displayModeBar: false });
+    }
+
+    // Contact map / difference-distance controls are only meaningful once
+    // there's a real completed run (>=2 structures) to fetch them from -
+    // repopulated on every renderVisuals() call, preserving the previously
+    // selected structure(s) where they're still valid, same pattern as
+    // populateAnnotationsPicker().
+    populateContactMapSelectors() {
+        const singleSelects = [this.element.querySelector('#contact-map-pdb-select')];
+        const pairSelects = [
+            this.element.querySelector('#diff-distance-pdb-a-select'),
+            this.element.querySelector('#diff-distance-pdb-b-select'),
+        ];
+
+        [...singleSelects, ...pairSelects].forEach(select => {
+            const previousValue = select.value;
+            select.innerHTML = "";
+            this.structures.forEach(({ pdbId }) => {
+                const opt = document.createElement('option');
+                opt.value = pdbId;
+                opt.textContent = pdbId;
+                select.appendChild(opt);
+            });
+            if (this.structures.some(s => s.pdbId === previousValue)) {
+                select.value = previousValue;
+            }
+        });
+        if (pairSelects[1] && this.structures.length > 1 && pairSelects[0].value === pairSelects[1].value) {
+            pairSelects[1].value = this.structures[1].pdbId;
+        }
+    }
+
+    async loadContactMap() {
+        const pdbId = this.element.querySelector('#contact-map-pdb-select').value;
+        const div = this.element.querySelector('#contact-map-plotly');
+        if (!this.currentRunId || !pdbId) return;
+
+        div.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Loading contact map&hellip;</div>`;
+        try {
+            const data = await fetchContactMap(this.currentRunId, pdbId);
+            this.renderContactMapHeatmap(data);
+        } catch (err) {
+            console.error("Failed to load contact map:", err);
+            div.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Failed to load contact map.</div>`;
+        }
+    }
+
+    renderContactMapHeatmap(data) {
+        const div = this.element.querySelector('#contact-map-plotly');
+        if (!div) return;
+
+        if (data.capped) {
+            div.innerHTML = `
+                <div class="flex items-center justify-center h-full text-secondary font-body-sm text-center px-4">
+                    ${data.residue_count} residues exceeds the dense-matrix cap - ${data.contacts.length} contacts found, too sparse to render as a heatmap here.
+                </div>
+            `;
+            return;
+        }
+
+        div.innerHTML = "";
+        const trace = {
+            z: data.matrix,
+            type: 'heatmap',
+            colorscale: [[0, 'rgba(0,0,0,0)'], [1, '#C9A063']],
+            showscale: false,
+        };
+        const layout = {
+            height: 240,
+            margin: { l: 40, r: 10, t: 10, b: 30 },
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            font: { family: "Inter, sans-serif", size: 10, color: "#A79E8E" },
+            yaxis: { autorange: 'reversed' },
+        };
+        Plotly.newPlot(div, [trace], layout, { responsive: true, displayModeBar: false });
+    }
+
+    async loadDifferenceDistance() {
+        const pdbIdA = this.element.querySelector('#diff-distance-pdb-a-select').value;
+        const pdbIdB = this.element.querySelector('#diff-distance-pdb-b-select').value;
+        const div = this.element.querySelector('#diff-distance-plotly');
+        if (!this.currentRunId || !pdbIdA || !pdbIdB) return;
+
+        if (pdbIdA === pdbIdB) {
+            div.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Select two different structures.</div>`;
+            return;
+        }
+
+        div.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Loading difference-distance matrix&hellip;</div>`;
+        try {
+            const data = await fetchDifferenceDistance(this.currentRunId, pdbIdA, pdbIdB);
+            this.renderDifferenceDistanceHeatmap(data);
+        } catch (err) {
+            console.error("Failed to load difference-distance matrix:", err);
+            div.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Failed to load difference-distance matrix.</div>`;
+        }
+    }
+
+    renderDifferenceDistanceHeatmap(data) {
+        const div = this.element.querySelector('#diff-distance-plotly');
+        if (!div) return;
+
+        if (data.capped) {
+            div.innerHTML = `
+                <div class="flex items-center justify-center h-full text-secondary font-body-sm text-center px-4">
+                    ${data.column_count} aligned columns exceeds the dense-matrix cap - ${data.differences.length} notable shifts (&gt;3&Aring;) found, too sparse to render as a heatmap here.
+                </div>
+            `;
+            return;
+        }
+
+        div.innerHTML = "";
+        const trace = {
+            z: data.matrix,
+            type: 'heatmap',
+            colorscale: 'YlOrRd',
+        };
+        const layout = {
+            height: 240,
+            margin: { l: 40, r: 10, t: 10, b: 30 },
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            font: { family: "Inter, sans-serif", size: 10, color: "#A79E8E" },
+            yaxis: { autorange: 'reversed' },
+        };
+        Plotly.newPlot(div, [trace], layout, { responsive: true, displayModeBar: false });
     }
 
     renderPhyloTree() {

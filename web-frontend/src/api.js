@@ -439,6 +439,33 @@ export async function fetchValidation(pdbId) {
     return res.json();
 }
 
+// One structure's own CA-CA contact map from a completed run's alignment -
+// see rmsd_calculator.get_structure_contact_map(). Returns either a dense
+// `matrix` or, above the residue cap, a sparse `contacts` list - never both.
+export async function fetchContactMap(runId, pdbId, threshold) {
+    runId = assertSafeSegment(runId, 'runId');
+    pdbId = assertSafeSegment(pdbId, 'pdbId');
+    const params = { run_id: runId, pdb_id: pdbId };
+    if (threshold !== undefined) params.threshold = threshold;
+    const res = await fetch(buildUrl('/api/contact-map', params), { headers: authHeaders() });
+    if (!res.ok) throw new Error("Contact map fetch failed");
+    return res.json();
+}
+
+// Difference-distance matrix between two structures in a completed run's
+// alignment - see rmsd_calculator.get_difference_distance_matrix(). Returns
+// either a dense `matrix` or, above the column cap, a sparse `differences`
+// list - never both.
+export async function fetchDifferenceDistance(runId, pdbIdA, pdbIdB) {
+    runId = assertSafeSegment(runId, 'runId');
+    pdbIdA = assertSafeSegment(pdbIdA, 'pdbIdA');
+    pdbIdB = assertSafeSegment(pdbIdB, 'pdbIdB');
+    const params = { run_id: runId, pdb_id_a: pdbIdA, pdb_id_b: pdbIdB };
+    const res = await fetch(buildUrl('/api/difference-distance', params), { headers: authHeaders() });
+    if (!res.ok) throw new Error("Difference-distance fetch failed");
+    return res.json();
+}
+
 export async function fetchInterface(pdbId, chainA, chainB, runId) {
     pdbId = assertValidPdbId(pdbId, 'pdbId');
     chainA = assertSafeSegment(chainA, 'chainA');

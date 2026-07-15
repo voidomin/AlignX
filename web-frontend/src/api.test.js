@@ -435,4 +435,37 @@ describe('api.js request-ID validation', () => {
         expect(global.fetch.mock.calls[0][0]).toContain('/api/ligand-info');
         expect(global.fetch.mock.calls[0][0]).toContain('ligand_code=HEM');
     });
+
+    it('fetchContactMap rejects an unsafe pdbId', async () => {
+        const { fetchContactMap } = await import('./api.js');
+        await expect(fetchContactMap('run_1', '../evil')).rejects.toThrow('Invalid pdbId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchContactMap resolves with the run/pdb-scoped contact map shape', async () => {
+        mockFetchOnce({ pdb_id: '4HHB', residue_count: 3, capped: false, matrix: [[0, 1, 0], [1, 0, 0], [0, 0, 0]], contacts: null });
+        const { fetchContactMap } = await import('./api.js');
+        const data = await fetchContactMap('run_1', '4HHB', 8.0);
+        expect(data.residue_count).toBe(3);
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/contact-map');
+        expect(global.fetch.mock.calls[0][0]).toContain('run_id=run_1');
+        expect(global.fetch.mock.calls[0][0]).toContain('pdb_id=4HHB');
+        expect(global.fetch.mock.calls[0][0]).toContain('threshold=8');
+    });
+
+    it('fetchDifferenceDistance rejects an unsafe pdbIdB', async () => {
+        const { fetchDifferenceDistance } = await import('./api.js');
+        await expect(fetchDifferenceDistance('run_1', '4HHB', '../evil')).rejects.toThrow('Invalid pdbIdB');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchDifferenceDistance resolves with the pairwise difference-matrix shape', async () => {
+        mockFetchOnce({ pdb_id_a: '4HHB', pdb_id_b: '3UG9', column_count: 2, capped: false, matrix: [[0, 1.2], [1.2, 0]], differences: null });
+        const { fetchDifferenceDistance } = await import('./api.js');
+        const data = await fetchDifferenceDistance('run_1', '4HHB', '3UG9');
+        expect(data.column_count).toBe(2);
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/difference-distance');
+        expect(global.fetch.mock.calls[0][0]).toContain('pdb_id_a=4HHB');
+        expect(global.fetch.mock.calls[0][0]).toContain('pdb_id_b=3UG9');
+    });
 });

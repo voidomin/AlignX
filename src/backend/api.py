@@ -40,6 +40,10 @@ from src.backend.interface_analyzer import InterfaceAnalyzer
 from src.backend.pdb_manager import PDBManager
 from src.backend.rmsd_analyzer import RMSDAnalyzer
 from src.backend.result_manager import ResultManager
+from src.backend.rmsd_calculator import (
+    get_structure_contact_map,
+    get_difference_distance_matrix,
+)
 
 logger = get_logger()
 
@@ -986,6 +990,88 @@ def compare_runs(
         "target_mean_rmsd": round(target_mean, 3),
         "mean_rmsd_shift": round(current_mean - target_mean, 3),
     }
+
+
+@app.get(
+    "/api/contact-map",
+    responses={
+        400: {"description": "Invalid run_id/pdb_id/session_id"},
+        404: {"description": "Run not found, or no contact map for this pdb_id"},
+    },
+)
+def get_contact_map(
+    run_id: Annotated[str, Query(...)],
+    pdb_id: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
+    threshold: Annotated[float, Query()] = 8.0,
+):
+    """CA-CA contact map for one structure in a completed run - see
+    rmsd_calculator.get_structure_contact_map()."""
+    _safe_segment(run_id, "run_id")
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(session_id, "session_id")
+
+    run, res_dir = _lookup_run_and_result_dir(run_id, session_id)
+    alignment_pdb = res_dir / "alignment.pdb"
+    if not alignment_pdb.exists() or not run.get("pdb_ids"):
+        raise HTTPException(
+            status_code=404, detail=f"No alignment output found for run {run_id}."
+        )
+
+    result = get_structure_contact_map(
+        alignment_pdb, run["pdb_ids"], pdb_id, threshold=threshold
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No contact map available for {pdb_id} in run {run_id}.",
+        )
+    return sanitize_for_json(result)
+
+
+@app.get(
+    "/api/difference-distance",
+    responses={
+        400: {"description": "Invalid run_id/pdb_id_a/pdb_id_b/session_id"},
+        404: {
+            "description": "Run not found, or no shared aligned columns between these two structures"
+        },
+    },
+)
+def get_difference_distance(
+    run_id: Annotated[str, Query(...)],
+    pdb_id_a: Annotated[str, Query(...)],
+    pdb_id_b: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """Difference-distance matrix between two structures in a completed
+    run's alignment - see rmsd_calculator.get_difference_distance_matrix()."""
+    _safe_segment(run_id, "run_id")
+    _safe_segment(pdb_id_a, "pdb_id_a")
+    _safe_segment(pdb_id_b, "pdb_id_b")
+    _safe_segment(session_id, "session_id")
+
+    run, res_dir = _lookup_run_and_result_dir(run_id, session_id)
+    alignment_pdb = res_dir / "alignment.pdb"
+    alignment_fasta = res_dir / "alignment.fasta"
+    if (
+        not alignment_pdb.exists()
+        or not alignment_fasta.exists()
+        or not run.get("pdb_ids")
+    ):
+        raise HTTPException(
+            status_code=404, detail=f"No alignment output found for run {run_id}."
+        )
+
+    result = get_difference_distance_matrix(
+        alignment_pdb, alignment_fasta, run["pdb_ids"], pdb_id_a, pdb_id_b
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No shared aligned columns between {pdb_id_a} and {pdb_id_b} in run {run_id}.",
+        )
+    return sanitize_for_json(result)
 
 
 @app.get(

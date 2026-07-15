@@ -1729,6 +1729,135 @@ def test_newick_endpoint_404s_for_unknown_run():
         assert response.status_code == 404
 
 
+def _write_two_structure_alignment(res_dir, coords_a, coords_b):
+    lines = ["MODEL     1"]
+    for i, (x, y, z) in enumerate(coords_a, start=1):
+        lines.append(
+            f"ATOM  {i:5d}  CA  ALA A{i:4d}    {x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00           C"
+        )
+    lines.append("ENDMDL")
+    lines.append("MODEL     2")
+    for i, (x, y, z) in enumerate(coords_b, start=1):
+        lines.append(
+            f"ATOM  {i:5d}  CA  ALA A{i:4d}    {x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00           C"
+        )
+    lines.append("ENDMDL")
+    lines.append("END\n")
+    (res_dir / "alignment.pdb").write_text("\n".join(lines))
+    seq = "A" * len(coords_a)
+    (res_dir / "alignment.fasta").write_text(f">structA\n{seq}\n>structB\n{seq}\n")
+
+
+def test_contact_map_endpoint_returns_a_real_matrix(tmp_path):
+    _write_two_structure_alignment(
+        tmp_path,
+        [[0.0, 0.0, 0.0], [3.0, 4.0, 0.0], [100.0, 0.0, 0.0]],
+        [[0.0, 0.0, 0.0], [3.0, 4.0, 0.0], [100.0, 0.0, 0.0]],
+    )
+
+    with patch(
+        "src.backend.api._lookup_run_and_result_dir",
+        return_value=({"id": "run_123", "pdb_ids": ["structA", "structB"]}, tmp_path),
+    ):
+        response = client.get("/api/contact-map?run_id=run_123&pdb_id=structA")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["pdb_id"] == "structA"
+    assert data["residue_count"] == 3
+    assert data["matrix"][0][1] == 1
+    assert data["matrix"][0][2] == 0
+
+
+def test_contact_map_endpoint_404s_when_pdb_id_not_in_alignment(tmp_path):
+    _write_two_structure_alignment(tmp_path, [[0.0, 0.0, 0.0]], [[0.0, 0.0, 0.0]])
+
+    with patch(
+        "src.backend.api._lookup_run_and_result_dir",
+        return_value=({"id": "run_123", "pdb_ids": ["structA", "structB"]}, tmp_path),
+    ):
+        response = client.get("/api/contact-map?run_id=run_123&pdb_id=does_not_exist")
+
+    assert response.status_code == 404
+
+
+def test_contact_map_endpoint_404s_when_alignment_files_missing(tmp_path):
+    with patch(
+        "src.backend.api._lookup_run_and_result_dir",
+        return_value=({"id": "run_123", "pdb_ids": ["structA", "structB"]}, tmp_path),
+    ):
+        response = client.get("/api/contact-map?run_id=run_123&pdb_id=structA")
+
+    assert response.status_code == 404
+
+
+def test_contact_map_endpoint_404s_for_unknown_run():
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        response = client.get("/api/contact-map?run_id=nope&pdb_id=structA")
+        assert response.status_code == 404
+
+
+def test_contact_map_endpoint_400s_on_invalid_run_id():
+    response = client.get("/api/contact-map?run_id=../etc&pdb_id=structA")
+    assert response.status_code == 400
+
+
+def test_difference_distance_endpoint_returns_a_real_matrix(tmp_path):
+    _write_two_structure_alignment(
+        tmp_path,
+        [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0], [0.0, 5.0, 0.0]],
+        [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0], [20.0, 5.0, 0.0]],
+    )
+
+    with patch(
+        "src.backend.api._lookup_run_and_result_dir",
+        return_value=({"id": "run_123", "pdb_ids": ["structA", "structB"]}, tmp_path),
+    ):
+        response = client.get(
+            "/api/difference-distance?run_id=run_123&pdb_id_a=structA&pdb_id_b=structB"
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["pdb_id_a"] == "structA"
+    assert data["pdb_id_b"] == "structB"
+    assert data["column_count"] == 3
+    assert data["matrix"][0][1] == pytest.approx(0.0)
+    assert data["matrix"][0][2] != pytest.approx(0.0)
+
+
+def test_difference_distance_endpoint_404s_when_no_shared_columns(tmp_path):
+    _write_two_structure_alignment(
+        tmp_path, [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]], [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]]
+    )
+    (tmp_path / "alignment.fasta").write_text(">structA\nAA--\n>structB\n--AA\n")
+
+    with patch(
+        "src.backend.api._lookup_run_and_result_dir",
+        return_value=({"id": "run_123", "pdb_ids": ["structA", "structB"]}, tmp_path),
+    ):
+        response = client.get(
+            "/api/difference-distance?run_id=run_123&pdb_id_a=structA&pdb_id_b=structB"
+        )
+
+    assert response.status_code == 404
+
+
+def test_difference_distance_endpoint_404s_for_unknown_run():
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        response = client.get(
+            "/api/difference-distance?run_id=nope&pdb_id_a=structA&pdb_id_b=structB"
+        )
+        assert response.status_code == 404
+
+
+def test_difference_distance_endpoint_400s_on_invalid_pdb_id():
+    response = client.get(
+        "/api/difference-distance?run_id=run_123&pdb_id_a=../etc&pdb_id_b=structB"
+    )
+    assert response.status_code == 400
+
+
 def test_report_zip_endpoint_bundles_every_available_artifact(tmp_path):
     import zipfile
     import io

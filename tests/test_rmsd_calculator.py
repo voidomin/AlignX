@@ -13,6 +13,11 @@ from src.backend.rmsd_calculator import (
     parse_rmsd_matrix,
     calculate_structure_rmsd,
     calculate_alignment_quality_metrics,
+    calculate_pairwise_distance_matrix,
+    calculate_contact_map,
+    calculate_difference_distance_matrix,
+    get_structure_contact_map,
+    get_difference_distance_matrix,
     _try_parse_rmsd_row,
     _parse_matrix_value,
     _select_structures,
@@ -560,6 +565,208 @@ class TestCalculateAlignmentQualityMetrics:
 
         assert result is not None
         assert result["structA"] == {"tm_score": 0.0, "gdt_ts": 0.0}
+
+
+class TestCalculatePairwiseDistanceMatrix:
+    def test_hand_computed_distances(self):
+        coords = np.array([[0.0, 0.0, 0.0], [3.0, 4.0, 0.0]])
+        matrix = calculate_pairwise_distance_matrix(coords)
+        assert matrix.shape == (2, 2)
+        assert matrix[0, 1] == pytest.approx(5.0)
+        assert matrix[1, 0] == pytest.approx(5.0)
+        assert matrix[0, 0] == pytest.approx(0.0)
+
+    def test_empty_coords_returns_empty_matrix(self):
+        matrix = calculate_pairwise_distance_matrix(np.zeros((0, 3)))
+        assert matrix.shape == (0, 0)
+
+
+class TestCalculateContactMap:
+    def test_within_threshold_marked_as_contact(self):
+        coords = np.array([[0.0, 0.0, 0.0], [3.0, 4.0, 0.0], [100.0, 0.0, 0.0]])
+        contacts = calculate_contact_map(coords, threshold=8.0)
+        assert contacts[0, 1] == 1
+        assert contacts[0, 2] == 0
+        assert contacts[1, 2] == 0
+
+    def test_diagonal_is_always_zero(self):
+        coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        contacts = calculate_contact_map(coords, threshold=8.0)
+        assert contacts[0, 0] == 0
+        assert contacts[1, 1] == 0
+
+
+class TestCalculateDifferenceDistanceMatrix:
+    def test_rigid_shift_of_one_point_only_changes_distances_involving_it(self):
+        # A three-point "domain" where only the third point moves - its
+        # distance-to-others should shift while the untouched pair's
+        # distance stays exactly zero, the signature difference-distance
+        # matrices are meant to surface.
+        coords1 = np.array([[0.0, 0.0, 0.0], [5.0, 0.0, 0.0], [0.0, 5.0, 0.0]])
+        coords2 = np.array([[0.0, 0.0, 0.0], [5.0, 0.0, 0.0], [20.0, 5.0, 0.0]])
+        diff = calculate_difference_distance_matrix(coords1, coords2)
+        assert diff[0, 1] == pytest.approx(0.0)
+        assert diff[0, 2] != pytest.approx(0.0)
+        assert diff[1, 2] != pytest.approx(0.0)
+
+    def test_identical_coords_gives_zero_matrix(self):
+        coords = np.array([[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]])
+        diff = calculate_difference_distance_matrix(coords, coords)
+        assert np.allclose(diff, 0.0)
+
+
+class TestGetStructureContactMap:
+    def test_returns_dense_matrix_for_a_known_structure(self, tmp_path):
+        pdb_file = tmp_path / "alignment.pdb"
+        coords = [[0.0, 0.0, 0.0], [3.0, 4.0, 0.0], [100.0, 0.0, 0.0]]
+        _write_multi_model_pdb(pdb_file, [coords, coords])
+
+        result = get_structure_contact_map(
+            pdb_file, ["structA", "structB"], "structA", threshold=8.0
+        )
+
+        assert result is not None
+        assert result["pdb_id"] == "structA"
+        assert result["residue_count"] == 3
+        assert result["capped"] is False
+        assert result["contacts"] is None
+        assert result["matrix"][0][1] == 1
+        assert result["matrix"][0][2] == 0
+
+    def test_resolves_by_position_not_by_fasta_record_text(self, tmp_path):
+        # Mustang's own FASTA output labels records by input filename
+        # (e.g. "4hhb.pdb", lowercased) - resolution must go through the
+        # caller-supplied pdb_ids list by position, not by matching that
+        # filename-derived text against the clean id the frontend/API
+        # actually use ("structA").
+        pdb_file = tmp_path / "alignment.pdb"
+        coords = [[0.0, 0.0, 0.0], [3.0, 4.0, 0.0], [100.0, 0.0, 0.0]]
+        _write_multi_model_pdb(pdb_file, [coords, coords])
+
+        result = get_structure_contact_map(pdb_file, ["structA", "structB"], "structA")
+
+        assert result is not None
+        assert result["residue_count"] == 3
+
+    def test_returns_sparse_contacts_above_the_residue_cap(self, tmp_path):
+        pdb_file = tmp_path / "alignment.pdb"
+        coords = [[0.0, 0.0, 0.0], [3.0, 4.0, 0.0], [100.0, 0.0, 0.0]]
+        _write_multi_model_pdb(pdb_file, [coords, coords])
+
+        result = get_structure_contact_map(
+            pdb_file, ["structA", "structB"], "structA", threshold=8.0, max_residues=2
+        )
+
+        assert result is not None
+        assert result["capped"] is True
+        assert result["matrix"] is None
+        assert result["contacts"] == [[0, 1]]
+
+    def test_unknown_pdb_id_returns_none(self, tmp_path):
+        pdb_file = tmp_path / "alignment.pdb"
+        coords = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]
+        _write_multi_model_pdb(pdb_file, [coords, coords])
+
+        result = get_structure_contact_map(
+            pdb_file, ["structA", "structB"], "does_not_exist"
+        )
+
+        assert result is None
+
+    def test_missing_files_return_none_not_a_crash(self, tmp_path):
+        result = get_structure_contact_map(
+            tmp_path / "nope.pdb", ["structA", "structB"], "structA"
+        )
+        assert result is None
+
+
+class TestGetDifferenceDistanceMatrix:
+    def test_returns_dense_matrix_for_two_known_structures(self, tmp_path):
+        pdb_file = tmp_path / "alignment.pdb"
+        fasta_file = tmp_path / "alignment.afasta"
+        coords_a = [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0], [0.0, 5.0, 0.0]]
+        coords_b = [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0], [20.0, 5.0, 0.0]]
+        _write_multi_model_pdb(pdb_file, [coords_a, coords_b])
+        fasta_file.write_text(">structA\nAAA\n>structB\nAAA\n")
+
+        result = get_difference_distance_matrix(
+            pdb_file, fasta_file, ["structA", "structB"], "structA", "structB"
+        )
+
+        assert result is not None
+        assert result["column_count"] == 3
+        assert result["capped"] is False
+        assert result["differences"] is None
+        assert result["matrix"][0][1] == pytest.approx(0.0)
+        assert result["matrix"][0][2] != pytest.approx(0.0)
+
+    def test_resolves_by_position_not_by_fasta_record_text(self, tmp_path):
+        # Same rationale as the equivalent contact-map test - the FASTA's
+        # own record ids ("4hhb.pdb"-style) must not be required to match
+        # the clean ids passed in via pdb_ids.
+        pdb_file = tmp_path / "alignment.pdb"
+        fasta_file = tmp_path / "alignment.afasta"
+        coords_a = [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0], [0.0, 5.0, 0.0]]
+        coords_b = [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0], [20.0, 5.0, 0.0]]
+        _write_multi_model_pdb(pdb_file, [coords_a, coords_b])
+        fasta_file.write_text(">4hhb.pdb\nAAA\n>2hhb.pdb\nAAA\n")
+
+        result = get_difference_distance_matrix(
+            pdb_file, fasta_file, ["4HHB", "2HHB"], "4HHB", "2HHB"
+        )
+
+        assert result is not None
+        assert result["column_count"] == 3
+
+    def test_returns_sparse_differences_above_the_column_cap(self, tmp_path):
+        pdb_file = tmp_path / "alignment.pdb"
+        fasta_file = tmp_path / "alignment.afasta"
+        coords_a = [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0], [0.0, 5.0, 0.0]]
+        coords_b = [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0], [20.0, 5.0, 0.0]]
+        _write_multi_model_pdb(pdb_file, [coords_a, coords_b])
+        fasta_file.write_text(">structA\nAAA\n>structB\nAAA\n")
+
+        result = get_difference_distance_matrix(
+            pdb_file,
+            fasta_file,
+            ["structA", "structB"],
+            "structA",
+            "structB",
+            max_residues=2,
+            notable_shift_a=1.0,
+        )
+
+        assert result is not None
+        assert result["capped"] is True
+        assert result["matrix"] is None
+        assert len(result["differences"]) >= 1
+        assert all(len(d) == 3 for d in result["differences"])
+
+    def test_unknown_pdb_id_returns_none(self, tmp_path):
+        pdb_file = tmp_path / "alignment.pdb"
+        fasta_file = tmp_path / "alignment.afasta"
+        coords = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]
+        _write_multi_model_pdb(pdb_file, [coords, coords])
+        fasta_file.write_text(">structA\nAA\n>structB\nAA\n")
+
+        result = get_difference_distance_matrix(
+            pdb_file, fasta_file, ["structA", "structB"], "structA", "nope"
+        )
+
+        assert result is None
+
+    def test_no_common_columns_returns_none(self, tmp_path):
+        pdb_file = tmp_path / "alignment.pdb"
+        fasta_file = tmp_path / "alignment.afasta"
+        coords = [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]]
+        _write_multi_model_pdb(pdb_file, [coords, coords])
+        fasta_file.write_text(">structA\nAA--\n>structB\n--AA\n")
+
+        result = get_difference_distance_matrix(
+            pdb_file, fasta_file, ["structA", "structB"], "structA", "structB"
+        )
+
+        assert result is None
 
     def test_returns_none_on_parse_failure(self, tmp_path):
         fasta_file = tmp_path / "alignment.afasta"
