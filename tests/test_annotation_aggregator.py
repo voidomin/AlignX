@@ -768,32 +768,144 @@ class TestFetchUniprotFeatures:
 
 
 class TestAttachFeatureHighlightChains:
-    def test_populates_highlight_chains_for_alphafold(self):
+    @pytest.mark.asyncio
+    async def test_populates_highlight_chains_for_alphafold(self):
         features = [{"type": "Binding site", "start": 88, "end": 88}]
-        AnnotationAggregator._attach_feature_highlight_chains(
-            features, "A", "alphafold"
-        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            await aggregator._attach_feature_highlight_chains(
+                features, "A", "alphafold", "AF-P69905-F1", client
+            )
         assert features[0]["highlight_chains"] == {"A": [88]}
 
-    def test_expands_a_multi_residue_range(self):
+    @pytest.mark.asyncio
+    async def test_expands_a_multi_residue_range(self):
         features = [{"type": "Natural variant", "start": 10, "end": 12}]
-        AnnotationAggregator._attach_feature_highlight_chains(
-            features, "A", "alphafold"
-        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            await aggregator._attach_feature_highlight_chains(
+                features, "A", "alphafold", "AF-P69905-F1", client
+            )
         assert features[0]["highlight_chains"] == {"A": [10, 11, 12]}
 
-    @pytest.mark.parametrize("source", ["pdb", "swissmodel", "esmfold"])
-    def test_none_for_non_alphafold_sources(self, source):
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("source", ["swissmodel", "esmfold"])
+    async def test_none_for_sources_with_no_residue_mapping(self, source):
         features = [{"type": "Binding site", "start": 88, "end": 88}]
-        AnnotationAggregator._attach_feature_highlight_chains(features, "A", source)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            await aggregator._attach_feature_highlight_chains(
+                features, "A", source, "some_id", client
+            )
         assert features[0]["highlight_chains"] is None
 
-    def test_none_when_no_chain_given(self):
+    @pytest.mark.asyncio
+    async def test_none_when_no_chain_given(self):
         features = [{"type": "Binding site", "start": 88, "end": 88}]
-        AnnotationAggregator._attach_feature_highlight_chains(
-            features, None, "alphafold"
-        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            await aggregator._attach_feature_highlight_chains(
+                features, None, "alphafold", "AF-P69905-F1", client
+            )
         assert features[0]["highlight_chains"] is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_translates_through_the_real_residue_map_for_pdb_source(
+        self, mock_get
+    ):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "1crn": {
+                    "UniProt": {
+                        "P01542": {
+                            "mappings": [
+                                {
+                                    "chain_id": "A",
+                                    "unp_start": 1,
+                                    "unp_end": 3,
+                                    "start": {"author_residue_number": 10},
+                                    "end": {"author_residue_number": 12},
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        )
+        features = [{"type": "Binding site", "start": 1, "end": 2}]
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            await aggregator._attach_feature_highlight_chains(
+                features, "A", "pdb", "1CRN", client
+            )
+        assert features[0]["highlight_chains"] == {"A": [10, 11]}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_none_for_pdb_source_when_nothing_maps(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        features = [{"type": "Binding site", "start": 1, "end": 2}]
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            await aggregator._attach_feature_highlight_chains(
+                features, "A", "pdb", "1CRN", client
+            )
+        assert features[0]["highlight_chains"] is None
+
+
+class TestAttachDomainHighlightChains:
+    @pytest.mark.asyncio
+    async def test_populates_highlight_chains_for_alphafold(self):
+        domains = [{"locations": [{"start": 5, "end": 7}]}]
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            await aggregator._attach_domain_highlight_chains(
+                domains, "A", "alphafold", "AF-P69905-F1", client
+            )
+        assert domains[0]["highlight_chains"] == {"A": [5, 6, 7]}
+
+    @pytest.mark.asyncio
+    async def test_none_for_esmfold(self):
+        domains = [{"locations": [{"start": 5, "end": 7}]}]
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            await aggregator._attach_domain_highlight_chains(
+                domains, "A", "esmfold", "ESM-1", client
+            )
+        assert domains[0]["highlight_chains"] is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_translates_through_the_real_residue_map_for_pdb_source(
+        self, mock_get
+    ):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "1crn": {
+                    "UniProt": {
+                        "P01542": {
+                            "mappings": [
+                                {
+                                    "chain_id": "A",
+                                    "unp_start": 1,
+                                    "unp_end": 3,
+                                    "start": {"author_residue_number": 10},
+                                    "end": {"author_residue_number": 12},
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        )
+        domains = [{"locations": [{"start": 1, "end": 3}]}]
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            await aggregator._attach_domain_highlight_chains(
+                domains, "A", "pdb", "1CRN", client
+            )
+        assert domains[0]["highlight_chains"] == {"A": [10, 11, 12]}
 
 
 class TestGoTermNameCaching:
@@ -1001,6 +1113,157 @@ class TestResolvePdbUniprotAccession:
         assert first == "P01542"
         assert second == "P01542"
         mock_get.assert_called_once()
+
+
+class TestResolveUniprotResidueMapping:
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_builds_a_clean_1to1_span(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "1crn": {
+                    "UniProt": {
+                        "P01542": {
+                            "mappings": [
+                                {
+                                    "chain_id": "A",
+                                    "unp_start": 1,
+                                    "unp_end": 3,
+                                    "start": {"author_residue_number": 10},
+                                    "end": {"author_residue_number": 12},
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            mapping = await aggregator.resolve_uniprot_residue_mapping(
+                "1CRN", "A", client
+            )
+        assert mapping == {1: 10, 2: 11, 3: 12}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_skips_segments_for_a_different_chain(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "1crn": {
+                    "UniProt": {
+                        "P01542": {
+                            "mappings": [
+                                {
+                                    "chain_id": "B",
+                                    "unp_start": 1,
+                                    "unp_end": 3,
+                                    "start": {"author_residue_number": 10},
+                                    "end": {"author_residue_number": 12},
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            mapping = await aggregator.resolve_uniprot_residue_mapping(
+                "1CRN", "A", client
+            )
+        assert mapping == {}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_skips_a_segment_whose_spans_differ_in_length(self, mock_get):
+        # A malformed/unusual segment where the UniProt span (3 residues)
+        # and author span (2 residues) don't match - must be skipped
+        # rather than silently mismapped one-to-one.
+        mock_get.return_value = _mock_response(
+            json_data={
+                "1crn": {
+                    "UniProt": {
+                        "P01542": {
+                            "mappings": [
+                                {
+                                    "chain_id": "A",
+                                    "unp_start": 1,
+                                    "unp_end": 3,
+                                    "start": {"author_residue_number": 10},
+                                    "end": {"author_residue_number": 11},
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            mapping = await aggregator.resolve_uniprot_residue_mapping(
+                "1CRN", "A", client
+            )
+        assert mapping == {}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_merges_multiple_segments(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "1crn": {
+                    "UniProt": {
+                        "P01542": {
+                            "mappings": [
+                                {
+                                    "chain_id": "A",
+                                    "unp_start": 1,
+                                    "unp_end": 2,
+                                    "start": {"author_residue_number": 10},
+                                    "end": {"author_residue_number": 11},
+                                },
+                                {
+                                    "chain_id": "A",
+                                    "unp_start": 5,
+                                    "unp_end": 6,
+                                    "start": {"author_residue_number": 20},
+                                    "end": {"author_residue_number": 21},
+                                },
+                            ]
+                        }
+                    }
+                }
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            mapping = await aggregator.resolve_uniprot_residue_mapping(
+                "1CRN", "A", client
+            )
+        assert mapping == {1: 10, 2: 11, 5: 20, 6: 21}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_on_non_200(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            mapping = await aggregator.resolve_uniprot_residue_mapping(
+                "ZZZZ", "A", client
+            )
+        assert mapping == {}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            mapping = await aggregator.resolve_uniprot_residue_mapping(
+                "1CRN", "A", client
+            )
+        assert mapping == {}
 
 
 class TestResolveAccession:
@@ -1280,24 +1543,21 @@ class TestAggregateForStructure:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "pdb_id,source,expected_highlight_chains",
+        "pdb_id,source,expected_domain_highlight,expected_feature_highlight",
         [
             # AlphaFold models are numbered 1..N matching their UniProt
             # sequence exactly, by construction - so InterPro's UniProt-
             # numbered domain locations are usable directly as this
             # structure's own residue numbers.
-            ("AF-P69905-F1", "alphafold", {"A": [2, 3, 4, 5]}),
-            # A real PDB entry's author residue numbering commonly differs
-            # from UniProt numbering (constructs, tags, non-1-start
-            # numbering) - without real SIFTS segment-mapping (out of scope
-            # here), using InterPro's UniProt-numbered locations directly
-            # would silently highlight the wrong residues, so this must
-            # stay None for non-AlphaFold sources.
-            ("4HHB", "pdb", None),
+            ("AF-P69905-F1", "alphafold", {"A": [2, 3, 4, 5]}, {"A": [88]}),
+            # A real PDB entry's author numbering differs from UniProt
+            # numbering by a fixed +10 offset in this mocked residue map -
+            # resolve_uniprot_residue_mapping() translates through it.
+            ("4HHB", "pdb", {"A": [12, 13, 14, 15]}, {"A": [98]}),
         ],
     )
-    async def test_highlight_chains_only_populated_for_alphafold_structures(
-        self, pdb_id, source, expected_highlight_chains
+    async def test_highlight_chains_populated_via_the_right_mechanism_per_source(
+        self, pdb_id, source, expected_domain_highlight, expected_feature_highlight
     ):
         aggregator = AnnotationAggregator()
         with patch.object(
@@ -1335,20 +1595,35 @@ class TestAggregateForStructure:
             ),
         ), patch.object(
             aggregator, "resolve_go_term_names", AsyncMock(return_value={})
+        ), patch.object(
+            aggregator,
+            "resolve_uniprot_residue_mapping",
+            AsyncMock(return_value={n: n + 10 for n in range(1, 100)}),
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
                     pdb_id, "A", source, client
                 )
 
-        assert result["domains"][0]["highlight_chains"] == expected_highlight_chains
-        expected_feature_highlight = (
-            {"A": [88]} if expected_highlight_chains is not None else None
-        )
+        assert result["domains"][0]["highlight_chains"] == expected_domain_highlight
         assert (
             result["uniprot_features"][0]["highlight_chains"]
             == expected_feature_highlight
         )
+
+    @pytest.mark.asyncio
+    async def test_highlight_chains_none_for_esmfold(self):
+        # esmfold structures have no UniProt mapping at all, so
+        # _resolve_structure_accession returns None and neither InterPro
+        # domains nor UniProt features are ever fetched - highlight_chains
+        # never gets a chance to populate.
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.aggregate_for_structure(
+                "ESM-MGYP1", "A", "esmfold", client
+            )
+        assert result["domains"] == []
+        assert result["uniprot_features"] == []
 
     @pytest.mark.asyncio
     async def test_pdb_id_and_chain_pass_through_to_the_result(self):
