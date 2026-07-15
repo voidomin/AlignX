@@ -126,6 +126,20 @@ _AUTH_REQUIRED_PREFIXES = ("/api/", "/results/", "/raw/")
 
 @app.middleware("http")
 async def require_api_key(request: Request, call_next):
+    # This middleware runs before CORSMiddleware gets a chance to answer a
+    # preflight request - a real browser's OPTIONS preflight never carries
+    # the X-API-Key header (browsers don't attach custom headers to
+    # preflight requests at all), so without this exemption every real
+    # cross-origin request from the frontend would 401 here before CORS
+    # headers were ever added, and the browser would report it as a CORS
+    # failure - a real, live-verified bug (2026-07-15) that broke the
+    # deployed frontend entirely the moment ALIGNX_API_KEY was first set.
+    # Safe to exempt: a preflight carries no sensitive data, it's just the
+    # browser asking permission to make the real (still-authenticated)
+    # request.
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     # /results and /raw serve generated reports/notebooks and downloaded
     # structure files directly off disk via StaticFiles - session/run
     # folder names aren't secrets, so without this check anyone who can
