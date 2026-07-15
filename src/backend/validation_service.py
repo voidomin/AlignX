@@ -10,6 +10,7 @@ whatever coordinates are in the specific file downloaded/cleaned here.
 
 import re
 from typing import Any, Dict, Optional
+from urllib.parse import quote
 
 import httpx
 
@@ -54,12 +55,20 @@ async def fetch_pdbe_validation(
     fetch_* methods).
     """
     if not _SAFE_PDB_ID.match(pdb_id or ""):
-        logger.warning(f"Rejected unsafe pdb_id for validation lookup: {pdb_id!r}")
+        logger.warning(
+            f"Rejected unsafe pdb_id for validation lookup: {sanitize_for_log(pdb_id)}"
+        )
         return None
+
+    # Percent-encode on top of the allowlist check above - belt and
+    # suspenders against the request path ever containing anything but the
+    # exact validated segment, even if _SAFE_PDB_ID's pattern were ever
+    # loosened later.
+    safe_id = quote(pdb_id.lower(), safe="")
 
     try:
         response = await client.get(
-            f"{PDBE_VALIDATION_BASE_URL}/{pdb_id.lower()}",
+            f"{PDBE_VALIDATION_BASE_URL}/{safe_id}",
             headers={"Accept": "application/json"},
         )
         if response.status_code != 200:
