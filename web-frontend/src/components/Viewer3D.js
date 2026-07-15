@@ -174,9 +174,11 @@ export class Viewer3D {
             });
         });
 
+        // No `if (btn.disabled) return` guard needed here - disabled buttons
+        // never dispatch click events at all (browsers suppress it), so
+        // this listener simply never fires for the disabled option.
         this.element.querySelectorAll('.viewer-colorscheme-option').forEach(btn => {
             btn.addEventListener('click', () => {
-                if (btn.disabled) return;
                 this.setColorScheme(btn.dataset.scheme);
                 this.element.querySelector('#viewer-colorscheme-picker').open = false;
             });

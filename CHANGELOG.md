@@ -24,7 +24,8 @@ A substantial upgrade to the 3D structure viewer, plus a fix for a race conditio
 
 ### Verified
 - Full backend suite: 984 tests passing, unchanged (no backend files touched). `black`/`ruff` clean.
-- Frontend suite: 264 Vitest tests passing (up from 237 - `Viewer3D.js` previously had zero test coverage; this batch adds a full `Viewer3D.test.js` covering every new feature plus regression coverage for existing ghost/highlight/load behavior). `npm run lint` clean, `npm run build` succeeds.
+- Frontend suite: 293 Vitest tests passing (up from 237 - `Viewer3D.js` previously had zero test coverage; this batch adds a full `Viewer3D.test.js` covering every new feature, edge cases like an out-of-range structure index or a missing viewer instance, and regression coverage for existing ghost/highlight/load behavior - 98.9% statement / 87.6% branch coverage on the file). `npm run lint` clean, `npm run build` succeeds.
+- SonarCloud's new-code coverage gate (80% minimum) initially failed at 76.9% on the first push; closing the branch-coverage gaps it flagged (missing-viewer guards, the ESM- pLDDT path, single-structure confidence coloring, out-of-range structure indices, and a few other edge branches) brought the file to 87.6% branch coverage.
 - Real end-to-end verification against a live local server via Chromium, using a real completed 2-structure Mustang alignment: all 4 representation styles and all 4 color schemes applied without error; auto-spin, fullscreen (including popover visibility while fullscreen), and drag-to-rotate-without-triggering-clicks all confirmed; the downloaded screenshot was a real 583KB non-blank PNG; the measurement tool's 2-click distance/connector flow ran without error. Zero console/page errors throughout.
 
 ## [3.89.0]

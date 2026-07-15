@@ -383,6 +383,341 @@ describe('Viewer3D', () => {
         });
     });
 
+    describe('surface toggle and reset view', () => {
+        it('toggling surface on adds a SAS surface, toggling off removes it', () => {
+            const v = makeViewer();
+            const btn = v.element.querySelector('#btn-toggle-surface');
+
+            btn.click();
+            expect(mockViewer.addSurface).toHaveBeenCalledWith('SAS', expect.objectContaining({ opacity: 0.45 }));
+            expect(v.isSurfaceVisible).toBe(true);
+
+            btn.click();
+            expect(mockViewer.removeAllSurfaces).toHaveBeenCalled();
+            expect(v.isSurfaceVisible).toBe(false);
+        });
+
+        it('reset-view button re-centers the camera', () => {
+            const v = makeViewer();
+            v.element.querySelector('#btn-reset-view').click();
+            expect(mockViewer.zoomTo).toHaveBeenCalled();
+            expect(mockViewer.render).toHaveBeenCalled();
+        });
+    });
+
+    describe('fullscreen exit', () => {
+        it('clicking the button while already fullscreen calls exitFullscreen', () => {
+            const v = makeViewer();
+            Object.defineProperty(document, 'fullscreenElement', { value: v.element, configurable: true });
+
+            v.element.querySelector('#btn-toggle-fullscreen').click();
+
+            expect(document.exitFullscreen).toHaveBeenCalled();
+            Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true });
+        });
+    });
+
+    describe('style switcher - remaining representations', () => {
+        it('selecting sphere applies a scale-based size param', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+            v.setStyleRepresentation('sphere');
+            expect(mockViewer.setStyle).toHaveBeenCalledWith(expect.anything(), { sphere: expect.objectContaining({ scale: 0.3 }) });
+        });
+
+        it('selecting line applies a linewidth-based size param', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+            v.setStyleRepresentation('line');
+            expect(mockViewer.setStyle).toHaveBeenCalledWith(expect.anything(), { line: expect.objectContaining({ linewidth: 2 }) });
+        });
+    });
+
+    describe('pLDDT confidence color scheme', () => {
+        it('applies a B-factor gradient for a pLDDT structure with numeric B-factors', async () => {
+            const v = makeViewer();
+            mockViewer.getModel.mockReturnValue({ selectedAtoms: vi.fn(() => [{ b: 40 }, { b: 90 }]) });
+            await v.loadSuperposition('run_1', ['AF-P69905-F1', '3UG9'], {}, null);
+
+            v.setColorScheme('confidence');
+
+            expect(mockViewer.setStyle).toHaveBeenCalledWith(
+                { chain: 'A' },
+                { cartoon: expect.objectContaining({ colorscheme: { prop: 'b', gradient: 'roygb', min: 40, max: 90 } }) }
+            );
+        });
+
+        it('falls back to identity color for a non-pLDDT structure even in confidence mode', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            v.setColorScheme('confidence');
+
+            expect(mockViewer.setStyle).toHaveBeenCalledWith({ chain: 'A' }, { cartoon: expect.objectContaining({ color: expect.any(String) }) });
+        });
+
+        it('falls back to identity color for a pLDDT structure with no numeric B-factors', async () => {
+            const v = makeViewer();
+            mockViewer.getModel.mockReturnValue({ selectedAtoms: vi.fn(() => []) });
+            await v.loadSuperposition('run_1', ['AF-P69905-F1', '3UG9'], {}, null);
+
+            v.setColorScheme('confidence');
+
+            expect(mockViewer.setStyle).toHaveBeenCalledWith({ chain: 'A' }, { cartoon: expect.objectContaining({ color: expect.any(String) }) });
+        });
+    });
+
+    describe('line-style ghosting fallback', () => {
+        it('dims the color toward the background instead of relying on opacity alone', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+            v.setStyleRepresentation('line');
+            mockViewer.setStyle.mockClear();
+
+            v.highlightResidue(0, 'A', 10, 5);
+
+            const [, styleArg] = mockViewer.setStyle.mock.calls[0];
+            expect(styleArg.line.color).not.toBe('#8B5CF6');
+            expect(styleArg.line.opacity).toBe(0.35);
+        });
+    });
+
+    describe('RMSD HUD math', () => {
+        it('computes the mean RMSD for a 2-structure run with a real matrix', async () => {
+            const v = makeViewer();
+            await v.loadSuperposition('run_1', ['4RLT', '3UG9'], {}, { index: ['4RLT', '3UG9'], data: [[0, 2.5], [2.5, 0]] });
+
+            expect(v.element.querySelector('#hud-rmsd-container').textContent).toContain('2.50');
+        });
+
+        it('shows every pairwise value for a 3+ structure run', async () => {
+            const v = makeViewer();
+            await v.loadSuperposition('run_1', ['A', 'B', 'C'], {}, { index: ['A', 'B', 'C'], data: [[0, 1, 2], [1, 0, 3], [2, 3, 0]] });
+
+            const text = v.element.querySelector('#hud-rmsd-container').textContent;
+            expect(text).toContain('Pairwise RMSD');
+            expect(text).toContain('1.00');
+            expect(text).toContain('2.00');
+            expect(text).toContain('3.00');
+        });
+    });
+
+    describe('load failure handling', () => {
+        it('loadSuperposition logs an error when the fetch response is not ok', async () => {
+            global.fetch.mockResolvedValue({ ok: false, statusText: 'Not Found' });
+            const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+            const v = makeViewer();
+
+            await loadTwoStructures(v);
+
+            expect(errSpy).toHaveBeenCalled();
+        });
+
+        it('loadSingleStructure logs an error when the fetch response is not ok', async () => {
+            global.fetch.mockResolvedValue({ ok: false, statusText: 'Not Found' });
+            const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+            const v = makeViewer();
+
+            await v.loadSingleStructure('4RLT');
+
+            expect(errSpy).toHaveBeenCalled();
+        });
+    });
+
+    describe('edge cases for ghost/highlight zoom targets', () => {
+        it('showLigandBindingSite with no mappable interactions zooms to the whole model instead of an empty selection', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+            mockViewer.zoomTo.mockClear();
+
+            v.showLigandBindingSite(0, 'HEM_A_1', [{ aligned_resi: null }]);
+
+            expect(mockViewer.zoomTo).toHaveBeenCalledWith();
+        });
+
+        it('highlightResidue with no aligned_resi mapping avoids selecting a bogus residue', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+            mockViewer.zoomTo.mockClear();
+
+            v.highlightResidue(0, 'A', 10, null);
+
+            expect(mockViewer.zoomTo).toHaveBeenCalledWith();
+        });
+
+        it('highlightResidues with an empty map zooms to the whole model', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+            mockViewer.zoomTo.mockClear();
+
+            v.highlightResidues({});
+
+            expect(mockViewer.zoomTo).toHaveBeenCalledWith();
+        });
+    });
+
+    describe('inspect label cleared by entering measure mode', () => {
+        it('removes an existing inspect label when switching to measure mode', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+            const callback = mockViewer.setClickable.mock.calls.at(-1)[2];
+            callback({ resn: 'ALA', resi: 1, chain: 'A', x: 0, y: 0, z: 0 });
+            expect(v.inspectLabelHandle).not.toBeNull();
+            mockViewer.removeLabel.mockClear();
+
+            v.element.querySelector('#btn-toggle-measure').click();
+
+            expect(mockViewer.removeLabel).toHaveBeenCalled();
+        });
+
+        it('inspect click with no atom (clicked empty space) clears without adding a new label', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+            const callback = mockViewer.setClickable.mock.calls.at(-1)[2];
+            callback({ resn: 'ALA', resi: 1, chain: 'A', x: 0, y: 0, z: 0 });
+            mockViewer.addLabel.mockClear();
+
+            callback(null);
+
+            expect(v.inspectLabelHandle).toBeNull();
+            expect(mockViewer.addLabel).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('measurement connector fallback', () => {
+        it('uses addCylinder when addLine is not available', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+            delete mockViewer.addLine;
+            mockViewer.addCylinder = vi.fn(() => ({ id: 'cyl' }));
+            v.element.querySelector('#btn-toggle-measure').click();
+            const callback = mockViewer.setClickable.mock.calls.at(-1)[2];
+
+            callback({ resn: 'ALA', resi: 1, chain: 'A', x: 0, y: 0, z: 0 });
+            callback({ resn: 'GLY', resi: 2, chain: 'A', x: 3, y: 4, z: 0 });
+
+            expect(mockViewer.addCylinder).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('guards on a viewer that never got a 3Dmol instance', () => {
+        function makeUninitializedViewer() {
+            const v = new Viewer3D();
+            v.render();
+            return v;
+        }
+
+        it('every viewer-dependent method no-ops instead of throwing', () => {
+            const v = makeUninitializedViewer();
+            expect(() => {
+                v.toggleSpin();
+                v.downloadScreenshot();
+                v.showLigandBindingSite(0, 'HEM', []);
+                v.highlightResidue(0, 'A', 1, 1);
+                v.highlightResidues({ A: [1] });
+                v.resetCartoonStyles();
+                v._handleInspectClick({ resn: 'ALA', resi: 1, chain: 'A', x: 0, y: 0, z: 0 });
+                v._handleMeasureClick({ resn: 'ALA', resi: 1, chain: 'A', x: 0, y: 0, z: 0 });
+                v._wireClickHandler();
+                v.reset();
+            }).not.toThrow();
+        });
+
+        it('loadSuperposition/loadSingleStructure lazily call init3Dmol when no viewer exists yet', async () => {
+            const v = makeUninitializedViewer();
+            expect(v.viewer).toBeNull();
+
+            await v.loadSuperposition('run_1', ['4RLT', '3UG9'], {}, null);
+
+            expect(v.viewer).not.toBeNull();
+            expect(window.$3Dmol.createViewer).toHaveBeenCalled();
+        });
+    });
+
+    describe('window resize', () => {
+        it('resizes the viewer on a window resize event', () => {
+            makeViewer();
+            window.dispatchEvent(new Event('resize'));
+            expect(mockViewer.resize).toHaveBeenCalled();
+        });
+    });
+
+    describe('ESM Atlas pLDDT detection', () => {
+        it('treats an ESM- accession as a pLDDT structure too', async () => {
+            const v = makeViewer();
+            await v.loadSuperposition('run_1', ['ESM-MGYP002537940442', '3UG9'], {}, null);
+
+            expect(v.hasPlddtStructures()).toBe(true);
+        });
+    });
+
+    describe('confidence coloring on a single (non-aligned) structure', () => {
+        it('applies the B-factor gradient using the whole-model selector', async () => {
+            const v = makeViewer();
+            mockViewer.getModel.mockReturnValue({ selectedAtoms: vi.fn(() => [{ b: 10 }, { b: 80 }]) });
+            await v.loadSingleStructure('AF-P69905-F1');
+
+            v.setColorScheme('confidence');
+
+            expect(mockViewer.setStyle).toHaveBeenCalledWith(
+                {},
+                { cartoon: expect.objectContaining({ colorscheme: { prop: 'b', gradient: 'roygb', min: 10, max: 80 } }) }
+            );
+        });
+    });
+
+    describe('ghost/highlight with an out-of-range structure index', () => {
+        it('showLigandBindingSite falls back to chain A and a default color when the index is invalid', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            v.showLigandBindingSite(99, 'HEM', [{ aligned_resi: 5 }]);
+
+            expect(mockViewer.addStyle).toHaveBeenCalledWith(
+                { chain: 'A', resi: 5 },
+                expect.objectContaining({ cartoon: expect.objectContaining({ color: '#8B5CF6' }) })
+            );
+        });
+
+        it('highlightResidue falls back to the given raw chain when the index is invalid', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            v.highlightResidue(99, 'Z', 10, 7);
+
+            expect(mockViewer.zoomTo).toHaveBeenCalledWith({ chain: 'Z', resi: 7 });
+        });
+    });
+
+    describe('highlightResidues with a missing or sparse chain mapping', () => {
+        it('tolerates a null/undefined chainMapping', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            expect(() => v.highlightResidues(undefined)).not.toThrow();
+            expect(mockViewer.zoomTo).toHaveBeenCalledWith();
+        });
+
+        it('skips a chain entry with an empty residue list', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+            mockViewer.addStyle.mockClear();
+
+            v.highlightResidues({ A: [], B: [3] });
+
+            expect(mockViewer.addStyle).toHaveBeenCalledTimes(1);
+            expect(mockViewer.addStyle).toHaveBeenCalledWith({ chain: 'B', resi: [3] }, expect.any(Object));
+        });
+    });
+
+    describe('reset on a viewer that was never loaded or spinning', () => {
+        it('is a no-op-safe reset from the default state', () => {
+            const v = makeViewer();
+            expect(() => v.reset()).not.toThrow();
+            expect(v.isSpinning).toBe(false);
+        });
+    });
+
     describe('reset', () => {
         it('restores the ambient placeholder, empty HUD, and default style/color/spin/measure state', async () => {
             const v = makeViewer();
