@@ -2,6 +2,23 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.89.0]
+
+Merges the Overview (Compare mode, 2+ structures) and Discover (exactly 1 structure) tabs into a single **Workspace** tab - the direct fix for the recurring complaint that kicked off this session's whole feature-audit thread: you had to pick a mode before you knew what you wanted to do with your structures. Confirmed via two research passes that this was almost entirely a frontend consolidation - the backend already resolved everything from a bare `pdb_id` with `run_id` optional everywhere except the genuinely N>=2-only alignment/sequence/report/cluster/comparison endpoints.
+
+### Changed
+- **One "Workspace" tab replaces Overview + Discover.** Add any number of structures from any of the 4 DB sources or your own upload, exactly as before - no more picking a mode upfront. Nav goes from 10 tabs to 9: Workspace / Results (Ligands, Sequence, Analytics, Clusters) / Manage (Diff Runs, History, Dashboard, Settings - renamed from "Workspace" now that the merged tab owns that name).
+- **Per-structure "What is this?" action, available at any structure count** - not gated on being the only structure in the workspace, since Foldseek's search has no such backend requirement. Runs the same job-submission/detail-level/hit-table flow as before (now `DiscoveryPanel.js`), rendered inline below the structure list; only one result panel shown at a time.
+- **Ligands and Analytics tabs now work for a single, un-aligned structure** - both used to gate entirely on a completed Compare-mode `run_id`, even though `fetchLigands`/`fetchAnnotations` never needed one. Discover's own embedded ligand/pocket section is gone, superseded by this - one ligand UI instead of two.
+- **The 3D viewer now shows an instant single-structure preview** the moment there's exactly 1 structure in the workspace - decoupled from any job, unlike the old Discover flow where the viewer only updated once the slow Foldseek search finished. Reverts to the placeholder once a 2nd structure is added, until a real alignment produces a superposition.
+- **Run Structural Alignment is hidden below 2 structures** instead of shown with a "switch to Discover mode" nudge - there's no other mode to switch to anymore.
+- **History/Dashboard reload unifies onto the Workspace tab** for both past Discover and Compare runs - a reloaded Discover entry reopens its saved function-hypothesis result the same way a live "What is this?" run would.
+
+### Verified
+- Full backend suite: 984 tests passing, unchanged (no backend files touched). `black`/`ruff` clean.
+- Frontend suite: 237 Vitest tests passing (down from 303 mid-migration, after deleting the superseded `OverviewTab`/`DiscoverTab` components and their tests - `WorkspaceTab`/`DiscoveryPanel` fully replace their coverage). `npm run lint` clean, `npm run build` succeeds.
+- Real end-to-end verification against a live local server via Chromium: adding one structure showed an instant 3D preview and real Ligands-tab data with no completed run; the per-card "What is this?" button opened a live Foldseek search inline; adding a second structure correctly revealed the Run Alignment button. Zero console/page errors throughout.
+
 ## [3.88.0]
 
 5 scientific/analytical capability gaps from a code-verified feature audit (distinct from the earlier UX-only audits this session) - real things a structural biologist would expect that neither Compare nor Discover mode did before this batch. Each item was implemented, tested, and live-verified against real biological data independently before the next began.
