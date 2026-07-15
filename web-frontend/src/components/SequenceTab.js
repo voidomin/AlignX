@@ -1,4 +1,4 @@
-import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl, getAlignmentReportUrl, getLabNotebookUrl, getCitationsUrl, getRmsdCsvUrl, getHeatmapPngUrl, getReportZipUrl, getNewickUrl } from '../api';
+import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl, getAlignmentReportUrl, getLabNotebookUrl, getLabNotebookIpynbUrl, getCitationsUrl, getRmsdCsvUrl, getHeatmapPngUrl, getReportZipUrl, getNewickUrl } from '../api';
 
 const REPORT_SECTIONS = [
     { key: 'summary', label: 'Summary' },
@@ -86,6 +86,10 @@ export class SequenceTab {
                     <div class="flex items-center justify-between py-2 border-b border-border-subtle">
                         <span class="font-body-sm text-body-sm text-primary font-mono">lab_notebook.html</span>
                         <a id="download-notebook-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">View Notebook</a>
+                    </div>
+                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
+                        <span class="font-body-sm text-body-sm text-primary font-mono">lab_notebook.ipynb</span>
+                        <a id="download-notebook-ipynb-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download Jupyter Notebook</a>
                     </div>
                     <div class="flex items-center justify-between py-2 border-b border-border-subtle">
                         <span class="font-body-sm text-body-sm text-primary font-mono">mustang_report.pdf</span>
@@ -263,6 +267,7 @@ export class SequenceTab {
         const pdbLink = this.element.querySelector('#download-pdb-link');
         const fastaLink = this.element.querySelector('#download-fasta-link');
         const notebookLink = this.element.querySelector('#download-notebook-link');
+        const notebookIpynbLink = this.element.querySelector('#download-notebook-ipynb-link');
         const reportLink = this.element.querySelector('#download-report-link');
         const citationsLink = this.element.querySelector('#download-citations-link');
         const rmsdCsvLink = this.element.querySelector('#download-rmsd-csv-link');
@@ -281,6 +286,9 @@ export class SequenceTab {
 
             notebookLink.href = getLabNotebookUrl(this.currentRunId);
             notebookLink.classList.remove('opacity-55', 'pointer-events-none');
+
+            notebookIpynbLink.href = getLabNotebookIpynbUrl(this.currentRunId);
+            notebookIpynbLink.classList.remove('opacity-55', 'pointer-events-none');
 
             citationsLink.href = getCitationsUrl(this.currentRunId);
             citationsLink.classList.remove('opacity-55', 'pointer-events-none');
@@ -308,6 +316,9 @@ export class SequenceTab {
 
             notebookLink.href = "#";
             notebookLink.classList.add('opacity-55', 'pointer-events-none');
+
+            notebookIpynbLink.href = "#";
+            notebookIpynbLink.classList.add('opacity-55', 'pointer-events-none');
 
             citationsLink.href = "#";
             citationsLink.classList.add('opacity-55', 'pointer-events-none');

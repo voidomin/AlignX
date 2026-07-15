@@ -410,6 +410,14 @@ export function getLabNotebookUrl(runId) {
     return withApiKey(buildUrl('/api/notebook', { run_id: runId }));
 }
 
+// A real, runnable Jupyter notebook for this run - unlike getLabNotebookUrl's
+// static HTML snapshot, every code cell re-fetches this run's data live from
+// this same deployment's own documented REST API (see /api/notebook/ipynb).
+export function getLabNotebookIpynbUrl(runId) {
+    runId = assertSafeSegment(runId, 'runId');
+    return withApiKey(buildUrl('/api/notebook/ipynb', { run_id: runId }));
+}
+
 export function getCitationsUrl(runId) {
     runId = assertSafeSegment(runId, 'runId');
     return withApiKey(buildUrl('/api/report/citations', { run_id: runId }));

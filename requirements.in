@@ -69,3 +69,8 @@ ruff==0.15.21
 fastapi>=0.110.0
 uvicorn>=0.28.0
 python-multipart>=0.0.9  # required by FastAPI's UploadFile (POST /api/upload)
+
+# Jupyter notebook export (notebook_exporter.py's export_ipynb) - pure
+# Python, jsonschema (already a transitive dependency) is its only real
+# dependency, no binary/compilation concerns.
+nbformat>=5.9.0

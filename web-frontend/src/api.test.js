@@ -154,6 +154,11 @@ describe('api.js (no API key configured)', () => {
         expect(getLabNotebookUrl('run_1')).toContain('/api/notebook?run_id=run_1');
     });
 
+    it('getLabNotebookIpynbUrl points at the ipynb notebook endpoint for the given run', async () => {
+        const { getLabNotebookIpynbUrl } = await import('./api.js');
+        expect(getLabNotebookIpynbUrl('run_1')).toContain('/api/notebook/ipynb?run_id=run_1');
+    });
+
     it('getDiscoveryReportUrl points at the discover report endpoint for the given run', async () => {
         const { getDiscoveryReportUrl } = await import('./api.js');
         expect(getDiscoveryReportUrl('discover_1')).toContain('/api/discover/report?run_id=discover_1');

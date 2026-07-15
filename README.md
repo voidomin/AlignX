@@ -146,6 +146,27 @@ Full step-by-step verification protocol (setup checks, scientific metrics, API s
 
 ---
 
+## 🔌 REST API
+
+Every StructScope capability (alignment, ligand/pocket analysis, functional
+annotation, mutation impact, QC, exports, ...) is exposed as a documented
+REST endpoint - the SPA is just one client of it. Once the backend is
+running, browse the interactive Swagger UI at `/docs` (or the raw
+`/openapi.json` schema) for the full, always-current reference:
+
+```
+http://127.0.0.1:8000/docs
+```
+
+Every completed run also exports as a real, runnable Jupyter notebook
+(`GET /api/notebook/ipynb?run_id=...`, or the "Download Jupyter Notebook"
+link in the Sequence tab) - unlike the static HTML lab notebook, its code
+cells re-fetch the run's data live from this same REST API on execution,
+so it stays useful as a starting point for your own analysis rather than a
+frozen snapshot.
+
+---
+
 ## 📚 Documentation
 
 | Doc | Covers |

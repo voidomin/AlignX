@@ -1843,6 +1843,84 @@ def test_notebook_endpoint_500s_on_unexpected_exporter_error():
         assert "disk full" in response.json()["detail"]
 
 
+def test_notebook_ipynb_endpoint_returns_a_real_file(tmp_path):
+    dummy_ipynb = tmp_path / "dummy.ipynb"
+    dummy_ipynb.write_text('{"cells": [], "nbformat": 4}')
+
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "src.backend.notebook_exporter.NotebookExporter.export_ipynb"
+    ) as mock_export:
+        mock_export.return_value = dummy_ipynb
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT", "3UG9"],
+            "metadata": {
+                "results": {
+                    "stats": {"mean_rmsd": 1.25},
+                    "id": "run_123",
+                    "pdb_ids": ["4RLT", "3UG9"],
+                }
+            },
+        }
+
+        response = client.get("/api/notebook/ipynb?run_id=run_123")
+
+        assert response.status_code == 200
+        assert "dummy.ipynb" not in response.headers["content-disposition"]
+        assert "lab_notebook_run_123.ipynb" in response.headers["content-disposition"]
+        mock_export.assert_called_once()
+        call_args = mock_export.call_args
+        assert call_args[0][1] == "run_123"
+        assert call_args[1]["base_url"] == "http://testserver"
+
+
+def test_notebook_ipynb_endpoint_404s_for_unknown_run():
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        response = client.get("/api/notebook/ipynb?run_id=nope")
+        assert response.status_code == 404
+
+
+def test_notebook_ipynb_endpoint_500s_when_file_not_actually_created(tmp_path):
+    missing_ipynb = tmp_path / "never_written.ipynb"
+
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "src.backend.notebook_exporter.NotebookExporter.export_ipynb"
+    ) as mock_export:
+        mock_export.return_value = missing_ipynb
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT"],
+            "metadata": {"results": {"stats": {}, "id": "run_123"}},
+        }
+
+        response = client.get("/api/notebook/ipynb?run_id=run_123")
+
+        assert response.status_code == 500
+        assert "not created successfully" in response.json()["detail"]
+
+
+def test_notebook_ipynb_endpoint_500s_on_unexpected_exporter_error():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "src.backend.notebook_exporter.NotebookExporter.export_ipynb"
+    ) as mock_export:
+        mock_export.side_effect = RuntimeError("disk full")
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT"],
+            "metadata": {"results": {"stats": {}, "id": "run_123"}},
+        }
+
+        response = client.get("/api/notebook/ipynb?run_id=run_123")
+
+        assert response.status_code == 500
+        assert "disk full" in response.json()["detail"]
+
+
+def test_notebook_ipynb_endpoint_400s_on_invalid_run_id():
+    response = client.get("/api/notebook/ipynb?run_id=../etc")
+    assert response.status_code == 400
+
+
 def test_rmsd_csv_endpoint_returns_a_real_csv():
     with patch("src.backend.api.history_db.get_run") as mock_get_run:
         mock_get_run.return_value = {

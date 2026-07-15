@@ -121,6 +121,65 @@ class TestNotebookExporterExport:
         assert output_path is not None
 
 
+class TestNotebookExporterExportIpynb:
+    def test_full_happy_path_produces_a_real_valid_notebook(self, tmp_path):
+        import nbformat as nbf
+
+        results = {
+            "stats": {"mean_rmsd": 1.23456},
+            "pdb_ids": ["4RLT", "3UG9"],
+            "result_dir": tmp_path,
+        }
+
+        exporter = NotebookExporter()
+        output_path = exporter.export_ipynb(
+            results, "run_123", insights=["**Key finding** here."]
+        )
+
+        assert output_path is not None
+        assert output_path.exists()
+        assert output_path.suffix == ".ipynb"
+
+        notebook = nbf.read(output_path, as_version=4)
+        nbf.validate(notebook)  # real nbformat schema validation, not just JSON
+
+        sources = [c["source"] for c in notebook["cells"]]
+        assert any("run_123" in s for s in sources)
+        assert any("Key finding" in s for s in sources)
+        assert any("requests.get" in s for s in sources)
+
+    def test_uses_the_given_base_url_in_the_setup_cell(self, tmp_path):
+        results = {"stats": {"mean_rmsd": 1.0}, "pdb_ids": [], "result_dir": tmp_path}
+
+        exporter = NotebookExporter()
+        output_path = exporter.export_ipynb(
+            results, "run_123", base_url="https://example.com"
+        )
+
+        content = output_path.read_text(encoding="utf-8")
+        assert "https://example.com" in content
+
+    def test_no_insights_renders_without_an_insights_cell(self, tmp_path):
+        import nbformat as nbf
+
+        results = {"stats": {"mean_rmsd": 1.0}, "pdb_ids": [], "result_dir": tmp_path}
+
+        exporter = NotebookExporter()
+        output_path = exporter.export_ipynb(results, "run_123", insights=None)
+
+        notebook = nbf.read(output_path, as_version=4)
+        sources = [c["source"] for c in notebook["cells"]]
+        assert not any("Automated insights" in s for s in sources)
+
+    def test_returns_none_and_does_not_raise_on_bad_result_dir(self):
+        results = {"stats": {"mean_rmsd": 1.0}, "pdb_ids": [], "result_dir": None}
+
+        exporter = NotebookExporter()
+        output_path = exporter.export_ipynb(results, "run_123")
+
+        assert output_path is None
+
+
 class TestTemplateStrFallback:
     def test_falls_back_to_minimal_template_when_file_missing(self, tmp_path):
         exporter = NotebookExporter()

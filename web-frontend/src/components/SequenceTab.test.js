@@ -7,6 +7,7 @@ vi.mock('../api.js', () => ({
     getAlignmentFastaUrl: vi.fn((runId) => `http://api/results/${runId}/alignment.fasta`),
     getAlignmentReportUrl: vi.fn((runId, sections) => `http://api/api/report?run_id=${runId}${sections ? `&sections=${sections.join(',')}` : ''}`),
     getLabNotebookUrl: vi.fn((runId) => `http://api/api/notebook?run_id=${runId}`),
+    getLabNotebookIpynbUrl: vi.fn((runId) => `http://api/api/notebook/ipynb?run_id=${runId}`),
     getCitationsUrl: vi.fn((runId) => `http://api/api/report/citations?run_id=${runId}`),
     getRmsdCsvUrl: vi.fn((runId) => `http://api/api/report/rmsd-csv?run_id=${runId}`),
     getHeatmapPngUrl: vi.fn((runId) => `http://api/api/report/heatmap-png?run_id=${runId}`),
@@ -107,6 +108,22 @@ describe('SequenceTab', () => {
         const notebookLink = tab.element.querySelector('#download-notebook-link');
         expect(notebookLink.classList.contains('pointer-events-none')).toBe(false);
         expect(notebookLink.href).toContain('run_123');
+    });
+
+    it('enables the Jupyter notebook link once a run is set, and disables it again on reset', () => {
+        fetchSequence.mockResolvedValue({ sequences: {}, conservation: [] });
+        const tab = new SequenceTab();
+        tab.render();
+
+        tab.updateResults('run_123', { rmsd: 1.0 });
+
+        const notebookIpynbLink = tab.element.querySelector('#download-notebook-ipynb-link');
+        expect(notebookIpynbLink.classList.contains('pointer-events-none')).toBe(false);
+        expect(notebookIpynbLink.href).toContain('run_123');
+
+        tab.updateResults(null, null);
+
+        expect(notebookIpynbLink.classList.contains('pointer-events-none')).toBe(true);
     });
 
     it('report checklist defaults to all 5 sections checked with no sections param in the URL', () => {

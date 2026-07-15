@@ -2009,6 +2009,79 @@ def get_lab_notebook(
         )
 
 
+@app.get(
+    "/api/notebook/ipynb",
+    responses={
+        400: {"description": "Invalid run_id or session_id"},
+        404: {"description": "Run not found in the history database"},
+        500: {"description": "Jupyter notebook generation failed"},
+    },
+)
+def get_lab_notebook_ipynb(
+    request: Request,
+    run_id: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Generate and retrieve a real, runnable Jupyter notebook for a run -
+    see NotebookExporter.export_ipynb(). Unlike GET /api/notebook's static
+    HTML snapshot, every code cell here re-fetches this run's data live
+    from this same deployment's own REST API (request.base_url), so it
+    keeps working correctly regardless of which host actually served it.
+    """
+    from src.backend.notebook_exporter import NotebookExporter
+    from fastapi.responses import FileResponse
+
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    run = history_db.get_run(run_id)
+    if not run:
+        raise HTTPException(
+            status_code=404, detail=f"Run {run_id} not found in history database."
+        )
+
+    res_dir = project_root / "results"
+    if session_id:
+        res_dir = res_dir / session_id
+    res_dir = res_dir / run_id
+
+    metadata = run.get("metadata", {})
+    results = metadata.get("results") or {
+        "stats": metadata.get("stats", {}),
+        "id": run_id,
+        "pdb_ids": run.get("pdb_ids", []),
+    }
+    results = dict(results)
+    results["result_dir"] = res_dir
+
+    try:
+        exporter = NotebookExporter()
+        base_url = str(request.base_url).rstrip("/")
+        notebook_path = exporter.export_ipynb(
+            results, run_id, insights=results.get("insights"), base_url=base_url
+        )
+
+        if not notebook_path or not notebook_path.exists():
+            raise HTTPException(
+                status_code=500,
+                detail="Jupyter notebook file was not created successfully.",
+            )
+
+        return FileResponse(
+            path=str(notebook_path),
+            media_type="application/x-ipynb+json",
+            filename=f"lab_notebook_{run_id}.ipynb",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Failed to generate Jupyter notebook")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate Jupyter notebook: {str(e)}"
+        )
+
+
 def _lookup_run_and_result_dir(
     run_id: str, session_id: Optional[str]
 ) -> Tuple[Dict[str, Any], Path]:
