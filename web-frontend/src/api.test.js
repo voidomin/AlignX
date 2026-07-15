@@ -490,4 +490,26 @@ describe('api.js request-ID validation', () => {
         expect(global.fetch.mock.calls[0][0]).toContain('resi=6');
         expect(global.fetch.mock.calls[0][0]).toContain('mutant=V');
     });
+
+    it('updateRunNotes rejects an unsafe runId', async () => {
+        const { updateRunNotes } = await import('./api.js');
+        await expect(updateRunNotes('../evil', { notes: 'x' })).rejects.toThrow('Invalid runId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('updateRunNotes PUTs notes and tags as JSON', async () => {
+        mockFetchOnce({ run_id: 'run_1', notes: 'Interesting fold', tags: ['kinase'] });
+        const { updateRunNotes } = await import('./api.js');
+        const data = await updateRunNotes('run_1', { notes: 'Interesting fold', tags: ['kinase'] });
+        expect(data.notes).toBe('Interesting fold');
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/history/run_1/notes');
+        expect(global.fetch.mock.calls[0][1].method).toBe('PUT');
+        expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({ notes: 'Interesting fold', tags: ['kinase'] });
+    });
+
+    it('updateRunNotes throws with the backend detail message on failure', async () => {
+        mockFetchOnce({ detail: 'Run not found in history database.' }, false, 404);
+        const { updateRunNotes } = await import('./api.js');
+        await expect(updateRunNotes('run_1', { notes: 'x' })).rejects.toThrow('Run not found in history database.');
+    });
 });

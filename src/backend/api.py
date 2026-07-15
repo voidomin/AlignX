@@ -440,6 +440,7 @@ async def analyze_chains(
                 chain_info[pid]["method"] = meta.get("method", "N/A")
                 chain_info[pid]["resolution"] = meta.get("resolution", "N/A")
                 chain_info[pid]["organism"] = meta.get("organism", "N/A")
+                chain_info[pid]["citation"] = meta.get("citation")
     except Exception as e:
         logger.warning(f"Failed to fetch PDB title metadata: {e}")
 
@@ -1602,6 +1603,48 @@ def delete_history_run(
 
     history_db.delete_run(run_id)
     return {"deleted": run_id}
+
+
+class RunNotesUpdate(BaseModel):
+    notes: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+
+@app.put(
+    "/api/history/{run_id}/notes",
+    responses={
+        400: {"description": "Invalid run_id"},
+        403: {"description": "Run belongs to a different session"},
+        404: {"description": "Run not found in the history database"},
+    },
+)
+def update_run_notes(
+    run_id: str,
+    body: RunNotesUpdate,
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Add/update a run's free-text notes and/or tags, stored in the run's
+    existing metadata JSON column (see HistoryDatabase.update_run_notes -
+    no schema change needed). Same session-ownership check as
+    delete_history_run: a shared-run-link viewer can read but not edit
+    someone else's run's notes.
+    """
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    run = history_db.get_run(run_id)
+    if not run:
+        raise HTTPException(
+            status_code=404, detail=f"Run {run_id} not found in history database."
+        )
+    if run.get("session_id") and run["session_id"] != session_id:
+        raise HTTPException(
+            status_code=403, detail="This run belongs to a different session."
+        )
+
+    history_db.update_run_notes(run_id, notes=body.notes, tags=body.tags)
+    return {"run_id": run_id, "notes": body.notes, "tags": body.tags}
 
 
 @app.delete("/api/history")

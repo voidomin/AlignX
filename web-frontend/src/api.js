@@ -322,6 +322,24 @@ export async function deleteRun(runId) {
     return res.json();
 }
 
+// Adds/updates a run's free-text notes and/or tags, stored in the run's
+// existing metadata (see HistoryDatabase.update_run_notes - no schema
+// change involved). Pass notes/tags as null to leave that field untouched;
+// pass "" or [] to explicitly clear it.
+export async function updateRunNotes(runId, { notes, tags } = {}) {
+    runId = assertSafeSegment(runId, 'runId');
+    const res = await fetch(buildUrl(`/api/history/${runId}/notes`), {
+        method: 'PUT',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: notes ?? null, tags: tags ?? null }),
+    });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Failed to update run notes");
+    }
+    return res.json();
+}
+
 export async function clearAllHistory() {
     const res = await fetch(buildUrl('/api/history'), { method: 'DELETE', headers: authHeaders() });
     if (!res.ok) {

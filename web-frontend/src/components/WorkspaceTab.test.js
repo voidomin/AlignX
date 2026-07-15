@@ -322,6 +322,61 @@ describe('WorkspaceTab', () => {
         expect(tab.element.querySelector('.pdb-gaps-badge')).toBeNull();
     });
 
+    it('shows a PubMed link when the structure has a real primary citation with a PubMed ID', () => {
+        const tab = makeTab({
+            selectedPDBs: ['4HHB'],
+            pdbMetadata: {
+                '4HHB': {
+                    chains: [{ id: 'A', residue_count: 141, gaps: [] }],
+                    source: 'pdb',
+                    citation: {
+                        pubmed_id: 6726807,
+                        doi: '10.1016/0022-2836(84)90472-8',
+                        authors: ['Fermi, G.'],
+                        title: 'The crystal structure of human deoxyhaemoglobin',
+                    },
+                },
+            },
+        });
+        tab.render();
+
+        const row = tab.element.querySelector('#workspace-pdb-list-container > div');
+        const link = row.querySelector('.pdb-citation-link');
+        expect(link.textContent).toBe('View publication (PubMed)');
+        expect(link.href).toBe('https://pubmed.ncbi.nlm.nih.gov/6726807/');
+        expect(link.title).toBe('The crystal structure of human deoxyhaemoglobin');
+    });
+
+    it('falls back to a DOI link when there is no PubMed ID', () => {
+        const tab = makeTab({
+            selectedPDBs: ['4HHB'],
+            pdbMetadata: {
+                '4HHB': {
+                    chains: [{ id: 'A', residue_count: 141, gaps: [] }],
+                    source: 'pdb',
+                    citation: { pubmed_id: null, doi: '10.1016/0022-2836(84)90472-8', authors: [], title: null },
+                },
+            },
+        });
+        tab.render();
+
+        const link = tab.element.querySelector('.pdb-citation-link');
+        expect(link.textContent).toBe('View publication (DOI)');
+        expect(link.href).toBe('https://doi.org/10.1016/0022-2836(84)90472-8');
+    });
+
+    it('omits the citation link when the structure has no primary citation', () => {
+        const tab = makeTab({
+            selectedPDBs: ['4RLT'],
+            pdbMetadata: {
+                '4RLT': { chains: [{ id: 'A', residue_count: 100, gaps: [] }], citation: null },
+            },
+        });
+        tab.render();
+
+        expect(tab.element.querySelector('.pdb-citation-link')).toBeNull();
+    });
+
     it('defaults to a "PDB" badge and omits the metadata line while metadata has not loaded yet', () => {
         const tab = makeTab({ selectedPDBs: ['4RLT'] });
         tab.render();

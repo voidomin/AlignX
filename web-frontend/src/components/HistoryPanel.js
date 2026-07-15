@@ -1,4 +1,4 @@
-import { fetchHistory, getShareLink, deleteRun, clearAllHistory } from '../api';
+import { fetchHistory, getShareLink, deleteRun, clearAllHistory, updateRunNotes } from '../api';
 
 const PAGE_SIZE = 20;
 
@@ -92,7 +92,7 @@ export class HistoryPanel {
         const container = this.element.querySelector('#history-runs-list');
         runs.forEach(run => {
             const div = document.createElement('div');
-            div.className = "flex justify-between items-center py-3 border-b border-border-subtle hover:bg-surface-raised transition-colors cursor-pointer group px-2 -mx-2 rounded-md";
+            div.className = "flex flex-col gap-2 py-3 border-b border-border-subtle hover:bg-surface-raised transition-colors cursor-pointer group px-2 -mx-2 rounded-md";
 
             let pids;
             try {
@@ -121,16 +121,28 @@ export class HistoryPanel {
             // injection sink here at all (stronger than escaping into an
             // innerHTML template).
             div.innerHTML = `
-                <div class="flex items-center gap-4">
-                    <span class="px-1.5 py-0.5 rounded-md bg-surface border border-border-subtle font-mono text-[10px] text-secondary uppercase" data-field="type"></span>
-                    <span class="font-body-sm font-bold text-primary group-hover:text-accent font-mono" data-field="id"></span>
-                    <div class="flex gap-1" data-field="pids"></div>
+                <div class="flex justify-between items-center">
+                    <div class="flex items-center gap-4">
+                        <span class="px-1.5 py-0.5 rounded-md bg-surface border border-border-subtle font-mono text-[10px] text-secondary uppercase" data-field="type"></span>
+                        <span class="font-body-sm font-bold text-primary group-hover:text-accent font-mono" data-field="id"></span>
+                        <div class="flex gap-1" data-field="pids"></div>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <span class="text-[10px] font-medium capitalize text-success" data-field="status"></span>
+                        <span class="font-label-sm text-[10px] text-secondary" data-field="time"></span>
+                        <button class="notes-toggle-btn font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Notes &amp; tags</button>
+                        <button class="share-run-btn font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Share</button>
+                        <button class="delete-run-btn font-label-sm text-label-sm text-secondary hover:text-error transition-colors underline decoration-dotted">Delete</button>
+                    </div>
                 </div>
-                <div class="flex items-center gap-4">
-                    <span class="text-[10px] font-medium capitalize text-success" data-field="status"></span>
-                    <span class="font-label-sm text-[10px] text-secondary" data-field="time"></span>
-                    <button class="share-run-btn font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Share</button>
-                    <button class="delete-run-btn font-label-sm text-label-sm text-secondary hover:text-error transition-colors underline decoration-dotted">Delete</button>
+                <div class="flex flex-wrap items-center gap-1.5" data-field="tags-display"></div>
+                <div class="hidden flex-col gap-2 pt-1" data-field="notes-editor">
+                    <textarea class="notes-input w-full bg-surface border border-border rounded-md px-2 py-1.5 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent" rows="2" placeholder="Add a note about this run..."></textarea>
+                    <input type="text" class="tags-input w-full bg-surface border border-border rounded-md px-2 py-1.5 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" placeholder="Comma-separated tags, e.g. kinase, review" />
+                    <div class="flex gap-2">
+                        <button class="notes-save-btn px-3 py-1 rounded-md bg-accent-muted text-accent font-label-sm text-label-sm">Save</button>
+                        <button class="notes-cancel-btn px-3 py-1 rounded-md font-label-sm text-label-sm text-secondary hover:text-primary">Cancel</button>
+                    </div>
                 </div>
             `;
 
@@ -147,8 +159,44 @@ export class HistoryPanel {
                 pidsContainer.appendChild(badge);
             });
 
+            this.renderTagsDisplay(div, run);
+
             div.addEventListener('click', () => {
                 this.onReloadRun(run);
+            });
+
+            const notesToggleBtn = div.querySelector('.notes-toggle-btn');
+            const notesEditor = div.querySelector('[data-field="notes-editor"]');
+            const notesInput = div.querySelector('.notes-input');
+            const tagsInput = div.querySelector('.tags-input');
+            notesToggleBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                notesInput.value = run.metadata?.notes || '';
+                tagsInput.value = (run.metadata?.tags || []).join(', ');
+                notesEditor.classList.remove('hidden');
+                notesEditor.classList.add('flex');
+            });
+
+            div.querySelector('.notes-cancel-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                notesEditor.classList.add('hidden');
+                notesEditor.classList.remove('flex');
+            });
+
+            div.querySelector('.notes-save-btn').addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const notes = notesInput.value.trim();
+                const tags = tagsInput.value.split(',').map(t => t.trim()).filter(Boolean);
+                try {
+                    await updateRunNotes(run.id, { notes, tags });
+                    run.metadata = { ...run.metadata, notes, tags };
+                    this.renderTagsDisplay(div, run);
+                    notesEditor.classList.add('hidden');
+                    notesEditor.classList.remove('flex');
+                } catch (err) {
+                    console.error("Failed to save run notes:", err);
+                    alert(err.message || "Failed to save notes.");
+                }
             });
 
             const shareBtn = div.querySelector('.share-run-btn');
@@ -187,6 +235,29 @@ export class HistoryPanel {
 
             container.appendChild(div);
         });
+    }
+
+    // Renders the tag badges + note preview under one run's row - called
+    // both on initial render and after a successful notes-editor save, so
+    // the display reflects the just-saved values without a full reload.
+    renderTagsDisplay(div, run) {
+        const container = div.querySelector('[data-field="tags-display"]');
+        container.innerHTML = "";
+
+        const tags = run.metadata?.tags || [];
+        tags.forEach(tag => {
+            const badge = document.createElement('span');
+            badge.className = "px-1.5 py-0.5 rounded-md bg-accent-muted text-accent font-mono text-[10px]";
+            badge.textContent = tag;
+            container.appendChild(badge);
+        });
+
+        if (run.metadata?.notes) {
+            const note = document.createElement('span');
+            note.className = "font-body-sm text-[11px] text-secondary italic";
+            note.textContent = run.metadata.notes;
+            container.appendChild(note);
+        }
     }
 
     renderLoadMoreControl() {

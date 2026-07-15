@@ -391,6 +391,21 @@ export class WorkspaceTab {
                 .join('; ');
             const gapLabel = gapCount === 1 ? 'region' : 'regions';
 
+            // RCSB's primary-citation lookup - prefer a PubMed link when
+            // an ID is present (more reliably resolvable than every DOI),
+            // fall back to the DOI resolver otherwise. AlphaFold/SWISS-
+            // MODEL/ESMFold structures have no citation concept, so meta
+            // has no `citation` field for those at all.
+            let citationLinkHTML = '';
+            if (meta?.citation?.pubmed_id || meta?.citation?.doi) {
+                const citation = meta.citation;
+                const href = citation.pubmed_id
+                    ? `https://pubmed.ncbi.nlm.nih.gov/${citation.pubmed_id}/`
+                    : `https://doi.org/${citation.doi}`;
+                const label = citation.pubmed_id ? 'PubMed' : 'DOI';
+                citationLinkHTML = `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" class="pdb-citation-link font-body-sm text-[11px] text-accent hover:underline pl-0.5" title="${escapeHtml(citation.title || '')}">View publication (${label})</a>`;
+            }
+
             div.innerHTML = `
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-2">
@@ -411,6 +426,7 @@ export class WorkspaceTab {
                 ${meta?.is_nmr ? `<span class="pdb-nmr-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="Showing model 1 of ${meta.num_models} - other conformers in this NMR ensemble aren't analyzed.">NMR · ${meta.num_models} models (model 1 shown)</span>` : ''}
                 ${gapCount > 0 ? `<span class="pdb-gaps-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="${escapeHtml(gapTooltip)}">${gapCount} disordered ${gapLabel}</span>` : ''}
                 ${meta?.source === 'pdb' ? `<span id="validation-badge-${pid}" class="pdb-validation-badge font-body-sm text-[11px] text-tertiary pl-0.5">${this._validationBadgeContent(pid)}</span>` : ''}
+                ${citationLinkHTML}
             `;
 
             // Bind events

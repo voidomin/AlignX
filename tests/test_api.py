@@ -371,6 +371,59 @@ def test_delete_history_run_allows_deleting_a_legacy_run_with_no_session_id():
         mock_db.delete_run.assert_called_once_with("run_1")
 
 
+def test_update_run_notes_sets_notes_and_tags():
+    with patch("src.backend.api.history_db") as mock_db:
+        mock_db.get_run.return_value = {"id": "run_1", "session_id": "sess_1"}
+        response = client.put(
+            "/api/history/run_1/notes?session_id=sess_1",
+            json={"notes": "Interesting fold", "tags": ["kinase", "review"]},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["notes"] == "Interesting fold"
+        assert data["tags"] == ["kinase", "review"]
+        mock_db.update_run_notes.assert_called_once_with(
+            "run_1", notes="Interesting fold", tags=["kinase", "review"]
+        )
+
+
+def test_update_run_notes_404s_for_unknown_run():
+    with patch("src.backend.api.history_db") as mock_db:
+        mock_db.get_run.return_value = None
+        response = client.put(
+            "/api/history/does_not_exist/notes?session_id=sess_1",
+            json={"notes": "x"},
+        )
+
+        assert response.status_code == 404
+        mock_db.update_run_notes.assert_not_called()
+
+
+def test_update_run_notes_403s_for_a_different_sessions_run():
+    with patch("src.backend.api.history_db") as mock_db:
+        mock_db.get_run.return_value = {"id": "run_1", "session_id": "someone_else"}
+        response = client.put(
+            "/api/history/run_1/notes?session_id=sess_1",
+            json={"notes": "x"},
+        )
+
+        assert response.status_code == 403
+        mock_db.update_run_notes.assert_not_called()
+
+
+def test_update_run_notes_allows_editing_a_legacy_run_with_no_session_id():
+    with patch("src.backend.api.history_db") as mock_db:
+        mock_db.get_run.return_value = {"id": "run_1", "session_id": None}
+        response = client.put(
+            "/api/history/run_1/notes?session_id=sess_1",
+            json={"notes": "x"},
+        )
+
+        assert response.status_code == 200
+        mock_db.update_run_notes.assert_called_once_with("run_1", notes="x", tags=None)
+
+
 def test_clear_history_falls_back_to_a_global_wipe_without_a_session_id():
     """The bundled SPA doesn't send session_id anywhere today, so omitting
     it must still work (matching the single-user Streamlit app this is
@@ -414,6 +467,12 @@ def test_chains_endpoint():
                 "method": "X-RAY DIFFRACTION",
                 "resolution": "2.10 Å",
                 "organism": "Homo sapiens",
+                "citation": {
+                    "pubmed_id": 12345,
+                    "doi": "10.1000/xyz",
+                    "authors": ["Someone, A."],
+                    "title": "A paper",
+                },
             }
         }
 
@@ -428,6 +487,7 @@ def test_chains_endpoint():
         assert data["chains"]["4RLT"]["resolution"] == "2.10 Å"
         assert data["chains"]["4RLT"]["organism"] == "Homo sapiens"
         assert data["chains"]["4RLT"]["source"] == "pdb"
+        assert data["chains"]["4RLT"]["citation"]["pubmed_id"] == 12345
 
 
 def test_chains_endpoint_tags_source_for_alphafold_id():
