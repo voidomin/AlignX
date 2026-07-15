@@ -9,9 +9,10 @@ vi.mock('../api.js', () => ({
     getDiscoveryReportUrl: vi.fn((runId) => `http://mock/api/discover/report?run_id=${runId}`),
     getDiscoveryExportUrl: vi.fn((runId) => `http://mock/api/discover/export?run_id=${runId}`),
     getDiscoveryCitationsUrl: vi.fn((runId) => `http://mock/api/discover/citations?run_id=${runId}`),
+    fetchValidation: vi.fn(),
 }));
 
-import { submitDiscoveryJob, pollJobUntilDone } from '../api.js';
+import { submitDiscoveryJob, pollJobUntilDone, fetchValidation } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new WorkspaceTab({
@@ -174,6 +175,91 @@ describe('WorkspaceTab', () => {
         expect(rows[1].querySelector('.source-badge').textContent).toBe('AlphaFold');
         expect(rows[1].querySelector('.pdb-meta-line').textContent)
             .toBe('Predicted (AF2) · pLDDT Scored · Homo sapiens');
+    });
+
+    describe('wwPDB validation badge', () => {
+        function makePdbTab(overrides = {}) {
+            return makeTab({
+                selectedPDBs: ['4HHB'],
+                pdbMetadata: {
+                    '4HHB': { chains: [{ id: 'A', residue_count: 141 }], source: 'pdb' },
+                },
+                ...overrides,
+            });
+        }
+
+        it('shows a "checking" placeholder immediately, then the real metrics once the fetch resolves', async () => {
+            let resolveFetch;
+            fetchValidation.mockReturnValue(new Promise(r => { resolveFetch = r; }));
+            const tab = makePdbTab();
+            tab.render();
+
+            const badge = tab.element.querySelector('#validation-badge-4HHB');
+            expect(badge.textContent).toBe('Checking wwPDB validation…');
+
+            resolveFetch({
+                pdb_id: '4HHB',
+                validation: {
+                    clashscore: { value: 1.2, percentile_archive: 85.4 },
+                    percent_rama_outliers: { value: 1.24, percentile_archive: 12.8 },
+                },
+            });
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(badge.textContent).toContain('Clashscore 1.2');
+            expect(badge.textContent).toContain('archive percentile 85');
+            expect(badge.textContent).toContain('Rama outliers 1.2%');
+        });
+
+        it('shows a graceful message when no validation report is available', async () => {
+            fetchValidation.mockResolvedValue({ pdb_id: '4HHB', validation: null });
+            const tab = makePdbTab();
+            tab.render();
+
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#validation-badge-4HHB').textContent)
+                .toBe('No wwPDB validation report available');
+        });
+
+        it('shows a graceful message when the fetch itself fails', async () => {
+            fetchValidation.mockRejectedValue(new Error('network down'));
+            const tab = makePdbTab();
+            tab.render();
+
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#validation-badge-4HHB').textContent)
+                .toBe('No wwPDB validation report available');
+        });
+
+        it('omits the badge entirely for non-"pdb"-source structures', () => {
+            fetchValidation.mockClear();
+            const tab = makeTab({
+                selectedPDBs: ['AF-P69905-F1'],
+                pdbMetadata: { 'AF-P69905-F1': { chains: [{ id: 'A', residue_count: 141 }], source: 'alphafold' } },
+            });
+            tab.render();
+
+            expect(tab.element.querySelector('.pdb-validation-badge')).toBeNull();
+            expect(fetchValidation).not.toHaveBeenCalled();
+        });
+
+        it('only fetches once per structure across re-renders', async () => {
+            fetchValidation.mockResolvedValue({ pdb_id: '4HHB', validation: null });
+            const tab = makePdbTab();
+            tab.render();
+            await Promise.resolve();
+            await Promise.resolve();
+            fetchValidation.mockClear();
+
+            tab.updateState(['4HHB'], {}, { '4HHB': { chains: [{ id: 'A', residue_count: 141 }], source: 'pdb' } });
+
+            expect(fetchValidation).not.toHaveBeenCalled();
+        });
     });
 
     it('shows an NMR badge when the structure is a multi-model ensemble', () => {

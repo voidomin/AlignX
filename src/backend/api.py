@@ -32,6 +32,7 @@ from src.utils.logger import get_logger, sanitize_for_log
 from src.backend.coordinator import AnalysisCoordinator
 from src.backend.discovery_coordinator import DiscoveryCoordinator
 from src.backend.annotation_aggregator import AnnotationAggregator
+from src.backend.validation_service import fetch_pdbe_validation
 from src.backend.foldseek_client import FoldseekClient, FoldseekError
 from src.backend.database import HistoryDatabase
 from src.backend.ligand_analyzer import LigandAnalyzer
@@ -1260,6 +1261,30 @@ async def get_annotations(
             pdb_id, chain, source, client
         )
     return {"pdb_id": pdb_id, "annotation": sanitize_for_json(annotation)}
+
+
+@app.get(
+    "/api/validation",
+    responses={400: {"description": "Invalid pdb_id"}},
+)
+async def get_validation(pdb_id: Annotated[str, Query(...)]):
+    """
+    Fetch wwPDB/PDBe experimental validation metrics (clashscore,
+    Ramachandran/rotamer outlier percentiles) for a real, experimentally-
+    solved PDB entry - see validation_service.py. Only meaningful for
+    source == "pdb" structures; AlphaFold/SWISS-MODEL/ESMFold structures
+    have no experimental validation report, so this returns
+    validation: null for those rather than a 404 (not an error case - the
+    frontend simply omits the validation section for those sources).
+    """
+    _safe_segment(pdb_id, "pdb_id")
+
+    if PDBManager.detect_source(pdb_id) != "pdb":
+        return {"pdb_id": pdb_id, "validation": None}
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        validation = await fetch_pdbe_validation(pdb_id, client)
+    return {"pdb_id": pdb_id, "validation": validation}
 
 
 @app.get("/api/memory")

@@ -401,4 +401,21 @@ describe('api.js request-ID validation', () => {
         const { fetchAnnotations } = await import('./api.js');
         await expect(fetchAnnotations('AF-P69905-F1')).resolves.toBeDefined();
     });
+
+    it('fetchValidation rejects a pdbId that is not a recognized structure ID format', async () => {
+        const { fetchValidation } = await import('./api.js');
+        await expect(fetchValidation('../evil')).rejects.toThrow('Invalid pdbId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchValidation resolves with the { pdb_id, validation } shape', async () => {
+        mockFetchOnce({ pdb_id: '4HHB', validation: { clashscore: { value: 1.2 } } });
+        const { fetchValidation } = await import('./api.js');
+        await expect(fetchValidation('4HHB')).resolves.toEqual({
+            pdb_id: '4HHB',
+            validation: { clashscore: { value: 1.2 } },
+        });
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/validation');
+        expect(global.fetch.mock.calls[0][0]).toContain('pdb_id=4HHB');
+    });
 });

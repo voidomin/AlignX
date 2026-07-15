@@ -1,4 +1,4 @@
-import { fetchSuggestions, isValidPdbId } from '../api';
+import { fetchSuggestions, isValidPdbId, fetchValidation } from '../api';
 import { escapeHtml } from '../escapeHtml';
 import { QUICK_START_EXAMPLES } from '../quickStartExamples';
 import { DiscoveryPanel } from './DiscoveryPanel';
@@ -39,6 +39,13 @@ export class WorkspaceTab {
         this.discoveryPanel = new DiscoveryPanel({
             onClose: () => this.hideDiscoveryPanel(),
         });
+        // wwPDB validation is only meaningful for real, experimentally-
+        // solved PDB entries (AlphaFold/SWISS-MODEL/ESMFold have no
+        // validation report) - fetched lazily per structure card, cached
+        // so switching tabs and back doesn't re-fetch. undefined = not
+        // yet fetched, null = fetched but no report available.
+        this.validationCache = {};
+        this._validationLoading = new Set();
     }
 
     render() {
@@ -403,6 +410,7 @@ export class WorkspaceTab {
                 ${metaParts.length > 0 ? `<span class="pdb-meta-line font-body-sm text-[11px] text-secondary pl-0.5">${metaParts.join(' · ')}</span>` : ''}
                 ${meta?.is_nmr ? `<span class="pdb-nmr-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="Showing model 1 of ${meta.num_models} - other conformers in this NMR ensemble aren't analyzed.">NMR · ${meta.num_models} models (model 1 shown)</span>` : ''}
                 ${gapCount > 0 ? `<span class="pdb-gaps-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="${escapeHtml(gapTooltip)}">${gapCount} disordered ${gapLabel}</span>` : ''}
+                ${meta?.source === 'pdb' ? `<span id="validation-badge-${pid}" class="pdb-validation-badge font-body-sm text-[11px] text-tertiary pl-0.5">${this._validationBadgeContent(pid)}</span>` : ''}
             `;
 
             // Bind events
@@ -419,7 +427,46 @@ export class WorkspaceTab {
             });
 
             container.appendChild(div);
+
+            if (meta?.source === 'pdb') {
+                this._loadValidation(pid);
+            }
         });
+    }
+
+    _validationBadgeContent(pid) {
+        const cached = this.validationCache[pid];
+        if (cached === undefined) return 'Checking wwPDB validation…';
+        if (!cached) return 'No wwPDB validation report available';
+
+        const parts = [];
+        if (cached.clashscore) {
+            parts.push(`Clashscore ${cached.clashscore.value.toFixed(1)} (archive percentile ${Math.round(cached.clashscore.percentile_archive)})`);
+        }
+        if (cached.percent_rama_outliers) {
+            parts.push(`Rama outliers ${cached.percent_rama_outliers.value.toFixed(1)}% (archive percentile ${Math.round(cached.percent_rama_outliers.percentile_archive)})`);
+        }
+        return parts.length > 0 ? parts.join(' · ') : 'No wwPDB validation report available';
+    }
+
+    // Fetched lazily per structure card (not part of the chain-metadata
+    // round trip) and only for real PDB entries - re-rendering just this
+    // one badge span in place once the fetch settles, not the whole list,
+    // so an in-flight fetch for one card doesn't disturb the others.
+    async _loadValidation(pid) {
+        if (this.validationCache[pid] !== undefined || this._validationLoading.has(pid)) return;
+        this._validationLoading.add(pid);
+        try {
+            const data = await fetchValidation(pid);
+            this.validationCache[pid] = data.validation;
+        } catch (err) {
+            console.error('Failed to load wwPDB validation for', pid, err);
+            this.validationCache[pid] = null;
+        } finally {
+            this._validationLoading.delete(pid);
+        }
+        const badge = this.element?.querySelector(`#validation-badge-${pid}`);
+        if (badge) badge.textContent = this._validationBadgeContent(pid);
     }
 
     getParameters() {
