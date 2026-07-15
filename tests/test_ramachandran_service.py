@@ -51,6 +51,7 @@ class TestCalculateTorsionAngles:
             "phi",
             "psi",
             "region",
+            "secondary_structure",
         ]
         assert len(df) == 3
         assert set(df["residue_name"]) == {"ALA", "GLY", "SER"}
@@ -115,6 +116,79 @@ class TestClassifyRegion:
     def test_outlier_region(self):
         service = RamachandranService()
         assert service._classify_region(170, -170) == "Outlier"
+
+
+class TestClassifySecondaryStructure:
+    def test_none_angle_is_terminal(self):
+        service = RamachandranService()
+        assert service._classify_secondary_structure(None, None) == "Terminal"
+
+    def test_alpha_helix_region(self):
+        service = RamachandranService()
+        assert service._classify_secondary_structure(-60, -40) == "Helix"
+
+    def test_beta_sheet_region(self):
+        service = RamachandranService()
+        assert service._classify_secondary_structure(-120, 130) == "Sheet"
+
+    def test_beta_sheet_region_wrapping_psi(self):
+        service = RamachandranService()
+        assert service._classify_secondary_structure(-120, -170) == "Sheet"
+
+    def test_outside_both_regions_is_coil(self):
+        service = RamachandranService()
+        assert service._classify_secondary_structure(60, 60) == "Coil"
+
+
+class TestAggregateSecondaryStructure:
+    def test_empty_input_returns_zeros(self):
+        service = RamachandranService()
+        result = service.aggregate_secondary_structure({})
+        assert result == {
+            "total_residues": 0,
+            "helix_percent": 0,
+            "sheet_percent": 0,
+            "coil_percent": 0,
+            "per_chain": {},
+        }
+
+    def test_computes_percentages_and_excludes_terminal_residues(self):
+        service = RamachandranService()
+        df = pd.DataFrame(
+            [
+                {"residue_id": 1, "secondary_structure": "Terminal"},
+                {"residue_id": 2, "secondary_structure": "Helix"},
+                {"residue_id": 3, "secondary_structure": "Helix"},
+                {"residue_id": 4, "secondary_structure": "Sheet"},
+                {"residue_id": 5, "secondary_structure": "Coil"},
+            ]
+        )
+
+        result = service.aggregate_secondary_structure({"A": df})
+
+        assert result["total_residues"] == 4
+        assert result["helix_percent"] == pytest.approx(50.0)
+        assert result["sheet_percent"] == pytest.approx(25.0)
+        assert result["coil_percent"] == pytest.approx(25.0)
+        assert result["per_chain"]["A"]["residue_count"] == 4
+        assert result["per_chain"]["A"]["helix_percent"] == pytest.approx(50.0)
+
+    def test_combines_multiple_chains(self):
+        service = RamachandranService()
+        df_a = pd.DataFrame([{"residue_id": 1, "secondary_structure": "Helix"}])
+        df_b = pd.DataFrame(
+            [
+                {"residue_id": 1, "secondary_structure": "Sheet"},
+                {"residue_id": 2, "secondary_structure": "Sheet"},
+            ]
+        )
+
+        result = service.aggregate_secondary_structure({"A": df_a, "B": df_b})
+
+        assert result["total_residues"] == 3
+        assert result["helix_percent"] == pytest.approx(100 / 3)
+        assert result["sheet_percent"] == pytest.approx(200 / 3)
+        assert set(result["per_chain"].keys()) == {"A", "B"}
 
 
 class TestAggregateMetrics:

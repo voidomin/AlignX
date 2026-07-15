@@ -66,6 +66,7 @@ class RamachandranService:
             "phi": phi_deg,
             "psi": psi_deg,
             "region": self._classify_region(phi_deg, psi_deg),
+            "secondary_structure": self._classify_secondary_structure(phi_deg, psi_deg),
         }
 
     def _classify_region(self, phi: Optional[float], psi: Optional[float]) -> str:
@@ -93,6 +94,79 @@ class RamachandranService:
             return "Allowed"
 
         return "Outlier"
+
+    def _classify_secondary_structure(
+        self, phi: Optional[float], psi: Optional[float]
+    ) -> str:
+        """
+        Approximate per-residue secondary structure (Helix/Sheet/Coil) from
+        phi/psi alone, using standard simplified backbone-region boundaries.
+        This is deliberately distinct from _classify_region()'s
+        favored/allowed/outlier Ramachandran-validity classification above -
+        both read the same angle pair, but answer different questions (is
+        this residue's backbone geometry favorable? vs. what kind of
+        secondary structure does it look like?). Not DSSP-equivalent (no
+        hydrogen-bonding geometry, no beta-bridge partner detection) - a
+        backbone-torsion-only approximation, good enough for a quick %
+        helix/sheet/coil summary, not for publication-grade SS assignment.
+        """
+        if phi is None or psi is None:
+            return "Terminal"
+
+        # Alpha-helix (and 3-10/pi helix) backbone region.
+        if -100 <= phi <= -30 and -80 <= psi <= 15:
+            return "Helix"
+        # Beta-strand region - psi wraps around +-180, so both ends of the
+        # range are included.
+        if -180 <= phi <= -45 and (90 <= psi <= 180 or -180 <= psi <= -150):
+            return "Sheet"
+
+        return "Coil"
+
+    def aggregate_secondary_structure(
+        self, torsion_data: Dict[str, pd.DataFrame]
+    ) -> Dict[str, Any]:
+        """
+        Summarize %helix/%sheet/%coil across all chains, plus a per-chain
+        breakdown. Terminal residues (only one resolvable angle) are
+        excluded from every percentage's denominator, same as
+        aggregate_metrics() excludes them from its own quality_score.
+        """
+        per_chain: Dict[str, Any] = {}
+        total_helix = total_sheet = total_coil = total_residues = 0
+
+        for chain_id, df in torsion_data.items():
+            assigned = df[df["secondary_structure"] != "Terminal"]
+            chain_total = len(assigned)
+            helix = int((assigned["secondary_structure"] == "Helix").sum())
+            sheet = int((assigned["secondary_structure"] == "Sheet").sum())
+            coil = int((assigned["secondary_structure"] == "Coil").sum())
+
+            per_chain[chain_id] = {
+                "residue_count": chain_total,
+                "helix_percent": (helix / chain_total * 100) if chain_total else 0,
+                "sheet_percent": (sheet / chain_total * 100) if chain_total else 0,
+                "coil_percent": (coil / chain_total * 100) if chain_total else 0,
+            }
+
+            total_helix += helix
+            total_sheet += sheet
+            total_coil += coil
+            total_residues += chain_total
+
+        return {
+            "total_residues": total_residues,
+            "helix_percent": (
+                (total_helix / total_residues * 100) if total_residues else 0
+            ),
+            "sheet_percent": (
+                (total_sheet / total_residues * 100) if total_residues else 0
+            ),
+            "coil_percent": (
+                (total_coil / total_residues * 100) if total_residues else 0
+            ),
+            "per_chain": per_chain,
+        }
 
     def aggregate_metrics(
         self, torsion_data: Dict[str, pd.DataFrame]

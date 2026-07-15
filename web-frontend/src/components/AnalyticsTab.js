@@ -36,6 +36,7 @@ export class AnalyticsTab {
     heatmapFig = null;
     treeFig = null;
     ramachandranStats = null;
+    secondaryStructureStats = null;
     rmsfValues = [];
     insights = [];
     qualityMetrics = null;
@@ -110,6 +111,14 @@ export class AnalyticsTab {
                             </thead>
                             <tbody id="quality-metrics-table-body"></tbody>
                         </table>
+                    </div>
+                    <div id="secondary-structure-card" class="flex flex-col gap-2 hidden">
+                        <span class="font-label-sm text-label-sm text-secondary uppercase">Secondary structure (backbone-torsion approximation, not DSSP)</span>
+                        <div class="grid grid-cols-3 gap-4">
+                            <div class="stat-row"><span class="stat-key">Helix</span><span id="ss-helix-percent" class="stat-value">--</span></div>
+                            <div class="stat-row"><span class="stat-key">Sheet</span><span id="ss-sheet-percent" class="stat-value">--</span></div>
+                            <div class="stat-row"><span class="stat-key">Coil</span><span id="ss-coil-percent" class="stat-value">--</span></div>
+                        </div>
                     </div>
                 </div>
 
@@ -232,7 +241,11 @@ export class AnalyticsTab {
         return this.structures.map(s => s.pdbId).join('|');
     }
 
-    updateResults(runId, figures, ramachandranStats, rmsfValues, insights, qualityMetrics, structures) {
+    // structuralStats bundles ramachandran + secondaryStructure (both
+    // per-run structural-QC summaries) into one object instead of adding a
+    // new positional parameter, same rationale as the `structures` param -
+    // keeps this under SonarCloud's max-parameter threshold.
+    updateResults(runId, figures, structuralStats, rmsfValues, insights, qualityMetrics, structures) {
         const newStructures = structures || [];
         const newKey = newStructures.map(s => s.pdbId).join('|');
         if (newKey !== this._structuresKey()) {
@@ -247,7 +260,8 @@ export class AnalyticsTab {
         this.currentRunId = runId;
         this.heatmapFig = figures?.heatmap ?? null;
         this.treeFig = figures?.tree ?? null;
-        this.ramachandranStats = ramachandranStats;
+        this.ramachandranStats = structuralStats?.ramachandran ?? null;
+        this.secondaryStructureStats = structuralStats?.secondaryStructure ?? null;
         this.rmsfValues = rmsfValues || [];
         this.insights = insights || [];
         this.qualityMetrics = qualityMetrics || null;
@@ -398,6 +412,7 @@ export class AnalyticsTab {
 
         this.renderRamachandranSection();
         this.renderQualityMetricsTable();
+        this.renderSecondaryStructureSection();
         this.renderRmsfChart();
         this.renderRmsdHeatmap();
         this.renderPhyloTree();
@@ -439,6 +454,19 @@ export class AnalyticsTab {
         } else {
             listCard.classList.add('hidden');
         }
+    }
+
+    renderSecondaryStructureSection() {
+        const card = this.element.querySelector('#secondary-structure-card');
+        if (this.secondaryStructureStats?.total_residues == null || this.secondaryStructureStats.total_residues === 0) {
+            card.classList.add('hidden');
+            return;
+        }
+
+        card.classList.remove('hidden');
+        this.element.querySelector('#ss-helix-percent').innerText = `${this.secondaryStructureStats.helix_percent.toFixed(1)}%`;
+        this.element.querySelector('#ss-sheet-percent').innerText = `${this.secondaryStructureStats.sheet_percent.toFixed(1)}%`;
+        this.element.querySelector('#ss-coil-percent').innerText = `${this.secondaryStructureStats.coil_percent.toFixed(1)}%`;
     }
 
     renderQualityMetricsTable() {

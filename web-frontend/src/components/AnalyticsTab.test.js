@@ -100,6 +100,44 @@ describe('AnalyticsTab', () => {
         expect(card.classList.contains('hidden')).toBe(true);
     });
 
+    it('renders %helix/%sheet/%coil when secondary_structure_stats is present', () => {
+        const tab = makeTab();
+        tab.render();
+
+        tab.updateResults('run_1', null, {
+            secondaryStructure: { total_residues: 100, helix_percent: 45.5, sheet_percent: 20.25, coil_percent: 34.25 },
+        }, [], []);
+
+        const card = tab.element.querySelector('#secondary-structure-card');
+        expect(card.classList.contains('hidden')).toBe(false);
+        expect(tab.element.querySelector('#ss-helix-percent').innerText).toBe('45.5%');
+        expect(tab.element.querySelector('#ss-sheet-percent').innerText).toBe('20.3%');
+        expect(tab.element.querySelector('#ss-coil-percent').innerText).toBe('34.3%');
+    });
+
+    it('hides the secondary-structure section when no stats are given, or when total_residues is 0', () => {
+        const tab = makeTab();
+        tab.render();
+
+        tab.updateResults('run_1', null, null, [], []);
+        expect(tab.element.querySelector('#secondary-structure-card').classList.contains('hidden')).toBe(true);
+
+        tab.updateResults('run_1', null, { secondaryStructure: { total_residues: 0, helix_percent: 0, sheet_percent: 0, coil_percent: 0 } }, [], []);
+        expect(tab.element.querySelector('#secondary-structure-card').classList.contains('hidden')).toBe(true);
+    });
+
+    it('still populates the Ramachandran section from the bundled structuralStats.ramachandran', () => {
+        const tab = makeTab();
+        tab.render();
+
+        tab.updateResults('run_1', null, {
+            ramachandran: { favored_percent: 92.5, outlier_count: 2, outliers_list: ['PRO12 (Chain A)'] },
+        }, [], []);
+
+        expect(tab.element.querySelector('#ramachandran-score').innerText).toBe('92.5%');
+        expect(tab.element.querySelector('#ramachandran-outliers').innerText).toBe(2);
+    });
+
     it('sub-tab switching still works, including the new insights sub-tab', () => {
         const tab = makeTab();
         tab.render();

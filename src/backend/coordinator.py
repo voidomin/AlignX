@@ -465,6 +465,7 @@ class AnalysisCoordinator:
             # Ramachandran (Torsion) Analysis
             torsion_data = None
             ramachandran_stats = None
+            secondary_structure_stats = None
             if alignment_pdb.exists():
                 torsion_data = self.ramachandran_service.calculate_torsion_angles(
                     alignment_pdb
@@ -472,6 +473,11 @@ class AnalysisCoordinator:
                 if torsion_data:
                     ramachandran_stats = self.ramachandran_service.aggregate_metrics(
                         torsion_data
+                    )
+                    secondary_structure_stats = (
+                        self.ramachandran_service.aggregate_secondary_structure(
+                            torsion_data
+                        )
                     )
 
             # Calculate sequence identity and save parsed alignments for UI
@@ -529,6 +535,7 @@ class AnalysisCoordinator:
                 "quality_metrics": quality_metrics,
                 "torsion_data": torsion_data,
                 "ramachandran_stats": ramachandran_stats,
+                "secondary_structure_stats": secondary_structure_stats,
             }
         except Exception:
             logger.exception("Data processing failed")

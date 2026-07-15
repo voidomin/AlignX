@@ -28,6 +28,7 @@ class App {
         this.heatmapFig = null;
         this.treeFig = null;
         this.ramachandranStats = null;
+        this.secondaryStructureStats = null;
         this.rmsdDf = null;
 
         // A shared run link (see api.js's getShareLink()) is world-readable
@@ -172,6 +173,14 @@ class App {
         return this.selectedPDBs.map(pdbId => ({ pdbId, chain: this.chainSelections[pdbId] }));
     }
 
+    // Same rationale as buildAnalyticsStructures() - bundles the two
+    // per-run structural-QC stats (Ramachandran outlier summary and the
+    // new secondary-structure %helix/%sheet/%coil summary) into one object
+    // instead of adding a new positional parameter.
+    buildStructuralStats() {
+        return { ramachandran: this.ramachandranStats, secondaryStructure: this.secondaryStructureStats };
+    }
+
     updateTabContentPane() {
         const pane = document.getElementById('tab-content-pane');
         if (!pane) return;
@@ -193,7 +202,7 @@ class App {
             this.analyticsTab.updateResults(
                 this.currentRunId,
                 { heatmap: this.heatmapFig, tree: this.treeFig },
-                this.ramachandranStats,
+                this.buildStructuralStats(),
                 this.analyticsTab.rmsfValues,
                 this.analyticsTab.insights,
                 this.analyticsTab.qualityMetrics,
@@ -355,6 +364,7 @@ class App {
             this.heatmapFig = results.heatmap_fig;
             this.treeFig = results.tree_fig;
             this.ramachandranStats = results.ramachandran_stats;
+            this.secondaryStructureStats = results.secondary_structure_stats;
             this.rmsdDf = results.rmsd_df;
 
             // Load 3D Superposition (all N structures)
@@ -375,7 +385,7 @@ class App {
             // Update tabs
             this.ligandTab.updateLigands(this.currentLigands, results.id, this.selectedPDBs, results.ligand_pocket_similarity);
             this.sequenceTab.updateResults(results.id, results.stats);
-            this.analyticsTab.updateResults(results.id, { heatmap: this.heatmapFig, tree: this.treeFig }, this.ramachandranStats, results.rmsf_values, results.insights, results.quality_metrics, this.buildAnalyticsStructures());
+            this.analyticsTab.updateResults(results.id, { heatmap: this.heatmapFig, tree: this.treeFig }, this.buildStructuralStats(), results.rmsf_values, results.insights, results.quality_metrics, this.buildAnalyticsStructures());
             this.clustersTab.updateResults(this.rmsdDf, this.pdbMetadata);
 
             // Switch to Sequence tab
@@ -434,6 +444,7 @@ class App {
             this.heatmapFig = null;
             this.treeFig = null;
             this.ramachandranStats = null;
+            this.secondaryStructureStats = null;
             this.rmsdDf = null;
 
             this.workspaceTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
@@ -458,12 +469,14 @@ class App {
             this.heatmapFig = metadata.results.heatmap_fig || null;
             this.treeFig = metadata.results.tree_fig || null;
             this.ramachandranStats = metadata.results.ramachandran_stats || null;
+            this.secondaryStructureStats = metadata.results.secondary_structure_stats || null;
             this.rmsdDf = metadata.results.rmsd_df || null;
         } else {
             stats = metadata.stats || {};
             this.heatmapFig = null;
             this.treeFig = null;
             this.ramachandranStats = null;
+            this.secondaryStructureStats = null;
             this.rmsdDf = null;
         }
 
@@ -503,7 +516,7 @@ class App {
         this.analyticsTab.updateResults(
             run.id,
             { heatmap: this.heatmapFig, tree: this.treeFig },
-            this.ramachandranStats,
+            this.buildStructuralStats(),
             metadata.results ? metadata.results.rmsf_values : null,
             metadata.results ? metadata.results.insights : null,
             metadata.results ? metadata.results.quality_metrics : null,
@@ -526,6 +539,7 @@ class App {
             this.heatmapFig = null;
             this.treeFig = null;
             this.ramachandranStats = null;
+            this.secondaryStructureStats = null;
             this.rmsdDf = null;
 
             // Reload to a true empty state, not a re-seeded example pair -
