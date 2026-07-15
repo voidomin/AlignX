@@ -89,6 +89,24 @@ class TestFetchPdbeValidation:
 
     @pytest.mark.asyncio
     @patch("src.backend.validation_service.httpx.AsyncClient.get")
+    async def test_rejects_an_unsafe_pdb_id_without_making_a_request(self, mock_get):
+        async with httpx.AsyncClient() as client:
+            result = await fetch_pdbe_validation("../etc/passwd", client)
+        assert result is None
+        mock_get.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("src.backend.validation_service.httpx.AsyncClient.get")
+    async def test_rejects_a_pdb_id_that_would_redirect_the_request_path(
+        self, mock_get
+    ):
+        async with httpx.AsyncClient() as client:
+            result = await fetch_pdbe_validation("4hhb/../../evil", client)
+        assert result is None
+        mock_get.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("src.backend.validation_service.httpx.AsyncClient.get")
     async def test_returns_none_on_non_200(self, mock_get):
         mock_get.return_value = _mock_response(status_code=404)
         async with httpx.AsyncClient() as client:

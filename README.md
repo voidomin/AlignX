@@ -131,7 +131,7 @@ Copy `.env.example` to `.env` and customize. Notable production-relevant ones:
 
 ## 🧪 Testing
 
-Backend (pytest, 1017 tests):
+Backend (pytest, 1019 tests):
 ```powershell
 powershell -File scripts\run_tests.ps1
 ```

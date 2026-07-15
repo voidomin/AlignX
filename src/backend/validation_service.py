@@ -8,6 +8,7 @@ Ramachandran analysis (ramachandran_service.py), which only ever sees
 whatever coordinates are in the specific file downloaded/cleaned here.
 """
 
+import re
 from typing import Any, Dict, Optional
 
 import httpx
@@ -19,6 +20,14 @@ logger = get_logger()
 PDBE_VALIDATION_BASE_URL = (
     "https://www.ebi.ac.uk/pdbe/api/validation/global-percentiles/entry"
 )
+
+# api.py's _safe_segment() already rejects an unsafe pdb_id before this
+# function is ever reached in production - this is defense in depth so the
+# module is safe on its own regardless of caller, and so a URL is never
+# built from unvalidated user input even in theory (alnum/underscore/
+# hyphen only, same allowlist api.py uses - blocks path traversal and
+# arbitrary-host injection into the request path).
+_SAFE_PDB_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 
 # PDBe's raw key -> (our key, human label). "absolute"/"relative" are
 # percentile ranks (0-100) - "absolute" is this entry's percentile across
@@ -44,6 +53,10 @@ async def fetch_pdbe_validation(
     other external-API fetch functions (e.g. annotation_aggregator.py's
     fetch_* methods).
     """
+    if not _SAFE_PDB_ID.match(pdb_id or ""):
+        logger.warning(f"Rejected unsafe pdb_id for validation lookup: {pdb_id!r}")
+        return None
+
     try:
         response = await client.get(
             f"{PDBE_VALIDATION_BASE_URL}/{pdb_id.lower()}",
