@@ -178,6 +178,25 @@ class TestApiKeyAuth:
             response = client.get("/")
         assert response.status_code != 401
 
+    def test_options_preflight_never_gated_by_api_key(self):
+        """Real bug, live-verified against production (2026-07-15): a
+        browser's CORS preflight (OPTIONS) never carries the X-API-Key
+        header at all - browsers don't attach custom headers to preflight
+        requests - so without this exemption, this middleware 401'd every
+        preflight before CORSMiddleware ever got a chance to answer it with
+        real CORS headers, which the browser then reports as a CORS
+        failure on the actual request. This broke the deployed frontend
+        entirely the moment ALIGNX_API_KEY was first configured."""
+        with patch.object(api_module, "_ALIGNX_API_KEY", "secret-key"):
+            response = client.options(
+                "/api/history",
+                headers={
+                    "Origin": "https://example.com",
+                    "Access-Control-Request-Method": "GET",
+                },
+            )
+        assert response.status_code != 401
+
 
 def test_health_endpoint():
     """Verify that the health check endpoint returns correct status."""
