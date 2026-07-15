@@ -2602,6 +2602,118 @@ async def test_clustalo_job_sweep_drops_old_finished_jobs_but_keeps_recent_and_r
     api_module.clustalo_jobs.clear()
 
 
+def test_conservation_job_submission_returns_queued():
+    """Submitting a valid conservation job returns a job_id immediately
+    with status "queued" - it must not block on the (very slow,
+    minutes-long) BLAST submit/poll/fetch pipeline."""
+    api_module.blast_jobs.clear()
+    response = client.post(
+        "/api/jobs/conservation",
+        json={"sequence": "MVHLTPEEKSAVTALWGKVNVDEVGGEALGRLLVVYPWTQRFFESFGDLS"},
+    )
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "queued"
+    assert body["job_id"] in api_module.blast_jobs
+    api_module.blast_jobs.clear()
+
+
+def test_conservation_job_submission_rejects_a_too_short_sequence():
+    response = client.post("/api/jobs/conservation", json={"sequence": "MVHL"})
+    assert response.status_code == 400
+
+
+def test_conservation_job_submission_rejects_non_amino_acid_characters():
+    response = client.post(
+        "/api/jobs/conservation", json={"sequence": "MVHL123$%^EEKSAVTALWG"}
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_conservation_job_execution_completes_and_is_pollable():
+    """Directly exercises _execute_blast_job (the background task the
+    endpoint schedules) end-to-end, then confirms GET /api/jobs/{job_id} -
+    the same polling endpoint used for every other job type - surfaces the
+    real conservation profile result."""
+    api_module.blast_jobs.clear()
+    job_id = "test-blast-job"
+    api_module.blast_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    with patch(
+        "src.backend.api.BlastClient.find_homologs_and_score_conservation",
+        new_callable=AsyncMock,
+    ) as mock_find:
+        mock_find.return_value = {
+            "rid": "rid-1",
+            "num_hits": 10,
+            "conservation_profile": [
+                {
+                    "position": 1,
+                    "conservation": 1.0,
+                    "num_homologs": 10,
+                    "most_common": "M",
+                }
+            ],
+        }
+        await api_module._execute_blast_job(job_id, "MVHLTPEEK")
+
+    poll = client.get(f"/api/jobs/{job_id}")
+    assert poll.json()["status"] == "completed"
+    assert poll.json()["num_hits"] == 10
+    assert poll.json()["conservation_profile"][0]["most_common"] == "M"
+
+    api_module.blast_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_conservation_job_execution_surfaces_pipeline_failure():
+    api_module.blast_jobs.clear()
+    job_id = "test-blast-job-fail"
+    api_module.blast_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    with patch(
+        "src.backend.api.BlastClient.find_homologs_and_score_conservation",
+        new_callable=AsyncMock,
+    ) as mock_find:
+        from src.backend.blast_client import BlastError
+
+        mock_find.side_effect = BlastError(
+            "BLAST job rid-1 did not complete within 1200s"
+        )
+        await api_module._execute_blast_job(job_id, "MVHLTPEEK")
+
+    poll = client.get(f"/api/jobs/{job_id}")
+    assert poll.json()["status"] == "failed"
+    assert "did not complete within 1200s" in poll.json()["error"]
+
+    api_module.blast_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_blast_job_sweep_drops_old_finished_jobs_but_keeps_recent_and_running():
+    now = time.time()
+    api_module.blast_jobs.clear()
+    api_module.blast_jobs.update(
+        {
+            "old_completed": {"status": "completed", "finished_at": now - 10_000},
+            "recent_completed": {"status": "completed", "finished_at": now},
+            "still_running": {"status": "running", "created_at": now - 10_000},
+        }
+    )
+
+    with patch.object(api_module, "_JOB_TTL_SECONDS", 60), patch(
+        "asyncio.sleep", new_callable=AsyncMock
+    ) as mock_sleep:
+        mock_sleep.side_effect = [None, asyncio.CancelledError()]
+        with pytest.raises(asyncio.CancelledError):
+            await api_module._sweep_blast_jobs()
+
+    remaining = set(api_module.blast_jobs.keys())
+    assert remaining == {"recent_completed", "still_running"}
+    api_module.blast_jobs.clear()
+
+
 @pytest.mark.asyncio
 async def test_execute_alignment_job_marks_completed_on_success():
     """Mirrors test_execute_alignment_job_marks_failed_on_pipeline_error but

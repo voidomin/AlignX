@@ -79,6 +79,24 @@ describe('api.js (no API key configured)', () => {
         await expect(submitClustalOmegaJob({ '4RLT': 'MVHL' })).rejects.toThrow('At least 2 sequences are required.');
     });
 
+    it('submitConservationJob posts the sequence to the conservation job endpoint', async () => {
+        mockFetchOnce({ job_id: 'blast123', status: 'queued' });
+        const { submitConservationJob } = await import('./api.js');
+
+        const result = await submitConservationJob('MVHLTPEEKSAVTALWGKVNV');
+
+        expect(result.job_id).toBe('blast123');
+        const [url, options] = global.fetch.mock.calls[0];
+        expect(url).toContain('/api/jobs/conservation');
+        expect(JSON.parse(options.body)).toEqual({ sequence: 'MVHLTPEEKSAVTALWGKVNV' });
+    });
+
+    it('submitConservationJob throws with the backend detail message on failure', async () => {
+        mockFetchOnce({ detail: 'A real protein sequence (10+ amino-acid letters) is required.' }, false, 400);
+        const { submitConservationJob } = await import('./api.js');
+        await expect(submitConservationJob('MV')).rejects.toThrow('A real protein sequence');
+    });
+
     it('pollJobUntilDone polls until status is completed', async () => {
         const responses = [
             { status: 'queued' },

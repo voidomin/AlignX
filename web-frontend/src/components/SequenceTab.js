@@ -1,4 +1,4 @@
-import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl, getAlignmentReportUrl, getLabNotebookUrl, getLabNotebookIpynbUrl, getCitationsUrl, getRmsdCsvUrl, getHeatmapPngUrl, getReportZipUrl, getNewickUrl, submitClustalOmegaJob, pollJobUntilDone } from '../api';
+import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl, getAlignmentReportUrl, getLabNotebookUrl, getLabNotebookIpynbUrl, getCitationsUrl, getRmsdCsvUrl, getHeatmapPngUrl, getReportZipUrl, getNewickUrl, submitClustalOmegaJob, submitConservationJob, pollJobUntilDone } from '../api';
 import { escapeHtml } from '../escapeHtml';
 
 const REPORT_SECTIONS = [
@@ -55,6 +55,9 @@ export class SequenceTab {
 
                 <div class="flex flex-col gap-3">
                     <span class="eyebrow">Sequence alignment view</span>
+                    <div class="section-caption">
+                        Coloring shows identity across the structures loaded in this run, not true evolutionary conservation - see "True sequence-only MSA" below for a real homolog-based conservation profile.
+                    </div>
                     <div id="sequence-alignment-grid-wrapper" class="overflow-x-auto rounded-md max-h-[350px]">
                         <div class="text-center py-8 text-secondary font-body-sm">
                             Run alignment to generate sequence view.
@@ -71,6 +74,20 @@ export class SequenceTab {
                         Independent of Mustang's structural alignment above - a real multiple sequence alignment computed purely from each structure's own sequence, via EBI's public Clustal Omega service. Can disagree with the structural alignment for divergent sequences with similar folds.
                     </div>
                     <div id="clustalo-result-wrapper" class="overflow-x-auto rounded-md max-h-[350px]"></div>
+                </div>
+
+                <div class="flex flex-col gap-3 border-t border-border pt-6">
+                    <div class="flex items-center justify-between">
+                        <span class="eyebrow">Real evolutionary conservation (NCBI BLAST)</span>
+                        <div class="flex items-center gap-2">
+                            <select id="conservation-structure-select" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[160px]"></select>
+                            <button id="conservation-run-btn" class="btn-secondary py-1.5 px-3 rounded-md font-label-md text-label-md" disabled>Find real homologs</button>
+                        </div>
+                    </div>
+                    <div class="section-caption">
+                        Searches NCBI BLAST for real homologs of the selected structure's sequence, then scores real per-position conservation from their alignments (Shannon entropy) - genuinely different from the identity-based coloring above. Real BLAST searches commonly take several minutes.
+                    </div>
+                    <div id="conservation-result-wrapper" class="overflow-x-auto rounded-md max-h-[350px]"></div>
                 </div>
 
                 <div class="flex flex-col gap-3 border-t border-border pt-6">
@@ -157,6 +174,7 @@ export class SequenceTab {
         });
 
         this.element.querySelector('#clustalo-run-btn').addEventListener('click', () => this.runClustalOmegaAlignment());
+        this.element.querySelector('#conservation-run-btn').addEventListener('click', () => this.runConservationSearch());
     }
 
     async searchMotif(query) {
@@ -263,6 +281,8 @@ export class SequenceTab {
             this.element.querySelector('#motif-search-input').value = "";
             this.element.querySelector('#motif-results-container').innerHTML = "";
             this.element.querySelector('#clustalo-result-wrapper').innerHTML = "";
+            this.element.querySelector('#conservation-result-wrapper').innerHTML = "";
+            this.element.querySelector('#conservation-structure-select').innerHTML = "";
         }
     }
 
@@ -294,6 +314,9 @@ export class SequenceTab {
 
         const clustaloBtn = this.element.querySelector('#clustalo-run-btn');
         clustaloBtn.disabled = !this.currentRunId;
+
+        const conservationBtn = this.element.querySelector('#conservation-run-btn');
+        conservationBtn.disabled = !this.currentRunId;
 
         if (this.currentRunId) {
             pdbLink.href = getAlignmentPdbUrl(this.currentRunId);
@@ -372,6 +395,8 @@ export class SequenceTab {
         try {
             const data = await fetchSequence(this.currentRunId);
             const { sequences, conservation } = data;
+
+            this._populateConservationStructureSelect(Object.keys(sequences));
 
             // Render colored scrollable grid
             let rowsHtml = "";
@@ -547,6 +572,108 @@ export class SequenceTab {
             <table class="text-left border-collapse">
                 <tbody>
                     ${rowsHtml}
+                </tbody>
+            </table>
+        `;
+    }
+
+    _populateConservationStructureSelect(headers) {
+        const select = this.element.querySelector('#conservation-structure-select');
+        const previousValue = select.value;
+        select.innerHTML = "";
+        headers.forEach(header => {
+            const opt = document.createElement('option');
+            opt.value = header;
+            opt.textContent = header;
+            select.appendChild(opt);
+        });
+        if (headers.includes(previousValue)) {
+            select.value = previousValue;
+        }
+    }
+
+    // Independent of both loadSequenceGrid() and runClustalOmegaAlignment()
+    // above - searches a real external homolog database (NCBI BLAST) for
+    // just the one selected structure's sequence, rather than comparing
+    // sequences already loaded in this workspace against each other.
+    async runConservationSearch() {
+        if (!this.currentRunId) return;
+        const select = this.element.querySelector('#conservation-structure-select');
+        const header = select.value;
+        const btn = this.element.querySelector('#conservation-run-btn');
+        const wrapper = this.element.querySelector('#conservation-result-wrapper');
+
+        if (!header) {
+            wrapper.innerHTML = `<div class="text-center py-8 text-secondary font-body-sm">No structure available to search.</div>`;
+            return;
+        }
+
+        btn.disabled = true;
+        wrapper.innerHTML = `
+            <div class="text-center py-8 text-secondary font-body-sm">
+                <span class="animate-spin material-symbols-outlined text-[18px]">sync</span>
+                Submitting ${escapeHtml(header)}'s sequence to NCBI BLAST…
+            </div>
+        `;
+
+        try {
+            const data = await fetchSequence(this.currentRunId);
+            const sequence = (data.sequences?.[header] || '').replace(/-/g, '');
+
+            if (sequence.length < 10) {
+                wrapper.innerHTML = `<div class="text-center py-8 text-secondary font-body-sm">Sequence too short for a BLAST search.</div>`;
+                return;
+            }
+
+            const submission = await submitConservationJob(sequence);
+            wrapper.innerHTML = `
+                <div class="text-center py-8 text-secondary font-body-sm">
+                    <span class="animate-spin material-symbols-outlined text-[18px]">sync</span>
+                    Waiting on NCBI BLAST (real searches commonly take several minutes)…
+                </div>
+            `;
+
+            const job = await pollJobUntilDone(submission.job_id, { intervalMs: 15000 });
+            if (job.status === 'failed') {
+                wrapper.innerHTML = `<div class="text-center py-8 text-error font-body-sm">BLAST conservation search failed: ${escapeHtml(job.error || 'unknown error')}</div>`;
+                return;
+            }
+
+            this.renderConservationResult(header, job.conservation_profile, job.num_hits);
+        } catch (err) {
+            console.error("Conservation search failed:", err);
+            wrapper.innerHTML = `<div class="text-center py-8 text-error font-body-sm">Failed to run conservation search.</div>`;
+        } finally {
+            btn.disabled = !this.currentRunId;
+        }
+    }
+
+    renderConservationResult(header, profile, numHits) {
+        const wrapper = this.element.querySelector('#conservation-result-wrapper');
+        if (!profile || profile.length === 0) {
+            wrapper.innerHTML = `<div class="text-center py-8 text-error font-body-sm">No conservation profile returned.</div>`;
+            return;
+        }
+
+        let residuesHtml = "";
+        profile.forEach(p => {
+            const score = p.conservation;
+            const char = p.most_common || '-';
+            const bgColor = score == null ? "#2f3542" : `rgba(255, 71, 87, ${score.toFixed(2)})`;
+            const title = score == null
+                ? 'No homolog coverage at this position'
+                : `Conservation: ${(score * 100).toFixed(1)}% (${p.num_homologs} homologs)`;
+            residuesHtml += `<td class="text-center font-mono border border-border-subtle" style="background-color: ${bgColor}; min-width: 22px; height: 24px; font-size: 12px; color: #fff;" title="${escapeHtml(title)}">${escapeHtml(char)}</td>`;
+        });
+
+        wrapper.innerHTML = `
+            <div class="font-body-sm text-[11px] text-secondary pb-2">${numHits} real homolog(s) found via NCBI BLAST</div>
+            <table class="text-left border-collapse">
+                <tbody>
+                    <tr class="border-b border-border-subtle">
+                        <td class="sticky left-0 bg-surface-raised text-primary pr-4 pl-2 font-bold font-mono border-r border-border whitespace-nowrap min-w-[120px] text-body-sm">${escapeHtml(header)}</td>
+                        ${residuesHtml}
+                    </tr>
                 </tbody>
             </table>
         `;

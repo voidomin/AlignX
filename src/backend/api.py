@@ -35,6 +35,7 @@ from src.backend.annotation_aggregator import AnnotationAggregator
 from src.backend.validation_service import fetch_pdbe_validation
 from src.backend.foldseek_client import FoldseekClient, FoldseekError
 from src.backend.clustalo_client import ClustalOmegaClient
+from src.backend.blast_client import BlastClient
 from src.backend.database import HistoryDatabase
 from src.backend.ligand_analyzer import LigandAnalyzer
 from src.backend.interface_analyzer import InterfaceAnalyzer
@@ -71,10 +72,12 @@ async def lifespan(app: FastAPI):
     sweep_task = asyncio.create_task(_sweep_alignment_jobs())
     discovery_sweep_task = asyncio.create_task(_sweep_discovery_jobs())
     clustalo_sweep_task = asyncio.create_task(_sweep_clustalo_jobs())
+    blast_sweep_task = asyncio.create_task(_sweep_blast_jobs())
     yield
     sweep_task.cancel()
     discovery_sweep_task.cancel()
     clustalo_sweep_task.cancel()
+    blast_sweep_task.cancel()
 
 
 # Initialize FastAPI App
@@ -749,14 +752,15 @@ async def submit_alignment_job(
 )
 def get_alignment_job(job_id: str):
     """
-    Poll the status/result of a submitted job (alignment, discovery, or
-    Clustal Omega - job IDs are unique uuid4 hex strings, so one polling
-    endpoint covers all of them).
+    Poll the status/result of a submitted job (alignment, discovery,
+    Clustal Omega, or BLAST conservation - job IDs are unique uuid4 hex
+    strings, so one polling endpoint covers all of them).
     """
     job = (
         alignment_jobs.get(job_id)
         or discovery_jobs.get(job_id)
         or clustalo_jobs.get(job_id)
+        or blast_jobs.get(job_id)
     )
     if job is None:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found.")
@@ -950,6 +954,92 @@ async def submit_clustalo_job(
     clustalo_jobs[job_id] = {"status": "queued", "created_at": time.time()}
 
     _spawn_background_task(_execute_clustalo_job(job_id, sequences))
+
+    return {"job_id": job_id, "status": "queued"}
+
+
+# In-memory job registry for the async BLAST-homolog-conservation pipeline
+# (see blast_client.py) - mirrors clustalo_jobs above (pure async network
+# I/O, no asyncio.to_thread needed). Real BLAST searches take minutes and
+# NCBI policy forbids polling more than once/minute, so this is by far the
+# longest-running job type in this app - the same background-job/poll
+# pattern still applies, just with a much longer realistic wait.
+blast_jobs: Dict[str, Dict[str, Any]] = {}
+_SAFE_PROTEIN_SEQUENCE = re.compile(r"^[A-Za-z]{10,}$")
+
+
+async def _sweep_blast_jobs():
+    """Periodically drop finished BLAST jobs older than _JOB_TTL_SECONDS."""
+    while True:
+        await asyncio.sleep(_JOB_SWEEP_INTERVAL_SECONDS)
+        now = time.time()
+        stale_ids = [
+            jid
+            for jid, job in blast_jobs.items()
+            if job.get("status") in ("completed", "failed")
+            and now - job.get("finished_at", now) > _JOB_TTL_SECONDS
+        ]
+        for jid in stale_ids:
+            blast_jobs.pop(jid, None)
+
+
+async def _run_blast_pipeline(sequence: str) -> Dict[str, Any]:
+    client = BlastClient(config)
+    return await client.find_homologs_and_score_conservation(sequence)
+
+
+async def _execute_blast_job(job_id: str, sequence: str):
+    blast_jobs[job_id]["status"] = "running"
+    created_at = blast_jobs[job_id].get("created_at", time.time())
+    try:
+        outcome = await _run_blast_pipeline(sequence)
+        blast_jobs[job_id] = {
+            "status": "completed",
+            "created_at": created_at,
+            "finished_at": time.time(),
+            **outcome,
+        }
+    except Exception as e:
+        blast_jobs[job_id] = {
+            "status": "failed",
+            "created_at": created_at,
+            "finished_at": time.time(),
+            "error": str(e),
+        }
+
+
+@app.post(
+    "/api/jobs/conservation",
+    status_code=202,
+    responses={
+        400: {
+            "description": "Missing/invalid sequence (must be 10+ amino-acid letters)"
+        }
+    },
+)
+async def submit_conservation_job(sequence: Annotated[str, Body(..., embed=True)]):
+    """
+    Submit a real per-column evolutionary conservation search as a
+    background job: finds real homologs of `sequence` via NCBI BLAST, then
+    scores conservation per query position from their real alignments -
+    see blast_client.py. Unlike sequence_viewer.py's existing
+    calculate_conservation() (identity across whatever structures happen
+    to be loaded, not real evolutionary conservation), this searches a
+    real homolog panel. Returns immediately with a job_id; poll
+    GET /api/jobs/{job_id} for status - budget real wall-clock time here,
+    real BLAST searches commonly take several minutes.
+    """
+    sequence = (sequence or "").strip()
+    if not _SAFE_PROTEIN_SEQUENCE.match(sequence):
+        raise HTTPException(
+            status_code=400,
+            detail="A real protein sequence (10+ amino-acid letters) is required.",
+        )
+
+    job_id = uuid.uuid4().hex
+    blast_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    _spawn_background_task(_execute_blast_job(job_id, sequence))
 
     return {"job_id": job_id, "status": "queued"}
 

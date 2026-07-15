@@ -193,6 +193,26 @@ export async function submitClustalOmegaJob(sequences) {
     return res.json();
 }
 
+// Real per-column evolutionary conservation via NCBI BLAST homolog search -
+// see blast_client.py. `sequence` should be one structure's own raw (ungapped)
+// sequence; the job searches for real homologs and scores conservation per
+// query position from their real alignments. Real BLAST searches commonly
+// take several minutes - poll the returned job_id with pollJobUntilDone()
+// using a generous interval. The completed job's `conservation_profile`
+// field is a list of {position, conservation, num_homologs, most_common}.
+export async function submitConservationJob(sequence) {
+    const res = await fetch(buildUrl('/api/jobs/conservation'), {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ sequence })
+    });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Conservation search submission failed");
+    }
+    return res.json();
+}
+
 export async function submitDiscoveryJob(pdbId, databases) {
     const body = { pdb_id: pdbId };
     if (databases && databases.length > 0) body.databases = databases;

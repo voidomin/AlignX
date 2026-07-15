@@ -14,10 +14,11 @@ vi.mock('../api.js', () => ({
     getReportZipUrl: vi.fn((runId) => `http://api/api/report/zip?run_id=${runId}`),
     getNewickUrl: vi.fn((runId) => `http://api/api/report/newick?run_id=${runId}`),
     submitClustalOmegaJob: vi.fn(),
+    submitConservationJob: vi.fn(),
     pollJobUntilDone: vi.fn(),
 }));
 
-import { fetchSequence, submitClustalOmegaJob, pollJobUntilDone } from '../api.js';
+import { fetchSequence, submitClustalOmegaJob, submitConservationJob, pollJobUntilDone } from '../api.js';
 
 describe('SequenceTab', () => {
     afterEach(() => {
@@ -384,6 +385,100 @@ describe('SequenceTab', () => {
             tab.updateResults('run_123', { rmsd: 1.0 });
 
             expect(tab.element.querySelector('#clustalo-run-btn').disabled).toBe(false);
+        });
+    });
+
+    describe('real evolutionary conservation (BLAST)', () => {
+        async function setUpWithSequences(tab) {
+            fetchSequence.mockResolvedValue({
+                sequences: { '4RLT': 'MVHLTPEE--KSAVTAL', '3UG9': '-MVLSPADKTNVKAAWGK' },
+                conservation: [],
+            });
+            tab.render();
+            tab.updateResults('run_123', { rmsd: 1.0 });
+            await Promise.resolve();
+        }
+
+        it('populates the structure selector from the run sequences', async () => {
+            const tab = new SequenceTab();
+            await setUpWithSequences(tab);
+
+            const options = Array.from(tab.element.querySelector('#conservation-structure-select').options).map(o => o.value);
+            expect(options).toEqual(['4RLT', '3UG9']);
+        });
+
+        it('strips gaps before submitting, then renders the real conservation profile', async () => {
+            submitConservationJob.mockResolvedValue({ job_id: 'blast-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({
+                status: 'completed',
+                num_hits: 10,
+                conservation_profile: [
+                    { position: 1, conservation: 1.0, num_homologs: 10, most_common: 'M' },
+                    { position: 2, conservation: 0.5, num_homologs: 10, most_common: 'V' },
+                ],
+            });
+
+            const tab = new SequenceTab();
+            await setUpWithSequences(tab);
+
+            tab.element.querySelector('#conservation-run-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(submitConservationJob).toHaveBeenCalledWith('MVHLTPEEKSAVTAL');
+            expect(pollJobUntilDone).toHaveBeenCalledWith('blast-1', expect.objectContaining({ intervalMs: 15000 }));
+
+            const wrapper = tab.element.querySelector('#conservation-result-wrapper');
+            expect(wrapper.textContent).toContain('10 real homolog');
+            expect(wrapper.querySelectorAll('td[title]')).toHaveLength(2);
+        });
+
+        it('shows the real failure reason when the BLAST job fails', async () => {
+            submitConservationJob.mockResolvedValue({ job_id: 'blast-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({
+                status: 'failed',
+                error: 'BLAST job blast-1 did not complete within 1200s',
+            });
+
+            const tab = new SequenceTab();
+            await setUpWithSequences(tab);
+
+            tab.element.querySelector('#conservation-run-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#conservation-result-wrapper').textContent)
+                .toContain('did not complete within 1200s');
+        });
+
+        it('shows a graceful message when the selected sequence is too short', async () => {
+            fetchSequence.mockResolvedValue({ sequences: { '4RLT': 'MV' }, conservation: [] });
+
+            const tab = new SequenceTab();
+            tab.render();
+            tab.updateResults('run_123', { rmsd: 1.0 });
+            await Promise.resolve();
+
+            tab.element.querySelector('#conservation-run-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(submitConservationJob).not.toHaveBeenCalled();
+            expect(tab.element.querySelector('#conservation-result-wrapper').textContent)
+                .toContain('too short');
+        });
+
+        it('disables the button with no run loaded and re-enables it once one is set', () => {
+            const tab = new SequenceTab();
+            tab.render();
+
+            expect(tab.element.querySelector('#conservation-run-btn').disabled).toBe(true);
+
+            tab.updateResults('run_123', { rmsd: 1.0 });
+
+            expect(tab.element.querySelector('#conservation-run-btn').disabled).toBe(false);
         });
     });
 });
