@@ -432,6 +432,20 @@ export async function fetchAnnotations(pdbId, chain) {
 // structures (AlphaFold/SWISS-MODEL/ESMFold have no experimental
 // validation report) rather than a 404, so callers don't need a special
 // error path for that expected case.
+// Maps a structure's own author-numbered residue to its real UniProt
+// position, then looks up the real wild-type residue/gene from UniProt and
+// (if a matching record exists) the real ClinVar clinical significance of
+// the wildtype->mutant substitution - see AnnotationAggregator.
+// resolve_structure_uniprot_position()/fetch_clinvar_significance().
+export async function fetchMutationImpact(pdbId, chain, resi, mutant) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    chain = assertSafeSegment(chain, 'chain');
+    const params = { pdb_id: pdbId, chain, resi, mutant };
+    const res = await fetch(buildUrl('/api/mutation-impact', params), { headers: authHeaders() });
+    if (!res.ok) throw new Error("Mutation impact fetch failed");
+    return res.json();
+}
+
 export async function fetchValidation(pdbId) {
     pdbId = assertValidPdbId(pdbId, 'pdbId');
     const res = await fetch(buildUrl('/api/validation', { pdb_id: pdbId }), { headers: authHeaders() });

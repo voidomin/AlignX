@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import pandas as pd
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, MagicMock, AsyncMock, ANY
 from pathlib import Path
 
 import src.backend.api as api_module
@@ -915,6 +915,98 @@ def test_annotations_endpoint_with_a_chain_for_a_plain_pdb_id():
 
 def test_annotations_endpoint_400s_on_invalid_chain_param():
     response = client.get("/api/annotations?pdb_id=4HHB&chain=../etc")
+    assert response.status_code == 400
+
+
+def test_mutation_impact_endpoint_returns_a_real_looking_result():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.resolve_structure_uniprot_position = AsyncMock(
+            return_value=("P68871", 7)
+        )
+        mock_aggregator.fetch_uniprot_gene_and_sequence = AsyncMock(
+            return_value={"gene": "HBB", "sequence": "MVHLTPVEK"}
+        )
+        mock_aggregator.fetch_clinvar_significance = AsyncMock(
+            return_value={
+                "variation_id": "15333",
+                "accession": "VCV000015333",
+                "title": "NM_000518.5(HBB):c.20A>T (p.Glu7Val)",
+                "clinical_significance": "Pathogenic",
+                "review_status": "criteria provided, multiple submitters, no conflicts",
+            }
+        )
+        mock_aggregator.fetch_uniprot_features = AsyncMock(return_value=[])
+
+        response = client.get(
+            "/api/mutation-impact?pdb_id=4HHB&chain=A&resi=6&mutant=V"
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["accession"] == "P68871"
+    assert data["gene"] == "HBB"
+    assert data["uniprot_position"] == 7
+    assert data["wildtype_residue"] == "V"
+    assert data["mutant_residue"] == "V"
+    assert data["clinvar"]["clinical_significance"] == "Pathogenic"
+    assert data["highlight_chains"] == {"A": [6]}
+    mock_aggregator.fetch_clinvar_significance.assert_called_once_with(
+        "HBB", "V7V", ANY
+    )
+
+
+def test_mutation_impact_endpoint_surfaces_a_known_uniprot_variant():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.resolve_structure_uniprot_position = AsyncMock(
+            return_value=("P68871", 7)
+        )
+        mock_aggregator.fetch_uniprot_gene_and_sequence = AsyncMock(
+            return_value={"gene": None, "sequence": None}
+        )
+        mock_aggregator.fetch_clinvar_significance = AsyncMock(return_value=None)
+        mock_aggregator.fetch_uniprot_features = AsyncMock(
+            return_value=[
+                {
+                    "type": "Natural variant",
+                    "description": "in HBS",
+                    "start": 7,
+                    "end": 7,
+                }
+            ]
+        )
+
+        response = client.get(
+            "/api/mutation-impact?pdb_id=4HHB&chain=A&resi=6&mutant=V"
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["clinvar"] is None
+    assert data["known_uniprot_variant"]["description"] == "in HBS"
+
+
+def test_mutation_impact_endpoint_404s_when_position_cannot_be_resolved():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.resolve_structure_uniprot_position = AsyncMock(
+            return_value=None
+        )
+
+        response = client.get(
+            "/api/mutation-impact?pdb_id=4HHB&chain=A&resi=6&mutant=V"
+        )
+
+    assert response.status_code == 404
+
+
+def test_mutation_impact_endpoint_400s_on_invalid_chain():
+    response = client.get(
+        "/api/mutation-impact?pdb_id=4HHB&chain=../etc&resi=6&mutant=V"
+    )
+    assert response.status_code == 400
+
+
+def test_mutation_impact_endpoint_400s_on_invalid_mutant():
+    response = client.get("/api/mutation-impact?pdb_id=4HHB&chain=A&resi=6&mutant=XX")
     assert response.status_code == 400
 
 

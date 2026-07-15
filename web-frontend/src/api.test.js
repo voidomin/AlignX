@@ -468,4 +468,26 @@ describe('api.js request-ID validation', () => {
         expect(global.fetch.mock.calls[0][0]).toContain('pdb_id_a=4HHB');
         expect(global.fetch.mock.calls[0][0]).toContain('pdb_id_b=3UG9');
     });
+
+    it('fetchMutationImpact rejects an unsafe chain', async () => {
+        const { fetchMutationImpact } = await import('./api.js');
+        await expect(fetchMutationImpact('4HHB', '../evil', 6, 'V')).rejects.toThrow('Invalid chain');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchMutationImpact resolves with the mutation-impact shape', async () => {
+        mockFetchOnce({
+            accession: 'P68871', uniprot_position: 7, wildtype_residue: 'V', mutant_residue: 'V',
+            gene: 'HBB', clinvar: { clinical_significance: 'Pathogenic' }, known_uniprot_variant: null,
+            highlight_chains: { A: [6] },
+        });
+        const { fetchMutationImpact } = await import('./api.js');
+        const data = await fetchMutationImpact('4HHB', 'A', 6, 'V');
+        expect(data.gene).toBe('HBB');
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/mutation-impact');
+        expect(global.fetch.mock.calls[0][0]).toContain('pdb_id=4HHB');
+        expect(global.fetch.mock.calls[0][0]).toContain('chain=A');
+        expect(global.fetch.mock.calls[0][0]).toContain('resi=6');
+        expect(global.fetch.mock.calls[0][0]).toContain('mutant=V');
+    });
 });

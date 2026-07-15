@@ -5,9 +5,10 @@ vi.mock('../api.js', () => ({
     fetchAnnotations: vi.fn(),
     fetchContactMap: vi.fn(),
     fetchDifferenceDistance: vi.fn(),
+    fetchMutationImpact: vi.fn(),
 }));
 
-import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance } from '../api.js';
+import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new AnalyticsTab(overrides);
@@ -506,6 +507,107 @@ describe('AnalyticsTab', () => {
 
             expect(global.Plotly.newPlot).not.toHaveBeenCalled();
             expect(tab.element.querySelector('#diff-distance-plotly').textContent).toContain('5000 aligned columns');
+        });
+    });
+
+    describe('map a mutation', () => {
+        function setUpForMutation(tab) {
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+            tab.element.querySelector('#mutation-resi-input').value = '6';
+            tab.element.querySelector('#mutation-mutant-input').value = 'V';
+        }
+
+        it('fetches and renders a real-looking mutation impact result', async () => {
+            fetchMutationImpact.mockResolvedValue({
+                accession: 'P68871', uniprot_position: 7, wildtype_residue: 'V', mutant_residue: 'V',
+                gene: 'HBB',
+                clinvar: { clinical_significance: 'Pathogenic', review_status: 'reviewed by expert panel' },
+                known_uniprot_variant: null,
+                highlight_chains: { A: [6] },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-map-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(fetchMutationImpact).toHaveBeenCalledWith('4HHB', 'A', 6, 'V');
+            const result = tab.element.querySelector('#mutation-impact-result');
+            expect(result.textContent).toContain('P68871');
+            expect(result.textContent).toContain('Pathogenic');
+        });
+
+        it('shows a known UniProt variant when ClinVar has no match', async () => {
+            fetchMutationImpact.mockResolvedValue({
+                accession: 'P68871', uniprot_position: 7, wildtype_residue: 'V', mutant_residue: 'V',
+                gene: 'HBB', clinvar: null,
+                known_uniprot_variant: { type: 'Natural variant', description: 'in HBS', start: 7, end: 7 },
+                highlight_chains: { A: [6] },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-map-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const result = tab.element.querySelector('#mutation-impact-result');
+            expect(result.textContent).toContain('No matching ClinVar record found.');
+            expect(result.textContent).toContain('in HBS');
+        });
+
+        it('triggers onHighlightResidues when "Highlight in 3D" is clicked', async () => {
+            fetchMutationImpact.mockResolvedValue({
+                accession: 'P68871', uniprot_position: 7, wildtype_residue: 'V', mutant_residue: 'V',
+                gene: 'HBB', clinvar: null, known_uniprot_variant: null,
+                highlight_chains: { A: [6] },
+            });
+            const onHighlightResidues = vi.fn();
+            const tab = makeTab({ onHighlightResidues });
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-map-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            tab.element.querySelector('#mutation-impact-result button').click();
+            expect(onHighlightResidues).toHaveBeenCalledWith({ A: [6] });
+        });
+
+        it('shows a validation message instead of fetching when inputs are incomplete', async () => {
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+            tab.element.querySelector('#mutation-resi-input').value = '';
+            tab.element.querySelector('#mutation-mutant-input').value = 'V';
+
+            tab.element.querySelector('#mutation-map-btn').click();
+            await Promise.resolve();
+
+            expect(fetchMutationImpact).not.toHaveBeenCalled();
+            expect(tab.element.querySelector('#mutation-impact-result').textContent)
+                .toContain('Enter a residue number and a mutant residue.');
+        });
+
+        it('shows a graceful message when the fetch fails', async () => {
+            fetchMutationImpact.mockRejectedValue(new Error('boom'));
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-map-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#mutation-impact-result').textContent)
+                .toContain('Failed to map this mutation.');
         });
     });
 });

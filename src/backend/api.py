@@ -1368,6 +1368,100 @@ async def get_annotations(
     return {"pdb_id": pdb_id, "annotation": sanitize_for_json(annotation)}
 
 
+_SAFE_AMINO_ACID = re.compile(r"^[A-Za-z]$")
+
+
+@app.get(
+    "/api/mutation-impact",
+    responses={
+        400: {"description": "Invalid pdb_id/chain/mutant"},
+        404: {"description": "Could not resolve this residue to a UniProt position"},
+    },
+)
+async def get_mutation_impact(
+    pdb_id: Annotated[str, Query(...)],
+    chain: Annotated[str, Query(...)],
+    resi: Annotated[int, Query(...)],
+    mutant: Annotated[str, Query(...)],
+):
+    """
+    Maps a structure's own author-numbered residue to its real UniProt
+    position (see AnnotationAggregator.resolve_structure_uniprot_position),
+    then looks up the real wild-type residue and gene symbol from UniProt
+    and (if a matching record exists) the real clinical significance of
+    the wildtype->mutant substitution from ClinVar. Also surfaces any
+    already-known UniProt "Natural variant" feature at that position -
+    UniProt's own variant records carry no structured pathogenicity field,
+    only free text, so ClinVar is the only source of a real classification
+    here.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(chain, "chain")
+    if not _SAFE_AMINO_ACID.match(mutant or ""):
+        raise HTTPException(
+            status_code=400, detail=f"Invalid mutant residue code: {mutant!r}"
+        )
+
+    source = PDBManager.detect_source(pdb_id)
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resolved = await annotation_aggregator.resolve_structure_uniprot_position(
+            pdb_id, chain, resi, source, client
+        )
+        if resolved is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Could not resolve {pdb_id} chain {chain} residue {resi} to a UniProt position.",
+            )
+        accession, uniprot_position = resolved
+
+        summary = await annotation_aggregator.fetch_uniprot_gene_and_sequence(
+            accession, client
+        )
+        sequence = summary.get("sequence")
+        wildtype_residue = (
+            sequence[uniprot_position - 1]
+            if sequence and 1 <= uniprot_position <= len(sequence)
+            else None
+        )
+
+        clinvar = None
+        gene = summary.get("gene")
+        if gene and wildtype_residue:
+            variant_notation = (
+                f"{wildtype_residue.upper()}{uniprot_position}{mutant.upper()}"
+            )
+            clinvar = await annotation_aggregator.fetch_clinvar_significance(
+                gene, variant_notation, client
+            )
+
+        features = await annotation_aggregator.fetch_uniprot_features(accession, client)
+        known_variant = next(
+            (
+                f
+                for f in features
+                if f["type"] == "Natural variant"
+                and f["start"] <= uniprot_position <= f["end"]
+            ),
+            None,
+        )
+
+    return sanitize_for_json(
+        {
+            "pdb_id": pdb_id,
+            "chain": chain,
+            "resi": resi,
+            "accession": accession,
+            "gene": gene,
+            "uniprot_position": uniprot_position,
+            "wildtype_residue": wildtype_residue,
+            "mutant_residue": mutant.upper(),
+            "known_uniprot_variant": known_variant,
+            "clinvar": clinvar,
+            "highlight_chains": {chain: [resi]},
+        }
+    )
+
+
 @app.get(
     "/api/validation",
     responses={400: {"description": "Invalid pdb_id"}},

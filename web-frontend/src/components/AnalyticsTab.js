@@ -1,4 +1,4 @@
-import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance } from '../api';
+import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact } from '../api';
 import { renderDomainList, renderGoTermList, renderFeatureList } from '../utils/annotationRenderers';
 
 // Renders one insight string's markdown-lite **bold** segments as real
@@ -212,6 +212,23 @@ export class AnalyticsTab {
                         <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Shared across all structures</span>
                         <div id="annotations-shared-content"></div>
                     </div>
+
+                    <div class="flex flex-col gap-2 pt-3 border-t border-border-subtle">
+                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Map a mutation</span>
+                        <span class="font-body-sm text-body-sm text-secondary">Maps the selected structure's residue to UniProt, then checks ClinVar for a matching clinical record</span>
+                        <div class="flex items-end gap-2">
+                            <label class="flex flex-col gap-1">
+                                <span class="font-label-sm text-label-sm text-secondary">Residue #</span>
+                                <input id="mutation-resi-input" type="number" min="1" class="w-24 bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono" />
+                            </label>
+                            <label class="flex flex-col gap-1">
+                                <span class="font-label-sm text-label-sm text-secondary">Mutant residue</span>
+                                <input id="mutation-mutant-input" type="text" maxlength="1" class="w-16 bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono uppercase" />
+                            </label>
+                            <button id="mutation-map-btn" class="px-3 py-1.5 rounded-md bg-accent-muted text-accent font-label-md text-label-md hover:bg-accent hover:text-white transition-colors">Map</button>
+                        </div>
+                        <div id="mutation-impact-result" class="font-body-sm text-body-sm text-secondary flex flex-col gap-1"></div>
+                    </div>
                 </div>
             </div>
         `;
@@ -239,6 +256,7 @@ export class AnalyticsTab {
     setupAnnotationsPicker() {
         const select = this.element.querySelector('#annotations-structure-select');
         select.addEventListener('change', () => this.renderAnnotationsPanel());
+        this.element.querySelector('#mutation-map-btn').addEventListener('click', () => this.loadMutationImpact());
     }
 
     switchSubTab(key) {
@@ -412,6 +430,71 @@ export class AnalyticsTab {
         }
 
         this.renderSharedAnnotations(sharedSection, sharedContent);
+    }
+
+    // Maps the currently-selected structure's own author-numbered residue
+    // to UniProt/ClinVar - independent of the cached annotation list above
+    // (a fresh network call per click, not something to prefetch for every
+    // structure the way the domain/GO/pathway lists are).
+    async loadMutationImpact() {
+        const resultDiv = this.element.querySelector('#mutation-impact-result');
+        const select = this.element.querySelector('#annotations-structure-select');
+        const pdbId = select.value || this.structures[0]?.pdbId;
+        const structure = this.structures.find(s => s.pdbId === pdbId);
+        const chain = structure?.chain;
+        const resi = Number.parseInt(this.element.querySelector('#mutation-resi-input').value, 10);
+        const mutant = this.element.querySelector('#mutation-mutant-input').value.trim();
+
+        if (!pdbId || !chain) {
+            resultDiv.textContent = 'Select a structure with a resolved chain first.';
+            return;
+        }
+        if (!Number.isInteger(resi) || !mutant) {
+            resultDiv.textContent = 'Enter a residue number and a mutant residue.';
+            return;
+        }
+
+        resultDiv.textContent = 'Mapping mutation…';
+        try {
+            const data = await fetchMutationImpact(pdbId, chain, resi, mutant);
+            this.renderMutationImpact(data);
+        } catch (err) {
+            console.error("Failed to map mutation:", err);
+            resultDiv.textContent = 'Failed to map this mutation.';
+        }
+    }
+
+    renderMutationImpact(data) {
+        const resultDiv = this.element.querySelector('#mutation-impact-result');
+        resultDiv.innerHTML = "";
+
+        const summary = document.createElement('div');
+        summary.className = "text-primary";
+        summary.textContent = `UniProt ${data.accession ?? '--'} position ${data.uniprot_position ?? '--'}: ${data.wildtype_residue ?? '?'} → ${data.mutant_residue}`;
+        resultDiv.appendChild(summary);
+
+        const clinvarLine = document.createElement('div');
+        if (data.clinvar) {
+            clinvarLine.textContent = `ClinVar: ${data.clinvar.clinical_significance} (${data.clinvar.review_status})`;
+        } else {
+            clinvarLine.textContent = 'No matching ClinVar record found.';
+        }
+        resultDiv.appendChild(clinvarLine);
+
+        if (data.known_uniprot_variant) {
+            const variantLine = document.createElement('div');
+            variantLine.textContent = `Known UniProt variant at this position: ${data.known_uniprot_variant.description || '(no description)'}`;
+            resultDiv.appendChild(variantLine);
+        }
+
+        if (data.highlight_chains) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = "font-label-sm text-label-sm text-accent hover:underline text-left";
+            btn.textContent = 'Highlight in 3D';
+            btn.addEventListener('click', () => this.onHighlightResidues(data.highlight_chains));
+            resultDiv.appendChild(btn);
+        }
     }
 
     renderReactomePathways(pathways) {

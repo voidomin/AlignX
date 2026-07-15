@@ -40,6 +40,12 @@ SIFTS_BASE_URL = "https://www.ebi.ac.uk/pdbe/api/mappings/uniprot"
 PDBE_ALL_MAPPINGS_BASE_URL = "https://www.ebi.ac.uk/pdbe/api/mappings"
 GMGC_BASE_URL = "https://gmgc.embl.de/api/v1.0"
 UNIPROT_BASE_URL = "https://rest.uniprot.org/uniprotkb"
+# NCBI's E-utilities work keyless at 3 req/s - fast enough for one
+# interactive mutation lookup (a single esearch+esummary pair), no
+# dedicated rate limiter needed the way the batch STRING/Foldseek fetches
+# have (those loop over many neighbors in one job; this doesn't).
+CLINVAR_ESEARCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+CLINVAR_ESUMMARY_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
 
 # UniProt's own /features list carries ~15 feature types per entry (Chain,
 # Domain, Helix, Beta strand, Turn, Glycosylation, ...); most duplicate a
@@ -391,6 +397,127 @@ class AnnotationAggregator:
                     continue
                 residue_map.update(self._residue_map_from_segment(segment))
         return residue_map
+
+    async def resolve_structure_uniprot_position(
+        self,
+        pdb_id: str,
+        chain: Optional[str],
+        author_resi: int,
+        source: str,
+        client: httpx.AsyncClient,
+    ) -> Optional[Tuple[str, int]]:
+        """Resolves one of a structure's own author-numbered residues to
+        (uniprot_accession, uniprot_position) - the inverse direction of
+        resolve_uniprot_residue_mapping()'s UniProt->author translation,
+        needed for looking up a residue the *structure* numbers in
+        UniProt/ClinVar's own protein-position numbering (e.g. for mutation
+        mapping). AlphaFold's 1:1 numbering makes the position identical to
+        the author number; a real PDB entry inverts the real SIFTS segment
+        map. Returns None if the structure has no resolvable accession, or
+        (for a PDB entry) no segment maps to this exact author residue."""
+        accession = await self._resolve_structure_accession(
+            pdb_id, chain, source, client, None
+        )
+        if not accession:
+            return None
+        if source == "alphafold":
+            return accession, author_resi
+        if source == "pdb" and chain:
+            residue_map = await self.resolve_uniprot_residue_mapping(
+                pdb_id, chain, client
+            )
+            for uniprot_pos, mapped_author_resi in residue_map.items():
+                if mapped_author_resi == author_resi:
+                    return accession, uniprot_pos
+        return None
+
+    async def fetch_uniprot_gene_and_sequence(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> Dict[str, Optional[str]]:
+        """Fetches a protein's gene symbol (ClinVar's own gene-based search
+        term) and full sequence (to read off the real wild-type residue at
+        a resolved UniProt position) from the same UniProt entry
+        fetch_uniprot_features() already targets."""
+
+        async def _fetch() -> Dict[str, Optional[str]]:
+            try:
+                response = await client.get(
+                    f"{UNIPROT_BASE_URL}/{accession}.json",
+                    headers=_JSON_ACCEPT_HEADERS,
+                )
+                if response.status_code != 200:
+                    return {"gene": None, "sequence": None}
+                data = response.json()
+                genes = data.get("genes") or []
+                gene = (genes[0].get("geneName") or {}).get("value") if genes else None
+                sequence = (data.get("sequence") or {}).get("value")
+                return {"gene": gene, "sequence": sequence}
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"UniProt gene/sequence lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return {"gene": None, "sequence": None}
+
+        return await self._get_or_fetch(
+            f"uniprot_summary:{accession}", "uniprot_summary", _fetch
+        )
+
+    async def fetch_clinvar_significance(
+        self, gene: str, variant_notation: str, client: httpx.AsyncClient
+    ) -> Optional[Dict[str, Any]]:
+        """Looks up a gene+variant's real clinical significance via NCBI's
+        keyless ClinVar E-utilities: esearch (find matching variant
+        records) then esummary (fetch the top match's real classification).
+        `variant_notation` is matched as free text against ClinVar's own
+        indexed fields, so either short form ("E7V") or HGVS protein
+        notation ("p.Glu7Val") works. Returns None if nothing resolves."""
+
+        async def _fetch() -> Optional[Dict[str, Any]]:
+            try:
+                search_response = await client.get(
+                    CLINVAR_ESEARCH_URL,
+                    params={
+                        "db": "clinvar",
+                        "term": f"{gene}[gene] AND {variant_notation}",
+                        "retmode": "json",
+                    },
+                )
+                if search_response.status_code != 200:
+                    return None
+                ids = (
+                    search_response.json().get("esearchresult", {}).get("idlist") or []
+                )
+                if not ids:
+                    return None
+
+                summary_response = await client.get(
+                    CLINVAR_ESUMMARY_URL,
+                    params={"db": "clinvar", "id": ids[0], "retmode": "json"},
+                )
+                if summary_response.status_code != 200:
+                    return None
+                record = summary_response.json().get("result", {}).get(ids[0])
+                if not record:
+                    return None
+
+                classification = record.get("germline_classification") or {}
+                return {
+                    "variation_id": ids[0],
+                    "accession": record.get("accession"),
+                    "title": record.get("title"),
+                    "clinical_significance": classification.get("description"),
+                    "review_status": classification.get("review_status"),
+                }
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"ClinVar lookup failed for {sanitize_for_log(gene)} "
+                    f"{sanitize_for_log(variant_notation)}: {e}"
+                )
+                return None
+
+        return await self._get_or_fetch(
+            f"clinvar:{gene}:{variant_notation}", "clinvar", _fetch
+        )
 
     async def resolve_accession(
         self,

@@ -1266,6 +1266,175 @@ class TestResolveUniprotResidueMapping:
         assert mapping == {}
 
 
+class TestResolveStructureUniprotPosition:
+    @pytest.mark.asyncio
+    async def test_alphafold_uses_1to1_numbering_no_extra_lookup(self):
+        aggregator = AnnotationAggregator()
+        with patch.object(
+            aggregator, "_resolve_structure_accession", AsyncMock(return_value="P69905")
+        ):
+            async with httpx.AsyncClient() as client:
+                result = await aggregator.resolve_structure_uniprot_position(
+                    "AF-P69905-F1", "A", 42, "alphafold", client
+                )
+        assert result == ("P69905", 42)
+
+    @pytest.mark.asyncio
+    async def test_pdb_inverts_the_real_residue_map(self):
+        aggregator = AnnotationAggregator()
+        with patch.object(
+            aggregator, "_resolve_structure_accession", AsyncMock(return_value="P01542")
+        ), patch.object(
+            aggregator,
+            "resolve_uniprot_residue_mapping",
+            AsyncMock(return_value={1: 10, 2: 11, 3: 12}),
+        ):
+            async with httpx.AsyncClient() as client:
+                result = await aggregator.resolve_structure_uniprot_position(
+                    "1CRN", "A", 11, "pdb", client
+                )
+        assert result == ("P01542", 2)
+
+    @pytest.mark.asyncio
+    async def test_pdb_returns_none_when_author_resi_not_in_map(self):
+        aggregator = AnnotationAggregator()
+        with patch.object(
+            aggregator, "_resolve_structure_accession", AsyncMock(return_value="P01542")
+        ), patch.object(
+            aggregator,
+            "resolve_uniprot_residue_mapping",
+            AsyncMock(return_value={1: 10, 2: 11}),
+        ):
+            async with httpx.AsyncClient() as client:
+                result = await aggregator.resolve_structure_uniprot_position(
+                    "1CRN", "A", 999, "pdb", client
+                )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_accession_resolves(self):
+        aggregator = AnnotationAggregator()
+        with patch.object(
+            aggregator, "_resolve_structure_accession", AsyncMock(return_value=None)
+        ):
+            async with httpx.AsyncClient() as client:
+                result = await aggregator.resolve_structure_uniprot_position(
+                    "ESM-MGYP1", "A", 42, "esmfold", client
+                )
+        assert result is None
+
+
+class TestFetchUniprotGeneAndSequence:
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_parses_gene_and_sequence(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "genes": [{"geneName": {"value": "HBB"}}],
+                "sequence": {"value": "MVHLTPEEK"},
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            summary = await aggregator.fetch_uniprot_gene_and_sequence("P68871", client)
+        assert summary == {"gene": "HBB", "sequence": "MVHLTPEEK"}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_fields_when_no_gene_present(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={"sequence": {"value": "MVHLTPEEK"}}
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            summary = await aggregator.fetch_uniprot_gene_and_sequence("P68871", client)
+        assert summary == {"gene": None, "sequence": "MVHLTPEEK"}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_fields_on_non_200(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            summary = await aggregator.fetch_uniprot_gene_and_sequence("NOPE", client)
+        assert summary == {"gene": None, "sequence": None}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_fields_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            summary = await aggregator.fetch_uniprot_gene_and_sequence("P68871", client)
+        assert summary == {"gene": None, "sequence": None}
+
+
+class TestFetchClinvarSignificance:
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_resolves_a_real_looking_pathogenic_variant(self, mock_get):
+        def _get_side_effect(url, **kwargs):
+            if "esearch" in url:
+                return _mock_response(
+                    json_data={"esearchresult": {"idlist": ["15333"]}}
+                )
+            return _mock_response(
+                json_data={
+                    "result": {
+                        "15333": {
+                            "accession": "VCV000015333",
+                            "title": "NM_000518.5(HBB):c.20A>T (p.Glu7Val)",
+                            "germline_classification": {
+                                "description": "Pathogenic",
+                                "review_status": "criteria provided, multiple submitters, no conflicts",
+                            },
+                        }
+                    }
+                }
+            )
+
+        mock_get.side_effect = _get_side_effect
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_clinvar_significance("HBB", "E7V", client)
+        assert result == {
+            "variation_id": "15333",
+            "accession": "VCV000015333",
+            "title": "NM_000518.5(HBB):c.20A>T (p.Glu7Val)",
+            "clinical_significance": "Pathogenic",
+            "review_status": "criteria provided, multiple submitters, no conflicts",
+        }
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_when_esearch_finds_nothing(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={"esearchresult": {"idlist": []}}
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_clinvar_significance("HBB", "Z999Q", client)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_esearch_non_200(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=500)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_clinvar_significance("HBB", "E7V", client)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_clinvar_significance("HBB", "E7V", client)
+        assert result is None
+
+
 class TestResolveAccession:
 
     @pytest.mark.asyncio
