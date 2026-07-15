@@ -53,6 +53,15 @@ Have one structure and no idea what it does? The **Discover** tab searches it ag
 - **Structural Clusters**: Interactive RMSD-threshold clustering (hierarchical/average-linkage) to group structurally similar proteins into families.
 - **Batch Comparison**: Diff the RMSD matrix of the current run against any past run to see how structural relationships shifted.
 - **Ligand Hunter**: Auto-detect binding pockets, calculate interaction similarities, and visualize SASA (Solvent Accessible Surface Area) — for any of the N structures in a run, not just the first.
+- **Ligand Chemistry Lookup**: Real name/formula/SMILES/InChIKey for any ligand code, via RCSB's Chemical Component Dictionary.
+- **Contact Maps & Difference-Distance Matrices**: A real CA-CA contact map per structure, and a real difference-distance matrix between two structures — reveals domain movements a single global RMSD hides.
+- **Druggability Volume Estimates**: Convex-hull volume for each heuristic candidate pocket, alongside the existing pocket-similarity view.
+- **Real PDB-Entry Residue Mapping**: PDB entries now get working "Highlight in 3D" for InterPro domains and UniProt features too, via a real per-segment SIFTS residue map.
+- **Mutation Impact + ClinVar**: Maps a structure's residue to its real UniProt position, then surfaces the real wild-type residue, gene, and (if a match exists) ClinVar clinical significance for a proposed substitution.
+- **Literature Links + Run Notes/Tags**: Real PubMed/DOI links on PDB entry cards, plus free-text notes and tags on any run.
+- **Bulk QC Sweep**: Ramachandran/secondary-structure/wwPDB-validation QC across every loaded structure at once, no alignment required.
+- **True Sequence-Only MSA**: A real multiple sequence alignment via EBI Clustal Omega, independent of Mustang's structural alignment.
+- **True Evolutionary Conservation**: Real per-position conservation scored from real NCBI BLAST homolog hits, distinct from the identity-across-loaded-structures approximation.
 - **Interactive Phylogeny**: Structural phylogenetic trees generated via average linkage (UPGMA).
 - **Dashboard**: Aggregate stats (total runs, proteins analyzed, cache size), recent activity, and quick-start examples.
 - **Multi-User Session Isolation**: Session-scoped results and history, safe for stateless/shared deployments.
@@ -131,12 +140,12 @@ Copy `.env.example` to `.env` and customize. Notable production-relevant ones:
 
 ## 🧪 Testing
 
-Backend (pytest, 1019 tests):
+Backend (pytest, 1161 tests):
 ```powershell
 powershell -File scripts\run_tests.ps1
 ```
 
-Frontend (Vitest, 312 tests):
+Frontend (Vitest, 373 tests):
 ```powershell
 cd web-frontend
 npm test
