@@ -114,6 +114,33 @@ describe('AnalyticsTab', () => {
     });
 
     describe('functional annotation sub-tab', () => {
+        it('loads annotations for a single un-aligned structure (no completed run)', async () => {
+            // Regression: this sub-tab used to gate entirely on
+            // this.currentRunId, which meant it never worked for a lone
+            // structure that had never been through a Compare alignment -
+            // fetchAnnotations takes no run_id at all, so there was never
+            // a backend reason for that gate.
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P69905',
+                    domains: [{ name: 'Globin', type: 'domain' }],
+                    go_terms: [], reactome_pathways: [],
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults(null, null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            tab.switchSubTab('annotations');
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(fetchAnnotations).toHaveBeenCalledWith('4HHB', 'A');
+            expect(tab.element.querySelector('#annotations-content').textContent).toContain('Globin');
+        });
+
         it('populates the structure picker from selectedPDBs', () => {
             const tab = makeTab();
             tab.render();

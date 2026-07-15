@@ -40,12 +40,19 @@ export class AnalyticsTab {
     insights = [];
     qualityMetrics = null;
     activeSubTab = 'quality';
-    // One entry per aligned structure: { pdbId, chain }. chain is only
-    // needed for plain PDB IDs (a real SIFTS lookup); AlphaFold/SWISS-
+    // One entry per structure in the workspace: { pdbId, chain }. chain is
+    // only needed for plain PDB IDs (a real SIFTS lookup); AlphaFold/SWISS-
     // MODEL IDs resolve their UniProt accession from the ID string alone.
+    // Annotations work from this list alone (fetchAnnotations takes no
+    // run_id at all) - unlike Quality/RMSF/RMSD/Phylogeny/Insights below,
+    // which are genuinely N>=2-only and stay gated on a real currentRunId.
     structures = [];
     annotationsCache = {};
-    annotationsLoadedForRunId = null;
+    // Keyed on the structure list's own identity (pdbIds joined), not
+    // runId - two single-structure workspaces both have runId===null, so
+    // keying on runId alone couldn't tell "already loaded for THIS
+    // structure" apart from "already loaded for a different one".
+    annotationsLoadedForKey = null;
     annotationsLoading = false;
 
     constructor(props = {}) {
@@ -197,8 +204,10 @@ export class AnalyticsTab {
         // Annotation lookups are real network calls (InterPro/QuickGO/
         // Reactome/SIFTS) - fetched lazily on first visit to this sub-tab,
         // not for every run whether or not anyone looks, and only once per
-        // run (annotationsLoadedForRunId guards a re-fetch on every click).
-        if (key === 'annotations' && this.currentRunId && this.annotationsLoadedForRunId !== this.currentRunId) {
+        // structure set (annotationsLoadedForKey guards a re-fetch on every
+        // click). Available whenever there's at least one structure, not
+        // just after a completed alignment - fetchAnnotations needs no run.
+        if (key === 'annotations' && this.structures.length > 0 && this.annotationsLoadedForKey !== this._structuresKey()) {
             this.loadAllAnnotations();
         }
     }
@@ -219,13 +228,21 @@ export class AnalyticsTab {
     // two more positional params) - both consolidations exist purely to
     // keep this under SonarCloud's max-7-parameter threshold (S107), not
     // for any behavioral reason.
+    _structuresKey() {
+        return this.structures.map(s => s.pdbId).join('|');
+    }
+
     updateResults(runId, figures, ramachandranStats, rmsfValues, insights, qualityMetrics, structures) {
-        if (runId !== this.currentRunId) {
-            // A different (or cleared) run - any cached annotations belong
-            // to a run that's no longer showing, so they'd be wrong to
-            // reuse; the next Annotations-tab visit re-fetches for real.
+        const newStructures = structures || [];
+        const newKey = newStructures.map(s => s.pdbId).join('|');
+        if (newKey !== this._structuresKey()) {
+            // A different structure set (a different run, a reset, or a
+            // different single un-aligned structure) - any cached
+            // annotations belong to a set that's no longer showing, so
+            // they'd be wrong to reuse; the next Annotations-tab visit
+            // re-fetches for real.
             this.annotationsCache = {};
-            this.annotationsLoadedForRunId = null;
+            this.annotationsLoadedForKey = null;
         }
         this.currentRunId = runId;
         this.heatmapFig = figures?.heatmap ?? null;
@@ -234,7 +251,7 @@ export class AnalyticsTab {
         this.rmsfValues = rmsfValues || [];
         this.insights = insights || [];
         this.qualityMetrics = qualityMetrics || null;
-        this.structures = structures || [];
+        this.structures = newStructures;
         this.renderVisuals();
     }
 
@@ -243,7 +260,7 @@ export class AnalyticsTab {
         this.annotationsLoading = true;
         this.renderAnnotationsPanel();
 
-        const runIdAtStart = this.currentRunId;
+        const keyAtStart = this._structuresKey();
         const results = await Promise.all(
             this.structures.map(async ({ pdbId, chain }) => {
                 try {
@@ -256,12 +273,12 @@ export class AnalyticsTab {
             })
         );
 
-        // The run may have changed (or been reset) while these were in
-        // flight - don't clobber a newer run's state with a stale response.
-        if (runIdAtStart !== this.currentRunId) return;
+        // The structure set may have changed while these were in flight -
+        // don't clobber newer state with a stale response.
+        if (keyAtStart !== this._structuresKey()) return;
 
         this.annotationsCache = Object.fromEntries(results);
-        this.annotationsLoadedForRunId = this.currentRunId;
+        this.annotationsLoadedForKey = keyAtStart;
         this.annotationsLoading = false;
         this.populateAnnotationsPicker();
         this.renderAnnotationsPanel();
@@ -288,8 +305,8 @@ export class AnalyticsTab {
         const sharedSection = this.element.querySelector('#annotations-shared-section');
         const sharedContent = this.element.querySelector('#annotations-shared-content');
 
-        if (!this.currentRunId) {
-            content.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Run alignment to display functional annotation.</div>`;
+        if (this.structures.length === 0) {
+            content.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Add a structure to display functional annotation.</div>`;
             sharedSection.classList.add('hidden');
             sharedSection.classList.remove('flex');
             return;

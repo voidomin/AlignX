@@ -167,6 +167,26 @@ describe('LigandTab', () => {
         expect(select.options[1].value).toBe('ZN_B_50');
     });
 
+    it('switching structure still fetches ligands with no completed run (a lone, un-aligned structure)', async () => {
+        // Regression: this used to bail out with `if (!this.currentRunId)
+        // return;` - the only thing blocking the Ligands tab from working
+        // for a single structure that's never been through a Compare
+        // alignment. fetchLigands already treats runId as optional.
+        fetchLigands.mockResolvedValue({
+            ligands: [{ id: 'ZN_A_50', name: 'ZN', chain: 'A', resi: 50 }],
+        });
+        const tab = makeTab({ selectedPDBs: ['4RLT'], currentRunId: null });
+        tab.render();
+        tab.updateLigands([], null, ['4RLT']);
+        tab.currentStructureIndex = -1; // force switchStructure(0) to not short-circuit as a no-op
+
+        await tab.switchStructure(0);
+
+        expect(fetchLigands).toHaveBeenCalledWith('4RLT', null);
+        const select = tab.element.querySelector('#ligand-select');
+        expect(select.options[1].value).toBe('ZN_A_50');
+    });
+
     it('loadInteractions targets the currently selected structure, not always the first', async () => {
         fetchInteractions.mockResolvedValue({
             interactions: { ligand: 'ZN_B_50', interactions: [] },

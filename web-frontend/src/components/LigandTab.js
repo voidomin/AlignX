@@ -138,8 +138,11 @@ export class LigandTab {
         this.clearTable();
         this.onLigandSelected(this.currentStructureIndex, "");
 
-        if (!this.currentRunId) return;
-
+        // fetchLigands already treats runId as optional (resolves the raw
+        // download directly when there's no run) - this used to bail out
+        // here whenever there was no completed alignment, which is exactly
+        // what blocked the Ligands tab from working for a lone, un-aligned
+        // structure.
         const pdbId = this.selectedPDBs[index];
         try {
             const ligData = await fetchLigands(pdbId, this.currentRunId);
