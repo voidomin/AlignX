@@ -132,7 +132,7 @@ Backend (pytest, 984 tests):
 powershell -File scripts\run_tests.ps1
 ```
 
-Frontend (Vitest, 237 tests):
+Frontend (Vitest, 293 tests):
 ```powershell
 cd web-frontend
 npm test
