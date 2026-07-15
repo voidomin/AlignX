@@ -418,4 +418,21 @@ describe('api.js request-ID validation', () => {
         expect(global.fetch.mock.calls[0][0]).toContain('/api/validation');
         expect(global.fetch.mock.calls[0][0]).toContain('pdb_id=4HHB');
     });
+
+    it('fetchLigandInfo rejects an unsafe ligand code', async () => {
+        const { fetchLigandInfo } = await import('./api.js');
+        await expect(fetchLigandInfo('../evil')).rejects.toThrow('Invalid ligandCode');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchLigandInfo resolves with the { ligand_code, chemistry } shape', async () => {
+        mockFetchOnce({ ligand_code: 'HEM', chemistry: { name: 'HEME', formula: 'C34 H32 Fe N4 O4' } });
+        const { fetchLigandInfo } = await import('./api.js');
+        await expect(fetchLigandInfo('HEM')).resolves.toEqual({
+            ligand_code: 'HEM',
+            chemistry: { name: 'HEME', formula: 'C34 H32 Fe N4 O4' },
+        });
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/ligand-info');
+        expect(global.fetch.mock.calls[0][0]).toContain('ligand_code=HEM');
+    });
 });

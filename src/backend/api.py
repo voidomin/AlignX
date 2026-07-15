@@ -244,7 +244,7 @@ def _safe_segment(value: Optional[str], field_name: str) -> Optional[str]:
 
 # Initialize Backend Managers
 history_db = HistoryDatabase()
-ligand_analyzer = LigandAnalyzer(config)
+ligand_analyzer = LigandAnalyzer(config, cache_db=history_db)
 interface_analyzer = InterfaceAnalyzer()
 annotation_aggregator = AnnotationAggregator(config, cache_db=history_db)
 rmsd_analyzer = RMSDAnalyzer(config)
@@ -1016,6 +1016,25 @@ def get_ligands(
 
     ligands = ligand_analyzer.get_ligands(pdb_path)
     return {"pdb_id": pdb_id, "ligands": sanitize_for_json(ligands)}
+
+
+@app.get(
+    "/api/ligand-info",
+    responses={400: {"description": "Invalid ligand_code"}},
+)
+async def get_ligand_info(ligand_code: Annotated[str, Query(...)]):
+    """
+    Resolve a 3-letter ligand/HETATM code to real chemistry (name,
+    formula, SMILES) via RCSB's Chemical Component Dictionary - see
+    LigandAnalyzer.fetch_ligand_chemistry(). Not tied to any downloaded
+    structure file or run - a pure lookup from the ligand code alone, so
+    it works for any ligand a structure's /api/ligands call surfaced.
+    """
+    _safe_segment(ligand_code, "ligand_code")
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        chemistry = await ligand_analyzer.fetch_ligand_chemistry(ligand_code, client)
+    return {"ligand_code": ligand_code.upper(), "chemistry": chemistry}
 
 
 @app.get(

@@ -1,4 +1,4 @@
-import { fetchInteractions, fetchLigands, fetchChains, fetchInterface } from '../api';
+import { fetchInteractions, fetchLigands, fetchChains, fetchInterface, fetchLigandInfo } from '../api';
 import { buildContactRow } from '../utils/interactionRenderers';
 
 export class LigandTab {
@@ -42,6 +42,7 @@ export class LigandTab {
                 <div class="flex gap-4">
                     <span id="ligand-sasa-badge" class="font-label-sm text-label-sm text-secondary hidden">SASA: -- Å²</span>
                 </div>
+                <div id="ligand-chemistry-info" class="font-body-sm text-[11px] text-secondary hidden"></div>
 
                 <div class="flex items-baseline justify-between mt-2 pt-4 border-t border-border">
                     <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Molecular interactions</span>
@@ -375,8 +376,9 @@ export class LigandTab {
         if (!this.element) return;
         const desc = this.element.querySelector('#ligand-pocket-desc');
         desc.innerText = "Perform an alignment and select a ligand from the list to analyze atomic interactions in the binding pocket.";
-        
+
         this.element.querySelector('#ligand-sasa-badge').classList.add('hidden');
+        this.element.querySelector('#ligand-chemistry-info').classList.add('hidden');
         this.element.querySelector('#interaction-count').innerText = "0 Found";
         
         this.element.querySelector('#interactions-table-body').innerHTML = `
@@ -421,6 +423,11 @@ export class LigandTab {
             this.onLigandSelected(this.currentStructureIndex, ligandId, contacts);
 
             desc.innerText = `Conserved catalytic pocket near ligand ${metadata.ligand}. Stable hydrophobic cluster showing coordinated interactions.`;
+
+            // Fire-and-forget - doesn't block interaction-table rendering,
+            // and a slow/failed chemistry lookup shouldn't affect the rest
+            // of this view.
+            this.loadLigandChemistry(ligandId);
 
             if (metadata.pocket_sasa) {
                 sasaBadge.innerText = `SASA: ${metadata.pocket_sasa.toFixed(1)} Å²`;
@@ -472,6 +479,37 @@ export class LigandTab {
                     </td>
                 </tr>
             `;
+        }
+    }
+
+    // Resolves "what is this ligand?" via RCSB's Chemical Component
+    // Dictionary - independent of the interaction analysis above (a slow
+    // or failed lookup here never blocks it). ligandsList already carries
+    // the bare 3-letter code as `.name` (the composite ligandId is
+    // RESNAME_CHAIN_RESI, not directly usable for a chemistry lookup).
+    async loadLigandChemistry(ligandId) {
+        const info = this.element.querySelector('#ligand-chemistry-info');
+        if (!info) return;
+
+        const ligand = this.ligandsList.find(l => l.id === ligandId);
+        const code = ligand ? ligand.name : ligandId.split('_')[0];
+
+        info.textContent = 'Looking up ligand chemistry…';
+        info.classList.remove('hidden');
+
+        try {
+            const data = await fetchLigandInfo(code);
+            if (!data.chemistry) {
+                info.textContent = `${code}: no chemistry data found.`;
+                return;
+            }
+            const c = data.chemistry;
+            const parts = [c.name, c.formula].filter(Boolean);
+            info.textContent = parts.length > 0 ? parts.join(' · ') : `${code}: no chemistry data found.`;
+            info.title = c.smiles ? `SMILES: ${c.smiles}` : '';
+        } catch (err) {
+            console.error("Failed to load ligand chemistry:", err);
+            info.textContent = `${code}: chemistry lookup failed.`;
         }
     }
 }

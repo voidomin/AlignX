@@ -235,6 +235,19 @@ export async function fetchLigands(pdbId, runId) {
     return res.json();
 }
 
+// Resolves a bare 3-letter ligand/HETATM code (not the composite
+// RESNAME_CHAIN_RESI id fetchLigands() returns) to real chemistry - name,
+// formula, SMILES - via RCSB's Chemical Component Dictionary. Not tied to
+// any structure/run - works from the ligand code alone. Always returns
+// { ligand_code, chemistry } - chemistry is null if nothing resolved,
+// never a 404, so callers don't need a special error path for that case.
+export async function fetchLigandInfo(ligandCode) {
+    ligandCode = assertSafeSegment(ligandCode, 'ligandCode');
+    const res = await fetch(buildUrl('/api/ligand-info', { ligand_code: ligandCode }), { headers: authHeaders() });
+    if (!res.ok) throw new Error("Ligand info fetch failed");
+    return res.json();
+}
+
 // Heuristic candidate-pocket detection for a structure with no real bound
 // ligand (see src/backend/ligand_analyzer.py's find_candidate_pockets) -
 // not a validated tool-grade result, so callers should only reach for this

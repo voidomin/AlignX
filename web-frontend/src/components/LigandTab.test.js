@@ -6,9 +6,10 @@ vi.mock('../api.js', () => ({
     fetchLigands: vi.fn(),
     fetchChains: vi.fn().mockResolvedValue({ chains: {} }),
     fetchInterface: vi.fn(),
+    fetchLigandInfo: vi.fn(),
 }));
 
-import { fetchInteractions, fetchLigands, fetchChains, fetchInterface } from '../api.js';
+import { fetchInteractions, fetchLigands, fetchChains, fetchInterface, fetchLigandInfo } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new LigandTab({
@@ -111,6 +112,86 @@ describe('LigandTab', () => {
         tab.element.querySelector('#interactions-table-body tr').click();
 
         expect(onResidueSelected).toHaveBeenCalledWith(0, 'A', 191, 42);
+    });
+
+    describe('ligand chemistry lookup', () => {
+        it('resolves and shows name/formula once a ligand is selected', async () => {
+            fetchInteractions.mockResolvedValue({
+                interactions: { ligand: 'HEM_A_1', interactions: [] },
+            });
+            fetchLigandInfo.mockResolvedValue({
+                ligand_code: 'HEM',
+                chemistry: { name: 'PROTOPORPHYRIN IX CONTAINING FE', formula: 'C34 H32 Fe N4 O4', smiles: 'CC1=C...' },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([{ id: 'HEM_A_1', name: 'HEM', chain: 'A', resi: 1 }], 'run_1');
+
+            await tab.loadInteractions('HEM_A_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(fetchLigandInfo).toHaveBeenCalledWith('HEM');
+            const info = tab.element.querySelector('#ligand-chemistry-info');
+            expect(info.classList.contains('hidden')).toBe(false);
+            expect(info.textContent).toContain('PROTOPORPHYRIN IX CONTAINING FE');
+            expect(info.textContent).toContain('C34 H32 Fe N4 O4');
+        });
+
+        it('shows a graceful message when no chemistry data resolves', async () => {
+            fetchInteractions.mockResolvedValue({
+                interactions: { ligand: 'XXX_A_1', interactions: [] },
+            });
+            fetchLigandInfo.mockResolvedValue({ ligand_code: 'XXX', chemistry: null });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([{ id: 'XXX_A_1', name: 'XXX', chain: 'A', resi: 1 }], 'run_1');
+
+            await tab.loadInteractions('XXX_A_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#ligand-chemistry-info').textContent)
+                .toBe('XXX: no chemistry data found.');
+        });
+
+        it('shows a graceful message when the chemistry fetch fails', async () => {
+            fetchInteractions.mockResolvedValue({
+                interactions: { ligand: 'HEM_A_1', interactions: [] },
+            });
+            fetchLigandInfo.mockRejectedValue(new Error('boom'));
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([{ id: 'HEM_A_1', name: 'HEM', chain: 'A', resi: 1 }], 'run_1');
+
+            await tab.loadInteractions('HEM_A_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#ligand-chemistry-info').textContent)
+                .toBe('HEM: chemistry lookup failed.');
+        });
+
+        it('hides the chemistry info when the ligand is deselected', async () => {
+            fetchInteractions.mockResolvedValue({
+                interactions: { ligand: 'HEM_A_1', interactions: [] },
+            });
+            fetchLigandInfo.mockResolvedValue({ ligand_code: 'HEM', chemistry: { name: 'HEME' } });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([{ id: 'HEM_A_1', name: 'HEM', chain: 'A', resi: 1 }], 'run_1');
+            await tab.loadInteractions('HEM_A_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            await tab.loadInteractions('');
+
+            expect(tab.element.querySelector('#ligand-chemistry-info').classList.contains('hidden')).toBe(true);
+        });
     });
 
     it('resets to the empty state and notifies the parent when ligand is deselected', async () => {

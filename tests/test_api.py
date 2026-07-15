@@ -956,6 +956,44 @@ def test_validation_endpoint_400s_on_invalid_pdb_id():
     assert response.status_code == 400
 
 
+def test_ligand_info_endpoint():
+    with patch(
+        "src.backend.api.ligand_analyzer.fetch_ligand_chemistry",
+        AsyncMock(
+            return_value={
+                "id": "HEM",
+                "name": "PROTOPORPHYRIN IX CONTAINING FE",
+                "formula": "C34 H32 Fe N4 O4",
+                "smiles": "CC1=C...",
+            }
+        ),
+    ) as mock_fetch:
+        response = client.get("/api/ligand-info?ligand_code=HEM")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ligand_code"] == "HEM"
+    assert data["chemistry"]["name"] == "PROTOPORPHYRIN IX CONTAINING FE"
+    mock_fetch.assert_called_once()
+    assert mock_fetch.call_args.args[0] == "HEM"
+
+
+def test_ligand_info_endpoint_returns_none_chemistry_gracefully():
+    with patch(
+        "src.backend.api.ligand_analyzer.fetch_ligand_chemistry",
+        AsyncMock(return_value=None),
+    ):
+        response = client.get("/api/ligand-info?ligand_code=ZZZ")
+
+    assert response.status_code == 200
+    assert response.json() == {"ligand_code": "ZZZ", "chemistry": None}
+
+
+def test_ligand_info_endpoint_400s_on_invalid_ligand_code():
+    response = client.get("/api/ligand-info?ligand_code=../etc")
+    assert response.status_code == 400
+
+
 def test_sequence_endpoint():
     """Verify that the sequence alignment endpoint returns correct structure and calculations."""
     with patch(
