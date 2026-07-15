@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderDomainList, renderGoTermList } from './annotationRenderers';
+import { renderDomainList, renderGoTermList, renderFeatureList } from './annotationRenderers';
 
 describe('annotationRenderers', () => {
     describe('renderDomainList', () => {
@@ -65,6 +65,47 @@ describe('annotationRenderers', () => {
         it('shows n/a for a missing aspect', () => {
             const html = renderGoTermList([{ id: 'GO:0005344', name: 'oxygen carrier activity' }]);
             expect(html).toContain('(n/a)');
+        });
+    });
+
+    describe('renderFeatureList', () => {
+        it('returns an empty string for an empty or missing list', () => {
+            expect(renderFeatureList([])).toBe('');
+            expect(renderFeatureList(null)).toBe('');
+            expect(renderFeatureList(undefined)).toBe('');
+        });
+
+        it('renders type, description, and residue position, using the default heading', () => {
+            const html = renderFeatureList([
+                { type: 'Binding site', description: 'proximal binding residue', start: 88, end: 88 },
+            ]);
+            expect(html).toContain('UniProt features');
+            expect(html).toContain('Binding site');
+            expect(html).toContain('proximal binding residue');
+            expect(html).toContain('88');
+        });
+
+        it('shows a residue range when start and end differ', () => {
+            const html = renderFeatureList([{ type: 'Natural variant', description: '', start: 10, end: 12 }]);
+            expect(html).toContain('10-12');
+        });
+
+        it('accepts a custom heading', () => {
+            const html = renderFeatureList([{ type: 'Binding site', description: '', start: 1, end: 1 }], 'Custom heading');
+            expect(html).toContain('Custom heading');
+        });
+
+        it('shows a "Highlight in 3D" button when a feature has highlight_chains', () => {
+            const html = renderFeatureList([
+                { type: 'Binding site', description: '', start: 88, end: 88, highlight_chains: { A: [88] } },
+            ]);
+            expect(html).toContain('Highlight in 3D');
+            expect(html).toContain('data-feature-index="0"');
+        });
+
+        it('omits the button when highlight_chains is absent (non-AlphaFold structures)', () => {
+            const html = renderFeatureList([{ type: 'Binding site', description: '', start: 88, end: 88 }]);
+            expect(html).not.toContain('Highlight in 3D');
         });
     });
 });

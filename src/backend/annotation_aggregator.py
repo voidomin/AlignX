@@ -33,6 +33,22 @@ STRING_BASE_URL = "https://version-12-0.string-db.org/api/json"
 REACTOME_BASE_URL = "https://reactome.org/ContentService"
 SIFTS_BASE_URL = "https://www.ebi.ac.uk/pdbe/api/mappings/uniprot"
 GMGC_BASE_URL = "https://gmgc.embl.de/api/v1.0"
+UNIPROT_BASE_URL = "https://rest.uniprot.org/uniprotkb"
+
+# UniProt's own /features list carries ~15 feature types per entry (Chain,
+# Domain, Helix, Beta strand, Turn, Glycosylation, ...); most duplicate a
+# signal already covered elsewhere (InterPro domains, the new backbone-
+# torsion secondary-structure assignment) - these 5 are the ones with real,
+# distinct value for a "what's biologically important at this residue?"
+# question: catalytic/binding sites, PTMs, structural disulfides, and known
+# natural variants.
+_UNIPROT_FEATURE_TYPES = {
+    "Active site",
+    "Binding site",
+    "Modified residue",
+    "Disulfide bond",
+    "Natural variant",
+}
 STRING_CALLER_IDENTITY = "structscope"
 _JSON_ACCEPT_HEADERS = {"Accept": "application/json"}
 
@@ -552,6 +568,51 @@ class AnnotationAggregator:
 
         return await self._get_or_fetch(f"gmgc:{gene_id}", "gmgc", _fetch)
 
+    async def fetch_uniprot_features(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> List[Dict[str, Any]]:
+        """Returns this protein's own curated sequence features straight
+        from UniProt (active/binding sites, PTMs, disulfide bonds, natural
+        variants) - a different signal than InterPro's domain/family
+        entries or QuickGO's GO terms, both already fetched elsewhere.
+        Filtered to _UNIPROT_FEATURE_TYPES; a raw UniProt entry has many
+        more feature types than that, most already covered by other
+        signals in this app (see that set's docstring)."""
+
+        async def _fetch() -> List[Dict[str, Any]]:
+            url = f"{UNIPROT_BASE_URL}/{accession}.json"
+            try:
+                response = await client.get(url, headers=_JSON_ACCEPT_HEADERS)
+                if response.status_code != 200:
+                    return []
+                features = []
+                for f in response.json().get("features") or []:
+                    if f.get("type") not in _UNIPROT_FEATURE_TYPES:
+                        continue
+                    loc = f.get("location") or {}
+                    start = (loc.get("start") or {}).get("value")
+                    end = (loc.get("end") or {}).get("value")
+                    if start is None or end is None:
+                        continue
+                    features.append(
+                        {
+                            "type": f["type"],
+                            "description": f.get("description") or "",
+                            "start": start,
+                            "end": end,
+                        }
+                    )
+                return features
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"UniProt features lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return []
+
+        return await self._get_or_fetch(
+            f"uniprot_features:{accession}", "uniprot_features", _fetch
+        )
+
     def _try_get_cached_go_name(self, gid: str) -> Optional[str]:
         if not self.cache_db:
             return None
@@ -674,6 +735,24 @@ class AnnotationAggregator:
             )
             domain["highlight_chains"] = {chain: residues} if residues else None
 
+    @staticmethod
+    def _attach_feature_highlight_chains(
+        features: List[Dict[str, Any]], chain: Optional[str], source: str
+    ) -> None:
+        """Same AlphaFold-only 1:1-numbering shortcut as
+        _attach_domain_highlight_chains() above - see that method's
+        docstring for why real PDB entries are out of scope here (would
+        need a new residue-level SIFTS segment fetch this codebase doesn't
+        do yet)."""
+        if source != "alphafold" or not chain:
+            for feature in features:
+                feature["highlight_chains"] = None
+            return
+
+        for feature in features:
+            residues = list(range(feature["start"], feature["end"] + 1))
+            feature["highlight_chains"] = {chain: residues} if residues else None
+
     async def aggregate_for_structure(
         self,
         pdb_id: str,
@@ -702,14 +781,18 @@ class AnnotationAggregator:
             "domains": [],
             "go_terms": [],
             "reactome_pathways": [],
+            "uniprot_features": [],
         }
         if not accession:
             return result
 
-        domains, quickgo_terms, reactome_pathways = await asyncio.gather(
-            self.fetch_interpro_entries(accession, client),
-            self.fetch_quickgo_annotations(accession, client),
-            self.fetch_reactome_pathways(accession, client),
+        domains, quickgo_terms, reactome_pathways, uniprot_features = (
+            await asyncio.gather(
+                self.fetch_interpro_entries(accession, client),
+                self.fetch_quickgo_annotations(accession, client),
+                self.fetch_reactome_pathways(accession, client),
+                self.fetch_uniprot_features(accession, client),
+            )
         )
 
         go_ids = [g["id"] for g in quickgo_terms if g.get("id")]
@@ -718,8 +801,10 @@ class AnnotationAggregator:
             term["name"] = names.get(term.get("id"))
 
         self._attach_domain_highlight_chains(domains, chain, source)
+        self._attach_feature_highlight_chains(uniprot_features, chain, source)
 
         result["domains"] = domains
+        result["uniprot_features"] = uniprot_features
         # QuickGO's annotation-search returns one row per curated evidence
         # code, so a well-studied protein's common GO terms (e.g. "protein
         # binding") routinely appear many times over - real duplicate

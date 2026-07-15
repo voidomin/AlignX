@@ -1,5 +1,5 @@
 import { fetchAnnotations } from '../api';
-import { renderDomainList, renderGoTermList } from '../utils/annotationRenderers';
+import { renderDomainList, renderGoTermList, renderFeatureList } from '../utils/annotationRenderers';
 
 // Renders one insight string's markdown-lite **bold** segments as real
 // <strong> DOM nodes, built via createElement/createTextNode rather than
@@ -354,19 +354,26 @@ export class AnalyticsTab {
             content.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Switch to this tab to load functional annotation.</div>`;
         } else if (!annotation.accession) {
             content.innerHTML = `<div class="font-body-sm text-secondary py-4">No UniProt accession could be resolved for ${selectedPdbId} - no functional annotation available.</div>`;
-        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length) {
-            content.innerHTML = `<div class="font-body-sm text-secondary py-4">Resolved to UniProt ${annotation.accession}, but no curated domains, GO terms, or pathways were found.</div>`;
+        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.uniprot_features?.length) {
+            content.innerHTML = `<div class="font-body-sm text-secondary py-4">Resolved to UniProt ${annotation.accession}, but no curated domains, GO terms, pathways, or sequence features were found.</div>`;
         } else {
             content.innerHTML = `
                 <div class="font-body-sm text-secondary">Resolved to UniProt <span class="font-mono text-primary">${annotation.accession}</span></div>
                 ${renderDomainList(annotation.domains)}
                 ${renderGoTermList(annotation.go_terms)}
+                ${renderFeatureList(annotation.uniprot_features)}
                 ${this.renderReactomePathways(annotation.reactome_pathways)}
             `;
             content.querySelectorAll('.domain-highlight-btn').forEach(btn => {
                 const domain = annotation.domains[Number(btn.dataset.domainIndex)];
                 if (domain?.highlight_chains) {
                     btn.addEventListener('click', () => this.onHighlightResidues(domain.highlight_chains));
+                }
+            });
+            content.querySelectorAll('.feature-highlight-btn').forEach(btn => {
+                const feature = annotation.uniprot_features[Number(btn.dataset.featureIndex)];
+                if (feature?.highlight_chains) {
+                    btn.addEventListener('click', () => this.onHighlightResidues(feature.highlight_chains));
                 }
             });
         }

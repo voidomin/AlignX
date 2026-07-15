@@ -332,6 +332,27 @@ describe('AnalyticsTab', () => {
             expect(onHighlightResidues).toHaveBeenCalledWith({ A: [2, 3, 4, 5] });
         });
 
+        it('shows a "Highlight in 3D" button for a UniProt feature with highlight_chains and calls onHighlightResidues when clicked', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: 'AF-P69905-F1', chain: 'A', accession: 'P69905',
+                    domains: [], go_terms: [], reactome_pathways: [],
+                    uniprot_features: [{ type: 'Binding site', description: 'proximal binding residue', start: 88, end: 88, highlight_chains: { A: [88] } }],
+                },
+            });
+            const onHighlightResidues = vi.fn();
+            const tab = makeTab({ onHighlightResidues });
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['AF-P69905-F1'], { 'AF-P69905-F1': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            const btn = tab.element.querySelector('.feature-highlight-btn');
+            expect(btn.textContent).toContain('Highlight in 3D');
+            btn.click();
+            expect(onHighlightResidues).toHaveBeenCalledWith({ A: [88] });
+        });
+
         it('omits the "Highlight in 3D" button for a domain with no highlight_chains (e.g. a plain PDB structure)', async () => {
             fetchAnnotations.mockResolvedValue({
                 annotation: {
