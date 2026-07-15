@@ -249,6 +249,29 @@ class TestFindCandidatePockets:
         found_resi = {r["resi"] for r in top["residues"]}
         assert found_resi.issubset({1, 50, 100, 150})
         assert len(top["center"]) == 3
+        # The 4 cluster centers form a real tetrahedron (non-coplanar), so
+        # a convex hull volume should compute to a real positive value.
+        assert top["volume_estimate_a3"] is not None
+        assert top["volume_estimate_a3"] > 0
+
+    def test_volume_estimate_is_none_for_a_coplanar_cluster(self, tmp_path):
+        # All 4 residue centers share z=0 - scipy's ConvexHull can't
+        # construct a 3D hull from coplanar points, so this must degrade
+        # to None rather than raising.
+        lines = []
+        lines += _residue_lines(1, "LEU", "A", 1, (0.0, 0.0, 0.0))
+        lines += _residue_lines(6, "PHE", "A", 50, (4.0, 0.0, 0.0))
+        lines += _residue_lines(11, "TRP", "A", 100, (0.0, 4.0, 0.0))
+        lines += _residue_lines(16, "TYR", "A", 150, (4.0, 4.0, 0.0))
+        lines.append("TER")
+        pdb_file = tmp_path / "coplanar_pocket.pdb"
+        pdb_file.write_text("\n".join(lines) + "\n")
+        analyzer = LigandAnalyzer()
+
+        pockets = analyzer.find_candidate_pockets(pdb_file)
+
+        assert len(pockets) >= 1
+        assert pockets[0]["volume_estimate_a3"] is None
 
     def test_no_surface_residues_returns_empty_list(self, fixture_pdb):
         # fixture_pdb's ALA/GLY pair is too small/isolated a residue set to

@@ -440,10 +440,32 @@ class LigandAnalyzer:
                 ],
                 "center": c["center"],
                 "score": round(c["score"], 2),
+                "volume_estimate_a3": self._cluster_convex_hull_volume(c["residues"]),
                 "heuristic": True,
             }
             for i, c in enumerate(selected)
         ]
+
+    @staticmethod
+    def _cluster_convex_hull_volume(residues: list) -> Optional[float]:
+        """Convex-hull volume (Angstrom^3) over a pocket candidate's own CA
+        coordinates - a rough size signal, not a validated cavity volume: a
+        convex hull always over-estimates a true concave binding cavity
+        (which is exactly what makes it a pocket rather than a bump), and
+        this app has no real geometric cavity detector (fpocket-equivalent)
+        to compare against. Returns None if the cluster is too small or too
+        close to coplanar for scipy to construct a hull from (needs >=4
+        non-coplanar points in 3D)."""
+        from scipy.spatial import ConvexHull
+        from scipy.spatial import QhullError
+
+        coords = np.array([r["CA"].get_coord() for r in residues])
+        if len(coords) < 4:
+            return None
+        try:
+            return round(float(ConvexHull(coords).volume), 1)
+        except QhullError:
+            return None
 
     def calculate_interaction_similarity(
         self, all_interactions: List[Dict[str, Any]]

@@ -7,9 +7,10 @@ vi.mock('../api.js', () => ({
     fetchChains: vi.fn().mockResolvedValue({ chains: {} }),
     fetchInterface: vi.fn(),
     fetchLigandInfo: vi.fn(),
+    fetchPockets: vi.fn(),
 }));
 
-import { fetchInteractions, fetchLigands, fetchChains, fetchInterface, fetchLigandInfo } from '../api.js';
+import { fetchInteractions, fetchLigands, fetchChains, fetchInterface, fetchLigandInfo, fetchPockets } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new LigandTab({
@@ -426,6 +427,84 @@ describe('LigandTab', () => {
             await tab.analyzeInterface();
 
             expect(tab.element.querySelector('#interface-results').textContent).toContain('Chain Z not found in structure');
+        });
+    });
+
+    describe('candidate binding pockets', () => {
+        it('fetches and renders candidate pockets when the structure has no real ligands', async () => {
+            fetchPockets.mockResolvedValue({
+                pdb_id: '4RLT',
+                pockets: [
+                    {
+                        rank: 1,
+                        residues: [{ chain: 'A', resi: 12, resn: 'LEU' }, { chain: 'A', resi: 88, resn: 'PHE' }],
+                        score: 5.5,
+                        volume_estimate_a3: 142.3,
+                        heuristic: true,
+                    },
+                ],
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([], 'run_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(fetchPockets).toHaveBeenCalledWith('4RLT', 'run_1');
+            const section = tab.element.querySelector('#candidate-pockets-section');
+            expect(section.classList.contains('hidden')).toBe(false);
+            const rows = tab.element.querySelectorAll('#candidate-pockets-table-body tr');
+            expect(rows).toHaveLength(1);
+            expect(rows[0].textContent).toContain('LEU A12');
+            expect(rows[0].textContent).toContain('142.3');
+        });
+
+        it('shows -- for a pocket with no volume estimate (coplanar cluster)', async () => {
+            fetchPockets.mockResolvedValue({
+                pdb_id: '4RLT',
+                pockets: [
+                    {
+                        rank: 1,
+                        residues: [{ chain: 'A', resi: 12, resn: 'LEU' }],
+                        score: 3.0,
+                        volume_estimate_a3: null,
+                        heuristic: true,
+                    },
+                ],
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([], 'run_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const rows = tab.element.querySelectorAll('#candidate-pockets-table-body tr');
+            expect(rows[0].textContent).toContain('--');
+        });
+
+        it('does not fetch candidate pockets when the structure already has real ligands', async () => {
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([{ id: 'RET_A_296', name: 'RET', chain: 'A', resi: 296 }], 'run_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(fetchPockets).not.toHaveBeenCalled();
+            expect(tab.element.querySelector('#candidate-pockets-section').classList.contains('hidden')).toBe(true);
+        });
+
+        it('hides the section and does not crash when the pocket fetch fails', async () => {
+            fetchPockets.mockRejectedValue(new Error('boom'));
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([], 'run_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#candidate-pockets-section').classList.contains('hidden')).toBe(true);
         });
     });
 });
