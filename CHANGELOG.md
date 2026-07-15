@@ -2,6 +2,31 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.90.0]
+
+A substantial upgrade to the 3D structure viewer, plus a fix for a race condition the previous release's immediate single-structure preview introduced.
+
+### Fixed
+- **Single-structure 3D preview 404ing for a structure not yet downloaded**: the viewer's `GET /api/structure-file` fetch (added in 3.89.0's unified Workspace merge) was firing before the backend had actually downloaded that structure (which only happens as a side effect of `POST /api/chains`) - for any structure not already cached this session, the viewer's fetch raced the download and silently 404'd, so no 3D image ever appeared. Fixed by awaiting the chain-metadata load first in `addPDB()`/`addManyPDBs()`/`loadQuickStart()`, so the file is guaranteed to exist before the viewer requests it. Reproduced against a cold structure with the local `data/raw` cache cleared, and confirmed fixed live.
+
+### Added
+- **Representation style switcher**: cartoon (default), stick, sphere, or line - a new popover in the viewer header, replacing the single hardcoded cartoon rendering everywhere.
+- **Two new color schemes**: color-by-secondary-structure and color-by-spectrum (rainbow N→C), alongside the existing chain-identity and pLDDT-confidence schemes - all four now live in one unified color-scheme popover (replacing the old standalone confidence-toggle button).
+- **Auto-spin toggle**: continuous rotation via 3Dmol's own built-in `spin()` - no custom animation loop, so it adds no polling overhead of its own.
+- **Fullscreen toggle**: expands the whole viewer panel (controls included) via the native Fullscreen API - no layout changes needed elsewhere, since the API promotes the element regardless of its normal fixed-width flex nesting.
+- **Click-to-inspect residues**: clicking any atom shows a small on-canvas label with its residue name/number/chain - purely informational, doesn't disturb the camera or current styling.
+- **Screenshot export**: downloads the current view as a PNG (`viewer.pngURI()` + a synthetic `<a download>` click) - the app's first client-side (non-backend-generated) download.
+- **Atom-to-atom measurement tool**: click two atoms to see the distance between them (a dashed connector + a distance label); a third click starts a fresh measurement instead of requiring a separate "clear" control.
+
+### Changed
+- Internal refactor: every hardcoded `{cartoon: {...}}` style literal across the viewer (superposition/single-structure loading, ghosting, resets) now routes through one central `_styleFor()`/`_colorPartFor()` pair, so style and color-scheme changes correctly re-apply to whatever's currently loaded, and adding new representations/schemes in the future means editing one place instead of several.
+- `reset()` now also clears style/color-scheme/spin/measurement state back to defaults - starting a fresh workspace no longer leaves auto-spin running or stale measurement markers on screen.
+
+### Verified
+- Full backend suite: 984 tests passing, unchanged (no backend files touched). `black`/`ruff` clean.
+- Frontend suite: 264 Vitest tests passing (up from 237 - `Viewer3D.js` previously had zero test coverage; this batch adds a full `Viewer3D.test.js` covering every new feature plus regression coverage for existing ghost/highlight/load behavior). `npm run lint` clean, `npm run build` succeeds.
+- Real end-to-end verification against a live local server via Chromium, using a real completed 2-structure Mustang alignment: all 4 representation styles and all 4 color schemes applied without error; auto-spin, fullscreen (including popover visibility while fullscreen), and drag-to-rotate-without-triggering-clicks all confirmed; the downloaded screenshot was a real 583KB non-blank PNG; the measurement tool's 2-click distance/connector flow ran without error. Zero console/page errors throughout.
+
 ## [3.89.0]
 
 Merges the Overview (Compare mode, 2+ structures) and Discover (exactly 1 structure) tabs into a single **Workspace** tab - the direct fix for the recurring complaint that kicked off this session's whole feature-audit thread: you had to pick a mode before you knew what you wanted to do with your structures. Confirmed via two research passes that this was almost entirely a frontend consolidation - the backend already resolved everything from a bare `pdb_id` with `run_id` optional everywhere except the genuinely N>=2-only alignment/sequence/report/cluster/comparison endpoints.

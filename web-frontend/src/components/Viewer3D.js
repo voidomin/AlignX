@@ -10,6 +10,25 @@ function colorForIndex(i) {
     return CHAIN_COLORS[i % CHAIN_COLORS.length];
 }
 
+const STYLE_OPTIONS = [
+    { key: 'cartoon', label: 'Cartoon' },
+    { key: 'stick', label: 'Stick' },
+    { key: 'sphere', label: 'Sphere' },
+    { key: 'line', label: 'Line' },
+];
+
+const COLOR_SCHEME_OPTIONS = [
+    { key: 'chain', label: 'Chain identity' },
+    { key: 'secondary', label: 'Secondary structure' },
+    { key: 'spectrum', label: 'Spectrum (N→C)' },
+    { key: 'confidence', label: 'pLDDT Confidence' },
+];
+
+// Shared "highlighted/selected" amber semantic (matches .row-selected) -
+// used for both residue-selection highlighting and the measurement tool's
+// markers/connector, since both mean "the thing the user explicitly picked."
+const HIGHLIGHT_COLOR = '#F59E0B';
+
 export class Viewer3D {
     element = null;
     viewer = null;
@@ -21,7 +40,24 @@ export class Viewer3D {
     // original source chain. sourceChain is only for HUD display text.
     structures = [];
     rmsdDf = null;
-    confidenceColoringEnabled = false;
+
+    // Representation + coloring are orthogonal choices, both applied via
+    // _styleFor() - switching either re-applies to whatever's currently
+    // loaded. 'confidence' replaces the old standalone confidenceColoringEnabled
+    // boolean; it's just one of four color schemes now.
+    currentStyle = 'cartoon';
+    currentColorScheme = 'chain';
+
+    // Click behavior branches on this - 'inspect' (default, informational
+    // residue lookup) vs 'measure' (2-click atom-to-atom distance). Mutually
+    // exclusive by construction so at most one kind of on-canvas label/shape
+    // set exists at a time (see _clearMeasurement/_clearInspectLabel).
+    interactionMode = 'inspect';
+    inspectLabelHandle = null;
+    measurePoints = [];
+    measureHandles = [];
+
+    isSpinning = false;
 
     render() {
         const div = document.createElement('div');
@@ -29,20 +65,55 @@ export class Viewer3D {
         // (panel-raised + shadow-panel, see style.css/tailwind.config.js) -
         // everything else stays flat, so this one soft lift reads as
         // deliberate rather than the whole UI looking inconsistently boxy.
-        div.className = "flex-1 panel-raised shadow-panel rounded-lg flex flex-col overflow-hidden relative";
+        div.className = "flex-1 panel-raised shadow-panel rounded-lg flex flex-col overflow-hidden relative [&:fullscreen]:rounded-none";
         div.innerHTML = `
             <!-- Viewport Header -->
-            <div class="px-4 py-3 border-b border-border flex justify-between items-center">
-                <h3 class="font-body-md text-body-md font-semibold text-primary">Superposition Viewer</h3>
-                <div class="flex gap-2">
-                    <button id="btn-toggle-confidence" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-secondary" title="Toggle pLDDT Confidence Coloring (AlphaFold/ESM structures)" disabled>
-                        <span class="material-symbols-outlined text-[18px]">gradient</span>
+            <div class="px-4 py-3 border-b border-border flex flex-col gap-2">
+                <div class="flex justify-between items-center">
+                    <h3 class="font-body-md text-body-md font-semibold text-primary">Superposition Viewer</h3>
+                    <div class="flex gap-2 items-center">
+                        <details id="viewer-style-picker" class="group relative">
+                            <summary class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors cursor-pointer select-none flex items-center gap-0.5 list-none [&::-webkit-details-marker]:hidden" title="Representation Style">
+                                <span class="material-symbols-outlined text-[18px]">view_in_ar</span>
+                                <span class="material-symbols-outlined text-[14px] group-open:rotate-180 transition-transform">expand_more</span>
+                            </summary>
+                            <div class="absolute right-0 top-full mt-1 z-20 bg-surface border border-border rounded-md shadow-panel p-1 flex flex-col gap-0.5 min-w-[130px]">
+                                ${STYLE_OPTIONS.map(o => `
+                                    <button data-style="${o.key}" class="viewer-style-option text-left px-2 py-1 rounded-sm font-label-sm text-label-sm text-secondary hover:text-primary hover:bg-surface-raised transition-colors">${o.label}</button>
+                                `).join('')}
+                            </div>
+                        </details>
+                        <details id="viewer-colorscheme-picker" class="group relative">
+                            <summary class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors cursor-pointer select-none flex items-center gap-0.5 list-none [&::-webkit-details-marker]:hidden" title="Color Scheme">
+                                <span class="material-symbols-outlined text-[18px]">palette</span>
+                                <span class="material-symbols-outlined text-[14px] group-open:rotate-180 transition-transform">expand_more</span>
+                            </summary>
+                            <div class="absolute right-0 top-full mt-1 z-20 bg-surface border border-border rounded-md shadow-panel p-1 flex flex-col gap-0.5 min-w-[170px]">
+                                ${COLOR_SCHEME_OPTIONS.map(o => `
+                                    <button data-scheme="${o.key}" class="viewer-colorscheme-option text-left px-2 py-1 rounded-sm font-label-sm text-label-sm text-secondary hover:text-primary hover:bg-surface-raised transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-secondary" ${o.key === 'confidence' ? 'disabled' : ''}>${o.label}</button>
+                                `).join('')}
+                            </div>
+                        </details>
+                        <button id="btn-toggle-surface" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Surface">
+                            <span class="material-symbols-outlined text-[18px]">blur_on</span>
+                        </button>
+                        <button id="btn-reset-view" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Reset View">
+                            <span class="material-symbols-outlined text-[18px]">center_focus_strong</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 items-center">
+                    <button id="btn-toggle-spin" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Auto-Spin">
+                        <span class="material-symbols-outlined text-[18px]">autorenew</span>
                     </button>
-                    <button id="btn-toggle-surface" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Surface">
-                        <span class="material-symbols-outlined text-[18px]">blur_on</span>
+                    <button id="btn-toggle-fullscreen" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Fullscreen">
+                        <span class="material-symbols-outlined text-[18px]">fullscreen</span>
                     </button>
-                    <button id="btn-reset-view" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Reset View">
-                        <span class="material-symbols-outlined text-[18px]">center_focus_strong</span>
+                    <button id="btn-toggle-measure" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Measurement Mode">
+                        <span class="material-symbols-outlined text-[18px]">straighten</span>
+                    </button>
+                    <button id="btn-screenshot" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Download Screenshot (PNG)">
+                        <span class="material-symbols-outlined text-[18px]">photo_camera</span>
                     </button>
                 </div>
             </div>
@@ -67,6 +138,8 @@ export class Viewer3D {
         this.element = div;
         this.setupEventListeners();
         this._renderEmptyHUD();
+        this._updateStylePickerUI();
+        this._updateColorSchemePopoverUI();
         return div;
     }
 
@@ -76,7 +149,12 @@ export class Viewer3D {
 
         container.innerHTML = "";
         this.viewer = $3Dmol.createViewer(container, {
-            defaultcolors: $3Dmol.rasmolElementColors
+            defaultcolors: $3Dmol.rasmolElementColors,
+            // Needed for #btn-screenshot's pngURI() capture - without this,
+            // some browsers clear the WebGL drawing buffer between frames
+            // and a screenshot taken outside the render callback comes back
+            // blank.
+            preserveDrawingBuffer: true
         });
         this.viewer.setBackgroundColor("#050608");
 
@@ -86,12 +164,22 @@ export class Viewer3D {
     }
 
     setupEventListeners() {
-        const toggleConfidenceBtn = this.element.querySelector('#btn-toggle-confidence');
         const toggleSurfaceBtn = this.element.querySelector('#btn-toggle-surface');
         const resetViewBtn = this.element.querySelector('#btn-reset-view');
 
-        toggleConfidenceBtn.addEventListener('click', () => {
-            this.colorByConfidence(!this.confidenceColoringEnabled);
+        this.element.querySelectorAll('.viewer-style-option').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.setStyleRepresentation(btn.dataset.style);
+                this.element.querySelector('#viewer-style-picker').open = false;
+            });
+        });
+
+        this.element.querySelectorAll('.viewer-colorscheme-option').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (btn.disabled) return;
+                this.setColorScheme(btn.dataset.scheme);
+                this.element.querySelector('#viewer-colorscheme-picker').open = false;
+            });
         });
 
         toggleSurfaceBtn.addEventListener('click', () => {
@@ -115,6 +203,102 @@ export class Viewer3D {
                 this.viewer.render();
             }
         });
+
+        this.element.querySelector('#btn-toggle-spin').addEventListener('click', () => {
+            this.toggleSpin();
+        });
+
+        this.element.querySelector('#btn-toggle-fullscreen').addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                this.element.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        });
+
+        // Registered once (this.element persists for the app's lifetime -
+        // only one Viewer3D instance is ever created) rather than per
+        // toggle, so this never accumulates duplicate listeners.
+        this.element.addEventListener('fullscreenchange', () => {
+            const isFs = document.fullscreenElement === this.element;
+            const btn = this.element.querySelector('#btn-toggle-fullscreen');
+            btn.querySelector('.material-symbols-outlined').textContent = isFs ? 'fullscreen_exit' : 'fullscreen';
+            btn.classList.toggle('bg-surface-raised', isFs);
+            btn.classList.toggle('text-primary', isFs);
+            // The container's actual pixel box changes asynchronously
+            // relative to this event - defer a frame, then again shortly
+            // after as a defensive fallback for slower browsers.
+            requestAnimationFrame(() => { if (this.viewer) this.viewer.resize(); });
+            setTimeout(() => { if (this.viewer) this.viewer.resize(); }, 150);
+        });
+
+        this.element.querySelector('#btn-toggle-measure').addEventListener('click', () => {
+            this.toggleMeasureMode();
+        });
+
+        this.element.querySelector('#btn-screenshot').addEventListener('click', () => {
+            this.downloadScreenshot();
+        });
+    }
+
+    _updateStylePickerUI() {
+        this.element?.querySelectorAll('.viewer-style-option').forEach(btn => {
+            const active = btn.dataset.style === this.currentStyle;
+            btn.classList.toggle('bg-surface-raised', active);
+            btn.classList.toggle('text-primary', active);
+        });
+    }
+
+    _updateColorSchemePopoverUI() {
+        this.element?.querySelectorAll('.viewer-colorscheme-option').forEach(btn => {
+            const scheme = btn.dataset.scheme;
+            if (scheme === 'confidence') {
+                btn.disabled = !this.hasPlddtStructures();
+            }
+            const active = scheme === this.currentColorScheme;
+            btn.classList.toggle('bg-surface-raised', active);
+            btn.classList.toggle('text-primary', active);
+        });
+    }
+
+    setStyleRepresentation(style) {
+        this.currentStyle = style;
+        this._updateStylePickerUI();
+        this.resetCartoonStyles();
+    }
+
+    setColorScheme(scheme) {
+        this.currentColorScheme = scheme;
+        this._updateColorSchemePopoverUI();
+        this.resetCartoonStyles();
+    }
+
+    // 3Dmol's own internal rAF-driven rotation - not a custom setInterval or
+    // animation loop, so this costs nothing beyond what 3Dmol already does
+    // per rendered frame.
+    toggleSpin() {
+        if (!this.viewer) return;
+        this.isSpinning = !this.isSpinning;
+        this.viewer.spin(this.isSpinning ? 'y' : false);
+        const btn = this.element.querySelector('#btn-toggle-spin');
+        btn.classList.toggle('bg-surface-raised', this.isSpinning);
+        btn.classList.toggle('text-primary', this.isSpinning);
+    }
+
+    downloadScreenshot() {
+        if (!this.viewer) return;
+        this.viewer.render();
+        const dataUri = this.viewer.pngURI();
+        const pdbIdPart = (this.structures.length > 0
+            ? this.structures.map(s => s.pdbId).join('_')
+            : 'structure'
+        ).replace(/[^A-Za-z0-9_.-]/g, '_');
+        const a = document.createElement('a');
+        a.href = dataUri;
+        a.download = `structscope_${pdbIdPart}.png`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
     }
 
     _buildStructures(pdbIds, chainSelections) {
@@ -124,6 +308,82 @@ export class Viewer3D {
             sourceChain: chainSelections?.[pdbId] || '?',
             color: colorForIndex(i)
         }));
+    }
+
+    // Central style builder every load/reset/ghost call site routes
+    // through, instead of the old scattered hardcoded {cartoon: {...}}
+    // literals - so switching representation or color scheme at any time
+    // correctly re-applies to whatever's currently loaded.
+    _sizeParamsFor(rep) {
+        switch (rep) {
+            case 'stick': return { radius: 0.25 };
+            case 'sphere': return { scale: 0.3 };
+            case 'line': return { linewidth: 2 };
+            case 'cartoon':
+            default: return {};
+        }
+    }
+
+    // AlphaFold writes pLDDT on a 0-100 scale, ESM Atlas as a 0-1 fraction -
+    // rather than assuming either, this reads the real min/max B-factor
+    // already present on the loaded model's atoms for each structure, so
+    // the color gradient is correct regardless of which convention the
+    // file used. Falls back to plain identity color when there's no model
+    // yet or no numeric B-factors (e.g. a non-pLDDT structure mixed into
+    // the same alignment).
+    _plddtColorPartFor(structure) {
+        if (!this._isPlddtStructure(structure.pdbId)) {
+            return { color: structure.color };
+        }
+        const model = this.viewer?.getModel();
+        if (!model) return { color: structure.color };
+
+        const atoms = model.selectedAtoms(this._selectorFor(structure));
+        const values = atoms.map(a => a.b).filter(v => typeof v === 'number');
+        if (values.length === 0) return { color: structure.color };
+
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        return { colorscheme: { prop: 'b', gradient: 'roygb', min, max } };
+    }
+
+    _colorPartFor(structure) {
+        switch (this.currentColorScheme) {
+            case 'secondary':
+                return { colorscheme: 'ssPyMOL' };
+            case 'spectrum':
+                return { colorscheme: 'spectrum' };
+            case 'confidence':
+                return this._plddtColorPartFor(structure);
+            case 'chain':
+            default:
+                return { color: structure.color };
+        }
+    }
+
+    // Blends a hex color toward the background color by fraction t (0 =
+    // unchanged, 1 = fully background) - used as a ghosting fallback for
+    // the `line` representation, whose WebGL line primitives may not
+    // support `opacity` the same way mesh-based representations do.
+    _dimColor(hex, t) {
+        const bg = { r: 0x05, g: 0x06, b: 0x08 };
+        const n = Number.parseInt(hex.replace('#', ''), 16);
+        const r = (n >> 16) & 0xff;
+        const g = (n >> 8) & 0xff;
+        const b = n & 0xff;
+        const mix = (c, bgC) => Math.round(c + (bgC - c) * t);
+        return `#${[mix(r, bg.r), mix(g, bg.g), mix(b, bg.b)]
+            .map(v => v.toString(16).padStart(2, '0'))
+            .join('')}`;
+    }
+
+    _styleFor(structure, { opacity = 0.85 } = {}) {
+        const rep = this.currentStyle;
+        let colorPart = this._colorPartFor(structure);
+        if (rep === 'line' && opacity < 0.85 && colorPart.color) {
+            colorPart = { color: this._dimColor(colorPart.color, 1 - opacity / 0.85) };
+        }
+        return { [rep]: { ...colorPart, opacity, ...this._sizeParamsFor(rep) } };
     }
 
     _renderEmptyHUD() {
@@ -214,14 +474,14 @@ export class Viewer3D {
             this.viewer.addModel(pdbData, "pdb");
 
             this.structures.forEach(s => {
-                this.viewer.setStyle({chain: s.mustangChain}, {cartoon: {color: s.color, opacity: 0.85}});
+                this.viewer.setStyle(this._selectorFor(s), this._styleFor(s));
             });
 
+            this._wireClickHandler();
             this.viewer.zoomTo();
             this.viewer.render();
             this.isSurfaceVisible = false;
-            this.confidenceColoringEnabled = false;
-            this._updateConfidenceButtonState();
+            this._updateColorSchemePopoverUI();
         } catch (err) {
             console.error("Error loading superposition coordinate data:", err);
         }
@@ -255,16 +515,31 @@ export class Viewer3D {
 
             this.viewer.clear();
             this.viewer.addModel(pdbData, "pdb");
-            this.viewer.setStyle({}, { cartoon: { color: colorForIndex(0), opacity: 0.85 } });
+            this.viewer.setStyle({}, this._styleFor(this.structures[0]));
 
+            this._wireClickHandler();
             this.viewer.zoomTo();
             this.viewer.render();
             this.isSurfaceVisible = false;
-            this.confidenceColoringEnabled = false;
-            this._updateConfidenceButtonState();
+            this._updateColorSchemePopoverUI();
         } catch (err) {
             console.error("Error loading single structure:", err);
         }
+    }
+
+    // (Re-)registered after every addModel/clear() call, not just once in
+    // init3Dmol() - a fresh model can drop clickable bindings set on the
+    // previous one. Branches on interactionMode rather than needing two
+    // separate click handlers.
+    _wireClickHandler() {
+        if (!this.viewer) return;
+        this.viewer.setClickable({}, true, (atom) => {
+            if (this.interactionMode === 'measure') {
+                this._handleMeasureClick(atom);
+            } else {
+                this._handleInspectClick(atom);
+            }
+        });
     }
 
     _renderSingleStructureHUD(pdbId) {
@@ -296,59 +571,11 @@ export class Viewer3D {
         return this.structures.some(s => this._isPlddtStructure(s.pdbId));
     }
 
-    _updateConfidenceButtonState() {
-        const btn = this.element?.querySelector('#btn-toggle-confidence');
-        if (!btn) return;
-        btn.disabled = !this.hasPlddtStructures();
-    }
-
-    // AlphaFold writes pLDDT on a 0-100 scale, ESM Atlas as a 0-1 fraction -
-    // rather than assuming either, this reads the real min/max B-factor
-    // already present on the loaded model's atoms for each structure, so
-    // the color gradient is correct regardless of which convention the
-    // file used.
-    // A structure with no mustangChain (Discover mode's single, non-aligned
-    // structure - see loadSingleStructure) has no per-structure chain
-    // lettering to select by, so it's styled as the whole model instead.
+    // A structure with no mustangChain (a single, non-aligned structure -
+    // see loadSingleStructure) has no per-structure chain lettering to
+    // select by, so it's styled as the whole model instead.
     _selectorFor(structure) {
         return structure.mustangChain ? { chain: structure.mustangChain } : {};
-    }
-
-    colorByConfidence(enabled) {
-        if (!this.viewer) return;
-        this.confidenceColoringEnabled = enabled;
-
-        if (!enabled) {
-            this.resetCartoonStyles();
-            return;
-        }
-
-        const model = this.viewer.getModel();
-        if (!model) return;
-
-        this.structures.forEach(s => {
-            const selector = this._selectorFor(s);
-            if (!this._isPlddtStructure(s.pdbId)) {
-                this.viewer.setStyle(selector, { cartoon: { color: s.color, opacity: 0.85 } });
-                return;
-            }
-
-            const atoms = model.selectedAtoms(selector);
-            const values = atoms.map(a => a.b).filter(v => typeof v === 'number');
-            if (values.length === 0) {
-                this.viewer.setStyle(selector, { cartoon: { color: s.color, opacity: 0.85 } });
-                return;
-            }
-
-            const min = Math.min(...values);
-            const max = Math.max(...values);
-            this.viewer.setStyle(selector, {
-                cartoon: { colorscheme: { prop: 'b', gradient: 'roygb', min, max } }
-            });
-        });
-
-        this.viewer.zoomTo();
-        this.viewer.render();
     }
 
     // Ligand atoms are never present in the aligned structure (Mustang only
@@ -363,7 +590,7 @@ export class Viewer3D {
 
         // Ghost every structure first.
         this.structures.forEach(s => {
-            this.viewer.setStyle({chain: s.mustangChain}, {cartoon: {color: s.color, opacity: 0.3}});
+            this.viewer.setStyle(this._selectorFor(s), this._styleFor(s, { opacity: 0.3 }));
         });
 
         const target = this.structures[structureIndex];
@@ -393,9 +620,9 @@ export class Viewer3D {
     highlightResidue(structureIndex, chain, resi, alignedResi) {
         if (!this.viewer) return;
 
-        // Reset all cartoon styles to ghost
+        // Reset all base styles to ghost
         this.structures.forEach(s => {
-            this.viewer.setStyle({chain: s.mustangChain}, {cartoon: {color: s.color, opacity: 0.35}});
+            this.viewer.setStyle(this._selectorFor(s), this._styleFor(s, { opacity: 0.35 }));
         });
 
         if (alignedResi === null || alignedResi === undefined) {
@@ -410,12 +637,12 @@ export class Viewer3D {
         const target = this.structures[structureIndex];
         const mustangChain = target ? target.mustangChain : chain;
 
-        // Selection highlight uses the amber "tertiary" semantic (matches .row-selected)
+        // Selection highlight uses the shared amber "tertiary" semantic
         const selection = {chain: mustangChain, resi: alignedResi};
         this.viewer.addStyle(selection, {
-            stick: {color: '#F59E0B', radius: 0.45},
-            sphere: {color: '#F59E0B', scale: 1.3},
-            cartoon: {color: '#F59E0B', opacity: 1.0}
+            stick: {color: HIGHLIGHT_COLOR, radius: 0.45},
+            sphere: {color: HIGHLIGHT_COLOR, scale: 1.3},
+            cartoon: {color: HIGHLIGHT_COLOR, opacity: 1.0}
         });
 
         this.viewer.zoomTo(selection);
@@ -437,7 +664,7 @@ export class Viewer3D {
         // empty selector ({}, "everything") there rather than a literal
         // null chain value, which wouldn't reliably match anything.
         this.structures.forEach(s => {
-            this.viewer.setStyle(this._selectorFor(s), { cartoon: { color: s.color, opacity: 0.35 } });
+            this.viewer.setStyle(this._selectorFor(s), this._styleFor(s, { opacity: 0.35 }));
         });
 
         const selections = [];
@@ -445,8 +672,8 @@ export class Viewer3D {
             if (!residues || residues.length === 0) return;
             const selection = { chain, resi: residues };
             this.viewer.addStyle(selection, {
-                stick: { color: '#F59E0B', radius: 0.35 },
-                cartoon: { color: '#F59E0B', opacity: 1.0 }
+                stick: { color: HIGHLIGHT_COLOR, radius: 0.35 },
+                cartoon: { color: HIGHLIGHT_COLOR, opacity: 1.0 }
             });
             selections.push(selection);
         });
@@ -461,19 +688,140 @@ export class Viewer3D {
 
     resetCartoonStyles() {
         if (!this.viewer) return;
-        this.viewer.removeAllSurfaces();
         this.structures.forEach(s => {
-            this.viewer.setStyle(this._selectorFor(s), {cartoon: {color: s.color, opacity: 0.85}});
+            this.viewer.setStyle(this._selectorFor(s), this._styleFor(s));
         });
         this.viewer.zoomTo();
         this.viewer.render();
+    }
+
+    // Inspect mode: purely informational, single reusable label - never
+    // disturbs camera/style state. At most one inspect label ever exists.
+    _handleInspectClick(atom) {
+        if (!this.viewer) return;
+        if (this.inspectLabelHandle) {
+            this.viewer.removeLabel(this.inspectLabelHandle);
+            this.inspectLabelHandle = null;
+        }
+        if (!atom) return;
+
+        const chainPart = atom.chain ? ` · Chain ${atom.chain}` : '';
+        const text = `${atom.resn} ${atom.resi}${chainPart}`;
+        this.inspectLabelHandle = this.viewer.addLabel(text, {
+            position: { x: atom.x, y: atom.y, z: atom.z },
+            backgroundColor: '#111318',
+            backgroundOpacity: 0.85,
+            fontColor: '#F5F5F5',
+            fontSize: 12,
+            borderThickness: 0
+        });
+        this.viewer.render();
+    }
+
+    _clearInspectLabel() {
+        if (!this.viewer || !this.inspectLabelHandle) return;
+        this.viewer.removeLabel(this.inspectLabelHandle);
+        this.inspectLabelHandle = null;
+    }
+
+    // 2-click atom-to-atom distance measurement. A 3rd click clears the
+    // completed pair and starts fresh, rather than requiring a separate
+    // "clear" affordance - keeps the header control count down.
+    _handleMeasureClick(atom) {
+        if (!this.viewer || !atom) return;
+
+        if (this.measurePoints.length >= 2) {
+            this._clearMeasurement();
+        }
+
+        if (this.measurePoints.length === 0) {
+            this.measurePoints.push(atom);
+            const handle = this.viewer.addLabel('A', {
+                position: { x: atom.x, y: atom.y, z: atom.z },
+                backgroundColor: HIGHLIGHT_COLOR,
+                backgroundOpacity: 0.9,
+                fontColor: '#111318',
+                fontSize: 11,
+                borderThickness: 0
+            });
+            this.measureHandles.push(handle);
+            this.viewer.render();
+            return;
+        }
+
+        // 2nd click - complete the pair.
+        const [a] = this.measurePoints;
+        const b = atom;
+        this.measurePoints.push(b);
+
+        const distance = Math.sqrt(
+            (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2
+        );
+
+        if (this.viewer.addLine) {
+            this.measureHandles.push(this.viewer.addLine({
+                start: { x: a.x, y: a.y, z: a.z },
+                end: { x: b.x, y: b.y, z: b.z },
+                color: HIGHLIGHT_COLOR,
+                dashed: true
+            }));
+        } else if (this.viewer.addCylinder) {
+            this.measureHandles.push(this.viewer.addCylinder({
+                start: { x: a.x, y: a.y, z: a.z },
+                end: { x: b.x, y: b.y, z: b.z },
+                radius: 0.05,
+                color: HIGHLIGHT_COLOR,
+                dashed: true
+            }));
+        }
+
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 };
+        this.measureHandles.push(this.viewer.addLabel(`${distance.toFixed(2)} Å`, {
+            position: mid,
+            backgroundColor: '#111318',
+            backgroundOpacity: 0.85,
+            fontColor: '#F5F5F5',
+            fontSize: 12,
+            borderThickness: 0
+        }));
+
+        this.viewer.render();
+    }
+
+    _clearMeasurement() {
+        if (this.viewer) {
+            this.viewer.removeAllLabels();
+            this.viewer.removeAllShapes();
+        }
+        this.measurePoints = [];
+        this.measureHandles = [];
+    }
+
+    toggleMeasureMode() {
+        this.interactionMode = this.interactionMode === 'measure' ? 'inspect' : 'measure';
+        this._clearMeasurement();
+        this._clearInspectLabel();
+        const btn = this.element.querySelector('#btn-toggle-measure');
+        const isMeasuring = this.interactionMode === 'measure';
+        btn.classList.toggle('bg-surface-raised', isMeasuring);
+        btn.classList.toggle('text-primary', isMeasuring);
+        if (this.viewer) this.viewer.render();
     }
 
     reset() {
         this.structures = [];
         this.rmsdDf = null;
         this.currentRunId = null;
-        this.confidenceColoringEnabled = false;
+        this.currentStyle = 'cartoon';
+        this.currentColorScheme = 'chain';
+        this.interactionMode = 'inspect';
+        this.measurePoints = [];
+        this.measureHandles = [];
+        this.inspectLabelHandle = null;
+        if (this.isSpinning && this.viewer) {
+            this.viewer.spin(false);
+        }
+        this.isSpinning = false;
         if (this.viewer) {
             this.viewer.clear();
             this.viewer.render();
@@ -481,7 +829,12 @@ export class Viewer3D {
         if (this.element) {
             this.element.querySelector("#ambient-placeholder").style.display = "flex";
             this._renderEmptyHUD();
-            this._updateConfidenceButtonState();
+            this._updateStylePickerUI();
+            this._updateColorSchemePopoverUI();
+            const spinBtn = this.element.querySelector('#btn-toggle-spin');
+            spinBtn.classList.remove('bg-surface-raised', 'text-primary');
+            const measureBtn = this.element.querySelector('#btn-toggle-measure');
+            measureBtn.classList.remove('bg-surface-raised', 'text-primary');
         }
     }
 }
