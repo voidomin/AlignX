@@ -1317,6 +1317,72 @@ def test_pockets_endpoint_400s_on_invalid_pdb_id():
     assert response.status_code == 400
 
 
+def test_qc_endpoint_returns_real_looking_stats_for_a_pdb_entry(tmp_path):
+    pdb_file = tmp_path / "4hhb.pdb"
+    pdb_file.write_text("ATOM      1  N   MET A   1      27.340  24.430   2.614\n")
+
+    with patch(
+        "src.backend.api._find_structure_pdb_path", return_value=pdb_file
+    ), patch(
+        "src.backend.api.ramachandran_service.calculate_torsion_angles",
+        return_value={"A": "dummy_dataframe"},
+    ), patch(
+        "src.backend.api.ramachandran_service.aggregate_metrics",
+        return_value={"favored_percent": 92.5, "outlier_count": 2},
+    ), patch(
+        "src.backend.api.ramachandran_service.aggregate_secondary_structure",
+        return_value={
+            "helix_percent": 80.3,
+            "sheet_percent": 5.0,
+            "coil_percent": 14.7,
+        },
+    ), patch(
+        "src.backend.api.fetch_pdbe_validation",
+        AsyncMock(return_value={"clashscore": {"value": 1.2}}),
+    ):
+        response = client.get("/api/qc?pdb_id=4HHB")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["pdb_id"] == "4HHB"
+    assert data["ramachandran_stats"]["favored_percent"] == 92.5
+    assert data["secondary_structure_stats"]["helix_percent"] == 80.3
+    assert data["validation"]["clashscore"]["value"] == 1.2
+
+
+def test_qc_endpoint_skips_validation_for_non_pdb_sources(tmp_path):
+    pdb_file = tmp_path / "af.cif"
+    pdb_file.write_text("dummy")
+
+    with patch(
+        "src.backend.api._find_structure_pdb_path", return_value=pdb_file
+    ), patch(
+        "src.backend.api.ramachandran_service.calculate_torsion_angles",
+        return_value=None,
+    ), patch(
+        "src.backend.api.fetch_pdbe_validation", AsyncMock()
+    ) as mock_validation:
+        response = client.get("/api/qc?pdb_id=AF-P69905-F1")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["validation"] is None
+    assert data["ramachandran_stats"] is None
+    assert data["secondary_structure_stats"] is None
+    mock_validation.assert_not_called()
+
+
+def test_qc_endpoint_404s_when_structure_not_found():
+    with patch("src.backend.api._find_structure_pdb_path", return_value=None):
+        response = client.get("/api/qc?pdb_id=4HHB")
+    assert response.status_code == 404
+
+
+def test_qc_endpoint_400s_on_invalid_pdb_id():
+    response = client.get("/api/qc?pdb_id=../etc")
+    assert response.status_code == 400
+
+
 def test_structure_file_endpoint_returns_the_raw_pdb(tmp_path):
     pdb_file = tmp_path / "4rlt.pdb"
     pdb_file.write_text("ATOM      1  N   MET A   1      27.340  24.430   2.614\n")

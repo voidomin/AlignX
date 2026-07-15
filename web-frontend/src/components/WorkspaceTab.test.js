@@ -10,9 +10,10 @@ vi.mock('../api.js', () => ({
     getDiscoveryExportUrl: vi.fn((runId) => `http://mock/api/discover/export?run_id=${runId}`),
     getDiscoveryCitationsUrl: vi.fn((runId) => `http://mock/api/discover/citations?run_id=${runId}`),
     fetchValidation: vi.fn(),
+    fetchQc: vi.fn(),
 }));
 
-import { submitDiscoveryJob, pollJobUntilDone, fetchValidation } from '../api.js';
+import { submitDiscoveryJob, pollJobUntilDone, fetchValidation, fetchQc } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new WorkspaceTab({
@@ -666,6 +667,88 @@ describe('WorkspaceTab', () => {
             expect(row.querySelector('script')).toBeNull();
             expect(row.querySelector('.pdb-meta-line').textContent)
                 .toContain('<script>alert(1)</script>.pdb');
+        });
+    });
+
+    describe('Run QC on all', () => {
+        it('fetches QC for every selected structure and renders a summary table', async () => {
+            fetchQc.mockImplementation(async (pid) => ({
+                pdb_id: pid,
+                ramachandran_stats: { favored_percent: 92.5, outlier_count: 2 },
+                secondary_structure_stats: { helix_percent: 80.3 },
+                validation: { clashscore: { value: 1.2 } },
+            }));
+
+            const tab = makeTab({ selectedPDBs: ['4HHB', '2HHB'] });
+            tab.render();
+
+            tab.element.querySelector('#workspace-run-qc-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(fetchQc).toHaveBeenCalledWith('4HHB');
+            expect(fetchQc).toHaveBeenCalledWith('2HHB');
+            const rows = tab.element.querySelectorAll('#workspace-qc-summary tbody tr');
+            expect(rows).toHaveLength(2);
+            expect(rows[0].textContent).toContain('92.5');
+            expect(rows[0].textContent).toContain('80.3');
+            expect(rows[0].textContent).toContain('1.2');
+        });
+
+        it('shows a per-row failure message when QC fails for one structure', async () => {
+            fetchQc.mockImplementation(async (pid) => {
+                if (pid === '2HHB') throw new Error('boom');
+                return {
+                    pdb_id: pid,
+                    ramachandran_stats: { favored_percent: 92.5, outlier_count: 0 },
+                    secondary_structure_stats: { helix_percent: 80.3 },
+                    validation: null,
+                };
+            });
+
+            const tab = makeTab({ selectedPDBs: ['4HHB', '2HHB'] });
+            tab.render();
+
+            tab.element.querySelector('#workspace-run-qc-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const rows = tab.element.querySelectorAll('#workspace-qc-summary tbody tr');
+            expect(rows[1].textContent).toContain('2HHB');
+            expect(rows[1].textContent).toContain('QC failed for this structure.');
+        });
+
+        it('shows -- for missing stats instead of crashing', async () => {
+            fetchQc.mockResolvedValue({
+                pdb_id: 'AF-P69905-F1',
+                ramachandran_stats: null,
+                secondary_structure_stats: null,
+                validation: null,
+            });
+
+            const tab = makeTab({ selectedPDBs: ['AF-P69905-F1'] });
+            tab.render();
+
+            tab.element.querySelector('#workspace-run-qc-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const row = tab.element.querySelector('#workspace-qc-summary tbody tr');
+            expect(row.textContent).toContain('--');
+        });
+
+        it('does nothing when there are no structures in the workspace', async () => {
+            fetchQc.mockClear();
+            const tab = makeTab({ selectedPDBs: [] });
+            tab.render();
+
+            tab.element.querySelector('#workspace-run-qc-btn').click();
+            await Promise.resolve();
+
+            expect(fetchQc).not.toHaveBeenCalled();
         });
     });
 });

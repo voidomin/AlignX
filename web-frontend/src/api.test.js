@@ -512,4 +512,24 @@ describe('api.js request-ID validation', () => {
         const { updateRunNotes } = await import('./api.js');
         await expect(updateRunNotes('run_1', { notes: 'x' })).rejects.toThrow('Run not found in history database.');
     });
+
+    it('fetchQc rejects a pdbId that is not a recognized structure ID format', async () => {
+        const { fetchQc } = await import('./api.js');
+        await expect(fetchQc('../evil')).rejects.toThrow('Invalid pdbId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchQc resolves with the QC shape', async () => {
+        mockFetchOnce({
+            pdb_id: '4HHB',
+            ramachandran_stats: { favored_percent: 92.5 },
+            secondary_structure_stats: { helix_percent: 80.3 },
+            validation: { clashscore: { value: 1.2 } },
+        });
+        const { fetchQc } = await import('./api.js');
+        const data = await fetchQc('4HHB');
+        expect(data.ramachandran_stats.favored_percent).toBe(92.5);
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/qc');
+        expect(global.fetch.mock.calls[0][0]).toContain('pdb_id=4HHB');
+    });
 });

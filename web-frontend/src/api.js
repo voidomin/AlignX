@@ -471,6 +471,19 @@ export async function fetchValidation(pdbId) {
     return res.json();
 }
 
+// Standalone per-structure QC (Ramachandran + secondary structure +, for
+// real PDB entries, wwPDB validation) - no alignment required, unlike the
+// same computations inside a completed run's results. Powers the Workspace
+// tab's "Run QC on all" sweep.
+export async function fetchQc(pdbId, runId) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const params = { pdb_id: pdbId };
+    if (runId) params.run_id = assertSafeSegment(runId, 'runId');
+    const res = await fetch(buildUrl('/api/qc', params), { headers: authHeaders() });
+    if (!res.ok) throw new Error("QC fetch failed");
+    return res.json();
+}
+
 // One structure's own CA-CA contact map from a completed run's alignment -
 // see rmsd_calculator.get_structure_contact_map(). Returns either a dense
 // `matrix` or, above the residue cap, a sparse `contacts` list - never both.

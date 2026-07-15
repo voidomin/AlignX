@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing import Dict, Any, Optional
+from src.backend.pdb_manager import parse_structure_file
 from src.utils.logger import get_logger
 
 logger = get_logger()
@@ -12,14 +13,15 @@ class RamachandranService:
     Service for calculating Ramachandran phi/psi angles and identifying outliers.
     """
 
-    def __init__(self):
-        from Bio.PDB import PDBParser
-
-        self.parser = PDBParser(QUIET=True)
-
     def calculate_torsion_angles(self, pdb_file: Path) -> Dict[str, pd.DataFrame]:
         """
-        Calculate phi/psi angles for all chains in a PDB file.
+        Calculate phi/psi angles for all chains in a structure file (PDB or
+        mmCIF - see parse_structure_file). Every caller so far
+        (coordinator.py) fed this Mustang's own re-exported alignment.pdb,
+        always PDB format regardless of input, so a hardcoded PDBParser
+        never surfaced its inability to read mmCIF - GET /api/qc is the
+        first caller to feed this a raw downloaded file directly, which is
+        .cif for AlphaFold-sourced structures.
 
         Returns:
             Dict mapping chain IDs to DataFrames with [residue_index, residue_name, phi, psi]
@@ -27,7 +29,7 @@ class RamachandranService:
         try:
             from Bio.PDB import Polypeptide
 
-            structure = self.parser.get_structure("protein", str(pdb_file))
+            structure = parse_structure_file(Path(pdb_file))
             results = {}
             for model in structure:
                 for chain in model:

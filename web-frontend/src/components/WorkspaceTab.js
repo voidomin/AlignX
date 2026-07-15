@@ -1,4 +1,4 @@
-import { fetchSuggestions, isValidPdbId, fetchValidation } from '../api';
+import { fetchSuggestions, isValidPdbId, fetchValidation, fetchQc } from '../api';
 import { escapeHtml } from '../escapeHtml';
 import { QUICK_START_EXAMPLES } from '../quickStartExamples';
 import { DiscoveryPanel } from './DiscoveryPanel';
@@ -87,6 +87,11 @@ export class WorkspaceTab {
 
                     <div id="workspace-pdb-list-container" class="flex flex-col gap-2 mt-1">
                         <!-- Dynamic list of PDBs with chain dropdowns -->
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+                        <button id="workspace-run-qc-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Run QC on all</button>
+                        <div id="workspace-qc-summary" class="hidden flex-col gap-2"></div>
                     </div>
 
                     <div id="workspace-discovery-panel-slot" class="${this.discoveryPanelVisible ? '' : 'hidden'}"></div>
@@ -183,6 +188,8 @@ export class WorkspaceTab {
             if (this.selectedPDBs.length < 2) return;
             this.onRunAlignment();
         });
+
+        this.element.querySelector('#workspace-run-qc-btn').addEventListener('click', () => this.runQcOnAll());
 
         const toggleBatchBtn = this.element.querySelector('#workspace-toggle-batch-add-btn');
         const batchContainer = this.element.querySelector('#workspace-batch-add-container');
@@ -483,6 +490,92 @@ export class WorkspaceTab {
         }
         const badge = this.element?.querySelector(`#validation-badge-${pid}`);
         if (badge) badge.textContent = this._validationBadgeContent(pid);
+    }
+
+    // Generalizes the per-card wwPDB validation badge above (and the
+    // Ramachandran/secondary-structure QC that's otherwise only ever
+    // computed inside a completed alignment run) into a one-shot sweep
+    // across every structure currently in the workspace, no alignment
+    // required - see GET /api/qc.
+    async runQcOnAll() {
+        if (!this.element || this.selectedPDBs.length === 0) return;
+        const btn = this.element.querySelector('#workspace-run-qc-btn');
+        const summary = this.element.querySelector('#workspace-qc-summary');
+
+        btn.disabled = true;
+        summary.classList.remove('hidden');
+        summary.classList.add('flex');
+        summary.innerHTML = `<div class="font-body-sm text-[11px] text-secondary"><span class="animate-spin material-symbols-outlined text-[14px]">sync</span> Running QC on ${this.selectedPDBs.length} structure(s)…</div>`;
+
+        const results = await Promise.all(
+            this.selectedPDBs.map(async pid => {
+                try {
+                    return await fetchQc(pid);
+                } catch (err) {
+                    console.error('QC failed for', pid, err);
+                    return { pdb_id: pid, error: true };
+                }
+            })
+        );
+
+        btn.disabled = false;
+        this.renderQcSummary(results);
+    }
+
+    renderQcSummary(results) {
+        const summary = this.element.querySelector('#workspace-qc-summary');
+        summary.innerHTML = "";
+
+        const table = document.createElement('table');
+        table.className = "w-full text-left border-collapse";
+        table.innerHTML = `
+            <thead class="font-label-sm text-label-sm text-secondary">
+                <tr>
+                    <th class="px-0 py-1.5 border-b border-border font-medium">Structure</th>
+                    <th class="px-3 py-1.5 border-b border-border font-medium text-right">Favored %</th>
+                    <th class="px-3 py-1.5 border-b border-border font-medium text-right">Outliers</th>
+                    <th class="px-3 py-1.5 border-b border-border font-medium text-right">Helix %</th>
+                    <th class="px-3 py-1.5 border-b border-border font-medium text-right">Clashscore</th>
+                </tr>
+            </thead>
+        `;
+        const tbody = document.createElement('tbody');
+        tbody.className = "font-body-sm text-body-sm text-primary font-mono divide-y divide-border-subtle";
+
+        results.forEach(r => {
+            const tr = document.createElement('tr');
+            if (r.error) {
+                tr.innerHTML = `<td class="py-1.5">${escapeHtml(r.pdb_id)}</td><td class="px-3 py-1.5 text-secondary" colspan="4">QC failed for this structure.</td>`;
+                tbody.appendChild(tr);
+                return;
+            }
+
+            const rama = r.ramachandran_stats;
+            const ss = r.secondary_structure_stats;
+            const clash = r.validation?.clashscore?.value;
+
+            const idCell = document.createElement('td');
+            idCell.className = "py-1.5";
+            idCell.textContent = r.pdb_id;
+            tr.appendChild(idCell);
+
+            [
+                rama?.favored_percent != null ? rama.favored_percent.toFixed(1) : '--',
+                rama?.outlier_count ?? '--',
+                ss?.helix_percent != null ? ss.helix_percent.toFixed(1) : '--',
+                clash != null ? clash.toFixed(1) : '--',
+            ].forEach(value => {
+                const td = document.createElement('td');
+                td.className = "px-3 py-1.5 text-right";
+                td.textContent = value;
+                tr.appendChild(td);
+            });
+
+            tbody.appendChild(tr);
+        });
+
+        table.appendChild(tbody);
+        summary.appendChild(table);
     }
 
     getParameters() {

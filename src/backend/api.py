@@ -39,6 +39,7 @@ from src.backend.ligand_analyzer import LigandAnalyzer
 from src.backend.interface_analyzer import InterfaceAnalyzer
 from src.backend.pdb_manager import PDBManager
 from src.backend.rmsd_analyzer import RMSDAnalyzer
+from src.backend.ramachandran_service import RamachandranService
 from src.backend.result_manager import ResultManager
 from src.backend.rmsd_calculator import (
     get_structure_contact_map,
@@ -252,6 +253,7 @@ ligand_analyzer = LigandAnalyzer(config, cache_db=history_db)
 interface_analyzer = InterfaceAnalyzer()
 annotation_aggregator = AnnotationAggregator(config, cache_db=history_db)
 rmsd_analyzer = RMSDAnalyzer(config)
+ramachandran_service = RamachandranService()
 
 
 @app.get("/health")
@@ -1485,6 +1487,64 @@ async def get_validation(pdb_id: Annotated[str, Query(...)]):
     async with httpx.AsyncClient(timeout=15.0) as client:
         validation = await fetch_pdbe_validation(pdb_id, client)
     return {"pdb_id": pdb_id, "validation": validation}
+
+
+@app.get(
+    "/api/qc",
+    responses={
+        400: {"description": "Invalid pdb_id/run_id/session_id"},
+        404: {"description": "Structure not found in the active workspace"},
+    },
+)
+async def get_qc(
+    pdb_id: Annotated[str, Query(...)],
+    run_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Standalone per-structure QC: Ramachandran outliers + secondary
+    structure (the same backbone-torsion computations coordinator.py
+    already runs for a full alignment) plus, for real PDB entries, real
+    wwPDB validation - all for one already-downloaded structure, no
+    alignment required. Powers the Workspace tab's "Run QC on all" sweep,
+    generalizing the per-card validation badge that already exists there
+    to every structure at once.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    pdb_path = _find_structure_pdb_path(pdb_id, run_id, session_id)
+    if not pdb_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Structure PDB for {pdb_id} not found in active workspace.",
+        )
+
+    torsion_data = await asyncio.to_thread(
+        ramachandran_service.calculate_torsion_angles, pdb_path
+    )
+    ramachandran_stats = None
+    secondary_structure_stats = None
+    if torsion_data:
+        ramachandran_stats = ramachandran_service.aggregate_metrics(torsion_data)
+        secondary_structure_stats = ramachandran_service.aggregate_secondary_structure(
+            torsion_data
+        )
+
+    validation = None
+    if PDBManager.detect_source(pdb_id) == "pdb":
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            validation = await fetch_pdbe_validation(pdb_id, client)
+
+    return sanitize_for_json(
+        {
+            "pdb_id": pdb_id,
+            "ramachandran_stats": ramachandran_stats,
+            "secondary_structure_stats": secondary_structure_stats,
+            "validation": validation,
+        }
+    )
 
 
 @app.get("/api/memory")

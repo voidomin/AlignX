@@ -70,6 +70,39 @@ class TestCalculateTorsionAngles:
         service = RamachandranService()
         assert service.calculate_torsion_angles(tmp_path) == {}
 
+    def test_works_with_a_real_mmcif_file_not_just_pdb(self, tmp_path):
+        # Regression: this used to hardcode Bio.PDB.PDBParser, which can't
+        # read mmCIF syntax at all - AlphaFold-sourced downloads are cached
+        # as .cif, so GET /api/qc (the first caller to feed this a raw
+        # downloaded file directly, rather than Mustang's own re-exported
+        # always-PDB alignment.pdb) silently got {} for every one of them.
+        from tests.conftest import MINIMAL_CIF_HEADER
+
+        residues = [
+            (1, "ALA", (-1.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.5, 1.4, 0.0)),
+            (2, "GLY", (1.9, 1.5, 0.0), (2.5, 2.8, 0.3), (4.0, 2.9, 0.0)),
+            (3, "SER", (4.5, 4.2, 0.2), (6.0, 4.4, 0.0), (6.5, 5.8, -0.3)),
+        ]
+        lines = []
+        serial = 1
+        for resi, resname, n_xyz, ca_xyz, c_xyz in residues:
+            for name, (x, y, z) in (("N", n_xyz), ("CA", ca_xyz), ("C", c_xyz)):
+                element = name[0]
+                lines.append(
+                    f"ATOM {serial} {element} {name} . {resname} A 1 {resi} ? "
+                    f"{x:.3f} {y:.3f} {z:.3f} 1.00 20.00 ? {resi} A 1"
+                )
+                serial += 1
+        cif_file = tmp_path / "fixture.cif"
+        cif_file.write_text(MINIMAL_CIF_HEADER + "\n".join(lines) + "\n")
+        service = RamachandranService()
+
+        result = service.calculate_torsion_angles(cif_file)
+
+        assert "A" in result
+        assert len(result["A"]) == 3
+        assert set(result["A"]["residue_name"]) == {"ALA", "GLY", "SER"}
+
 
 class TestTorsionRow:
     def test_returns_none_when_both_angles_missing(self):
