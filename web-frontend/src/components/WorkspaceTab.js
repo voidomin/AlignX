@@ -1,6 +1,7 @@
 import { fetchSuggestions, isValidPdbId } from '../api';
 import { escapeHtml } from '../escapeHtml';
 import { QUICK_START_EXAMPLES } from '../quickStartExamples';
+import { DiscoveryPanel } from './DiscoveryPanel';
 
 const SOURCE_LABELS = {
     pdb: 'PDB',
@@ -10,7 +11,14 @@ const SOURCE_LABELS = {
     upload: 'Uploaded',
 };
 
-export class OverviewTab {
+// The single merged "add structures, then see what you can do with them"
+// tab - replaces the old Overview (2+, Mustang alignment) and Discover
+// (exactly 1, Foldseek function inference) split. Add any number of
+// structures from any source; each gets its own "What is this?" action
+// (DiscoveryPanel, works at any N - Foldseek has no gating on workspace
+// size), and Run Structural Alignment lights up once there are 2+ (the
+// one genuinely N>=2-only backend requirement here).
+export class WorkspaceTab {
     constructor(props) {
         this.selectedPDBs = props.selectedPDBs || [];
         this.chainSelections = props.chainSelections || {};
@@ -27,48 +35,54 @@ export class OverviewTab {
         this.isUploading = false;
         this.suggestTimeout = null;
         this.batchInputVisible = false;
+        this.discoveryPanelVisible = false;
+        this.discoveryPanel = new DiscoveryPanel({
+            onClose: () => this.hideDiscoveryPanel(),
+        });
     }
 
     render() {
         const div = document.createElement('div');
         div.className = "editorial-section";
-        div.id = "tab-overview-container";
+        div.id = "tab-workspace-container";
 
         div.innerHTML = `
             <header class="section-head">
                 <div>
-                    <span class="eyebrow">Fig. — Alignment Workspace</span>
+                    <span class="eyebrow">Fig. — Workspace</span>
                     <h2 class="section-title">Structures &amp; parameters</h2>
                 </div>
-                <span id="pdb-count-badge" class="font-label-sm text-label-sm text-secondary">0 Proteins</span>
+                <span id="workspace-pdb-count-badge" class="font-label-sm text-label-sm text-secondary">0 Proteins</span>
             </header>
 
             <div class="section-body flex flex-col gap-8">
                 <div class="flex flex-col gap-3">
                     <div class="flex gap-2 relative">
-                        <input id="add-pdb-input" type="text" placeholder="PDB ID, or AF- / SM- / ESM- accession" class="flex-grow bg-surface-raised border border-border rounded-md px-3 py-1.5 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase" autocomplete="off"/>
-                        <button id="add-pdb-btn" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Add</button>
+                        <input id="workspace-add-pdb-input" type="text" placeholder="PDB ID, or AF- / SM- / ESM- accession" class="flex-grow bg-surface-raised border border-border rounded-md px-3 py-1.5 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase" autocomplete="off"/>
+                        <button id="workspace-add-pdb-btn" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Add</button>
                     </div>
-                    <div id="add-pdb-suggestions" class="flex gap-2"></div>
+                    <div id="workspace-add-pdb-suggestions" class="flex gap-2"></div>
 
                     <div class="flex items-center gap-4">
-                        <button id="toggle-batch-add-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Paste multiple IDs</button>
-                        <button id="upload-structure-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Upload a structure file</button>
-                        <input id="upload-structure-input" type="file" accept=".pdb,.ent,.cif" class="hidden"/>
+                        <button id="workspace-toggle-batch-add-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Paste multiple IDs</button>
+                        <button id="workspace-upload-structure-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Upload a structure file</button>
+                        <input id="workspace-upload-structure-input" type="file" accept=".pdb,.ent,.cif" class="hidden"/>
                     </div>
-                    <span id="upload-structure-feedback" class="font-body-sm text-[11px] text-secondary"></span>
+                    <span id="workspace-upload-structure-feedback" class="font-body-sm text-[11px] text-secondary"></span>
 
-                    <div id="batch-add-container" class="flex flex-col gap-2 ${this.batchInputVisible ? '' : 'hidden'}">
-                        <textarea id="batch-pdb-input" rows="3" placeholder="Paste PDB IDs or accessions, separated by commas, spaces, or new lines (e.g. 4RLT, 3UG9, AF-P69905-F1)" class="w-full bg-surface-raised border border-border rounded-md px-3 py-2 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase"></textarea>
+                    <div id="workspace-batch-add-container" class="flex flex-col gap-2 ${this.batchInputVisible ? '' : 'hidden'}">
+                        <textarea id="workspace-batch-pdb-input" rows="3" placeholder="Paste PDB IDs or accessions, separated by commas, spaces, or new lines (e.g. 4RLT, 3UG9, AF-P69905-F1)" class="w-full bg-surface-raised border border-border rounded-md px-3 py-2 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase"></textarea>
                         <div class="flex items-center gap-3">
-                            <button id="batch-add-btn" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Add All</button>
-                            <span id="batch-add-feedback" class="font-body-sm text-[11px] text-secondary"></span>
+                            <button id="workspace-batch-add-btn" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Add All</button>
+                            <span id="workspace-batch-add-feedback" class="font-body-sm text-[11px] text-secondary"></span>
                         </div>
                     </div>
 
-                    <div id="pdb-list-container" class="flex flex-col gap-2 mt-1">
+                    <div id="workspace-pdb-list-container" class="flex flex-col gap-2 mt-1">
                         <!-- Dynamic list of PDBs with chain dropdowns -->
                     </div>
+
+                    <div id="workspace-discovery-panel-slot" class="${this.discoveryPanelVisible ? '' : 'hidden'}"></div>
                 </div>
 
                 <div class="flex flex-col gap-3 border-t border-border pt-6">
@@ -83,28 +97,27 @@ export class OverviewTab {
                     </label>
                 </div>
 
-                <button id="overview-run-btn" class="btn-primary-hard w-full py-3 rounded-sm font-label-md text-label-md flex justify-center items-center gap-2">
+                <button id="workspace-run-btn" class="btn-primary-hard w-full py-3 rounded-sm font-label-md text-label-md flex justify-center items-center gap-2">
                     <span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
                     Run Structural Alignment
                 </button>
-
-                <div id="overview-validation-message" class="hidden flex-col gap-2 p-3 rounded-md bg-surface-raised border border-border-subtle">
-                    <span id="overview-validation-text" class="font-body-sm text-body-sm text-secondary"></span>
-                    <button id="overview-validation-action" class="hidden self-start font-label-sm text-label-sm text-accent hover:underline"></button>
-                </div>
             </div>
         `;
         this.element = div;
         this.setupEventListeners();
         this.refreshPDBList();
+
+        if (this.discoveryPanelVisible) {
+            this.element.querySelector('#workspace-discovery-panel-slot').appendChild(this.discoveryPanel.render());
+        }
         return div;
     }
 
     setupEventListeners() {
-        const addBtn = this.element.querySelector('#add-pdb-btn');
-        const addInput = this.element.querySelector('#add-pdb-input');
-        const runBtn = this.element.querySelector('#overview-run-btn');
-        const suggestionsContainer = this.element.querySelector('#add-pdb-suggestions');
+        const addBtn = this.element.querySelector('#workspace-add-pdb-btn');
+        const addInput = this.element.querySelector('#workspace-add-pdb-input');
+        const runBtn = this.element.querySelector('#workspace-run-btn');
+        const suggestionsContainer = this.element.querySelector('#workspace-add-pdb-suggestions');
 
         const renderSuggestions = (list) => {
             suggestionsContainer.innerHTML = "";
@@ -160,14 +173,15 @@ export class OverviewTab {
         });
 
         runBtn.addEventListener('click', () => {
+            if (this.selectedPDBs.length < 2) return;
             this.onRunAlignment();
         });
 
-        const toggleBatchBtn = this.element.querySelector('#toggle-batch-add-btn');
-        const batchContainer = this.element.querySelector('#batch-add-container');
-        const batchInput = this.element.querySelector('#batch-pdb-input');
-        const batchAddBtn = this.element.querySelector('#batch-add-btn');
-        const batchFeedback = this.element.querySelector('#batch-add-feedback');
+        const toggleBatchBtn = this.element.querySelector('#workspace-toggle-batch-add-btn');
+        const batchContainer = this.element.querySelector('#workspace-batch-add-container');
+        const batchInput = this.element.querySelector('#workspace-batch-pdb-input');
+        const batchAddBtn = this.element.querySelector('#workspace-batch-add-btn');
+        const batchFeedback = this.element.querySelector('#workspace-batch-add-feedback');
 
         toggleBatchBtn.addEventListener('click', () => {
             this.batchInputVisible = !this.batchInputVisible;
@@ -216,9 +230,9 @@ export class OverviewTab {
             if (addedCount > 0) batchInput.value = "";
         });
 
-        const uploadBtn = this.element.querySelector('#upload-structure-btn');
-        const uploadInput = this.element.querySelector('#upload-structure-input');
-        const uploadFeedback = this.element.querySelector('#upload-structure-feedback');
+        const uploadBtn = this.element.querySelector('#workspace-upload-structure-btn');
+        const uploadInput = this.element.querySelector('#workspace-upload-structure-input');
+        const uploadFeedback = this.element.querySelector('#workspace-upload-structure-feedback');
 
         uploadBtn.addEventListener('click', () => uploadInput.click());
 
@@ -244,6 +258,12 @@ export class OverviewTab {
         this.selectedPDBs = selectedPDBs;
         this.chainSelections = chainSelections;
         this.pdbMetadata = pdbMetadata;
+        // A removed/replaced structure invalidates whatever the Discovery
+        // panel is showing - rather than leave it displaying results for a
+        // structure no longer in the workspace, close it.
+        if (this.discoveryPanelVisible && !this.selectedPDBs.includes(this.discoveryPanel.pdbId)) {
+            this.hideDiscoveryPanel();
+        }
         this.refreshPDBList();
     }
 
@@ -254,17 +274,50 @@ export class OverviewTab {
         // Guard against submitting an alignment while a just-added structure's
         // chain selection hasn't resolved yet, which would silently persist
         // an incomplete chain_selection for that run.
-        const runBtn = this.element?.querySelector('#overview-run-btn');
+        const runBtn = this.element?.querySelector('#workspace-run-btn');
         if (runBtn) runBtn.disabled = isLoading;
+    }
+
+    showDiscoveryPanel(pdbId) {
+        this.discoveryPanelVisible = true;
+        const slot = this.element.querySelector('#workspace-discovery-panel-slot');
+        slot.classList.remove('hidden');
+        slot.innerHTML = '';
+        slot.appendChild(this.discoveryPanel.render());
+        this.discoveryPanel.runFor(pdbId);
+    }
+
+    // Reopens a Discover run loaded from the Dashboard/History tab - hands
+    // the saved result straight to the panel instead of re-running Foldseek.
+    showSavedDiscoveryResults(results) {
+        this.discoveryPanelVisible = true;
+        if (!this.element) return;
+        const slot = this.element.querySelector('#workspace-discovery-panel-slot');
+        slot.classList.remove('hidden');
+        slot.innerHTML = '';
+        slot.appendChild(this.discoveryPanel.render());
+        this.discoveryPanel.loadSavedResults(results);
+    }
+
+    hideDiscoveryPanel() {
+        this.discoveryPanelVisible = false;
+        const slot = this.element?.querySelector('#workspace-discovery-panel-slot');
+        if (slot) {
+            slot.classList.add('hidden');
+            slot.innerHTML = '';
+        }
     }
 
     refreshPDBList() {
         if (!this.element) return;
 
-        const badge = this.element.querySelector('#pdb-count-badge');
+        const badge = this.element.querySelector('#workspace-pdb-count-badge');
         badge.innerText = `${this.selectedPDBs.length} Protein${this.selectedPDBs.length !== 1 ? 's' : ''}`;
 
-        const container = this.element.querySelector('#pdb-list-container');
+        const runBtn = this.element.querySelector('#workspace-run-btn');
+        if (runBtn) runBtn.classList.toggle('hidden', this.selectedPDBs.length < 2);
+
+        const container = this.element.querySelector('#workspace-pdb-list-container');
         if (this.isLoadingChains) {
             container.innerHTML = `
                 <div class="flex items-center justify-center py-4 gap-2 text-secondary font-body-sm">
@@ -279,11 +332,11 @@ export class OverviewTab {
         if (this.selectedPDBs.length === 0) {
             container.innerHTML = `
                 <div class="flex flex-col items-center gap-3 py-4 text-center">
-                    <span class="text-secondary font-body-sm">Add at least 2 PDB structures to align, or try an example:</span>
-                    <div id="overview-quick-start" class="flex flex-wrap justify-center gap-2"></div>
+                    <span class="text-secondary font-body-sm">Add a structure to analyze it on its own, or 2+ to align them - or try an example:</span>
+                    <div id="workspace-quick-start" class="flex flex-wrap justify-center gap-2"></div>
                 </div>
             `;
-            const quickStartContainer = container.querySelector('#overview-quick-start');
+            const quickStartContainer = container.querySelector('#workspace-quick-start');
             if (quickStartContainer && this.onQuickStart) {
                 QUICK_START_EXAMPLES.forEach(ex => {
                     const btn = document.createElement('button');
@@ -340,9 +393,12 @@ export class OverviewTab {
                             ${chainsOptionsHTML}
                         </select>
                     </div>
-                    <button class="text-error hover:text-red-400 p-1 rounded-md hover:bg-surface transition-colors remove-pdb-btn" data-pdb="${pid}">
-                        <span class="material-symbols-outlined text-[18px]">delete</span>
-                    </button>
+                    <div class="flex items-center gap-1">
+                        <button class="discover-structure-btn font-label-sm text-label-sm text-secondary hover:text-accent px-2 py-1 rounded-md hover:bg-surface transition-colors whitespace-nowrap" data-pdb="${pid}">What is this?</button>
+                        <button class="text-error hover:text-red-400 p-1 rounded-md hover:bg-surface transition-colors remove-pdb-btn" data-pdb="${pid}">
+                            <span class="material-symbols-outlined text-[18px]">delete</span>
+                        </button>
+                    </div>
                 </div>
                 ${metaParts.length > 0 ? `<span class="pdb-meta-line font-body-sm text-[11px] text-secondary pl-0.5">${metaParts.join(' · ')}</span>` : ''}
                 ${meta?.is_nmr ? `<span class="pdb-nmr-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="Showing model 1 of ${meta.num_models} - other conformers in this NMR ensemble aren't analyzed.">NMR · ${meta.num_models} models (model 1 shown)</span>` : ''}
@@ -358,6 +414,10 @@ export class OverviewTab {
                 this.onRemovePDB(pid);
             });
 
+            div.querySelector('.discover-structure-btn').addEventListener('click', () => {
+                this.showDiscoveryPanel(pid);
+            });
+
             container.appendChild(div);
         });
     }
@@ -369,35 +429,8 @@ export class OverviewTab {
         };
     }
 
-    // Used for in-app guidance that doesn't warrant a full page error (e.g.
-    // "you need 2+ structures") - a dismissible-by-navigation inline banner
-    // instead of a jarring native alert(), with an optional single action
-    // button (e.g. routing to Discover mode for a single structure).
-    showValidationMessage(text, actionLabel, onAction) {
-        const box = this.element.querySelector('#overview-validation-message');
-        const textEl = this.element.querySelector('#overview-validation-text');
-        const actionBtn = this.element.querySelector('#overview-validation-action');
-        textEl.textContent = text;
-        box.classList.remove('hidden');
-        box.classList.add('flex');
-        if (actionLabel && onAction) {
-            actionBtn.textContent = actionLabel;
-            actionBtn.classList.remove('hidden');
-            actionBtn.onclick = onAction;
-        } else {
-            actionBtn.classList.add('hidden');
-            actionBtn.onclick = null;
-        }
-    }
-
-    clearValidationMessage() {
-        const box = this.element.querySelector('#overview-validation-message');
-        box.classList.add('hidden');
-        box.classList.remove('flex');
-    }
-
     setAligning(isAligning) {
-        const runBtn = this.element.querySelector('#overview-run-btn');
+        const runBtn = this.element.querySelector('#workspace-run-btn');
         if (!runBtn) return;
         if (isAligning) {
             runBtn.disabled = true;

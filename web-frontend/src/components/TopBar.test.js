@@ -65,11 +65,11 @@ describe('TopBar', () => {
     });
 
     describe('tab strip scroll affordance', () => {
-        it('renders 10 tabs and a scroll-left/scroll-right button pair, hidden by default', () => {
+        it('renders 9 tabs and a scroll-left/scroll-right button pair, hidden by default', () => {
             const bar = makeBar();
             bar.render();
 
-            expect(bar.element.querySelectorAll('.tab-trigger')).toHaveLength(10);
+            expect(bar.element.querySelectorAll('.tab-trigger')).toHaveLength(9);
             expect(bar.element.querySelector('#topbar-scroll-left').classList.contains('hidden')).toBe(true);
             expect(bar.element.querySelector('#topbar-scroll-right').classList.contains('hidden')).toBe(true);
         });

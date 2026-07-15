@@ -1,8 +1,20 @@
 import { describe, it, expect, vi } from 'vitest';
-import { OverviewTab } from './OverviewTab.js';
+import { WorkspaceTab } from './WorkspaceTab.js';
+
+vi.mock('../api.js', () => ({
+    fetchSuggestions: vi.fn(),
+    isValidPdbId: vi.fn((id) => /^[0-9A-Z]{4}$/.test(id) || /^(AF|SM|ESM)-/.test(id)),
+    submitDiscoveryJob: vi.fn(),
+    pollJobUntilDone: vi.fn(),
+    getDiscoveryReportUrl: vi.fn((runId) => `http://mock/api/discover/report?run_id=${runId}`),
+    getDiscoveryExportUrl: vi.fn((runId) => `http://mock/api/discover/export?run_id=${runId}`),
+    getDiscoveryCitationsUrl: vi.fn((runId) => `http://mock/api/discover/citations?run_id=${runId}`),
+}));
+
+import { submitDiscoveryJob, pollJobUntilDone } from '../api.js';
 
 function makeTab(overrides = {}) {
-    return new OverviewTab({
+    return new WorkspaceTab({
         selectedPDBs: [],
         chainSelections: {},
         pdbMetadata: {},
@@ -17,21 +29,21 @@ function makeTab(overrides = {}) {
     });
 }
 
-describe('OverviewTab', () => {
+describe('WorkspaceTab', () => {
     it('shows the empty-state message and a "0 Proteins" badge with no structures selected', () => {
         const tab = makeTab();
         tab.render();
 
-        expect(tab.element.querySelector('#pdb-count-badge').innerText).toBe('0 Proteins');
-        expect(tab.element.querySelector('#pdb-list-container').textContent)
-            .toContain('Add at least 2 PDB structures to align');
+        expect(tab.element.querySelector('#workspace-pdb-count-badge').innerText).toBe('0 Proteins');
+        expect(tab.element.querySelector('#workspace-pdb-list-container').textContent)
+            .toContain('Add a structure to analyze it on its own, or 2+ to align them');
     });
 
     it('shows quick-start example buttons in the empty state', () => {
         const tab = makeTab();
         tab.render();
 
-        const buttons = tab.element.querySelectorAll('#overview-quick-start .quick-start-btn');
+        const buttons = tab.element.querySelectorAll('#workspace-quick-start .quick-start-btn');
         expect(buttons.length).toBeGreaterThan(0);
     });
 
@@ -40,7 +52,7 @@ describe('OverviewTab', () => {
         const tab = makeTab({ onQuickStart });
         tab.render();
 
-        tab.element.querySelector('#overview-quick-start .quick-start-btn').click();
+        tab.element.querySelector('#workspace-quick-start .quick-start-btn').click();
 
         expect(onQuickStart).toHaveBeenCalledWith(expect.any(Array));
     });
@@ -49,53 +61,7 @@ describe('OverviewTab', () => {
         const tab = makeTab({ selectedPDBs: ['4RLT', '3UG9'] });
         tab.render();
 
-        expect(tab.element.querySelector('#overview-quick-start')).toBeNull();
-    });
-
-    describe('showValidationMessage', () => {
-        it('is hidden by default', () => {
-            const tab = makeTab();
-            tab.render();
-
-            expect(tab.element.querySelector('#overview-validation-message').classList.contains('hidden')).toBe(true);
-        });
-
-        it('shows the message text and an action button when both are given', () => {
-            const onAction = vi.fn();
-            const tab = makeTab();
-            tab.render();
-
-            tab.showValidationMessage('You have 1 structure selected.', 'Switch to Discover mode', onAction);
-
-            const box = tab.element.querySelector('#overview-validation-message');
-            expect(box.classList.contains('hidden')).toBe(false);
-            expect(tab.element.querySelector('#overview-validation-text').textContent).toBe('You have 1 structure selected.');
-            const actionBtn = tab.element.querySelector('#overview-validation-action');
-            expect(actionBtn.classList.contains('hidden')).toBe(false);
-            expect(actionBtn.textContent).toBe('Switch to Discover mode');
-
-            actionBtn.click();
-            expect(onAction).toHaveBeenCalledOnce();
-        });
-
-        it('shows just the message with no action button when none is given', () => {
-            const tab = makeTab();
-            tab.render();
-
-            tab.showValidationMessage('Something happened.');
-
-            expect(tab.element.querySelector('#overview-validation-action').classList.contains('hidden')).toBe(true);
-        });
-
-        it('clearValidationMessage hides the banner again', () => {
-            const tab = makeTab();
-            tab.render();
-            tab.showValidationMessage('You have 1 structure selected.');
-
-            tab.clearValidationMessage();
-
-            expect(tab.element.querySelector('#overview-validation-message').classList.contains('hidden')).toBe(true);
-        });
+        expect(tab.element.querySelector('#workspace-quick-start')).toBeNull();
     });
 
     it('calls onAddPDB with the uppercased 4-char input on Add click, and clears the input', () => {
@@ -103,9 +69,9 @@ describe('OverviewTab', () => {
         const tab = makeTab({ onAddPDB });
         tab.render();
 
-        const input = tab.element.querySelector('#add-pdb-input');
+        const input = tab.element.querySelector('#workspace-add-pdb-input');
         input.value = '4rlt';
-        tab.element.querySelector('#add-pdb-btn').click();
+        tab.element.querySelector('#workspace-add-pdb-btn').click();
 
         expect(onAddPDB).toHaveBeenCalledWith('4RLT');
         expect(input.value).toBe('');
@@ -116,8 +82,8 @@ describe('OverviewTab', () => {
         const tab = makeTab({ onAddPDB });
         tab.render();
 
-        tab.element.querySelector('#add-pdb-input').value = '4rl';
-        tab.element.querySelector('#add-pdb-btn').click();
+        tab.element.querySelector('#workspace-add-pdb-input').value = '4rl';
+        tab.element.querySelector('#workspace-add-pdb-btn').click();
 
         expect(onAddPDB).not.toHaveBeenCalled();
     });
@@ -127,7 +93,7 @@ describe('OverviewTab', () => {
         const tab = makeTab({ onAddPDB });
         tab.render();
 
-        const input = tab.element.querySelector('#add-pdb-input');
+        const input = tab.element.querySelector('#workspace-add-pdb-input');
         input.value = '3ug9';
         input.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter' }));
 
@@ -138,8 +104,8 @@ describe('OverviewTab', () => {
         const onAddPDB = vi.fn();
         const tab = makeTab({ onAddPDB });
         tab.render();
-        const input = tab.element.querySelector('#add-pdb-input');
-        const addBtn = tab.element.querySelector('#add-pdb-btn');
+        const input = tab.element.querySelector('#workspace-add-pdb-input');
+        const addBtn = tab.element.querySelector('#workspace-add-pdb-btn');
 
         input.value = 'af-p69905-f1';
         addBtn.click();
@@ -164,8 +130,8 @@ describe('OverviewTab', () => {
         });
         tab.render();
 
-        expect(tab.element.querySelector('#pdb-count-badge').innerText).toBe('2 Proteins');
-        const rows = tab.element.querySelectorAll('#pdb-list-container > div');
+        expect(tab.element.querySelector('#workspace-pdb-count-badge').innerText).toBe('2 Proteins');
+        const rows = tab.element.querySelectorAll('#workspace-pdb-list-container > div');
         expect(rows).toHaveLength(2);
 
         const select4RLT = rows[0].querySelector('select');
@@ -200,7 +166,7 @@ describe('OverviewTab', () => {
         });
         tab.render();
 
-        const rows = tab.element.querySelectorAll('#pdb-list-container > div');
+        const rows = tab.element.querySelectorAll('#workspace-pdb-list-container > div');
         expect(rows[0].querySelector('.source-badge').textContent).toBe('PDB');
         expect(rows[0].querySelector('.pdb-meta-line').textContent)
             .toBe('X-RAY DIFFRACTION · 2.10 Å · Homo sapiens');
@@ -223,7 +189,7 @@ describe('OverviewTab', () => {
         });
         tab.render();
 
-        const row = tab.element.querySelector('#pdb-list-container > div');
+        const row = tab.element.querySelector('#workspace-pdb-list-container > div');
         expect(row.querySelector('.pdb-nmr-badge').textContent).toBe('NMR · 20 models (model 1 shown)');
     });
 
@@ -252,7 +218,7 @@ describe('OverviewTab', () => {
         });
         tab.render();
 
-        const row = tab.element.querySelector('#pdb-list-container > div');
+        const row = tab.element.querySelector('#workspace-pdb-list-container > div');
         const badge = row.querySelector('.pdb-gaps-badge');
         expect(badge.textContent).toBe('1 disordered region');
         expect(badge.title).toContain('residues 21-24 missing');
@@ -274,7 +240,7 @@ describe('OverviewTab', () => {
         const tab = makeTab({ selectedPDBs: ['4RLT'] });
         tab.render();
 
-        const row = tab.element.querySelector('#pdb-list-container > div');
+        const row = tab.element.querySelector('#workspace-pdb-list-container > div');
         expect(row.querySelector('.source-badge').textContent).toBe('PDB');
         expect(row.querySelector('.pdb-meta-line')).toBeNull();
     });
@@ -304,7 +270,7 @@ describe('OverviewTab', () => {
         tab.render();
         tab.setLoadingChains(true);
 
-        expect(tab.element.querySelector('#pdb-list-container').textContent)
+        expect(tab.element.querySelector('#workspace-pdb-list-container').textContent)
             .toContain('Loading structure chains...');
     });
 
@@ -319,9 +285,9 @@ describe('OverviewTab', () => {
     });
 
     it('setAligning toggles the run button label and disabled state', () => {
-        const tab = makeTab();
+        const tab = makeTab({ selectedPDBs: ['4RLT', '3UG9'] });
         tab.render();
-        const runBtn = tab.element.querySelector('#overview-run-btn');
+        const runBtn = tab.element.querySelector('#workspace-run-btn');
 
         tab.setAligning(true);
         expect(runBtn.disabled).toBe(true);
@@ -332,13 +298,93 @@ describe('OverviewTab', () => {
         expect(runBtn.textContent).toContain('Run Structural Alignment');
     });
 
-    it('calls onRunAlignment when the run button is clicked', () => {
+    it('calls onRunAlignment when the run button is clicked with 2+ structures', () => {
         const onRunAlignment = vi.fn();
-        const tab = makeTab({ onRunAlignment });
+        const tab = makeTab({ selectedPDBs: ['4RLT', '3UG9'], onRunAlignment });
         tab.render();
 
-        tab.element.querySelector('#overview-run-btn').click();
+        tab.element.querySelector('#workspace-run-btn').click();
         expect(onRunAlignment).toHaveBeenCalled();
+    });
+
+    describe('Run Structural Alignment gating', () => {
+        it('hides the run button with 0 or 1 structures', () => {
+            const tab = makeTab();
+            tab.render();
+            expect(tab.element.querySelector('#workspace-run-btn').classList.contains('hidden')).toBe(true);
+
+            tab.updateState(['4RLT'], {}, {});
+            expect(tab.element.querySelector('#workspace-run-btn').classList.contains('hidden')).toBe(true);
+        });
+
+        it('shows the run button once there are 2+ structures', () => {
+            const tab = makeTab();
+            tab.render();
+
+            tab.updateState(['4RLT', '3UG9'], {}, {});
+
+            expect(tab.element.querySelector('#workspace-run-btn').classList.contains('hidden')).toBe(false);
+        });
+
+        it('does not call onRunAlignment if clicked while under 2 structures somehow', () => {
+            const onRunAlignment = vi.fn();
+            const tab = makeTab({ selectedPDBs: ['4RLT'], onRunAlignment });
+            tab.render();
+
+            tab.element.querySelector('#workspace-run-btn').click();
+            expect(onRunAlignment).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('per-structure Discover action', () => {
+        it('shows a "What is this?" button on every structure card, regardless of count', () => {
+            const tab = makeTab({ selectedPDBs: ['4RLT', '3UG9', 'AF-P69905-F1'] });
+            tab.render();
+
+            const buttons = tab.element.querySelectorAll('.discover-structure-btn');
+            expect(buttons).toHaveLength(3);
+        });
+
+        it('clicking it opens the DiscoveryPanel and runs a search for that structure', async () => {
+            submitDiscoveryJob.mockResolvedValue({ job_id: 'job1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({
+                status: 'completed',
+                results: { id: 'd1', pdb_id: '4RLT', source: 'pdb', databases_searched: ['pdb100'], hit_count: 0, hits: [], annotations: null },
+            });
+
+            const tab = makeTab({ selectedPDBs: ['4RLT'] });
+            tab.render();
+
+            tab.element.querySelector('.discover-structure-btn[data-pdb="4RLT"]').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(submitDiscoveryJob).toHaveBeenCalledWith('4RLT', expect.any(Array));
+            const slot = tab.element.querySelector('#workspace-discovery-panel-slot');
+            expect(slot.classList.contains('hidden')).toBe(false);
+            expect(slot.textContent).toContain('4RLT');
+        });
+
+        it('closing the panel via its close button hides the slot again', () => {
+            const tab = makeTab({ selectedPDBs: ['4RLT'] });
+            tab.render();
+
+            tab.element.querySelector('.discover-structure-btn[data-pdb="4RLT"]').click();
+            tab.discoveryPanel.element.querySelector('#discovery-panel-close-btn').click();
+
+            expect(tab.element.querySelector('#workspace-discovery-panel-slot').classList.contains('hidden')).toBe(true);
+        });
+
+        it('closes the panel if its structure is removed from the workspace', () => {
+            const tab = makeTab({ selectedPDBs: ['4RLT'] });
+            tab.render();
+            tab.element.querySelector('.discover-structure-btn[data-pdb="4RLT"]').click();
+
+            tab.updateState([], {}, {});
+
+            expect(tab.element.querySelector('#workspace-discovery-panel-slot').classList.contains('hidden')).toBe(true);
+        });
     });
 
     describe('batch add', () => {
@@ -346,9 +392,9 @@ describe('OverviewTab', () => {
             const tab = makeTab();
             tab.render();
 
-            expect(tab.element.querySelector('#batch-add-container').classList.contains('hidden')).toBe(true);
-            tab.element.querySelector('#toggle-batch-add-btn').click();
-            expect(tab.element.querySelector('#batch-add-container').classList.contains('hidden')).toBe(false);
+            expect(tab.element.querySelector('#workspace-batch-add-container').classList.contains('hidden')).toBe(true);
+            tab.element.querySelector('#workspace-toggle-batch-add-btn').click();
+            expect(tab.element.querySelector('#workspace-batch-add-container').classList.contains('hidden')).toBe(false);
         });
 
         it('parses a comma/newline/space-separated paste and calls onAddManyPDBs with valid, deduplicated, uppercased IDs', async () => {
@@ -356,8 +402,8 @@ describe('OverviewTab', () => {
             const tab = makeTab({ onAddManyPDBs });
             tab.render();
 
-            tab.element.querySelector('#batch-pdb-input').value = '4rlt, 3ug9\n4RLT af-p69905-f1';
-            tab.element.querySelector('#batch-add-btn').click();
+            tab.element.querySelector('#workspace-batch-pdb-input').value = '4rlt, 3ug9\n4RLT af-p69905-f1';
+            tab.element.querySelector('#workspace-batch-add-btn').click();
 
             expect(onAddManyPDBs).toHaveBeenCalledWith(['4RLT', '3UG9', 'AF-P69905-F1']);
         });
@@ -367,12 +413,12 @@ describe('OverviewTab', () => {
             const tab = makeTab({ selectedPDBs: ['4RLT'], onAddManyPDBs });
             tab.render();
 
-            tab.element.querySelector('#batch-pdb-input').value = '4RLT, 3ug9, notanid';
-            tab.element.querySelector('#batch-add-btn').click();
+            tab.element.querySelector('#workspace-batch-pdb-input').value = '4RLT, 3ug9, notanid';
+            tab.element.querySelector('#workspace-batch-add-btn').click();
             await onAddManyPDBs.mock.results[0].value;
 
             expect(onAddManyPDBs).toHaveBeenCalledWith(['3UG9']);
-            const feedback = tab.element.querySelector('#batch-add-feedback').innerText;
+            const feedback = tab.element.querySelector('#workspace-batch-add-feedback').innerText;
             expect(feedback).toContain('Added 1');
             expect(feedback).toContain('Skipped 1 already in the workspace');
             expect(feedback).toContain("Couldn't recognize: NOTANID");
@@ -383,11 +429,11 @@ describe('OverviewTab', () => {
             const tab = makeTab({ onAddManyPDBs });
             tab.render();
 
-            tab.element.querySelector('#batch-pdb-input').value = '4RLT, 3UG9';
-            tab.element.querySelector('#batch-add-btn').click();
+            tab.element.querySelector('#workspace-batch-pdb-input').value = '4RLT, 3UG9';
+            tab.element.querySelector('#workspace-batch-add-btn').click();
             await onAddManyPDBs.mock.results[0].value;
 
-            expect(tab.element.querySelector('#batch-add-feedback').innerText)
+            expect(tab.element.querySelector('#workspace-batch-add-feedback').innerText)
                 .toContain('Skipped 1 — workspace limit is 20 structures.');
         });
 
@@ -396,9 +442,9 @@ describe('OverviewTab', () => {
             const tab = makeTab({ selectedPDBs: [], onAddManyPDBs });
             tab.render();
 
-            const input = tab.element.querySelector('#batch-pdb-input');
+            const input = tab.element.querySelector('#workspace-batch-pdb-input');
             input.value = 'notanid';
-            tab.element.querySelector('#batch-add-btn').click();
+            tab.element.querySelector('#workspace-batch-add-btn').click();
 
             expect(onAddManyPDBs).not.toHaveBeenCalled();
             expect(input.value).toBe('notanid');
@@ -407,7 +453,7 @@ describe('OverviewTab', () => {
 
     describe('upload structure', () => {
         function selectFile(tab, file) {
-            const input = tab.element.querySelector('#upload-structure-input');
+            const input = tab.element.querySelector('#workspace-upload-structure-input');
             Object.defineProperty(input, 'files', { value: [file], configurable: true });
             input.dispatchEvent(new Event('change'));
             return input;
@@ -417,9 +463,9 @@ describe('OverviewTab', () => {
             const tab = makeTab();
             tab.render();
 
-            const input = tab.element.querySelector('#upload-structure-input');
+            const input = tab.element.querySelector('#workspace-upload-structure-input');
             const clickSpy = vi.spyOn(input, 'click');
-            tab.element.querySelector('#upload-structure-btn').click();
+            tab.element.querySelector('#workspace-upload-structure-btn').click();
 
             expect(clickSpy).toHaveBeenCalled();
         });
@@ -434,7 +480,7 @@ describe('OverviewTab', () => {
             await onUploadStructure.mock.results[0].value;
 
             expect(onUploadStructure).toHaveBeenCalledWith(file);
-            expect(tab.element.querySelector('#upload-structure-feedback').innerText)
+            expect(tab.element.querySelector('#workspace-upload-structure-feedback').innerText)
                 .toBe('Added my_structure.pdb.');
         });
 
@@ -447,7 +493,7 @@ describe('OverviewTab', () => {
             selectFile(tab, file);
             await onUploadStructure.mock.results[0].value.catch(() => {});
 
-            expect(tab.element.querySelector('#upload-structure-feedback').innerText)
+            expect(tab.element.querySelector('#workspace-upload-structure-feedback').innerText)
                 .toBe("Couldn't parse 'bad.pdb' as a structure");
         });
 
@@ -474,7 +520,7 @@ describe('OverviewTab', () => {
             });
             tab.render();
 
-            const row = tab.element.querySelector('#pdb-list-container > div');
+            const row = tab.element.querySelector('#workspace-pdb-list-container > div');
             expect(row.querySelector('.source-badge').textContent).toBe('Uploaded');
             expect(row.querySelector('script')).toBeNull();
             expect(row.querySelector('.pdb-meta-line').textContent)

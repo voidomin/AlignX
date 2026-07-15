@@ -1,26 +1,27 @@
 import { fetchMemoryStats, triggerClearMemory, fetchHealth } from '../api';
 
-// Grouped into three sections so the nav communicates structure instead of
-// 10 flat, equal-weight peers: Explore (pick a mode), Results (only
-// meaningful once a Compare/Overview alignment has actually run), Workspace
-// (meta - history, settings, and the past-run diffing tool). "Compare" was
-// renamed to "Diff Runs" here because it collided with a different meaning
-// of "Compare" used elsewhere (the Overview tab's alignment workflow is
+// Grouped into two sections so the nav communicates structure instead of
+// 9 flat, equal-weight peers: Workspace (the one merged add-structures/
+// analyze tab, replacing the old Overview+Discover split), Results (only
+// meaningful once a structural alignment has actually run), Manage
+// (history, settings, and the past-run diffing tool - this group used to
+// be named "Workspace" too, before the merged tab took that name).
+// "Compare" was renamed to "Diff Runs" here because it collided with a
+// different meaning of "Compare" used elsewhere (the alignment workflow is
 // informally called a "Compare run" in docs/guides/GETTING_STARTED.md) -
 // this tab specifically diffs the current run against a past one. A flat
 // array (group per entry) rather than nested {label, tabs: [...]} groups -
 // the render loop below inserts a divider whenever `group` changes.
 const TABS = [
-    { key: 'overview', label: 'Overview', group: 'Explore' },
-    { key: 'discover', label: 'Discover', group: 'Explore' },
+    { key: 'workspace', label: 'Workspace', group: 'Workspace' },
     { key: 'ligands', label: 'Ligands', group: 'Results' },
     { key: 'sequence', label: 'Sequence', group: 'Results' },
     { key: 'analytics', label: 'Analytics', group: 'Results' },
     { key: 'clusters', label: 'Clusters', group: 'Results' },
-    { key: 'comparison', label: 'Diff Runs', group: 'Workspace' },
-    { key: 'history', label: 'History', group: 'Workspace' },
-    { key: 'dashboard', label: 'Dashboard', group: 'Workspace' },
-    { key: 'settings', label: 'Settings', group: 'Workspace' },
+    { key: 'comparison', label: 'Diff Runs', group: 'Manage' },
+    { key: 'history', label: 'History', group: 'Manage' },
+    { key: 'dashboard', label: 'Dashboard', group: 'Manage' },
+    { key: 'settings', label: 'Settings', group: 'Manage' },
 ];
 
 export class TopBar {
@@ -28,7 +29,7 @@ export class TopBar {
         this.onTabChange = props.onTabChange;
         this.onExportData = props.onExportData;
         this.onNewWorkspace = props.onNewWorkspace;
-        this.activeTab = 'overview';
+        this.activeTab = 'workspace';
         this.element = null;
         this.memoryInterval = null;
     }

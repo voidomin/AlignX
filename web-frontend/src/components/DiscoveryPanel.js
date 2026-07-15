@@ -1,6 +1,5 @@
-import { submitDiscoveryJob, pollJobUntilDone, isValidPdbId, getDiscoveryReportUrl, getDiscoveryExportUrl, getDiscoveryCitationsUrl, fetchLigands, fetchInteractions, fetchPockets } from '../api';
+import { submitDiscoveryJob, pollJobUntilDone, getDiscoveryReportUrl, getDiscoveryExportUrl, getDiscoveryCitationsUrl } from '../api';
 import { renderDomainList, renderGoTermList } from '../utils/annotationRenderers';
-import { buildContactRow } from '../utils/interactionRenderers';
 
 const SOURCE_LABELS = {
     pdb: 'PDB',
@@ -37,101 +36,93 @@ const DATABASE_OPTIONS = [
     { key: 'gmgcl_id', label: 'GMGC', hint: 'Global Microbial Gene Catalog', annotatable: true, default: false },
 ];
 
-// Single-structure "what is this?" workflow: submit one structure to
-// Foldseek, then render the resulting neighbor hits + annotation summary
-// at whichever detail level the user picks. Self-contained, unlike
-// OverviewTab's Compare mode - it doesn't touch selectedPDBs/currentRunId.
-export class DiscoverTab {
+// Per-structure "what is this?" panel: submit one structure to Foldseek,
+// then render the resulting neighbor hits + annotation summary at whichever
+// detail level the user picks. Unlike the old DiscoverTab, this has no
+// pdb-id input or own ligand section of its own - the caller (WorkspaceTab)
+// already knows which structure to run this for, and Ligands/Analytics
+// tabs now handle ligand/pocket data for any structure count (see
+// LigandTab/AnalyticsTab's runId-optional guards).
+export class DiscoveryPanel {
     element = null;
     isRunning = false;
     detailLevel = 'student';
     results = null;
+    pdbId = null;
     selectedDatabases = new Set(DATABASE_OPTIONS.filter(d => d.default).map(d => d.key));
 
     constructor(props = {}) {
-        this.onStructureLoaded = props.onStructureLoaded || (() => {});
-        this.onSwitchToOverview = props.onSwitchToOverview || (() => {});
-        this.onHighlightResidues = props.onHighlightResidues || (() => {});
+        this.onClose = props.onClose || (() => {});
     }
 
     render() {
         const div = document.createElement('div');
-        div.className = "editorial-section";
-        div.id = "tab-discover-container";
+        div.className = "flex flex-col gap-4 p-4 rounded-md bg-surface-raised border border-border-subtle";
+        div.id = "discovery-panel-container";
 
         div.innerHTML = `
-            <header class="section-head">
-                <div>
-                    <span class="eyebrow">Fig. — Structural Discovery</span>
-                    <h2 class="section-title">Discover</h2>
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[18px] text-accent">travel_explore</span>
+                    <span class="font-label-md text-label-md">Discover: <span id="discovery-panel-pdbid" class="font-mono">${this.pdbId || ''}</span></span>
                 </div>
-            </header>
-
-            <div class="section-body flex flex-col gap-6">
-                <p class="font-body-sm text-secondary max-w-[560px]">
-                    Have one structure and don't know what it does? Search it against
-                    Foldseek's structural databases to find known proteins with a similar
-                    fold, and see what's known about them - structure is conserved far
-                    longer than sequence, so this can find connections sequence search misses.
-                </p>
-
-                <div class="flex gap-2">
-                    <input id="discover-input" type="text" placeholder="PDB ID, or AF-/SM-/ESM- accession"
-                        class="flex-1 bg-surface border border-border rounded-sm px-3 py-2 text-body-sm font-mono focus:outline-none focus:border-accent" />
-                    <button id="discover-run-btn" class="btn-primary px-5 py-2 rounded-sm font-label-md text-label-md flex items-center gap-2 whitespace-nowrap">
-                        <span class="material-symbols-outlined text-[18px]">travel_explore</span>
-                        Discover
-                    </button>
-                </div>
-
-                <details id="discover-db-picker" class="group">
-                    <summary class="font-body-sm text-[11px] text-secondary cursor-pointer select-none hover:text-primary w-fit">
-                        Databases: <span id="discover-db-summary" class="font-mono"></span>
-                        <span class="material-symbols-outlined text-[14px] align-middle group-open:rotate-180 transition-transform">expand_more</span>
-                    </summary>
-                    <div class="flex flex-col gap-2 pt-3">
-                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                            ${DATABASE_OPTIONS.map(d => `
-                                <label class="flex items-start gap-2 p-2 rounded-sm border border-border-subtle bg-surface hover:border-border cursor-pointer">
-                                    <input type="checkbox" data-db="${d.key}" class="discover-db-checkbox mt-0.5" ${this.selectedDatabases.has(d.key) ? 'checked' : ''} />
-                                    <span class="flex flex-col">
-                                        <span class="font-label-sm text-label-sm">${d.label}${!d.annotatable ? ' <span class="text-secondary" title="Hits shown, but no domain/GO annotation yet">*</span>' : ''}</span>
-                                        <span class="font-body-sm text-[10px] text-secondary">${d.hint}</span>
-                                    </span>
-                                </label>
-                            `).join('')}
-                        </div>
-                        <p class="font-body-sm text-[10px] text-secondary">* Hits from these databases are shown but don't yet resolve to functional annotations.</p>
-                    </div>
-                </details>
-
-                <div id="discover-status" class="hidden font-body-sm text-secondary flex items-center gap-2">
-                    <span id="discover-status-icon" class="animate-spin material-symbols-outlined text-[16px]">sync</span>
-                    <span id="discover-status-text"></span>
-                </div>
-                <div id="discover-error" class="hidden font-body-sm text-error"></div>
-                <div id="discover-results"></div>
-
-                <p class="font-body-sm text-[11px] text-secondary border-t border-border-subtle pt-4">
-                    Structural search via <a href="https://search.foldseek.com/search" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">Foldseek</a>.
-                    Functional annotations via EMBL-EBI's
-                    <a href="https://www.ebi.ac.uk/interpro/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">InterPro</a>,
-                    <a href="https://www.ebi.ac.uk/QuickGO/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">QuickGO</a>, and
-                    <a href="https://www.ebi.ac.uk/pdbe/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">PDBe SIFTS</a>,
-                    <a href="https://string-db.org/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">STRING</a>,
-                    <a href="https://reactome.org/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">Reactome</a>, and
-                    <a href="https://gmgc.embl.de/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">GMGC</a>.
-                    Results are computational inferences from structural similarity, not experimentally confirmed
-                    function - see each service's own terms of use for details.
-                </p>
+                <button id="discovery-panel-close-btn" class="text-secondary hover:text-primary" aria-label="Close">
+                    <span class="material-symbols-outlined text-[18px]">close</span>
+                </button>
             </div>
+
+            <p class="font-body-sm text-secondary max-w-[560px]">
+                Searches this structure against Foldseek's structural databases to find known
+                proteins with a similar fold, and shows what's known about them - structure is
+                conserved far longer than sequence, so this can find connections sequence search misses.
+            </p>
+
+            <details id="discover-db-picker" class="group">
+                <summary class="font-body-sm text-[11px] text-secondary cursor-pointer select-none hover:text-primary w-fit">
+                    Databases: <span id="discover-db-summary" class="font-mono"></span>
+                    <span class="material-symbols-outlined text-[14px] align-middle group-open:rotate-180 transition-transform">expand_more</span>
+                </summary>
+                <div class="flex flex-col gap-2 pt-3">
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        ${DATABASE_OPTIONS.map(d => `
+                            <label class="flex items-start gap-2 p-2 rounded-sm border border-border-subtle bg-surface hover:border-border cursor-pointer">
+                                <input type="checkbox" data-db="${d.key}" class="discover-db-checkbox mt-0.5" ${this.selectedDatabases.has(d.key) ? 'checked' : ''} />
+                                <span class="flex flex-col">
+                                    <span class="font-label-sm text-label-sm">${d.label}${!d.annotatable ? ' <span class="text-secondary" title="Hits shown, but no domain/GO annotation yet">*</span>' : ''}</span>
+                                    <span class="font-body-sm text-[10px] text-secondary">${d.hint}</span>
+                                </span>
+                            </label>
+                        `).join('')}
+                    </div>
+                    <p class="font-body-sm text-[10px] text-secondary">* Hits from these databases are shown but don't yet resolve to functional annotations.</p>
+                    <button id="discover-rerun-btn" class="btn-secondary self-start px-4 py-1.5 rounded-sm font-label-sm text-label-sm">Search again</button>
+                </div>
+            </details>
+
+            <div id="discover-status" class="hidden font-body-sm text-secondary flex items-center gap-2">
+                <span id="discover-status-icon" class="animate-spin material-symbols-outlined text-[16px]">sync</span>
+                <span id="discover-status-text"></span>
+            </div>
+            <div id="discover-error" class="hidden font-body-sm text-error"></div>
+            <div id="discover-results"></div>
+
+            <p class="font-body-sm text-[11px] text-secondary border-t border-border-subtle pt-4">
+                Structural search via <a href="https://search.foldseek.com/search" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">Foldseek</a>.
+                Functional annotations via EMBL-EBI's
+                <a href="https://www.ebi.ac.uk/interpro/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">InterPro</a>,
+                <a href="https://www.ebi.ac.uk/QuickGO/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">QuickGO</a>, and
+                <a href="https://www.ebi.ac.uk/pdbe/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">PDBe SIFTS</a>,
+                <a href="https://string-db.org/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">STRING</a>,
+                <a href="https://reactome.org/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">Reactome</a>, and
+                <a href="https://gmgc.embl.de/" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">GMGC</a>.
+                Results are computational inferences from structural similarity, not experimentally confirmed
+                function - see each service's own terms of use for details.
+            </p>
         `;
 
         this.element = div;
-        this.element.querySelector('#discover-run-btn').addEventListener('click', () => this.handleRun());
-        this.element.querySelector('#discover-input').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') this.handleRun();
-        });
+        this.element.querySelector('#discovery-panel-close-btn').addEventListener('click', () => this.onClose());
+        this.element.querySelector('#discover-rerun-btn').addEventListener('click', () => this.runFor(this.pdbId));
         this.element.querySelectorAll('.discover-db-checkbox').forEach(cb => {
             cb.addEventListener('change', () => {
                 if (cb.checked) this.selectedDatabases.add(cb.dataset.db);
@@ -142,10 +133,8 @@ export class DiscoverTab {
         this.updateDbSummary();
 
         if (this.results) {
-            this.element.querySelector('#discover-input').value = this.results.pdb_id;
             this.syncDbCheckboxes(this.results.databases_searched);
             this.renderResults();
-            this.onStructureLoaded(this.results.pdb_id);
         }
         return div;
     }
@@ -172,7 +161,7 @@ export class DiscoverTab {
 
     setRunning(isRunning) {
         this.isRunning = isRunning;
-        const btn = this.element.querySelector('#discover-run-btn');
+        const btn = this.element.querySelector('#discover-rerun-btn');
         if (btn) btn.disabled = isRunning;
     }
 
@@ -217,12 +206,10 @@ export class DiscoverTab {
         return 'Searching Foldseek structural databases... this can take a minute or two.';
     }
 
-    async handleRun() {
-        const input = this.element.querySelector('#discover-input');
-        const pdbId = (input.value || '').trim().toUpperCase();
-        if (!isValidPdbId(pdbId)) {
-            this.setError('Enter a valid PDB ID, or AF-/SM-/ESM- accession.');
-            return;
+    async runFor(pdbId) {
+        this.pdbId = pdbId;
+        if (this.element) {
+            this.element.querySelector('#discovery-panel-pdbid').textContent = pdbId;
         }
         if (this.selectedDatabases.size === 0) {
             this.setError('Select at least one database to search.');
@@ -245,7 +232,6 @@ export class DiscoverTab {
             this.results = job.results;
             this.setStatus(null);
             this.renderResults();
-            this.onStructureLoaded(this.results.pdb_id);
         } catch (err) {
             console.error('Discovery run failed:', err);
             this.setError(err.message);
@@ -266,15 +252,14 @@ export class DiscoverTab {
     // this just hands it back to the same rendering path a fresh run uses.
     loadSavedResults(results) {
         this.results = results;
+        this.pdbId = results ? results.pdb_id : null;
         this.detailLevel = 'student';
         if (this.element) {
-            const input = this.element.querySelector('#discover-input');
-            if (input && results) input.value = results.pdb_id;
+            if (results) this.element.querySelector('#discovery-panel-pdbid').textContent = results.pdb_id;
             if (results) this.syncDbCheckboxes(results.databases_searched);
             this.setError(null);
             this.setStatus(null);
             this.renderResults();
-            if (results) this.onStructureLoaded(results.pdb_id);
         }
     }
 
@@ -290,7 +275,7 @@ export class DiscoverTab {
         const sourceLabel = SOURCE_LABELS[r.source] || 'PDB';
 
         const detailToggleHTML = `
-            <div class="flex gap-1 p-1 rounded-md bg-surface-raised border border-border-subtle w-fit">
+            <div class="flex gap-1 p-1 rounded-md bg-surface border border-border-subtle w-fit">
                 ${DETAIL_LEVELS.map(d => `
                     <button data-level="${d.key}" class="detail-level-btn px-3 py-1 rounded-md font-label-sm text-label-sm transition-colors ${this.detailLevel === d.key ? 'bg-accent-muted text-accent' : 'text-secondary hover:text-primary'}">${d.label}</button>
                 `).join('')}
@@ -331,154 +316,12 @@ export class DiscoverTab {
                 </div>
                 ${downloadHTML}
                 ${bodyHTML}
-                <div id="discover-ligand-section" class="flex flex-col gap-3 border-t border-border-subtle pt-4"></div>
-                <div class="flex flex-col gap-2 p-3 rounded-md bg-surface-raised border border-border-subtle">
-                    <span class="font-body-sm text-body-sm text-secondary">Want to structurally align ${r.pdb_id} against another structure?</span>
-                    <button id="discover-switch-overview-btn" class="self-start font-label-sm text-label-sm text-accent hover:underline">Switch to Overview</button>
-                </div>
             </div>
         `;
 
         container.querySelectorAll('.detail-level-btn').forEach(btn => {
             btn.addEventListener('click', () => this.setDetailLevel(btn.dataset.level));
         });
-        container.querySelector('#discover-switch-overview-btn').addEventListener('click', () => this.onSwitchToOverview());
-
-        this.loadLigandSection(r.pdb_id);
-    }
-
-    // The searched structure's own ligands/binding sites - independent of
-    // the neighbor-search annotation above, and independent of any
-    // Compare-mode alignment (fetchLigands/fetchInteractions work from a
-    // bare pdb_id; no ligand-pocket-similarity matrix here, since that's
-    // inherently a multi-structure comparison that doesn't apply to one
-    // searched structure).
-    async loadLigandSection(pdbId) {
-        const section = this.element.querySelector('#discover-ligand-section');
-        if (!section) return;
-        section.innerHTML = `<span class="font-body-sm text-secondary"><span class="animate-spin material-symbols-outlined text-[16px] align-middle">sync</span> Checking for bound ligands...</span>`;
-
-        let ligands;
-        try {
-            const data = await fetchLigands(pdbId);
-            ligands = data.ligands || [];
-        } catch (err) {
-            console.error('Failed to load ligands for Discover structure:', err);
-            section.innerHTML = `<span class="font-body-sm text-secondary">Could not check for bound ligands.</span>`;
-            return;
-        }
-
-        if (ligands.length === 0) {
-            await this.renderCandidatePockets(section, pdbId);
-            return;
-        }
-
-        section.innerHTML = `
-            <div class="flex items-center justify-between">
-                <span class="eyebrow">Bound ligands</span>
-                <select id="discover-ligand-select" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[240px]">
-                    <option value="">Select a ligand</option>
-                    ${ligands.map(l => `<option value="${l.id}">${l.name} (Chain ${l.chain}, Resi ${l.resi})</option>`).join('')}
-                </select>
-            </div>
-            <div id="discover-ligand-results"></div>
-        `;
-        section.querySelector('#discover-ligand-select').addEventListener('change', (e) => {
-            this.loadLigandInteractions(pdbId, e.target.value);
-        });
-    }
-
-    // Discover mode's flagship inputs (AlphaFold/ESM Atlas predictions)
-    // essentially never have a co-crystallized ligand, so "no bound
-    // ligands" would otherwise be the end of the story here. Offers a
-    // heuristic candidate-pocket search instead (see
-    // ligand_analyzer.py's find_candidate_pockets) - explicitly labeled as
-    // a computational prediction, not a validated result like fpocket.
-    async renderCandidatePockets(section, pdbId) {
-        let pockets;
-        try {
-            const data = await fetchPockets(pdbId);
-            pockets = data.pockets || [];
-        } catch (err) {
-            console.error('Failed to search for candidate pockets:', err);
-            section.innerHTML = `<span class="font-body-sm text-secondary">No bound ligands detected in this structure.</span>`;
-            return;
-        }
-
-        if (pockets.length === 0) {
-            section.innerHTML = `<span class="font-body-sm text-secondary">No bound ligands detected, and no candidate binding pockets found.</span>`;
-            return;
-        }
-
-        section.innerHTML = `
-            <div class="flex flex-col gap-1">
-                <span class="eyebrow">Predicted binding pockets (no bound ligand found)</span>
-                <span class="font-body-sm text-[11px] text-secondary">Computational prediction from surface geometry, not an experimentally validated pocket - unlike the real ligand interactions above.</span>
-            </div>
-            <div class="flex flex-col gap-2">
-                ${pockets.map((p, i) => `
-                    <div class="flex items-center justify-between py-1.5 border-b border-border-subtle">
-                        <span class="font-body-sm text-body-sm">Pocket ${p.rank} <span class="text-secondary text-[11px]">(${p.residues.length} residues: ${p.residues.map(r => `${r.resn}${r.resi}`).join(', ')})</span></span>
-                        <button type="button" class="pocket-highlight-btn font-label-sm text-label-sm text-accent hover:underline" data-pocket-index="${i}">Highlight in 3D</button>
-                    </div>
-                `).join('')}
-            </div>
-        `;
-        section.querySelectorAll('.pocket-highlight-btn').forEach(btn => {
-            const pocket = pockets[Number(btn.dataset.pocketIndex)];
-            const chainMap = {};
-            pocket.residues.forEach(r => {
-                if (!chainMap[r.chain]) {
-                    chainMap[r.chain] = [];
-                }
-                chainMap[r.chain].push(r.resi);
-            });
-            btn.addEventListener('click', () => this.onHighlightResidues(chainMap));
-        });
-    }
-
-    async loadLigandInteractions(pdbId, ligandId) {
-        const results = this.element.querySelector('#discover-ligand-results');
-        if (!results) return;
-        if (!ligandId) {
-            results.innerHTML = '';
-            return;
-        }
-
-        results.innerHTML = `<div class="py-2 font-body-sm text-secondary"><span class="animate-spin material-symbols-outlined text-[16px] align-middle">sync</span> Analyzing binding site...</div>`;
-
-        try {
-            const data = await fetchInteractions(pdbId, ligandId);
-            const contacts = data.interactions.interactions || [];
-            if (contacts.length === 0) {
-                results.innerHTML = `<div class="py-2 font-body-sm text-secondary">No specific interaction contacts found.</div>`;
-                return;
-            }
-
-            const table = document.createElement('table');
-            table.className = "w-full text-left border-collapse mt-2";
-            table.innerHTML = `
-                <thead class="font-label-sm text-label-sm text-secondary">
-                    <tr>
-                        <th class="px-0 py-2 border-b border-border font-medium">Residue</th>
-                        <th class="px-3 py-2 border-b border-border font-medium">Chain</th>
-                        <th class="px-3 py-2 border-b border-border font-medium text-right">Resi</th>
-                        <th class="px-3 py-2 border-b border-border font-medium text-right">Dist (Å)</th>
-                        <th class="px-3 py-2 border-b border-border font-medium">Type</th>
-                    </tr>
-                </thead>
-            `;
-            const tbody = document.createElement('tbody');
-            tbody.className = "font-body-sm text-body-sm text-primary font-mono divide-y divide-border-subtle";
-            contacts.forEach(item => tbody.appendChild(buildContactRow(item)));
-            table.appendChild(tbody);
-
-            results.innerHTML = '';
-            results.appendChild(table);
-        } catch (err) {
-            console.error('Failed to load ligand interactions:', err);
-            results.innerHTML = `<div class="py-2 font-body-sm text-secondary">Failed to analyze binding site.</div>`;
-        }
     }
 
     // Researcher always sees whatever data exists (its own empty-state
@@ -534,7 +377,7 @@ export class DiscoverTab {
         const subject = topDomain ? `known <strong>${topDomain.name}</strong>-type proteins` : 'proteins with a known function';
         const involvement = topGo ? `, which are typically involved in <strong>${topGo.name}</strong>` : '';
         return `
-            <div class="p-4 rounded-md bg-surface-raised border border-border-subtle font-body-md leading-relaxed">
+            <div class="p-4 rounded-md bg-surface border border-border-subtle font-body-md leading-relaxed">
                 This structure looks similar to ${subject}${involvement}.
                 This is a computational inference based on structural similarity, not a confirmed experimental result.
             </div>
@@ -559,7 +402,7 @@ export class DiscoverTab {
         }
         return `
             <div class="flex flex-col gap-4">
-                <div class="p-4 rounded-md bg-surface-raised border border-border-subtle font-body-md leading-relaxed flex flex-col gap-3">
+                <div class="p-4 rounded-md bg-surface border border-border-subtle font-body-md leading-relaxed flex flex-col gap-3">
                     <p>Out of ${ann.neighbors_considered} of the most confident structural neighbors,
                     <strong>${ann.high_confidence_annotated_count}</strong> matched a protein with known functional
                     annotations at high enough structural confidence (Foldseek probability &ge; ${ann.min_confident_probability}).</p>
