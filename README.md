@@ -46,6 +46,10 @@ Have one structure and no idea what it does? The **Discover** tab searches it ag
 ### 🧠 Advanced Analysis
 
 - **N-Structure Alignment**: Superimpose two or more structures at once — the 3D viewer, HUD legend, and pairwise RMSD list all scale to however many you add, not just a fixed pair.
+- **Secondary Structure Assignment**: A backbone-torsion %helix/%sheet/%coil summary per structure, alongside the existing Ramachandran QC.
+- **Independent Pairwise TM-score**: A true length-normalized fold-similarity matrix via `tmtools`' own optimal superposition search — complementary to (not the same as) the existing Mustang-derived TM-score/GDT-TS table.
+- **UniProt Sequence Features**: Active/binding sites, PTMs, disulfide bonds, and known natural variants pulled straight from UniProt, highlightable in the 3D viewer for AlphaFold-sourced structures.
+- **wwPDB Validation Report**: Clashscore and Ramachandran/rotamer outlier percentiles (with archive-wide context) for real, experimentally-solved PDB entries.
 - **Structural Clusters**: Interactive RMSD-threshold clustering (hierarchical/average-linkage) to group structurally similar proteins into families.
 - **Batch Comparison**: Diff the RMSD matrix of the current run against any past run to see how structural relationships shifted.
 - **Ligand Hunter**: Auto-detect binding pockets, calculate interaction similarities, and visualize SASA (Solvent Accessible Surface Area) — for any of the N structures in a run, not just the first.
@@ -127,12 +131,12 @@ Copy `.env.example` to `.env` and customize. Notable production-relevant ones:
 
 ## 🧪 Testing
 
-Backend (pytest, 984 tests):
+Backend (pytest, 1017 tests):
 ```powershell
 powershell -File scripts\run_tests.ps1
 ```
 
-Frontend (Vitest, 293 tests):
+Frontend (Vitest, 312 tests):
 ```powershell
 cd web-frontend
 npm test

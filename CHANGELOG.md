@@ -2,6 +2,21 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.91.0]
+
+Phase 1 of a forward-looking feature-gap pass (researched and scoped as its own batch): one concrete, independently-shippable capability per theme identified - deeper structural comparison, ligand & pocket depth (deferred to Phase 2), mutation & conservation biology, and batch/scripting tooling. A larger Phase 2 backlog (ligand chemistry lookup, druggability scoring, contact maps, mutation/ClinVar impact, true evolutionary conservation via homolog search, a documented public API, and more) is tracked for a future batch.
+
+### Added
+- **Secondary structure assignment**: a new backbone-torsion-based %helix/%sheet/%coil classifier and per-chain/overall aggregation, built on the phi/psi angles already computed for Ramachandran QC - not DSSP-equivalent (no hydrogen-bonding geometry), but a solid quick summary. Shown in Analytics' Quality sub-tab alongside the existing Ramachandran outlier report.
+- **Independent pairwise TM-score matrix**: a new `tmtools`-powered TM-score computed via its own optimal-superposition search per structure pair - genuinely different from (and complementary to) the existing Mustang-column-based TM-score/GDT-TS table, since it doesn't just reuse Mustang's fixed correspondence. `tmtools` ships prebuilt wheels for every target platform including the Docker image's `python:3.10-slim`, so no new binary/compilation dependency (unlike Mustang) - verified via a full `docker build` + container smoke test before committing to it.
+- **UniProt sequence features**: active/binding sites, post-translational modifications, disulfide bonds, and known natural variants, fetched directly from UniProt for any structure with a resolved accession. AlphaFold-sourced structures get "Highlight in 3D" for each feature (their residue numbering matches UniProt exactly by construction, same shortcut the existing InterPro domain highlighting already uses); real PDB entries don't yet (would need a new residue-level SIFTS segment fetch this codebase doesn't do - tracked in the Phase 2 backlog).
+- **wwPDB validation report**: clashscore and Ramachandran/rotamer outlier percentiles (with both archive-wide and similar-resolution percentile context) for real, experimentally-solved PDB entries, via PDBe's validation API - a new badge on each PDB-sourced structure's card in the Workspace tab. AlphaFold/SWISS-MODEL/ESMFold structures have no experimental validation report and correctly show nothing here.
+
+### Verified
+- Full backend suite: 1017 tests passing (up from 984). `black`/`ruff` clean.
+- Frontend suite: 312 Vitest tests passing (up from 293). `npm run lint` clean, `npm run build` succeeds.
+- Real end-to-end verification against a live local server using a real completed alignment (4HHB, an experimentally-solved hemoglobin, + AF-P69905-F1, its AlphaFold-predicted counterpart): secondary structure showed a plausible 80.3% helix (hemoglobin's globin fold is famously helix-rich); the independent TM-score (0.991) sat alongside the existing Mustang-derived scores (0.994/0.987) as a distinct, real value; a real UniProt "Binding site"/"Modified residue" feature list rendered with working "Highlight in 3D" buttons (confirmed via a real 3D highlight, not just a click with no crash); and 4HHB's real wwPDB validation badge (clashscore, Rama outlier %, both with real percentile context) appeared correctly, while the AlphaFold structure correctly showed no validation section.
+
 ## [3.90.0]
 
 A substantial upgrade to the 3D structure viewer, plus a fix for a race condition the previous release's immediate single-structure preview introduced.
