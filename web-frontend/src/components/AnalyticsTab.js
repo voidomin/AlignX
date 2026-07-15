@@ -1,5 +1,5 @@
 import { fetchAnnotations } from '../api';
-import { renderDomainList, renderGoTermList } from '../utils/annotationRenderers';
+import { renderDomainList, renderGoTermList, renderFeatureList } from '../utils/annotationRenderers';
 
 // Renders one insight string's markdown-lite **bold** segments as real
 // <strong> DOM nodes, built via createElement/createTextNode rather than
@@ -36,6 +36,8 @@ export class AnalyticsTab {
     heatmapFig = null;
     treeFig = null;
     ramachandranStats = null;
+    secondaryStructureStats = null;
+    tmScoreMatrix = null;
     rmsfValues = [];
     insights = [];
     qualityMetrics = null;
@@ -109,6 +111,26 @@ export class AnalyticsTab {
                                 </tr>
                             </thead>
                             <tbody id="quality-metrics-table-body"></tbody>
+                        </table>
+                    </div>
+                    <div id="secondary-structure-card" class="flex flex-col gap-2 hidden">
+                        <span class="font-label-sm text-label-sm text-secondary uppercase">Secondary structure (backbone-torsion approximation, not DSSP)</span>
+                        <div class="grid grid-cols-3 gap-4">
+                            <div class="stat-row"><span class="stat-key">Helix</span><span id="ss-helix-percent" class="stat-value">--</span></div>
+                            <div class="stat-row"><span class="stat-key">Sheet</span><span id="ss-sheet-percent" class="stat-value">--</span></div>
+                            <div class="stat-row"><span class="stat-key">Coil</span><span id="ss-coil-percent" class="stat-value">--</span></div>
+                        </div>
+                    </div>
+                    <div id="pairwise-tm-score-card" class="flex flex-col gap-2 hidden">
+                        <span class="font-label-sm text-label-sm text-secondary uppercase">Pairwise TM-score (independent optimal superposition)</span>
+                        <table class="w-full font-body-sm text-body-sm">
+                            <thead>
+                                <tr class="text-secondary text-left border-b border-border-subtle">
+                                    <th class="font-normal py-1">Pair</th>
+                                    <th class="font-normal py-1">TM-score</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pairwise-tm-score-table-body"></tbody>
                         </table>
                     </div>
                 </div>
@@ -232,7 +254,11 @@ export class AnalyticsTab {
         return this.structures.map(s => s.pdbId).join('|');
     }
 
-    updateResults(runId, figures, ramachandranStats, rmsfValues, insights, qualityMetrics, structures) {
+    // structuralStats bundles ramachandran + secondaryStructure (both
+    // per-run structural-QC summaries) into one object instead of adding a
+    // new positional parameter, same rationale as the `structures` param -
+    // keeps this under SonarCloud's max-parameter threshold.
+    updateResults(runId, figures, structuralStats, rmsfValues, insights, qualityMetrics, structures) {
         const newStructures = structures || [];
         const newKey = newStructures.map(s => s.pdbId).join('|');
         if (newKey !== this._structuresKey()) {
@@ -247,7 +273,9 @@ export class AnalyticsTab {
         this.currentRunId = runId;
         this.heatmapFig = figures?.heatmap ?? null;
         this.treeFig = figures?.tree ?? null;
-        this.ramachandranStats = ramachandranStats;
+        this.ramachandranStats = structuralStats?.ramachandran ?? null;
+        this.secondaryStructureStats = structuralStats?.secondaryStructure ?? null;
+        this.tmScoreMatrix = structuralStats?.tmScoreMatrix ?? null;
         this.rmsfValues = rmsfValues || [];
         this.insights = insights || [];
         this.qualityMetrics = qualityMetrics || null;
@@ -326,19 +354,26 @@ export class AnalyticsTab {
             content.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Switch to this tab to load functional annotation.</div>`;
         } else if (!annotation.accession) {
             content.innerHTML = `<div class="font-body-sm text-secondary py-4">No UniProt accession could be resolved for ${selectedPdbId} - no functional annotation available.</div>`;
-        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length) {
-            content.innerHTML = `<div class="font-body-sm text-secondary py-4">Resolved to UniProt ${annotation.accession}, but no curated domains, GO terms, or pathways were found.</div>`;
+        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.uniprot_features?.length) {
+            content.innerHTML = `<div class="font-body-sm text-secondary py-4">Resolved to UniProt ${annotation.accession}, but no curated domains, GO terms, pathways, or sequence features were found.</div>`;
         } else {
             content.innerHTML = `
                 <div class="font-body-sm text-secondary">Resolved to UniProt <span class="font-mono text-primary">${annotation.accession}</span></div>
                 ${renderDomainList(annotation.domains)}
                 ${renderGoTermList(annotation.go_terms)}
+                ${renderFeatureList(annotation.uniprot_features)}
                 ${this.renderReactomePathways(annotation.reactome_pathways)}
             `;
             content.querySelectorAll('.domain-highlight-btn').forEach(btn => {
                 const domain = annotation.domains[Number(btn.dataset.domainIndex)];
                 if (domain?.highlight_chains) {
                     btn.addEventListener('click', () => this.onHighlightResidues(domain.highlight_chains));
+                }
+            });
+            content.querySelectorAll('.feature-highlight-btn').forEach(btn => {
+                const feature = annotation.uniprot_features[Number(btn.dataset.featureIndex)];
+                if (feature?.highlight_chains) {
+                    btn.addEventListener('click', () => this.onHighlightResidues(feature.highlight_chains));
                 }
             });
         }
@@ -398,6 +433,8 @@ export class AnalyticsTab {
 
         this.renderRamachandranSection();
         this.renderQualityMetricsTable();
+        this.renderSecondaryStructureSection();
+        this.renderPairwiseTmScoreTable();
         this.renderRmsfChart();
         this.renderRmsdHeatmap();
         this.renderPhyloTree();
@@ -439,6 +476,49 @@ export class AnalyticsTab {
         } else {
             listCard.classList.add('hidden');
         }
+    }
+
+    renderSecondaryStructureSection() {
+        const card = this.element.querySelector('#secondary-structure-card');
+        if (this.secondaryStructureStats?.total_residues == null || this.secondaryStructureStats.total_residues === 0) {
+            card.classList.add('hidden');
+            return;
+        }
+
+        card.classList.remove('hidden');
+        this.element.querySelector('#ss-helix-percent').innerText = `${this.secondaryStructureStats.helix_percent.toFixed(1)}%`;
+        this.element.querySelector('#ss-sheet-percent').innerText = `${this.secondaryStructureStats.sheet_percent.toFixed(1)}%`;
+        this.element.querySelector('#ss-coil-percent').innerText = `${this.secondaryStructureStats.coil_percent.toFixed(1)}%`;
+    }
+
+    // tmScoreMatrix mirrors rmsd_df's { index, columns, data } shape
+    // (both are pandas DataFrames sanitized the same way server-side) - a
+    // symmetric pdb_id x pdb_id matrix, self-comparisons excluded here
+    // since they're always 1.0 and not informative.
+    renderPairwiseTmScoreTable() {
+        const card = this.element.querySelector('#pairwise-tm-score-card');
+        const body = this.element.querySelector('#pairwise-tm-score-table-body');
+        const index = this.tmScoreMatrix?.index;
+        const data = this.tmScoreMatrix?.data;
+
+        if (!index || !data || index.length < 2) {
+            card.classList.add('hidden');
+            return;
+        }
+
+        card.classList.remove('hidden');
+        const rows = [];
+        for (let i = 0; i < index.length; i++) {
+            for (let j = i + 1; j < index.length; j++) {
+                rows.push({ a: index[i], b: index[j], value: data[i][j] });
+            }
+        }
+        body.innerHTML = rows.map(r => `
+            <tr>
+                <td class="py-1 font-mono">${r.a} &harr; ${r.b}</td>
+                <td class="py-1 font-mono">${r.value.toFixed(3)}</td>
+            </tr>
+        `).join('');
     }
 
     renderQualityMetricsTable() {

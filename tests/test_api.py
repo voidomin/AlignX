@@ -918,6 +918,44 @@ def test_annotations_endpoint_400s_on_invalid_chain_param():
     assert response.status_code == 400
 
 
+def test_validation_endpoint_for_a_real_pdb_entry():
+    with patch(
+        "src.backend.api.fetch_pdbe_validation",
+        AsyncMock(
+            return_value={
+                "clashscore": {
+                    "value": 1.2,
+                    "percentile_archive": 85.0,
+                    "percentile_similar_resolution": 70.0,
+                }
+            }
+        ),
+    ) as mock_fetch:
+        response = client.get("/api/validation?pdb_id=4HHB")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["pdb_id"] == "4HHB"
+    assert data["validation"]["clashscore"]["value"] == 1.2
+    mock_fetch.assert_called_once()
+    assert mock_fetch.call_args.args[0] == "4HHB"
+
+
+def test_validation_endpoint_skips_the_fetch_for_non_pdb_sources():
+    with patch("src.backend.api.fetch_pdbe_validation", AsyncMock()) as mock_fetch:
+        response = client.get("/api/validation?pdb_id=AF-P69905-F1")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data == {"pdb_id": "AF-P69905-F1", "validation": None}
+    mock_fetch.assert_not_called()
+
+
+def test_validation_endpoint_400s_on_invalid_pdb_id():
+    response = client.get("/api/validation?pdb_id=../etc")
+    assert response.status_code == 400
+
+
 def test_sequence_endpoint():
     """Verify that the sequence alignment endpoint returns correct structure and calculations."""
     with patch(

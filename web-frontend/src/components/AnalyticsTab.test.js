@@ -100,6 +100,80 @@ describe('AnalyticsTab', () => {
         expect(card.classList.contains('hidden')).toBe(true);
     });
 
+    it('renders %helix/%sheet/%coil when secondary_structure_stats is present', () => {
+        const tab = makeTab();
+        tab.render();
+
+        tab.updateResults('run_1', null, {
+            secondaryStructure: { total_residues: 100, helix_percent: 45.5, sheet_percent: 20.25, coil_percent: 34.25 },
+        }, [], []);
+
+        const card = tab.element.querySelector('#secondary-structure-card');
+        expect(card.classList.contains('hidden')).toBe(false);
+        expect(tab.element.querySelector('#ss-helix-percent').innerText).toBe('45.5%');
+        expect(tab.element.querySelector('#ss-sheet-percent').innerText).toBe('20.3%');
+        expect(tab.element.querySelector('#ss-coil-percent').innerText).toBe('34.3%');
+    });
+
+    it('hides the secondary-structure section when no stats are given, or when total_residues is 0', () => {
+        const tab = makeTab();
+        tab.render();
+
+        tab.updateResults('run_1', null, null, [], []);
+        expect(tab.element.querySelector('#secondary-structure-card').classList.contains('hidden')).toBe(true);
+
+        tab.updateResults('run_1', null, { secondaryStructure: { total_residues: 0, helix_percent: 0, sheet_percent: 0, coil_percent: 0 } }, [], []);
+        expect(tab.element.querySelector('#secondary-structure-card').classList.contains('hidden')).toBe(true);
+    });
+
+    it('still populates the Ramachandran section from the bundled structuralStats.ramachandran', () => {
+        const tab = makeTab();
+        tab.render();
+
+        tab.updateResults('run_1', null, {
+            ramachandran: { favored_percent: 92.5, outlier_count: 2, outliers_list: ['PRO12 (Chain A)'] },
+        }, [], []);
+
+        expect(tab.element.querySelector('#ramachandran-score').innerText).toBe('92.5%');
+        expect(tab.element.querySelector('#ramachandran-outliers').innerText).toBe(2);
+    });
+
+    it('renders a pairwise TM-score row per pair when tmScoreMatrix is present', () => {
+        const tab = makeTab();
+        tab.render();
+
+        tab.updateResults('run_1', null, {
+            tmScoreMatrix: {
+                index: ['4RLT', '3UG9', '1ABC'],
+                columns: ['4RLT', '3UG9', '1ABC'],
+                data: [
+                    [1.0, 0.812, 0.55],
+                    [0.812, 1.0, 0.61],
+                    [0.55, 0.61, 1.0],
+                ],
+            },
+        }, [], []);
+
+        const card = tab.element.querySelector('#pairwise-tm-score-card');
+        expect(card.classList.contains('hidden')).toBe(false);
+        const rows = tab.element.querySelectorAll('#pairwise-tm-score-table-body tr');
+        expect(rows).toHaveLength(3);
+        expect(rows[0].textContent).toContain('4RLT');
+        expect(rows[0].textContent).toContain('3UG9');
+        expect(rows[0].textContent).toContain('0.812');
+    });
+
+    it('hides the pairwise TM-score table when no tmScoreMatrix is given, or for a single structure', () => {
+        const tab = makeTab();
+        tab.render();
+
+        tab.updateResults('run_1', null, null, [], []);
+        expect(tab.element.querySelector('#pairwise-tm-score-card').classList.contains('hidden')).toBe(true);
+
+        tab.updateResults('run_1', null, { tmScoreMatrix: { index: ['4RLT'], columns: ['4RLT'], data: [[1.0]] } }, [], []);
+        expect(tab.element.querySelector('#pairwise-tm-score-card').classList.contains('hidden')).toBe(true);
+    });
+
     it('sub-tab switching still works, including the new insights sub-tab', () => {
         const tab = makeTab();
         tab.render();
@@ -256,6 +330,27 @@ describe('AnalyticsTab', () => {
             expect(btn.textContent).toContain('Highlight in 3D');
             btn.click();
             expect(onHighlightResidues).toHaveBeenCalledWith({ A: [2, 3, 4, 5] });
+        });
+
+        it('shows a "Highlight in 3D" button for a UniProt feature with highlight_chains and calls onHighlightResidues when clicked', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: 'AF-P69905-F1', chain: 'A', accession: 'P69905',
+                    domains: [], go_terms: [], reactome_pathways: [],
+                    uniprot_features: [{ type: 'Binding site', description: 'proximal binding residue', start: 88, end: 88, highlight_chains: { A: [88] } }],
+                },
+            });
+            const onHighlightResidues = vi.fn();
+            const tab = makeTab({ onHighlightResidues });
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['AF-P69905-F1'], { 'AF-P69905-F1': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            const btn = tab.element.querySelector('.feature-highlight-btn');
+            expect(btn.textContent).toContain('Highlight in 3D');
+            btn.click();
+            expect(onHighlightResidues).toHaveBeenCalledWith({ A: [88] });
         });
 
         it('omits the "Highlight in 3D" button for a domain with no highlight_chains (e.g. a plain PDB structure)', async () => {

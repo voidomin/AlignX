@@ -19,6 +19,7 @@ from src.backend.rmsd_calculator import (
     parse_rmsd_matrix,
     calculate_alignment_quality_metrics,
 )
+from src.backend.tm_score_calculator import calculate_tm_score_matrix
 from src.backend.ramachandran_service import RamachandranService
 from src.backend.database import HistoryDatabase
 from src.backend.sequence_viewer import SequenceViewer
@@ -457,14 +458,20 @@ class AnalysisCoordinator:
 
             # Quality Metrics (TM-score / GDT-TS)
             quality_metrics = None
+            tm_score_df = None
             if alignment_pdb.exists() and alignment_fasta.exists():
                 quality_metrics = calculate_alignment_quality_metrics(
                     alignment_pdb, alignment_fasta
                 )
+                # Independent pairwise TM-score matrix (tmtools' own optimal
+                # superposition search) - a separate, complementary signal
+                # to quality_metrics' Mustang-column-based average above.
+                tm_score_df = calculate_tm_score_matrix(alignment_pdb, alignment_fasta)
 
             # Ramachandran (Torsion) Analysis
             torsion_data = None
             ramachandran_stats = None
+            secondary_structure_stats = None
             if alignment_pdb.exists():
                 torsion_data = self.ramachandran_service.calculate_torsion_angles(
                     alignment_pdb
@@ -472,6 +479,11 @@ class AnalysisCoordinator:
                 if torsion_data:
                     ramachandran_stats = self.ramachandran_service.aggregate_metrics(
                         torsion_data
+                    )
+                    secondary_structure_stats = (
+                        self.ramachandran_service.aggregate_secondary_structure(
+                            torsion_data
+                        )
                     )
 
             # Calculate sequence identity and save parsed alignments for UI
@@ -527,8 +539,10 @@ class AnalysisCoordinator:
                 "conservation": conservation,
                 "rmsf_values": rmsf_values,
                 "quality_metrics": quality_metrics,
+                "tm_score_df": tm_score_df,
                 "torsion_data": torsion_data,
                 "ramachandran_stats": ramachandran_stats,
+                "secondary_structure_stats": secondary_structure_stats,
             }
         except Exception:
             logger.exception("Data processing failed")

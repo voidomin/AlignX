@@ -413,6 +413,19 @@ export async function fetchAnnotations(pdbId, chain) {
     return res.json();
 }
 
+// wwPDB/PDBe validation metrics (clashscore, Ramachandran/rotamer outlier
+// percentiles) for a real, experimentally-solved PDB entry. Always returns
+// { pdb_id, validation } - validation is null for non-"pdb"-source
+// structures (AlphaFold/SWISS-MODEL/ESMFold have no experimental
+// validation report) rather than a 404, so callers don't need a special
+// error path for that expected case.
+export async function fetchValidation(pdbId) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const res = await fetch(buildUrl('/api/validation', { pdb_id: pdbId }), { headers: authHeaders() });
+    if (!res.ok) throw new Error("Validation fetch failed");
+    return res.json();
+}
+
 export async function fetchInterface(pdbId, chainA, chainB, runId) {
     pdbId = assertValidPdbId(pdbId, 'pdbId');
     chainA = assertSafeSegment(chainA, 'chainA');

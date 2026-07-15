@@ -40,6 +40,11 @@ fpdf>=1.7.2  # ships no wheel (sdist only) - exempted from --only-binary :all: b
 # Phylogenetics
 dendropy>=4.6.0
 
+# Independent TM-score (tm_score_calculator.py) - a Cython-wrapped USalign
+# core with prebuilt wheels for every target platform incl. cp310, no
+# separate binary install/compilation needed (unlike Mustang).
+tmtools>=0.3.0
+
 # Configuration & Utilities
 pyyaml>=6.0.0
 python-dotenv>=1.0.0

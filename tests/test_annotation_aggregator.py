@@ -685,6 +685,117 @@ class TestFetchGmgcFeatures:
         assert domains == []
 
 
+class TestFetchUniprotFeatures:
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_parses_and_filters_to_meaningful_feature_types(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "features": [
+                    {
+                        "type": "Binding site",
+                        "description": "proximal binding residue",
+                        "location": {"start": {"value": 88}, "end": {"value": 88}},
+                    },
+                    {
+                        "type": "Natural variant",
+                        "description": "in Thionville",
+                        "location": {"start": {"value": 2}, "end": {"value": 2}},
+                    },
+                    # Not in _UNIPROT_FEATURE_TYPES - a raw UniProt entry has
+                    # many more feature types than the 5 this app cares
+                    # about (Chain, Domain, Helix, Beta strand, ...).
+                    {
+                        "type": "Helix",
+                        "description": "",
+                        "location": {"start": {"value": 10}, "end": {"value": 20}},
+                    },
+                ]
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            features = await aggregator.fetch_uniprot_features("P69905", client)
+
+        assert features == [
+            {
+                "type": "Binding site",
+                "description": "proximal binding residue",
+                "start": 88,
+                "end": 88,
+            },
+            {
+                "type": "Natural variant",
+                "description": "in Thionville",
+                "start": 2,
+                "end": 2,
+            },
+        ]
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_skips_a_feature_with_no_resolvable_location(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "features": [
+                    {"type": "Active site", "description": "", "location": {}},
+                ]
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            features = await aggregator.fetch_uniprot_features("P69905", client)
+        assert features == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_on_non_200(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            features = await aggregator.fetch_uniprot_features("NOPE", client)
+        assert features == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            features = await aggregator.fetch_uniprot_features("P69905", client)
+        assert features == []
+
+
+class TestAttachFeatureHighlightChains:
+    def test_populates_highlight_chains_for_alphafold(self):
+        features = [{"type": "Binding site", "start": 88, "end": 88}]
+        AnnotationAggregator._attach_feature_highlight_chains(
+            features, "A", "alphafold"
+        )
+        assert features[0]["highlight_chains"] == {"A": [88]}
+
+    def test_expands_a_multi_residue_range(self):
+        features = [{"type": "Natural variant", "start": 10, "end": 12}]
+        AnnotationAggregator._attach_feature_highlight_chains(
+            features, "A", "alphafold"
+        )
+        assert features[0]["highlight_chains"] == {"A": [10, 11, 12]}
+
+    @pytest.mark.parametrize("source", ["pdb", "swissmodel", "esmfold"])
+    def test_none_for_non_alphafold_sources(self, source):
+        features = [{"type": "Binding site", "start": 88, "end": 88}]
+        AnnotationAggregator._attach_feature_highlight_chains(features, "A", source)
+        assert features[0]["highlight_chains"] is None
+
+    def test_none_when_no_chain_given(self):
+        features = [{"type": "Binding site", "start": 88, "end": 88}]
+        AnnotationAggregator._attach_feature_highlight_chains(
+            features, None, "alphafold"
+        )
+        assert features[0]["highlight_chains"] is None
+
+
 class TestGoTermNameCaching:
     def test_try_get_cached_go_name_returns_none_without_cache_db(self):
         aggregator = AnnotationAggregator()
@@ -1096,6 +1207,7 @@ class TestAggregateForStructure:
             "domains": [],
             "go_terms": [],
             "reactome_pathways": [],
+            "uniprot_features": [],
         }
 
     @pytest.mark.asyncio
@@ -1139,6 +1251,19 @@ class TestAggregateForStructure:
             ),
         ), patch.object(
             aggregator,
+            "fetch_uniprot_features",
+            AsyncMock(
+                return_value=[
+                    {
+                        "type": "Binding site",
+                        "description": "proximal binding residue",
+                        "start": 88,
+                        "end": 88,
+                    }
+                ]
+            ),
+        ), patch.object(
+            aggregator,
             "resolve_go_term_names",
             AsyncMock(return_value={"GO:0005344": "oxygen carrier activity"}),
         ):
@@ -1151,6 +1276,7 @@ class TestAggregateForStructure:
         assert result["domains"][0]["name"] == "Globin"
         assert result["go_terms"][0]["name"] == "oxygen carrier activity"
         assert result["reactome_pathways"][0]["name"] == "Erythrocytes take up oxygen"
+        assert result["uniprot_features"][0]["type"] == "Binding site"
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -1195,6 +1321,19 @@ class TestAggregateForStructure:
         ), patch.object(
             aggregator, "fetch_reactome_pathways", AsyncMock(return_value=[])
         ), patch.object(
+            aggregator,
+            "fetch_uniprot_features",
+            AsyncMock(
+                return_value=[
+                    {
+                        "type": "Binding site",
+                        "description": "",
+                        "start": 88,
+                        "end": 88,
+                    }
+                ]
+            ),
+        ), patch.object(
             aggregator, "resolve_go_term_names", AsyncMock(return_value={})
         ):
             async with httpx.AsyncClient() as client:
@@ -1203,6 +1342,13 @@ class TestAggregateForStructure:
                 )
 
         assert result["domains"][0]["highlight_chains"] == expected_highlight_chains
+        expected_feature_highlight = (
+            {"A": [88]} if expected_highlight_chains is not None else None
+        )
+        assert (
+            result["uniprot_features"][0]["highlight_chains"]
+            == expected_feature_highlight
+        )
 
     @pytest.mark.asyncio
     async def test_pdb_id_and_chain_pass_through_to_the_result(self):
@@ -1239,6 +1385,8 @@ class TestAggregateForStructure:
             ),
         ), patch.object(
             aggregator, "fetch_reactome_pathways", AsyncMock(return_value=[])
+        ), patch.object(
+            aggregator, "fetch_uniprot_features", AsyncMock(return_value=[])
         ), patch.object(
             aggregator,
             "resolve_go_term_names",
