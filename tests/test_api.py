@@ -2502,6 +2502,106 @@ async def test_discovery_job_sweep_drops_old_finished_jobs_but_keeps_recent_and_
     assert remaining == {"recent_completed", "still_running"}
 
 
+def test_clustalo_job_submission_returns_queued():
+    """Submitting a valid Clustal Omega job returns a job_id immediately
+    with status "queued" - it must not block on the (slow, EBI-rate-
+    limited) submit/poll/fetch pipeline."""
+    api_module.clustalo_jobs.clear()
+    response = client.post(
+        "/api/jobs/clustalo", json={"sequences": {"4RLT": "MVHL", "3UG9": "MVLS"}}
+    )
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "queued"
+    assert body["job_id"] in api_module.clustalo_jobs
+    api_module.clustalo_jobs.clear()
+
+
+def test_clustalo_job_submission_rejects_fewer_than_two_sequences():
+    response = client.post("/api/jobs/clustalo", json={"sequences": {"4RLT": "MVHL"}})
+    assert response.status_code == 400
+
+
+def test_clustalo_job_submission_rejects_an_unsafe_sequence_id():
+    response = client.post(
+        "/api/jobs/clustalo",
+        json={"sequences": {"../etc": "MVHL", "3UG9": "MVLS"}},
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_clustalo_job_execution_completes_and_is_pollable():
+    """Directly exercises _execute_clustalo_job (the background task the
+    endpoint schedules) end-to-end, then confirms GET /api/jobs/{job_id} -
+    the same polling endpoint used for alignment/discovery jobs - surfaces
+    the real aligned FASTA result."""
+    api_module.clustalo_jobs.clear()
+    job_id = "test-clustalo-job"
+    api_module.clustalo_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    with patch(
+        "src.backend.api.ClustalOmegaClient.align", new_callable=AsyncMock
+    ) as mock_align:
+        mock_align.return_value = ">4RLT\nMV--HL\n>3UG9\n-MVLSH"
+        await api_module._execute_clustalo_job(
+            job_id, {"4RLT": "MVHL", "3UG9": "MVLSH"}
+        )
+
+    poll = client.get(f"/api/jobs/{job_id}")
+    assert poll.json()["status"] == "completed"
+    assert poll.json()["aligned_fasta"] == ">4RLT\nMV--HL\n>3UG9\n-MVLSH"
+
+    api_module.clustalo_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_clustalo_job_execution_surfaces_pipeline_failure():
+    api_module.clustalo_jobs.clear()
+    job_id = "test-clustalo-job-fail"
+    api_module.clustalo_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    with patch(
+        "src.backend.api.ClustalOmegaClient.align", new_callable=AsyncMock
+    ) as mock_align:
+        from src.backend.clustalo_client import ClustalOmegaError
+
+        mock_align.side_effect = ClustalOmegaError("Clustal Omega submission failed")
+        await api_module._execute_clustalo_job(
+            job_id, {"4RLT": "MVHL", "3UG9": "MVLSH"}
+        )
+
+    poll = client.get(f"/api/jobs/{job_id}")
+    assert poll.json()["status"] == "failed"
+    assert "Clustal Omega submission failed" in poll.json()["error"]
+
+    api_module.clustalo_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_clustalo_job_sweep_drops_old_finished_jobs_but_keeps_recent_and_running():
+    now = time.time()
+    api_module.clustalo_jobs.clear()
+    api_module.clustalo_jobs.update(
+        {
+            "old_completed": {"status": "completed", "finished_at": now - 10_000},
+            "recent_completed": {"status": "completed", "finished_at": now},
+            "still_running": {"status": "running", "created_at": now - 10_000},
+        }
+    )
+
+    with patch.object(api_module, "_JOB_TTL_SECONDS", 60), patch(
+        "asyncio.sleep", new_callable=AsyncMock
+    ) as mock_sleep:
+        mock_sleep.side_effect = [None, asyncio.CancelledError()]
+        with pytest.raises(asyncio.CancelledError):
+            await api_module._sweep_clustalo_jobs()
+
+    remaining = set(api_module.clustalo_jobs.keys())
+    assert remaining == {"recent_completed", "still_running"}
+    api_module.clustalo_jobs.clear()
+
+
 @pytest.mark.asyncio
 async def test_execute_alignment_job_marks_completed_on_success():
     """Mirrors test_execute_alignment_job_marks_failed_on_pipeline_error but

@@ -174,6 +174,25 @@ export async function pollJobUntilDone(jobId, { intervalMs = 1500, onTick = null
     }
 }
 
+// True sequence-only MSA via EBI's Clustal Omega, independent of Mustang's
+// structural alignment - see clustalo_client.py. `sequences` should be each
+// structure's own ungapped sequence (not a Mustang-aligned one), keyed by a
+// caller-chosen id (typically the pdb_id). Poll the returned job_id with
+// pollJobUntilDone(); the completed job's `aligned_fasta` field is the real
+// gap-padded aligned FASTA text.
+export async function submitClustalOmegaJob(sequences) {
+    const res = await fetch(buildUrl('/api/jobs/clustalo'), {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ sequences })
+    });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Clustal Omega submission failed");
+    }
+    return res.json();
+}
+
 export async function submitDiscoveryJob(pdbId, databases) {
     const body = { pdb_id: pdbId };
     if (databases && databases.length > 0) body.databases = databases;

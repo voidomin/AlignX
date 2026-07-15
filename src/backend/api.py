@@ -34,6 +34,7 @@ from src.backend.discovery_coordinator import DiscoveryCoordinator
 from src.backend.annotation_aggregator import AnnotationAggregator
 from src.backend.validation_service import fetch_pdbe_validation
 from src.backend.foldseek_client import FoldseekClient, FoldseekError
+from src.backend.clustalo_client import ClustalOmegaClient
 from src.backend.database import HistoryDatabase
 from src.backend.ligand_analyzer import LigandAnalyzer
 from src.backend.interface_analyzer import InterfaceAnalyzer
@@ -69,9 +70,11 @@ except Exception:
 async def lifespan(app: FastAPI):
     sweep_task = asyncio.create_task(_sweep_alignment_jobs())
     discovery_sweep_task = asyncio.create_task(_sweep_discovery_jobs())
+    clustalo_sweep_task = asyncio.create_task(_sweep_clustalo_jobs())
     yield
     sweep_task.cancel()
     discovery_sweep_task.cancel()
+    clustalo_sweep_task.cancel()
 
 
 # Initialize FastAPI App
@@ -746,10 +749,15 @@ async def submit_alignment_job(
 )
 def get_alignment_job(job_id: str):
     """
-    Poll the status/result of a submitted job (alignment or discovery - job
-    IDs are unique uuid4 hex strings, so one polling endpoint covers both).
+    Poll the status/result of a submitted job (alignment, discovery, or
+    Clustal Omega - job IDs are unique uuid4 hex strings, so one polling
+    endpoint covers all of them).
     """
-    job = alignment_jobs.get(job_id) or discovery_jobs.get(job_id)
+    job = (
+        alignment_jobs.get(job_id)
+        or discovery_jobs.get(job_id)
+        or clustalo_jobs.get(job_id)
+    )
     if job is None:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found.")
     return {"job_id": job_id, **job}
@@ -858,6 +866,90 @@ async def submit_discovery_job(
             session_id=session_id,
         )
     )
+
+    return {"job_id": job_id, "status": "queued"}
+
+
+# In-memory job registry for the async sequence-only MSA pipeline (EBI
+# Clustal Omega - see clustalo_client.py). Mirrors discovery_jobs above,
+# but doesn't need asyncio.to_thread the way alignment/discovery jobs do:
+# submit/poll/fetch here are all async network I/O with no CPU-bound or
+# blocking-file-I/O step, so the pipeline runs directly on the event loop
+# inside its own background task.
+clustalo_jobs: Dict[str, Dict[str, Any]] = {}
+
+
+async def _sweep_clustalo_jobs():
+    """Periodically drop finished Clustal Omega jobs older than _JOB_TTL_SECONDS."""
+    while True:
+        await asyncio.sleep(_JOB_SWEEP_INTERVAL_SECONDS)
+        now = time.time()
+        stale_ids = [
+            jid
+            for jid, job in clustalo_jobs.items()
+            if job.get("status") in ("completed", "failed")
+            and now - job.get("finished_at", now) > _JOB_TTL_SECONDS
+        ]
+        for jid in stale_ids:
+            clustalo_jobs.pop(jid, None)
+
+
+async def _run_clustalo_pipeline(sequences: Dict[str, str]) -> Dict[str, Any]:
+    client = ClustalOmegaClient(config)
+    aligned_fasta = await client.align(sequences)
+    return {"aligned_fasta": aligned_fasta}
+
+
+async def _execute_clustalo_job(job_id: str, sequences: Dict[str, str]):
+    clustalo_jobs[job_id]["status"] = "running"
+    created_at = clustalo_jobs[job_id].get("created_at", time.time())
+    try:
+        outcome = await _run_clustalo_pipeline(sequences)
+        clustalo_jobs[job_id] = {
+            "status": "completed",
+            "created_at": created_at,
+            "finished_at": time.time(),
+            **outcome,
+        }
+    except Exception as e:
+        clustalo_jobs[job_id] = {
+            "status": "failed",
+            "created_at": created_at,
+            "finished_at": time.time(),
+            "error": str(e),
+        }
+
+
+@app.post(
+    "/api/jobs/clustalo",
+    status_code=202,
+    responses={
+        400: {"description": "Fewer than 2 sequences, or an invalid sequence id"}
+    },
+)
+async def submit_clustalo_job(
+    sequences: Annotated[Dict[str, str], Body(..., embed=True)],
+):
+    """
+    Submit a true sequence-only multiple alignment as a background job via
+    EBI's Clustal Omega REST API (see clustalo_client.py) - independent of
+    Mustang's structural alignment, which every other alignment view in
+    this app relies on for sequence correspondence. `sequences` should
+    carry each structure's own ungapped sequence, keyed by a caller-chosen
+    id (typically the pdb_id). Returns immediately with a job_id; poll
+    GET /api/jobs/{job_id} for status.
+    """
+    if not sequences or len(sequences) < 2:
+        raise HTTPException(
+            status_code=400, detail="At least 2 sequences are required."
+        )
+    for seq_id in sequences:
+        _safe_segment(seq_id, "sequence id")
+
+    job_id = uuid.uuid4().hex
+    clustalo_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    _spawn_background_task(_execute_clustalo_job(job_id, sequences))
 
     return {"job_id": job_id, "status": "queued"}
 

@@ -13,9 +13,11 @@ vi.mock('../api.js', () => ({
     getHeatmapPngUrl: vi.fn((runId) => `http://api/api/report/heatmap-png?run_id=${runId}`),
     getReportZipUrl: vi.fn((runId) => `http://api/api/report/zip?run_id=${runId}`),
     getNewickUrl: vi.fn((runId) => `http://api/api/report/newick?run_id=${runId}`),
+    submitClustalOmegaJob: vi.fn(),
+    pollJobUntilDone: vi.fn(),
 }));
 
-import { fetchSequence } from '../api.js';
+import { fetchSequence, submitClustalOmegaJob, pollJobUntilDone } from '../api.js';
 
 describe('SequenceTab', () => {
     afterEach(() => {
@@ -277,6 +279,111 @@ describe('SequenceTab', () => {
 
             expect(tab.element.querySelector('#motif-search-input').value).toBe('');
             expect(tab.element.querySelector('#motif-results-container').innerHTML).toBe('');
+        });
+    });
+
+    describe('Clustal Omega true sequence-only MSA', () => {
+        it('strips gaps before submitting, then renders the real aligned result', async () => {
+            fetchSequence.mockResolvedValue({
+                sequences: { '4RLT': 'MV--HL', '3UG9': '-MVLSH' },
+                conservation: [],
+            });
+            submitClustalOmegaJob.mockResolvedValue({ job_id: 'job-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({
+                status: 'completed',
+                aligned_fasta: '>4RLT\nMVHL--\n>3UG9\nMVLSH-',
+            });
+
+            const tab = new SequenceTab();
+            tab.render();
+            tab.updateResults('run_123', { rmsd: 1.0 });
+            await Promise.resolve();
+
+            tab.element.querySelector('#clustalo-run-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(submitClustalOmegaJob).toHaveBeenCalledWith({ '4RLT': 'MVHL', '3UG9': 'MVLSH' });
+            expect(pollJobUntilDone).toHaveBeenCalledWith('job-1', expect.objectContaining({ intervalMs: 5000 }));
+
+            const wrapper = tab.element.querySelector('#clustalo-result-wrapper');
+            expect(wrapper.textContent).toContain('4RLT');
+            expect(wrapper.textContent).toContain('3UG9');
+            expect(wrapper.querySelectorAll('tbody tr')).toHaveLength(2);
+        });
+
+        it('shows the real failure reason when the job fails', async () => {
+            fetchSequence.mockResolvedValue({
+                sequences: { '4RLT': 'MVHL', '3UG9': 'MVLS' },
+                conservation: [],
+            });
+            submitClustalOmegaJob.mockResolvedValue({ job_id: 'job-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({
+                status: 'failed',
+                error: 'Clustal Omega job job-1 did not complete within 600s',
+            });
+
+            const tab = new SequenceTab();
+            tab.render();
+            tab.updateResults('run_123', { rmsd: 1.0 });
+            await Promise.resolve();
+
+            tab.element.querySelector('#clustalo-run-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#clustalo-result-wrapper').textContent)
+                .toContain('did not complete within 600s');
+        });
+
+        it('shows a graceful message when fewer than 2 real sequences resolve', async () => {
+            fetchSequence.mockResolvedValue({ sequences: { '4RLT': 'MVHL' }, conservation: [] });
+
+            const tab = new SequenceTab();
+            tab.render();
+            tab.updateResults('run_123', { rmsd: 1.0 });
+            await Promise.resolve();
+
+            tab.element.querySelector('#clustalo-run-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(submitClustalOmegaJob).not.toHaveBeenCalled();
+            expect(tab.element.querySelector('#clustalo-result-wrapper').textContent)
+                .toContain('Need at least 2 structures');
+        });
+
+        it('shows a graceful message when the submission itself throws', async () => {
+            fetchSequence.mockResolvedValue({
+                sequences: { '4RLT': 'MVHL', '3UG9': 'MVLS' },
+                conservation: [],
+            });
+            submitClustalOmegaJob.mockRejectedValue(new Error('boom'));
+
+            const tab = new SequenceTab();
+            tab.render();
+            tab.updateResults('run_123', { rmsd: 1.0 });
+            await Promise.resolve();
+
+            tab.element.querySelector('#clustalo-run-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#clustalo-result-wrapper').textContent)
+                .toContain('Failed to run sequence-only alignment.');
+        });
+
+        it('disables the button with no run loaded and re-enables it once one is set', () => {
+            const tab = new SequenceTab();
+            tab.render();
+
+            expect(tab.element.querySelector('#clustalo-run-btn').disabled).toBe(true);
+
+            tab.updateResults('run_123', { rmsd: 1.0 });
+
+            expect(tab.element.querySelector('#clustalo-run-btn').disabled).toBe(false);
         });
     });
 });

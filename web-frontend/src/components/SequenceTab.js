@@ -1,4 +1,5 @@
-import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl, getAlignmentReportUrl, getLabNotebookUrl, getLabNotebookIpynbUrl, getCitationsUrl, getRmsdCsvUrl, getHeatmapPngUrl, getReportZipUrl, getNewickUrl } from '../api';
+import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl, getAlignmentReportUrl, getLabNotebookUrl, getLabNotebookIpynbUrl, getCitationsUrl, getRmsdCsvUrl, getHeatmapPngUrl, getReportZipUrl, getNewickUrl, submitClustalOmegaJob, pollJobUntilDone } from '../api';
+import { escapeHtml } from '../escapeHtml';
 
 const REPORT_SECTIONS = [
     { key: 'summary', label: 'Summary' },
@@ -59,6 +60,17 @@ export class SequenceTab {
                             Run alignment to generate sequence view.
                         </div>
                     </div>
+                </div>
+
+                <div class="flex flex-col gap-3 border-t border-border pt-6">
+                    <div class="flex items-center justify-between">
+                        <span class="eyebrow">True sequence-only MSA (Clustal Omega)</span>
+                        <button id="clustalo-run-btn" class="btn-secondary py-1.5 px-3 rounded-md font-label-md text-label-md" disabled>Run true sequence alignment</button>
+                    </div>
+                    <div class="section-caption">
+                        Independent of Mustang's structural alignment above - a real multiple sequence alignment computed purely from each structure's own sequence, via EBI's public Clustal Omega service. Can disagree with the structural alignment for divergent sequences with similar folds.
+                    </div>
+                    <div id="clustalo-result-wrapper" class="overflow-x-auto rounded-md max-h-[350px]"></div>
                 </div>
 
                 <div class="flex flex-col gap-3 border-t border-border pt-6">
@@ -143,6 +155,8 @@ export class SequenceTab {
         motifInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') this.searchMotif(motifInput.value);
         });
+
+        this.element.querySelector('#clustalo-run-btn').addEventListener('click', () => this.runClustalOmegaAlignment());
     }
 
     async searchMotif(query) {
@@ -248,6 +262,7 @@ export class SequenceTab {
         if (this.element) {
             this.element.querySelector('#motif-search-input').value = "";
             this.element.querySelector('#motif-results-container').innerHTML = "";
+            this.element.querySelector('#clustalo-result-wrapper').innerHTML = "";
         }
     }
 
@@ -276,6 +291,9 @@ export class SequenceTab {
         const zipLink = this.element.querySelector('#download-zip-link');
         const motifBtn = this.element.querySelector('#motif-search-btn');
         motifBtn.disabled = !this.currentRunId;
+
+        const clustaloBtn = this.element.querySelector('#clustalo-run-btn');
+        clustaloBtn.disabled = !this.currentRunId;
 
         if (this.currentRunId) {
             pdbLink.href = getAlignmentPdbUrl(this.currentRunId);
@@ -428,5 +446,109 @@ export class SequenceTab {
                 </div>
             `;
         }
+    }
+
+    static _parseFasta(text) {
+        const result = {};
+        let current = null;
+        (text || '').split(/\r?\n/).forEach(line => {
+            if (line.startsWith('>')) {
+                current = line.slice(1).trim();
+                result[current] = '';
+            } else if (current) {
+                result[current] += line.trim();
+            }
+        });
+        return result;
+    }
+
+    // Independent of loadSequenceGrid() above - reuses the same run's raw
+    // sequences (gaps stripped, since Mustang's structural correspondence
+    // is exactly what this alignment must NOT depend on) but submits them
+    // fresh to EBI's Clustal Omega service for a real sequence-only MSA,
+    // rather than reading anything Mustang already computed.
+    async runClustalOmegaAlignment() {
+        if (!this.currentRunId) return;
+        const btn = this.element.querySelector('#clustalo-run-btn');
+        const wrapper = this.element.querySelector('#clustalo-result-wrapper');
+
+        btn.disabled = true;
+        wrapper.innerHTML = `
+            <div class="text-center py-8 text-secondary font-body-sm">
+                <span class="animate-spin material-symbols-outlined text-[18px]">sync</span>
+                Submitting sequences to EBI Clustal Omega…
+            </div>
+        `;
+
+        try {
+            const data = await fetchSequence(this.currentRunId);
+            const ungapped = Object.fromEntries(
+                Object.entries(data.sequences || {}).map(([id, seq]) => [id, seq.replace(/-/g, '')])
+            );
+
+            if (Object.keys(ungapped).length < 2) {
+                wrapper.innerHTML = `<div class="text-center py-8 text-secondary font-body-sm">Need at least 2 structures for a sequence alignment.</div>`;
+                return;
+            }
+
+            const submission = await submitClustalOmegaJob(ungapped);
+            wrapper.innerHTML = `
+                <div class="text-center py-8 text-secondary font-body-sm">
+                    <span class="animate-spin material-symbols-outlined text-[18px]">sync</span>
+                    Waiting on EBI Clustal Omega (this can take a couple of minutes)…
+                </div>
+            `;
+
+            const job = await pollJobUntilDone(submission.job_id, { intervalMs: 5000 });
+            if (job.status === 'failed') {
+                wrapper.innerHTML = `<div class="text-center py-8 text-error font-body-sm">Clustal Omega alignment failed: ${escapeHtml(job.error || 'unknown error')}</div>`;
+                return;
+            }
+
+            this.renderClustalOmegaResult(job.aligned_fasta);
+        } catch (err) {
+            console.error("Clustal Omega alignment failed:", err);
+            wrapper.innerHTML = `<div class="text-center py-8 text-error font-body-sm">Failed to run sequence-only alignment.</div>`;
+        } finally {
+            btn.disabled = !this.currentRunId;
+        }
+    }
+
+    renderClustalOmegaResult(alignedFastaText) {
+        const wrapper = this.element.querySelector('#clustalo-result-wrapper');
+        const sequences = SequenceTab._parseFasta(alignedFastaText);
+        const headers = Object.keys(sequences);
+
+        if (headers.length === 0) {
+            wrapper.innerHTML = `<div class="text-center py-8 text-error font-body-sm">Could not parse the returned alignment.</div>`;
+            return;
+        }
+
+        const seqLen = Math.max(...headers.map(h => sequences[h].length));
+        let rowsHtml = "";
+        headers.forEach(header => {
+            const seq = sequences[header];
+            let residuesHtml = "";
+            for (let i = 0; i < seqLen; i++) {
+                const char = seq[i] || '-';
+                const isConservedColumn = char !== '-' && headers.every(h => (sequences[h][i] || '-') === char);
+                const bgColor = isConservedColumn ? "#ff4757" : (char === '-' ? "#2f3542" : "transparent");
+                residuesHtml += `<td class="text-center font-mono border border-border-subtle" style="background-color: ${bgColor}; min-width: 22px; height: 24px; font-size: 12px; color: #fff;">${escapeHtml(char)}</td>`;
+            }
+            rowsHtml += `
+                <tr class="border-b border-border-subtle">
+                    <td class="sticky left-0 bg-surface-raised text-primary pr-4 pl-2 font-bold font-mono border-r border-border whitespace-nowrap min-w-[120px] text-body-sm">${escapeHtml(header)}</td>
+                    ${residuesHtml}
+                </tr>
+            `;
+        });
+
+        wrapper.innerHTML = `
+            <table class="text-left border-collapse">
+                <tbody>
+                    ${rowsHtml}
+                </tbody>
+            </table>
+        `;
     }
 }

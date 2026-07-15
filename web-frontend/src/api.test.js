@@ -61,6 +61,24 @@ describe('api.js (no API key configured)', () => {
         expect(JSON.parse(options.body)).toEqual({ pdb_id: '1CRN' });
     });
 
+    it('submitClustalOmegaJob posts the sequences dict to the clustalo job endpoint', async () => {
+        mockFetchOnce({ job_id: 'clustalo123', status: 'queued' });
+        const { submitClustalOmegaJob } = await import('./api.js');
+
+        const result = await submitClustalOmegaJob({ '4RLT': 'MVHL', '3UG9': 'MVLS' });
+
+        expect(result.job_id).toBe('clustalo123');
+        const [url, options] = global.fetch.mock.calls[0];
+        expect(url).toContain('/api/jobs/clustalo');
+        expect(JSON.parse(options.body)).toEqual({ sequences: { '4RLT': 'MVHL', '3UG9': 'MVLS' } });
+    });
+
+    it('submitClustalOmegaJob throws with the backend detail message on failure', async () => {
+        mockFetchOnce({ detail: 'At least 2 sequences are required.' }, false, 400);
+        const { submitClustalOmegaJob } = await import('./api.js');
+        await expect(submitClustalOmegaJob({ '4RLT': 'MVHL' })).rejects.toThrow('At least 2 sequences are required.');
+    });
+
     it('pollJobUntilDone polls until status is completed', async () => {
         const responses = [
             { status: 'queued' },
