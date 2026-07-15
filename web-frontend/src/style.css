@@ -28,10 +28,9 @@ body {
 
 /* The one deliberate "brutalist" device in the whole system: a hard, non-blurred
    offset shadow instead of a soft box-shadow. Reserved for exactly one primary
-   action app-wide (the Overview tab's Run Alignment button) — do not apply
-   this class anywhere else, or the "exactly one" rule stops meaning anything.
-   (v4 fix: Discover's own Run button previously also used this class - see
-   DiscoverTab.js, now on plain .btn-primary instead.) */
+   action app-wide (the Workspace tab's Run Structural Alignment button) —
+   do not apply this class anywhere else, or the "exactly one" rule stops
+   meaning anything. */
 .btn-primary-hard {
     background: theme(colors.accent);
     color: theme(colors.bg);

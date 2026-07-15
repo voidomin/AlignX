@@ -1,8 +1,7 @@
-// Shared between LigandTab.js (Compare-mode ligand contacts + chain-chain
-// interface contacts) and DiscoverTab.js's single-structure ligand
-// inspector - all three call sites render the exact same contact-row shape
-// (residue/chain/resi/distance/type), classified by the same real geometry
-// (interaction_geometry.py's classify_contact).
+// Used by LigandTab.js for both its ligand-contact and chain-chain
+// interface-contact tables - both call sites render the exact same
+// contact-row shape (residue/chain/resi/distance/type), classified by the
+// same real geometry (interaction_geometry.py's classify_contact).
 
 // Functional data-encoding: dot color signals interaction type. Matches the
 // 5 real classifications LigandAnalyzer/InterfaceAnalyzer actually emit -

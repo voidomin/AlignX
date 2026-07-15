@@ -1,8 +1,8 @@
-// Shared between DiscoverTab.js (Foldseek-neighbor-aggregated domains/GO
+// Shared between DiscoveryPanel.js (Foldseek-neighbor-aggregated domains/GO
 // terms, each carrying a neighbor_count) and AnalyticsTab.js's Annotations
-// sub-tab (Compare-mode, one structure's own domains/GO terms - no
-// neighbor_count at all, since there's nothing to aggregate across). Both
-// shapes render identically except for that optional count badge.
+// sub-tab (a structure's own domains/GO terms - no neighbor_count at all,
+// since there's nothing to aggregate across). Both shapes render
+// identically except for that optional count badge.
 
 // Compare mode's AlphaFold-sourced structures carry a highlight_chains map
 // per domain (see annotation_aggregator.py's aggregate_for_structure) -
