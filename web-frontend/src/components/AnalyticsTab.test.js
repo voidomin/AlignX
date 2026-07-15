@@ -138,6 +138,42 @@ describe('AnalyticsTab', () => {
         expect(tab.element.querySelector('#ramachandran-outliers').innerText).toBe(2);
     });
 
+    it('renders a pairwise TM-score row per pair when tmScoreMatrix is present', () => {
+        const tab = makeTab();
+        tab.render();
+
+        tab.updateResults('run_1', null, {
+            tmScoreMatrix: {
+                index: ['4RLT', '3UG9', '1ABC'],
+                columns: ['4RLT', '3UG9', '1ABC'],
+                data: [
+                    [1.0, 0.812, 0.55],
+                    [0.812, 1.0, 0.61],
+                    [0.55, 0.61, 1.0],
+                ],
+            },
+        }, [], []);
+
+        const card = tab.element.querySelector('#pairwise-tm-score-card');
+        expect(card.classList.contains('hidden')).toBe(false);
+        const rows = tab.element.querySelectorAll('#pairwise-tm-score-table-body tr');
+        expect(rows).toHaveLength(3);
+        expect(rows[0].textContent).toContain('4RLT');
+        expect(rows[0].textContent).toContain('3UG9');
+        expect(rows[0].textContent).toContain('0.812');
+    });
+
+    it('hides the pairwise TM-score table when no tmScoreMatrix is given, or for a single structure', () => {
+        const tab = makeTab();
+        tab.render();
+
+        tab.updateResults('run_1', null, null, [], []);
+        expect(tab.element.querySelector('#pairwise-tm-score-card').classList.contains('hidden')).toBe(true);
+
+        tab.updateResults('run_1', null, { tmScoreMatrix: { index: ['4RLT'], columns: ['4RLT'], data: [[1.0]] } }, [], []);
+        expect(tab.element.querySelector('#pairwise-tm-score-card').classList.contains('hidden')).toBe(true);
+    });
+
     it('sub-tab switching still works, including the new insights sub-tab', () => {
         const tab = makeTab();
         tab.render();

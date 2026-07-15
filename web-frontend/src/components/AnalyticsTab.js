@@ -37,6 +37,7 @@ export class AnalyticsTab {
     treeFig = null;
     ramachandranStats = null;
     secondaryStructureStats = null;
+    tmScoreMatrix = null;
     rmsfValues = [];
     insights = [];
     qualityMetrics = null;
@@ -119,6 +120,18 @@ export class AnalyticsTab {
                             <div class="stat-row"><span class="stat-key">Sheet</span><span id="ss-sheet-percent" class="stat-value">--</span></div>
                             <div class="stat-row"><span class="stat-key">Coil</span><span id="ss-coil-percent" class="stat-value">--</span></div>
                         </div>
+                    </div>
+                    <div id="pairwise-tm-score-card" class="flex flex-col gap-2 hidden">
+                        <span class="font-label-sm text-label-sm text-secondary uppercase">Pairwise TM-score (independent optimal superposition)</span>
+                        <table class="w-full font-body-sm text-body-sm">
+                            <thead>
+                                <tr class="text-secondary text-left border-b border-border-subtle">
+                                    <th class="font-normal py-1">Pair</th>
+                                    <th class="font-normal py-1">TM-score</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pairwise-tm-score-table-body"></tbody>
+                        </table>
                     </div>
                 </div>
 
@@ -262,6 +275,7 @@ export class AnalyticsTab {
         this.treeFig = figures?.tree ?? null;
         this.ramachandranStats = structuralStats?.ramachandran ?? null;
         this.secondaryStructureStats = structuralStats?.secondaryStructure ?? null;
+        this.tmScoreMatrix = structuralStats?.tmScoreMatrix ?? null;
         this.rmsfValues = rmsfValues || [];
         this.insights = insights || [];
         this.qualityMetrics = qualityMetrics || null;
@@ -413,6 +427,7 @@ export class AnalyticsTab {
         this.renderRamachandranSection();
         this.renderQualityMetricsTable();
         this.renderSecondaryStructureSection();
+        this.renderPairwiseTmScoreTable();
         this.renderRmsfChart();
         this.renderRmsdHeatmap();
         this.renderPhyloTree();
@@ -467,6 +482,36 @@ export class AnalyticsTab {
         this.element.querySelector('#ss-helix-percent').innerText = `${this.secondaryStructureStats.helix_percent.toFixed(1)}%`;
         this.element.querySelector('#ss-sheet-percent').innerText = `${this.secondaryStructureStats.sheet_percent.toFixed(1)}%`;
         this.element.querySelector('#ss-coil-percent').innerText = `${this.secondaryStructureStats.coil_percent.toFixed(1)}%`;
+    }
+
+    // tmScoreMatrix mirrors rmsd_df's { index, columns, data } shape
+    // (both are pandas DataFrames sanitized the same way server-side) - a
+    // symmetric pdb_id x pdb_id matrix, self-comparisons excluded here
+    // since they're always 1.0 and not informative.
+    renderPairwiseTmScoreTable() {
+        const card = this.element.querySelector('#pairwise-tm-score-card');
+        const body = this.element.querySelector('#pairwise-tm-score-table-body');
+        const index = this.tmScoreMatrix?.index;
+        const data = this.tmScoreMatrix?.data;
+
+        if (!index || !data || index.length < 2) {
+            card.classList.add('hidden');
+            return;
+        }
+
+        card.classList.remove('hidden');
+        const rows = [];
+        for (let i = 0; i < index.length; i++) {
+            for (let j = i + 1; j < index.length; j++) {
+                rows.push({ a: index[i], b: index[j], value: data[i][j] });
+            }
+        }
+        body.innerHTML = rows.map(r => `
+            <tr>
+                <td class="py-1 font-mono">${r.a} &harr; ${r.b}</td>
+                <td class="py-1 font-mono">${r.value.toFixed(3)}</td>
+            </tr>
+        `).join('');
     }
 
     renderQualityMetricsTable() {

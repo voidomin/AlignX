@@ -29,6 +29,7 @@ class App {
         this.treeFig = null;
         this.ramachandranStats = null;
         this.secondaryStructureStats = null;
+        this.tmScoreDf = null;
         this.rmsdDf = null;
 
         // A shared run link (see api.js's getShareLink()) is world-readable
@@ -178,7 +179,11 @@ class App {
     // new secondary-structure %helix/%sheet/%coil summary) into one object
     // instead of adding a new positional parameter.
     buildStructuralStats() {
-        return { ramachandran: this.ramachandranStats, secondaryStructure: this.secondaryStructureStats };
+        return {
+            ramachandran: this.ramachandranStats,
+            secondaryStructure: this.secondaryStructureStats,
+            tmScoreMatrix: this.tmScoreDf,
+        };
     }
 
     updateTabContentPane() {
@@ -365,6 +370,7 @@ class App {
             this.treeFig = results.tree_fig;
             this.ramachandranStats = results.ramachandran_stats;
             this.secondaryStructureStats = results.secondary_structure_stats;
+            this.tmScoreDf = results.tm_score_df;
             this.rmsdDf = results.rmsd_df;
 
             // Load 3D Superposition (all N structures)
@@ -445,6 +451,7 @@ class App {
             this.treeFig = null;
             this.ramachandranStats = null;
             this.secondaryStructureStats = null;
+            this.tmScoreDf = null;
             this.rmsdDf = null;
 
             this.workspaceTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
@@ -470,6 +477,7 @@ class App {
             this.treeFig = metadata.results.tree_fig || null;
             this.ramachandranStats = metadata.results.ramachandran_stats || null;
             this.secondaryStructureStats = metadata.results.secondary_structure_stats || null;
+            this.tmScoreDf = metadata.results.tm_score_df || null;
             this.rmsdDf = metadata.results.rmsd_df || null;
         } else {
             stats = metadata.stats || {};
@@ -477,6 +485,7 @@ class App {
             this.treeFig = null;
             this.ramachandranStats = null;
             this.secondaryStructureStats = null;
+            this.tmScoreDf = null;
             this.rmsdDf = null;
         }
 
@@ -540,6 +549,7 @@ class App {
             this.treeFig = null;
             this.ramachandranStats = null;
             this.secondaryStructureStats = null;
+            this.tmScoreDf = null;
             this.rmsdDf = null;
 
             // Reload to a true empty state, not a re-seeded example pair -
