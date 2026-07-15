@@ -1,7 +1,7 @@
 import './style.css';
 import { TopBar } from './components/TopBar';
 import { Viewer3D } from './components/Viewer3D';
-import { OverviewTab } from './components/OverviewTab';
+import { WorkspaceTab } from './components/WorkspaceTab';
 import { LigandTab } from './components/LigandTab';
 import { SequenceTab } from './components/SequenceTab';
 import { AnalyticsTab } from './components/AnalyticsTab';
@@ -10,7 +10,6 @@ import { ComparisonTab } from './components/ComparisonTab';
 import { HistoryPanel } from './components/HistoryPanel';
 import { DashboardTab } from './components/DashboardTab';
 import { SettingsTab } from './components/SettingsTab';
-import { DiscoverTab } from './components/DiscoverTab';
 import { fetchChains, runAlignment, pollJobUntilDone, fetchLigands, getAlignmentReportUrl, isValidPdbId, uploadStructure as apiUploadStructure, fetchRun, setApiKeyOverride } from './api';
 
 class App {
@@ -21,7 +20,7 @@ class App {
         this.chainSelections = {};
         this.pdbMetadata = {};
         this.currentRunId = null;
-        this.activeTab = 'overview'; // 'dashboard' | 'overview' | 'discover' | 'ligands' | 'sequence' | 'analytics' | 'clusters' | 'comparison' | 'history'
+        this.activeTab = 'workspace'; // 'dashboard' | 'workspace' | 'ligands' | 'sequence' | 'analytics' | 'clusters' | 'comparison' | 'history'
         this.currentLigands = [];
         this.isAligning = false;
 
@@ -50,7 +49,7 @@ class App {
 
         this.viewer3D = new Viewer3D();
 
-        this.overviewTab = new OverviewTab({
+        this.workspaceTab = new WorkspaceTab({
             selectedPDBs: this.selectedPDBs,
             chainSelections: this.chainSelections,
             pdbMetadata: this.pdbMetadata,
@@ -98,11 +97,6 @@ class App {
             onQuickStart: (pdbIds) => this.loadQuickStart(pdbIds)
         });
 
-        this.discoverTab = new DiscoverTab({
-            onStructureLoaded: (pdbId) => this.viewer3D.loadSingleStructure(pdbId),
-            onSwitchToOverview: () => this.switchTab('overview'),
-            onHighlightResidues: (chainMapping) => this.viewer3D.highlightResidues(chainMapping)
-        });
         this.settingsTab = new SettingsTab();
     }
 
@@ -186,10 +180,8 @@ class App {
 
         if (this.activeTab === 'dashboard') {
             pane.appendChild(this.dashboardTab.render());
-        } else if (this.activeTab === 'overview') {
-            pane.appendChild(this.overviewTab.render());
-        } else if (this.activeTab === 'discover') {
-            pane.appendChild(this.discoverTab.render());
+        } else if (this.activeTab === 'workspace') {
+            pane.appendChild(this.workspaceTab.render());
         } else if (this.activeTab === 'ligands') {
             pane.appendChild(this.ligandTab.render());
             this.ligandTab.updateLigands(this.currentLigands, this.currentRunId, this.selectedPDBs, this.ligandTab.pocketSimilarity);
@@ -228,7 +220,7 @@ class App {
 
     async loadChainsMetadata() {
         if (this.selectedPDBs.length === 0) return;
-        this.overviewTab.setLoadingChains(true);
+        this.workspaceTab.setLoadingChains(true);
         try {
             const data = await fetchChains(this.selectedPDBs);
             Object.keys(data.chains).forEach(pid => {
@@ -239,11 +231,25 @@ class App {
                     }
                 }
             });
-            this.overviewTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
+            this.workspaceTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
         } catch (err) {
             console.error("Failed to load chain selection data:", err);
         } finally {
-            this.overviewTab.setLoadingChains(false);
+            this.workspaceTab.setLoadingChains(false);
+        }
+    }
+
+    // The 3D viewer reacts to the structure list immediately, decoupled
+    // from any job: exactly 1 structure gets an instant raw-file preview
+    // (fast - no Foldseek involved, unlike the old Discover-mode flow that
+    // only updated the viewer once a slow search job completed); 0 or 2+
+    // structures fall back to the placeholder until a real alignment
+    // (loadSuperposition, from executeAlignment()/reloadPastRun()) replaces it.
+    syncViewerToStructureCount() {
+        if (this.selectedPDBs.length === 1) {
+            this.viewer3D.loadSingleStructure(this.selectedPDBs[0]);
+        } else {
+            this.viewer3D.reset();
         }
     }
 
@@ -253,7 +259,8 @@ class App {
         if (this.selectedPDBs.includes(pdbId)) return;
 
         this.selectedPDBs.push(pdbId);
-        this.overviewTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
+        this.workspaceTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
+        this.syncViewerToStructureCount();
         await this.loadChainsMetadata();
     }
 
@@ -266,7 +273,8 @@ class App {
         const overCap = pdbIds.length - accepted.length;
 
         this.selectedPDBs.push(...accepted);
-        this.overviewTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
+        this.workspaceTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
+        this.syncViewerToStructureCount();
         if (accepted.length > 0) await this.loadChainsMetadata();
 
         return { added: accepted, overCap };
@@ -289,41 +297,39 @@ class App {
             this.chainSelections[structureId] = info.chains[0].id;
         }
         this.selectedPDBs.push(structureId);
-        this.overviewTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
+        this.workspaceTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
+        this.syncViewerToStructureCount();
     }
 
     removePDB(pdbId) {
         this.selectedPDBs = this.selectedPDBs.filter(pid => pid !== pdbId);
         delete this.chainSelections[pdbId];
-        this.overviewTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
+        this.workspaceTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
+        this.syncViewerToStructureCount();
     }
 
     loadQuickStart(pdbIds) {
         this.selectedPDBs = [...pdbIds];
         this.chainSelections = {};
-        this.overviewTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
+        this.workspaceTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
+        this.syncViewerToStructureCount();
         this.loadChainsMetadata();
-        this.switchTab('overview');
+        this.switchTab('workspace');
     }
 
     async executeAlignment() {
-        this.overviewTab.clearValidationMessage();
-        if (this.selectedPDBs.length < 2) {
-            this.overviewTab.showValidationMessage(
-                `You have ${this.selectedPDBs.length} structure${this.selectedPDBs.length === 1 ? '' : 's'} selected — structural alignment needs 2 or more. Looking to explore a single structure on its own?`,
-                'Switch to Discover mode',
-                () => this.switchTab('discover')
-            );
-            return;
-        }
-        if (this.overviewTab.isLoadingChains) {
+        // WorkspaceTab's Run button is hidden below 2 structures and its own
+        // click handler already gates on this - this is just a defensive
+        // backstop against calling executeAlignment() directly.
+        if (this.selectedPDBs.length < 2) return;
+        if (this.workspaceTab.isLoadingChains) {
             // A just-added structure's chain selection hasn't resolved yet;
             // running now would persist an incomplete chain_selection.
             return;
         }
 
         this.setAligningState(true);
-        const params = this.overviewTab.getParameters();
+        const params = this.workspaceTab.getParameters();
 
         try {
             const submission = await runAlignment(
@@ -381,7 +387,7 @@ class App {
 
     setAligningState(isAligning) {
         this.isAligning = isAligning;
-        this.overviewTab.setAligning(isAligning);
+        this.workspaceTab.setAligning(isAligning);
     }
 
     async reloadPastRun(run) {
@@ -405,12 +411,33 @@ class App {
             // Malformed metadata - fall through with the {} default above.
         }
 
-        // Discover runs have no result directory/RMSD matrix to reload -
-        // the full result is stashed in metadata.results at save time, so
-        // reopening one just means handing that back to DiscoverTab.
+        let pids;
+        try {
+            pids = typeof run.pdb_ids === 'string' ? JSON.parse(run.pdb_ids) : run.pdb_ids;
+        } catch {
+            pids = [run.pdb_ids];
+        }
+        this.selectedPDBs = pids;
+
+        // Discover runs have no result directory/RMSD matrix to reload - the
+        // full result is stashed in metadata.results at save time (a single
+        // structure, so pids is a 1-item list here too) - reopening one just
+        // means handing that saved result back to the Workspace tab's
+        // DiscoveryPanel, the same as a live "What is this?" run would.
         if (metadata?.run_type === 'discover') {
-            this.discoverTab.loadSavedResults(metadata.results);
-            this.switchTab('discover');
+            this.currentRunId = null;
+            this.chainSelections = {};
+            this.heatmapFig = null;
+            this.treeFig = null;
+            this.ramachandranStats = null;
+            this.rmsdDf = null;
+
+            this.workspaceTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
+            this.activeTab = 'workspace';
+            this.updateTabContentPane();
+            this.syncViewerToStructureCount();
+            this.workspaceTab.showSavedDiscoveryResults(metadata.results);
+            this.loadChainsMetadata();
             return;
         }
 
@@ -418,17 +445,8 @@ class App {
 
         this.currentRunId = run.id;
 
-        let pids;
-        try {
-            pids = typeof run.pdb_ids === 'string' ? JSON.parse(run.pdb_ids) : run.pdb_ids;
-        } catch {
-            pids = [run.pdb_ids];
-        }
-
-        this.selectedPDBs = pids;
-
         this.chainSelections = metadata.chain_selection || {};
-        
+
         // Cache figures and quality stats from past run
         let stats;
         if (metadata.results) {
@@ -446,9 +464,9 @@ class App {
         }
 
         // Update tabs state
-        this.overviewTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
+        this.workspaceTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
         this.updateTabContentPane();
-        
+
         // Render 3D Superposition (all N structures)
         await this.viewer3D.loadSuperposition(
             run.id,
@@ -500,7 +518,7 @@ class App {
             this.pdbMetadata = {};
             this.currentRunId = null;
             this.currentLigands = [];
-            this.activeTab = 'overview';
+            this.activeTab = 'workspace';
             this.heatmapFig = null;
             this.treeFig = null;
             this.ramachandranStats = null;
@@ -508,10 +526,10 @@ class App {
 
             // Reload to a true empty state, not a re-seeded example pair -
             // "New Workspace" means new/empty, and this is also what
-            // resurfaces the quick-start prompt (OverviewTab's own
+            // resurfaces the quick-start prompt (WorkspaceTab's own
             // empty-state rendering) instead of leaving the user staring
             // at unexplained pre-loaded data.
-            this.overviewTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
+            this.workspaceTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
             this.ligandTab.updateLigands([], null, this.selectedPDBs);
             this.sequenceTab.updateResults(null, null);
             this.analyticsTab.updateResults(null, null, null, null, null, null, []);
@@ -519,7 +537,7 @@ class App {
             this.comparisonTab.updateResults(null);
             this.viewer3D.reset();
 
-            this.switchTab('overview');
+            this.switchTab('workspace');
         }
     }
 

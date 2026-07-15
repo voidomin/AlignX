@@ -287,6 +287,18 @@ export class WorkspaceTab {
         this.discoveryPanel.runFor(pdbId);
     }
 
+    // Reopens a Discover run loaded from the Dashboard/History tab - hands
+    // the saved result straight to the panel instead of re-running Foldseek.
+    showSavedDiscoveryResults(results) {
+        this.discoveryPanelVisible = true;
+        if (!this.element) return;
+        const slot = this.element.querySelector('#workspace-discovery-panel-slot');
+        slot.classList.remove('hidden');
+        slot.innerHTML = '';
+        slot.appendChild(this.discoveryPanel.render());
+        this.discoveryPanel.loadSavedResults(results);
+    }
+
     hideDiscoveryPanel() {
         this.discoveryPanelVisible = false;
         const slot = this.element?.querySelector('#workspace-discovery-panel-slot');
