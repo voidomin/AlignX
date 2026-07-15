@@ -260,8 +260,12 @@ class App {
 
         this.selectedPDBs.push(pdbId);
         this.workspaceTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
-        this.syncViewerToStructureCount();
+        // loadChainsMetadata() is what actually triggers the backend to
+        // download this structure (POST /api/chains -> batch_download) -
+        // syncing the viewer before it resolves would race a fresh
+        // structure's download, 404ing on /api/structure-file.
         await this.loadChainsMetadata();
+        this.syncViewerToStructureCount();
     }
 
     // Same cap config.yaml's core.max_proteins enforces server-side - a batch
@@ -274,8 +278,8 @@ class App {
 
         this.selectedPDBs.push(...accepted);
         this.workspaceTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
-        this.syncViewerToStructureCount();
         if (accepted.length > 0) await this.loadChainsMetadata();
+        this.syncViewerToStructureCount();
 
         return { added: accepted, overCap };
     }
@@ -308,13 +312,13 @@ class App {
         this.syncViewerToStructureCount();
     }
 
-    loadQuickStart(pdbIds) {
+    async loadQuickStart(pdbIds) {
         this.selectedPDBs = [...pdbIds];
         this.chainSelections = {};
         this.workspaceTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
-        this.syncViewerToStructureCount();
-        this.loadChainsMetadata();
         this.switchTab('workspace');
+        await this.loadChainsMetadata();
+        this.syncViewerToStructureCount();
     }
 
     async executeAlignment() {
