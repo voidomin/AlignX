@@ -135,6 +135,24 @@ export async function uploadStructure(file) {
     return res.json();
 }
 
+// Real ab-initio structure prediction directly from a raw amino-acid
+// sequence via ESM Atlas's public ESMFold API - no existing accession
+// needed, unlike every other structure source. Synchronous (not a
+// background job): returns the same {"chains": {...}} shape
+// uploadStructure() does.
+export async function predictFromSequence(sequence) {
+    const res = await fetch(buildUrl('/api/fold-sequence'), {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ sequence })
+    });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Structure prediction failed");
+    }
+    return res.json();
+}
+
 export async function runAlignment(pdbIds, chainSelections, removeWater, removeHeteroatoms) {
     const res = await fetch(buildUrl('/api/jobs/align'), {
         method: 'POST',
@@ -180,11 +198,13 @@ export async function pollJobUntilDone(jobId, { intervalMs = 1500, onTick = null
 // caller-chosen id (typically the pdb_id). Poll the returned job_id with
 // pollJobUntilDone(); the completed job's `aligned_fasta` field is the real
 // gap-padded aligned FASTA text.
-export async function submitClustalOmegaJob(sequences) {
+export async function submitClustalOmegaJob(sequences, webhookUrl) {
+    const body = { sequences };
+    if (webhookUrl) body.webhook_url = webhookUrl;
     const res = await fetch(buildUrl('/api/jobs/clustalo'), {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ sequences })
+        body: JSON.stringify(body)
     });
     if (!res.ok) {
         const errData = await res.json();
@@ -200,11 +220,13 @@ export async function submitClustalOmegaJob(sequences) {
 // take several minutes - poll the returned job_id with pollJobUntilDone()
 // using a generous interval. The completed job's `conservation_profile`
 // field is a list of {position, conservation, num_homologs, most_common}.
-export async function submitConservationJob(sequence) {
+export async function submitConservationJob(sequence, webhookUrl) {
+    const body = { sequence };
+    if (webhookUrl) body.webhook_url = webhookUrl;
     const res = await fetch(buildUrl('/api/jobs/conservation'), {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ sequence })
+        body: JSON.stringify(body)
     });
     if (!res.ok) {
         const errData = await res.json();
@@ -213,9 +235,10 @@ export async function submitConservationJob(sequence) {
     return res.json();
 }
 
-export async function submitDiscoveryJob(pdbId, databases) {
+export async function submitDiscoveryJob(pdbId, databases, webhookUrl) {
     const body = { pdb_id: pdbId };
     if (databases && databases.length > 0) body.databases = databases;
+    if (webhookUrl) body.webhook_url = webhookUrl;
     const res = await fetch(buildUrl('/api/jobs/discover'), {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
@@ -534,6 +557,49 @@ export async function fetchQc(pdbId, runId) {
 // One structure's own CA-CA contact map from a completed run's alignment -
 // see rmsd_calculator.get_structure_contact_map(). Returns either a dense
 // `matrix` or, above the residue cap, a sparse `contacts` list - never both.
+export async function fetchRunsTrend(runIds) {
+    const res = await fetch(buildUrl('/api/runs/trend'), {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ run_ids: runIds }),
+    });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Run trend fetch failed");
+    }
+    return res.json();
+}
+
+export async function fetchMutationTolerance(pdbId, chain) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const params = { pdb_id: pdbId };
+    if (chain) params.chain = assertSafeSegment(chain, 'chain');
+    const res = await fetch(buildUrl('/api/mutation-tolerance', params), { headers: authHeaders() });
+    if (!res.ok) throw new Error("Mutation tolerance fetch failed");
+    return res.json();
+}
+
+export async function fetchCathClassification(pdbId) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const res = await fetch(buildUrl('/api/cath', { pdb_id: pdbId }), { headers: authHeaders() });
+    if (!res.ok) throw new Error("CATH classification fetch failed");
+    return res.json();
+}
+
+export async function fetchAssemblyInfo(pdbId) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const res = await fetch(buildUrl('/api/assembly', { pdb_id: pdbId }), { headers: authHeaders() });
+    if (!res.ok) throw new Error("Assembly info fetch failed");
+    return res.json();
+}
+
+export async function fetchPae(pdbId) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const res = await fetch(buildUrl('/api/pae', { pdb_id: pdbId }), { headers: authHeaders() });
+    if (!res.ok) throw new Error("PAE fetch failed");
+    return res.json();
+}
+
 export async function fetchContactMap(runId, pdbId, threshold) {
     runId = assertSafeSegment(runId, 'runId');
     pdbId = assertSafeSegment(pdbId, 'pdbId');

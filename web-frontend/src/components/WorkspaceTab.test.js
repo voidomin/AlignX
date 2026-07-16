@@ -11,9 +11,11 @@ vi.mock('../api.js', () => ({
     getDiscoveryCitationsUrl: vi.fn((runId) => `http://mock/api/discover/citations?run_id=${runId}`),
     fetchValidation: vi.fn(),
     fetchQc: vi.fn(),
+    fetchCathClassification: vi.fn(),
+    fetchAssemblyInfo: vi.fn(),
 }));
 
-import { submitDiscoveryJob, pollJobUntilDone, fetchValidation, fetchQc } from '../api.js';
+import { submitDiscoveryJob, pollJobUntilDone, fetchValidation, fetchQc, fetchCathClassification, fetchAssemblyInfo } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new WorkspaceTab({
@@ -23,6 +25,7 @@ function makeTab(overrides = {}) {
         onAddPDB: vi.fn(),
         onAddManyPDBs: vi.fn().mockResolvedValue({ added: [], overCap: 0 }),
         onUploadStructure: vi.fn().mockResolvedValue(undefined),
+        onPredictFromSequence: vi.fn().mockResolvedValue(undefined),
         onRemovePDB: vi.fn(),
         onChainSelection: vi.fn(),
         onRunAlignment: vi.fn(),
@@ -260,6 +263,190 @@ describe('WorkspaceTab', () => {
             tab.updateState(['4HHB'], {}, { '4HHB': { chains: [{ id: 'A', residue_count: 141 }], source: 'pdb' } });
 
             expect(fetchValidation).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('CATH classification badge', () => {
+        function makePdbTab(overrides = {}) {
+            fetchValidation.mockResolvedValue({ pdb_id: '4HHB', validation: null });
+            return makeTab({
+                selectedPDBs: ['4HHB'],
+                pdbMetadata: {
+                    '4HHB': { chains: [{ id: 'A', residue_count: 141 }], source: 'pdb' },
+                },
+                ...overrides,
+            });
+        }
+
+        it('shows a "checking" placeholder immediately, then the classification once the fetch resolves', async () => {
+            let resolveFetch;
+            fetchCathClassification.mockReturnValue(new Promise(r => { resolveFetch = r; }));
+            const tab = makePdbTab();
+            tab.render();
+
+            const badge = tab.element.querySelector('#cath-badge-4HHB');
+            expect(badge.textContent).toBe('Checking CATH classification…');
+
+            resolveFetch({
+                pdb_id: '4HHB',
+                domains: [
+                    { chain_id: 'A', domain: '4hhbA00', classification: '1.10.490.10' },
+                    { chain_id: 'B', domain: '4hhbB00', classification: '1.10.490.10' },
+                ],
+            });
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(badge.textContent).toBe('CATH 1.10.490.10');
+        });
+
+        it('shows a "+N more" suffix when more than one distinct classification exists', async () => {
+            fetchCathClassification.mockResolvedValue({
+                pdb_id: '1ABC',
+                domains: [
+                    { chain_id: 'A', domain: '1abcA00', classification: '1.10.490.10' },
+                    { chain_id: 'A', domain: '1abcA01', classification: '2.40.50.140' },
+                ],
+            });
+            const tab = makePdbTab();
+            tab.render();
+
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#cath-badge-4HHB').textContent)
+                .toBe('CATH 1.10.490.10 (+1 more)');
+        });
+
+        it('shows a graceful message when no classification is available', async () => {
+            fetchCathClassification.mockResolvedValue({ pdb_id: '4HHB', domains: [] });
+            const tab = makePdbTab();
+            tab.render();
+
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#cath-badge-4HHB').textContent)
+                .toBe('No CATH classification available');
+        });
+
+        it('shows a graceful message when the fetch itself fails', async () => {
+            fetchCathClassification.mockRejectedValue(new Error('network down'));
+            const tab = makePdbTab();
+            tab.render();
+
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#cath-badge-4HHB').textContent)
+                .toBe('No CATH classification available');
+        });
+
+        it('omits the badge entirely for non-"pdb"-source structures', () => {
+            fetchCathClassification.mockClear();
+            const tab = makeTab({
+                selectedPDBs: ['AF-P69905-F1'],
+                pdbMetadata: { 'AF-P69905-F1': { chains: [{ id: 'A', residue_count: 141 }], source: 'alphafold' } },
+            });
+            tab.render();
+
+            expect(tab.element.querySelector('.pdb-cath-badge')).toBeNull();
+            expect(fetchCathClassification).not.toHaveBeenCalled();
+        });
+
+        it('only fetches once per structure across re-renders', async () => {
+            fetchCathClassification.mockResolvedValue({ pdb_id: '4HHB', domains: [] });
+            const tab = makePdbTab();
+            tab.render();
+            await Promise.resolve();
+            await Promise.resolve();
+            fetchCathClassification.mockClear();
+
+            tab.updateState(['4HHB'], {}, { '4HHB': { chains: [{ id: 'A', residue_count: 141 }], source: 'pdb' } });
+
+            expect(fetchCathClassification).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('oligomeric assembly badge', () => {
+        function makePdbTab(overrides = {}) {
+            fetchValidation.mockResolvedValue({ pdb_id: '4HHB', validation: null });
+            fetchCathClassification.mockResolvedValue({ pdb_id: '4HHB', domains: [] });
+            return makeTab({
+                selectedPDBs: ['4HHB'],
+                pdbMetadata: {
+                    '4HHB': { chains: [{ id: 'A', residue_count: 141 }], source: 'pdb' },
+                },
+                ...overrides,
+            });
+        }
+
+        it('shows a "checking" placeholder immediately, then the oligomeric state once the fetch resolves', async () => {
+            let resolveFetch;
+            fetchAssemblyInfo.mockReturnValue(new Promise(r => { resolveFetch = r; }));
+            const tab = makePdbTab();
+            tab.render();
+
+            const badge = tab.element.querySelector('#assembly-badge-4HHB');
+            expect(badge.textContent).toBe('Checking assembly state…');
+
+            resolveFetch({
+                pdb_id: '4HHB',
+                assembly: { oligomeric_count: 4, oligomeric_details: 'tetrameric' },
+            });
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(badge.textContent).toBe('Tetrameric');
+        });
+
+        it('shows a graceful message when no assembly state is available', async () => {
+            fetchAssemblyInfo.mockResolvedValue({ pdb_id: '4HHB', assembly: null });
+            const tab = makePdbTab();
+            tab.render();
+
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#assembly-badge-4HHB').textContent)
+                .toBe('No assembly state available');
+        });
+
+        it('shows a graceful message when the fetch itself fails', async () => {
+            fetchAssemblyInfo.mockRejectedValue(new Error('network down'));
+            const tab = makePdbTab();
+            tab.render();
+
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#assembly-badge-4HHB').textContent)
+                .toBe('No assembly state available');
+        });
+
+        it('omits the badge entirely for non-"pdb"-source structures', () => {
+            fetchAssemblyInfo.mockClear();
+            const tab = makeTab({
+                selectedPDBs: ['AF-P69905-F1'],
+                pdbMetadata: { 'AF-P69905-F1': { chains: [{ id: 'A', residue_count: 141 }], source: 'alphafold' } },
+            });
+            tab.render();
+
+            expect(tab.element.querySelector('.pdb-assembly-badge')).toBeNull();
+            expect(fetchAssemblyInfo).not.toHaveBeenCalled();
+        });
+
+        it('only fetches once per structure across re-renders', async () => {
+            fetchAssemblyInfo.mockResolvedValue({ pdb_id: '4HHB', assembly: null });
+            const tab = makePdbTab();
+            tab.render();
+            await Promise.resolve();
+            await Promise.resolve();
+            fetchAssemblyInfo.mockClear();
+
+            tab.updateState(['4HHB'], {}, { '4HHB': { chains: [{ id: 'A', residue_count: 141 }], source: 'pdb' } });
+
+            expect(fetchAssemblyInfo).not.toHaveBeenCalled();
         });
     });
 
@@ -667,6 +854,79 @@ describe('WorkspaceTab', () => {
             expect(row.querySelector('script')).toBeNull();
             expect(row.querySelector('.pdb-meta-line').textContent)
                 .toContain('<script>alert(1)</script>.pdb');
+        });
+    });
+
+    describe('predict from sequence', () => {
+        it('clicking "Predict from sequence" reveals the sequence input', () => {
+            const tab = makeTab();
+            tab.render();
+
+            const container = tab.element.querySelector('#workspace-predict-container');
+            expect(container.classList.contains('hidden')).toBe(true);
+
+            tab.element.querySelector('#workspace-toggle-predict-btn').click();
+
+            expect(container.classList.contains('hidden')).toBe(false);
+        });
+
+        it('rejects a sequence shorter than 10 residues without calling the callback', async () => {
+            const onPredictFromSequence = vi.fn();
+            const tab = makeTab({ onPredictFromSequence });
+            tab.render();
+
+            tab.element.querySelector('#workspace-predict-sequence-input').value = 'MV';
+            tab.element.querySelector('#workspace-predict-btn').click();
+            await Promise.resolve();
+
+            expect(onPredictFromSequence).not.toHaveBeenCalled();
+            expect(tab.element.querySelector('#workspace-predict-feedback').innerText)
+                .toBe('A sequence of at least 10 residues is required.');
+        });
+
+        it('calls onPredictFromSequence with the normalized sequence and reports success', async () => {
+            const onPredictFromSequence = vi.fn().mockResolvedValue(undefined);
+            const tab = makeTab({ onPredictFromSequence });
+            tab.render();
+
+            tab.element.querySelector('#workspace-predict-sequence-input').value = ' mvhltpeek savtalwgkv nv ';
+            tab.element.querySelector('#workspace-predict-btn').click();
+            await onPredictFromSequence.mock.results[0].value;
+
+            expect(onPredictFromSequence).toHaveBeenCalledWith('MVHLTPEEKSAVTALWGKVNV');
+            expect(tab.element.querySelector('#workspace-predict-feedback').innerText)
+                .toBe('Structure predicted for 21 residues.');
+            expect(tab.element.querySelector('#workspace-predict-sequence-input').value).toBe('');
+        });
+
+        it('reports the error message when prediction fails', async () => {
+            const onPredictFromSequence = vi.fn().mockRejectedValue(new Error('ESMFold returned status 504'));
+            const tab = makeTab({ onPredictFromSequence });
+            tab.render();
+
+            tab.element.querySelector('#workspace-predict-sequence-input').value = 'MVHLTPEEKSAVTALWGKVNV';
+            tab.element.querySelector('#workspace-predict-btn').click();
+            await onPredictFromSequence.mock.results[0].value.catch(() => {});
+
+            expect(tab.element.querySelector('#workspace-predict-feedback').innerText)
+                .toBe('ESMFold returned status 504');
+        });
+
+        it('disables the predict button while a prediction is in flight', async () => {
+            let resolvePredict;
+            const onPredictFromSequence = vi.fn(() => new Promise(r => { resolvePredict = r; }));
+            const tab = makeTab({ onPredictFromSequence });
+            tab.render();
+
+            tab.element.querySelector('#workspace-predict-sequence-input').value = 'MVHLTPEEKSAVTALWGKVNV';
+            const btn = tab.element.querySelector('#workspace-predict-btn');
+            btn.click();
+            await Promise.resolve();
+
+            expect(btn.disabled).toBe(true);
+            resolvePredict();
+            await onPredictFromSequence.mock.results[0].value;
+            expect(btn.disabled).toBe(false);
         });
     });
 

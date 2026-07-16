@@ -38,8 +38,11 @@ SIFTS_BASE_URL = "https://www.ebi.ac.uk/pdbe/api/mappings/uniprot"
 # each segment's author_residue_number range) needed to translate a UniProt-
 # numbered domain/feature location onto a PDB entry's own author numbering.
 PDBE_ALL_MAPPINGS_BASE_URL = "https://www.ebi.ac.uk/pdbe/api/mappings"
+PDBE_CATH_MAPPINGS_BASE_URL = "https://www.ebi.ac.uk/pdbe/api/mappings/cath_b"
+RCSB_ASSEMBLY_BASE_URL = "https://data.rcsb.org/rest/v1/core/assembly"
 GMGC_BASE_URL = "https://gmgc.embl.de/api/v1.0"
 UNIPROT_BASE_URL = "https://rest.uniprot.org/uniprotkb"
+ALPHAFOLD_FILES_BASE_URL = "https://alphafold.ebi.ac.uk/files"
 # NCBI's E-utilities work keyless at 3 req/s - fast enough for one
 # interactive mutation lookup (a single esearch+esummary pair), no
 # dedicated rate limiter needed the way the batch STRING/Foldseek fetches
@@ -67,6 +70,12 @@ _JSON_ACCEPT_HEADERS = {"Accept": "application/json"}
 # Foldseek's AlphaFold DB hits are named "AF-{UniProt}-F{fragment}[-v{n}] ...",
 # which embeds a UniProt accession directly - free to extract, no lookup.
 _AFDB_TARGET_PATTERN = re.compile(r"^AF-([A-Z0-9]+)-F\d+", re.IGNORECASE)
+# Compare-mode's own AlphaFold workspace IDs are "AF-{UniProt}-F{fragment}"
+# (see pdb_manager.py's _fetch_alphafold_response) - same accession+fragment
+# shape as a Foldseek AFDB target, but with no trailing "-model_v6 ..." to
+# strip, so this needs its own pattern rather than reusing
+# _AFDB_TARGET_PATTERN (which anchors on that trailing text being absent).
+_ALPHAFOLD_ID_PATTERN = re.compile(r"^AF-([A-Z0-9]+)-(F\d+)", re.IGNORECASE)
 
 # pdb100 hits are named "{pdbid}-assembly{n}.cif.gz_{chain} {title}", e.g.
 # "1ab1-assembly1.cif.gz_A SI FORM CRAMBIN" or, for a specific biological
@@ -809,6 +818,186 @@ class AnnotationAggregator:
             f"uniprot_features:{accession}", "uniprot_features", _fetch
         )
 
+    @staticmethod
+    def _parse_alphafold_id(pdb_id: str) -> Optional[Tuple[str, str]]:
+        """Pulls (uniprot_id, fragment) out of a Compare-mode AlphaFold
+        workspace ID, e.g. "AF-P69905-F1" -> ("P69905", "F1"). None for
+        anything that isn't AlphaFold-sourced."""
+        match = _ALPHAFOLD_ID_PATTERN.match((pdb_id or "").strip())
+        if not match:
+            return None
+        return match.group(1).upper(), match.group(2).upper()
+
+    async def fetch_predicted_aligned_error(
+        self, pdb_id: str, client: httpx.AsyncClient
+    ) -> Optional[List[List[float]]]:
+        """Real per-residue-pair confidence matrix for an AlphaFold model -
+        a different signal than per-residue pLDDT (which says how
+        confident AlphaFold is in *one* residue's own position, not how
+        confident it is in that residue's position *relative to* another,
+        which is what actually matters for judging whether two domains are
+        correctly oriented relative to each other). Only exists for
+        AlphaFold-sourced structures; returns None for anything else or if
+        no matching PAE file is found (tries the same version fallback
+        chain pdb_manager.py's own AlphaFold downloader does, since not
+        every entry has been reprocessed onto the latest model version)."""
+        parsed = self._parse_alphafold_id(pdb_id)
+        if not parsed:
+            return None
+        uniprot_id, fragment = parsed
+
+        async def _fetch() -> Optional[List[List[float]]]:
+            for v in ("6", "5", "4", "3", "2", "1"):
+                url = (
+                    f"{ALPHAFOLD_FILES_BASE_URL}/AF-{uniprot_id}-{fragment}"
+                    f"-predicted_aligned_error_v{v}.json"
+                )
+                try:
+                    response = await client.get(url)
+                except httpx.HTTPError as e:
+                    logger.warning(
+                        f"PAE lookup failed for {sanitize_for_log(pdb_id)}: {e}"
+                    )
+                    return None
+                if response.status_code == 200:
+                    payload = response.json()
+                    entry = payload[0] if payload else {}
+                    return entry.get("predicted_aligned_error")
+            return None
+
+        return await self._get_or_fetch(f"pae:{uniprot_id}:{fragment}", "pae", _fetch)
+
+    async def fetch_alphamissense_scores(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> Dict[str, Dict[str, Any]]:
+        """Real per-substitution pathogenicity scores from AlphaMissense,
+        keyed by UniProt position (as a string, since a JSON round-trip
+        through the annotation cache would silently coerce int keys to
+        strings anyway - keeping them strings from the start avoids a
+        cache-hit-vs-miss inconsistency): {"132": {"wildtype": "R",
+        "scores": {"A": {"pathogenicity": 0.42, "class": "Amb"}, ...}}}.
+        AlphaMissense was only ever published for a protein's first
+        AlphaFold fragment (it doesn't follow AlphaFold's multi-fragment
+        split for proteins over ~2700 residues), so this is looked up by
+        accession alone - works for any structure with a resolved
+        accession (see _resolve_structure_accession), not just an
+        AlphaFold-sourced one the way fetch_predicted_aligned_error is."""
+
+        async def _fetch() -> Dict[str, Dict[str, Any]]:
+            url = f"{ALPHAFOLD_FILES_BASE_URL}/AF-{accession}-F1-aa-substitutions.csv"
+            try:
+                response = await client.get(url)
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"AlphaMissense lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return {}
+            if response.status_code != 200:
+                return {}
+
+            by_position: Dict[str, Dict[str, Any]] = {}
+            for line in response.text.splitlines()[1:]:  # skip the header row
+                parts = line.split(",")
+                if len(parts) != 3:
+                    continue
+                variant, score_str, variant_class = parts
+                if len(variant) < 3:
+                    continue
+                wildtype, alt = variant[0], variant[-1]
+                try:
+                    position = str(int(variant[1:-1]))
+                    pathogenicity = float(score_str)
+                except ValueError:
+                    continue
+                entry = by_position.setdefault(
+                    position, {"wildtype": wildtype, "scores": {}}
+                )
+                entry["scores"][alt] = {
+                    "pathogenicity": pathogenicity,
+                    "class": variant_class,
+                }
+            return by_position
+
+        return await self._get_or_fetch(
+            f"alphamissense:{accession}", "alphamissense", _fetch
+        )
+
+    async def fetch_cath_classification(
+        self, pdb_id: str, client: httpx.AsyncClient
+    ) -> List[Dict[str, str]]:
+        """Real CATH fold classifications for a real PDB entry, via PDBe's
+        cath_b mappings endpoint - a standardized fold-family label
+        independent of Foldseek's own structural-similarity search.
+        Returns one entry per (chain, domain), e.g. [{"chain_id": "A",
+        "domain": "4hhbA00", "classification": "1.10.490.10"}, ...] since
+        a multi-domain chain can have more than one classification.
+        AlphaFold/SWISS-MODEL/ESM Atlas structures have no CATH mapping at
+        all (CATH only classifies real experimentally-solved structures) -
+        callers should only invoke this for source == "pdb"."""
+
+        async def _fetch() -> List[Dict[str, str]]:
+            try:
+                response = await client.get(
+                    f"{PDBE_CATH_MAPPINGS_BASE_URL}/{pdb_id.lower()}",
+                    headers=_JSON_ACCEPT_HEADERS,
+                )
+                if response.status_code != 200:
+                    return []
+                entry = response.json().get(pdb_id.lower(), {})
+                domains = []
+                for classification, details in (entry.get("CATH-B") or {}).items():
+                    for mapping in details.get("mappings") or []:
+                        domains.append(
+                            {
+                                "chain_id": mapping.get("chain_id"),
+                                "domain": mapping.get("domain"),
+                                "classification": classification,
+                            }
+                        )
+                return domains
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"CATH classification lookup failed for {sanitize_for_log(pdb_id)}: {e}"
+                )
+                return []
+
+        return await self._get_or_fetch(f"cath:{pdb_id}", "cath", _fetch)
+
+    async def fetch_assembly_info(
+        self, pdb_id: str, client: httpx.AsyncClient
+    ) -> Optional[Dict[str, Any]]:
+        """Real oligomeric-state metadata for a real PDB entry's first
+        biological assembly, via RCSB's assembly API - e.g. {"oligomeric_
+        count": 4, "oligomeric_details": "tetrameric"} for 4HHB. Deliberately
+        metadata-only (not a new interface-analysis engine - that's
+        InterfaceAnalyzer's job, see calculate_interface()). Only meaningful
+        for source == "pdb"; returns None if nothing resolves."""
+
+        async def _fetch() -> Optional[Dict[str, Any]]:
+            try:
+                response = await client.get(
+                    f"{RCSB_ASSEMBLY_BASE_URL}/{pdb_id.lower()}/1",
+                    headers=_JSON_ACCEPT_HEADERS,
+                )
+                if response.status_code != 200:
+                    return None
+                assembly = response.json().get("pdbx_struct_assembly") or {}
+                oligomeric_count = assembly.get("oligomeric_count")
+                oligomeric_details = assembly.get("oligomeric_details")
+                if oligomeric_count is None and oligomeric_details is None:
+                    return None
+                return {
+                    "oligomeric_count": oligomeric_count,
+                    "oligomeric_details": oligomeric_details,
+                }
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"RCSB assembly lookup failed for {sanitize_for_log(pdb_id)}: {e}"
+                )
+                return None
+
+        return await self._get_or_fetch(f"assembly:{pdb_id}", "assembly", _fetch)
+
     def _try_get_cached_go_name(self, gid: str) -> Optional[str]:
         if not self.cache_db:
             return None
@@ -1062,6 +1251,51 @@ class AnnotationAggregator:
             deduped_terms.append(term)
         result["go_terms"] = deduped_terms
         result["reactome_pathways"] = reactome_pathways
+        return result
+
+    async def aggregate_mutation_tolerance(
+        self,
+        pdb_id: str,
+        chain: Optional[str],
+        source: str,
+        client: httpx.AsyncClient,
+    ) -> Dict[str, Any]:
+        """Real per-residue mutation-tolerance overlay for one Compare-mode
+        structure - the mean AlphaMissense pathogenicity across all 19
+        possible substitutions at each position, translated onto this
+        structure's own residue numbering. Same accession resolution and
+        AlphaFold-1:1-vs-real-SIFTS-mapping split _attach_domain_highlight_
+        chains() already uses; SWISS-MODEL/ESM Atlas structures correctly
+        get nothing back, same scope those methods already have."""
+        accession = await self._resolve_structure_accession(
+            pdb_id, chain, source, client, None
+        )
+        result: Dict[str, Any] = {"accession": accession, "per_residue_average": {}}
+        if not accession:
+            return result
+
+        scores = await self.fetch_alphamissense_scores(accession, client)
+        if not scores:
+            return result
+
+        averages = {
+            position: sum(s["pathogenicity"] for s in entry["scores"].values())
+            / len(entry["scores"])
+            for position, entry in scores.items()
+            if entry.get("scores")
+        }
+
+        if source == "alphafold":
+            result["per_residue_average"] = averages
+        elif source == "pdb" and chain:
+            residue_map = await self.resolve_uniprot_residue_mapping(
+                pdb_id, chain, client
+            )
+            result["per_residue_average"] = {
+                str(author_resi): averages[str(uniprot_pos)]
+                for uniprot_pos, author_resi in residue_map.items()
+                if str(uniprot_pos) in averages
+            }
         return result
 
     @staticmethod

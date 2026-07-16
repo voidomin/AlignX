@@ -1,4 +1,4 @@
-import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact } from '../api';
+import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae } from '../api';
 import { renderDomainList, renderGoTermList, renderFeatureList } from '../utils/annotationRenderers';
 
 // Renders one insight string's markdown-lite **bold** segments as real
@@ -133,6 +133,18 @@ export class AnalyticsTab {
                             <tbody id="pairwise-tm-score-table-body"></tbody>
                         </table>
                     </div>
+                    <div class="flex flex-col gap-2 border-t border-border-subtle pt-4">
+                        <span class="font-label-sm text-label-sm text-secondary uppercase">Predicted aligned error (AlphaFold structures only)</span>
+                        <div class="flex gap-2 items-center">
+                            <select id="pae-pdb-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm"></select>
+                            <button id="pae-load-btn" class="px-3 py-1 rounded-md bg-accent-muted text-accent font-label-sm text-label-sm">Load</button>
+                        </div>
+                        <div id="pae-plotly" class="w-full h-[240px]">
+                            <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                                Select an AlphaFold structure and load to view its per-residue-pair confidence.
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Residue Fluctuation (Plotly Line Chart) -->
@@ -190,10 +202,22 @@ export class AnalyticsTab {
                 </div>
 
                 <!-- Automated Insights (plain-language summary bullets) -->
-                <div data-panel="insights" class="border border-border rounded-lg p-4 shrink-0 min-h-[320px]">
+                <div data-panel="insights" class="border border-border rounded-lg p-4 shrink-0 min-h-[320px] flex flex-col gap-4">
                     <ul id="analytics-insights-list" class="flex flex-col gap-2"></ul>
                     <div id="analytics-insights-empty" class="flex items-center justify-center h-full text-secondary font-body-sm">
                         Run alignment to display automated insights.
+                    </div>
+
+                    <div class="flex flex-col gap-2 border-t border-border-subtle pt-4">
+                        <span class="font-label-sm text-label-sm text-secondary uppercase">Describe the difference between two structures</span>
+                        <div class="flex gap-2 items-center">
+                            <select id="diff-narrative-pdb-a-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm"></select>
+                            <select id="diff-narrative-pdb-b-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm"></select>
+                            <button id="diff-narrative-load-btn" class="px-3 py-1 rounded-md bg-accent-muted text-accent font-label-sm text-label-sm">Describe</button>
+                        </div>
+                        <p id="diff-narrative-text" class="font-body-sm text-body-sm text-secondary">
+                            Select two structures above to get a plain-English summary of how they differ.
+                        </p>
                     </div>
                 </div>
 
@@ -237,13 +261,23 @@ export class AnalyticsTab {
         this.setupSubTabs();
         this.setupAnnotationsPicker();
         this.setupContactMapControls();
+        this.setupPaeControls();
+        this.setupDiffNarrativeControls();
         this.renderVisuals();
         return div;
+    }
+
+    setupDiffNarrativeControls() {
+        this.element.querySelector('#diff-narrative-load-btn').addEventListener('click', () => this.describeStructureDiff());
     }
 
     setupContactMapControls() {
         this.element.querySelector('#contact-map-load-btn').addEventListener('click', () => this.loadContactMap());
         this.element.querySelector('#diff-distance-load-btn').addEventListener('click', () => this.loadDifferenceDistance());
+    }
+
+    setupPaeControls() {
+        this.element.querySelector('#pae-load-btn').addEventListener('click', () => this.loadPae());
     }
 
     setupSubTabs() {
@@ -554,6 +588,8 @@ export class AnalyticsTab {
         this.renderRmsfChart();
         this.renderRmsdHeatmap();
         this.populateContactMapSelectors();
+        this.populatePaeSelector();
+        this.populateDiffNarrativeSelectors();
         this.renderPhyloTree();
         this.renderInsightsList();
 
@@ -782,6 +818,163 @@ export class AnalyticsTab {
         if (pairSelects[1] && this.structures.length > 1 && pairSelects[0].value === pairSelects[1].value) {
             pairSelects[1].value = this.structures[1].pdbId;
         }
+    }
+
+    // PAE only exists for AlphaFold-sourced structures (see
+    // AnnotationAggregator.fetch_predicted_aligned_error) - the workspace
+    // ID format ("AF-{UniProt}-F{fragment}") is enough to tell without
+    // needing each structure's source database passed down separately.
+    populatePaeSelector() {
+        const select = this.element.querySelector('#pae-pdb-select');
+        const previousValue = select.value;
+        select.innerHTML = "";
+        this.structures
+            .filter(({ pdbId }) => pdbId.toUpperCase().startsWith('AF-'))
+            .forEach(({ pdbId }) => {
+                const opt = document.createElement('option');
+                opt.value = pdbId;
+                opt.textContent = pdbId;
+                select.appendChild(opt);
+            });
+        if ([...select.options].some(opt => opt.value === previousValue)) {
+            select.value = previousValue;
+        }
+    }
+
+    async loadPae() {
+        const pdbId = this.element.querySelector('#pae-pdb-select').value;
+        const div = this.element.querySelector('#pae-plotly');
+        if (!pdbId) return;
+
+        div.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Loading PAE&hellip;</div>`;
+        try {
+            const data = await fetchPae(pdbId);
+            this.renderPaeHeatmap(data);
+        } catch (err) {
+            console.error("Failed to load PAE:", err);
+            div.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">No PAE data available for this structure.</div>`;
+        }
+    }
+
+    renderPaeHeatmap(data) {
+        const div = this.element.querySelector('#pae-plotly');
+        if (!div) return;
+
+        div.innerHTML = "";
+        const trace = {
+            z: data.pae,
+            type: 'heatmap',
+            // PAE is an error metric in Angstroms - low (blue) is
+            // confident, high (red) is not, the reverse sense of a
+            // similarity/contact heatmap's colorscale.
+            colorscale: [[0, '#3E5C9A'], [0.5, '#C9A063'], [1, '#B23A3A']],
+            showscale: true,
+        };
+        const layout = {
+            height: 240,
+            margin: { l: 40, r: 10, t: 10, b: 30 },
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            font: { family: "Inter, sans-serif", size: 10, color: "#A79E8E" },
+            yaxis: { autorange: 'reversed' },
+        };
+        Plotly.newPlot(div, [trace], layout, { responsive: true, displayModeBar: false });
+    }
+
+    // Same picker-population pattern as populateContactMapSelectors, for
+    // the "describe the difference between two structures" narrative
+    // below - reuses data already loaded into this tab (heatmapFig,
+    // tmScoreMatrix), no new fetch needed.
+    populateDiffNarrativeSelectors() {
+        const selects = [
+            this.element.querySelector('#diff-narrative-pdb-a-select'),
+            this.element.querySelector('#diff-narrative-pdb-b-select'),
+        ];
+        selects.forEach(select => {
+            const previousValue = select.value;
+            select.innerHTML = "";
+            this.structures.forEach(({ pdbId }) => {
+                const opt = document.createElement('option');
+                opt.value = pdbId;
+                opt.textContent = pdbId;
+                select.appendChild(opt);
+            });
+            if (this.structures.some(s => s.pdbId === previousValue)) {
+                select.value = previousValue;
+            }
+        });
+        if (this.structures.length > 1 && selects[0].value === selects[1].value) {
+            selects[1].value = this.structures[1].pdbId;
+        }
+    }
+
+    // Looks up the real RMSD value for a structure pair out of the same
+    // Plotly heatmap trace already rendered above (server-built via
+    // rmsd_analyzer.generate_plotly_heatmap - z/x/y arrays, not a
+    // separate fetch).
+    _rmsdFor(pdbIdA, pdbIdB) {
+        const trace = this.heatmapFig?.data?.[0];
+        if (!trace?.z || !trace?.x || !trace?.y) return null;
+        const rowIdx = trace.y.indexOf(pdbIdA);
+        const colIdx = trace.x.indexOf(pdbIdB);
+        if (rowIdx === -1 || colIdx === -1) return null;
+        const value = trace.z[rowIdx]?.[colIdx];
+        return typeof value === 'number' ? value : null;
+    }
+
+    // Independent tmtools-computed pairwise TM-score (tmScoreMatrix), not
+    // the Mustang-column-based per-structure score in qualityMetrics.
+    _tmScoreFor(pdbIdA, pdbIdB) {
+        const matrix = this.tmScoreMatrix;
+        if (!matrix?.data || !matrix?.index || !matrix?.columns) return null;
+        const rowIdx = matrix.index.indexOf(pdbIdA);
+        const colIdx = matrix.columns.indexOf(pdbIdB);
+        if (rowIdx === -1 || colIdx === -1) return null;
+        const value = matrix.data[rowIdx]?.[colIdx];
+        return typeof value === 'number' ? value : null;
+    }
+
+    describeStructureDiff() {
+        const pdbIdA = this.element.querySelector('#diff-narrative-pdb-a-select').value;
+        const pdbIdB = this.element.querySelector('#diff-narrative-pdb-b-select').value;
+        const textEl = this.element.querySelector('#diff-narrative-text');
+        if (!textEl) return;
+
+        if (!pdbIdA || !pdbIdB || pdbIdA === pdbIdB) {
+            textEl.textContent = "Select two different structures to compare.";
+            return;
+        }
+
+        const rmsd = this._rmsdFor(pdbIdA, pdbIdB);
+        if (rmsd === null) {
+            textEl.textContent = "No RMSD data available for this pair yet - run alignment first.";
+            return;
+        }
+
+        let rmsdSentence;
+        if (rmsd < 2.0) {
+            rmsdSentence = `${pdbIdA} and ${pdbIdB} are structurally very similar (${rmsd.toFixed(2)} Å RMSD).`;
+        } else if (rmsd <= 5.0) {
+            rmsdSentence = `${pdbIdA} and ${pdbIdB} show moderate structural divergence (${rmsd.toFixed(2)} Å RMSD).`;
+        } else {
+            rmsdSentence = `${pdbIdA} and ${pdbIdB} are substantially different in shape (${rmsd.toFixed(2)} Å RMSD).`;
+        }
+
+        const tmScore = this._tmScoreFor(pdbIdA, pdbIdB);
+        let tmSentence = "";
+        if (tmScore !== null) {
+            // Standard TM-score interpretation cutoffs (Zhang & Skolnick):
+            // >0.5 indicates the same fold; below that, likely different folds.
+            if (tmScore > 0.9) {
+                tmSentence = ` Their independent TM-score of ${tmScore.toFixed(3)} confirms the same fold with high confidence.`;
+            } else if (tmScore >= 0.5) {
+                tmSentence = ` Their independent TM-score of ${tmScore.toFixed(3)} still indicates the same overall fold.`;
+            } else {
+                tmSentence = ` Their independent TM-score of ${tmScore.toFixed(3)} suggests these may not share the same fold at all, despite the RMSD above.`;
+            }
+        }
+
+        textEl.textContent = rmsdSentence + tmSentence;
     }
 
     async loadContactMap() {

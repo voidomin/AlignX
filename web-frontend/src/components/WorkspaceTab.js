@@ -1,4 +1,4 @@
-import { fetchSuggestions, isValidPdbId, fetchValidation, fetchQc } from '../api';
+import { fetchSuggestions, isValidPdbId, fetchValidation, fetchQc, fetchCathClassification, fetchAssemblyInfo } from '../api';
 import { escapeHtml } from '../escapeHtml';
 import { QUICK_START_EXAMPLES } from '../quickStartExamples';
 import { DiscoveryPanel } from './DiscoveryPanel';
@@ -26,6 +26,7 @@ export class WorkspaceTab {
         this.onAddPDB = props.onAddPDB;
         this.onAddManyPDBs = props.onAddManyPDBs;
         this.onUploadStructure = props.onUploadStructure;
+        this.onPredictFromSequence = props.onPredictFromSequence;
         this.onRemovePDB = props.onRemovePDB;
         this.onChainSelection = props.onChainSelection;
         this.onRunAlignment = props.onRunAlignment;
@@ -35,6 +36,8 @@ export class WorkspaceTab {
         this.isUploading = false;
         this.suggestTimeout = null;
         this.batchInputVisible = false;
+        this.predictInputVisible = false;
+        this.isPredicting = false;
         this.discoveryPanelVisible = false;
         this.discoveryPanel = new DiscoveryPanel({
             onClose: () => this.hideDiscoveryPanel(),
@@ -46,6 +49,14 @@ export class WorkspaceTab {
         // yet fetched, null = fetched but no report available.
         this.validationCache = {};
         this._validationLoading = new Set();
+        // CATH fold classification is only meaningful for real PDB entries
+        // too - same lazy-per-card fetch/cache shape as validation above.
+        this.cathCache = {};
+        this._cathLoading = new Set();
+        // Real oligomeric-state metadata (e.g. "tetrameric") - same shape
+        // again, metadata display only, not a new interface-analysis engine.
+        this.assemblyCache = {};
+        this._assemblyLoading = new Set();
     }
 
     render() {
@@ -74,6 +85,7 @@ export class WorkspaceTab {
                         <button id="workspace-toggle-batch-add-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Paste multiple IDs</button>
                         <button id="workspace-upload-structure-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Upload a structure file</button>
                         <input id="workspace-upload-structure-input" type="file" accept=".pdb,.ent,.cif" class="hidden"/>
+                        <button id="workspace-toggle-predict-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Predict from sequence</button>
                     </div>
                     <span id="workspace-upload-structure-feedback" class="font-body-sm text-[11px] text-secondary"></span>
 
@@ -82,6 +94,14 @@ export class WorkspaceTab {
                         <div class="flex items-center gap-3">
                             <button id="workspace-batch-add-btn" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Add All</button>
                             <span id="workspace-batch-add-feedback" class="font-body-sm text-[11px] text-secondary"></span>
+                        </div>
+                    </div>
+
+                    <div id="workspace-predict-container" class="flex flex-col gap-2 ${this.predictInputVisible ? '' : 'hidden'}">
+                        <textarea id="workspace-predict-sequence-input" rows="3" placeholder="Paste a raw amino-acid sequence (10-300 residues) to predict its structure via ESMFold - no existing accession needed" class="w-full bg-surface-raised border border-border rounded-md px-3 py-2 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase"></textarea>
+                        <div class="flex items-center gap-3">
+                            <button id="workspace-predict-btn" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Predict Structure</button>
+                            <span id="workspace-predict-feedback" class="font-body-sm text-[11px] text-secondary"></span>
                         </div>
                     </div>
 
@@ -266,6 +286,40 @@ export class WorkspaceTab {
                 this.isUploading = false;
             }
         });
+
+        const togglePredictBtn = this.element.querySelector('#workspace-toggle-predict-btn');
+        const predictContainer = this.element.querySelector('#workspace-predict-container');
+        const predictInput = this.element.querySelector('#workspace-predict-sequence-input');
+        const predictBtn = this.element.querySelector('#workspace-predict-btn');
+        const predictFeedback = this.element.querySelector('#workspace-predict-feedback');
+
+        togglePredictBtn.addEventListener('click', () => {
+            this.predictInputVisible = !this.predictInputVisible;
+            predictContainer.classList.toggle('hidden', !this.predictInputVisible);
+            if (this.predictInputVisible) predictInput.focus();
+        });
+
+        predictBtn.addEventListener('click', async () => {
+            const sequence = predictInput.value.trim().toUpperCase().replace(/\s+/g, '');
+            if (sequence.length < 10) {
+                predictFeedback.innerText = 'A sequence of at least 10 residues is required.';
+                return;
+            }
+
+            this.isPredicting = true;
+            predictBtn.disabled = true;
+            predictFeedback.innerText = `Predicting structure for ${sequence.length} residues (this can take up to a minute)…`;
+            try {
+                await this.onPredictFromSequence(sequence);
+                predictFeedback.innerText = `Structure predicted for ${sequence.length} residues.`;
+                predictInput.value = "";
+            } catch (err) {
+                predictFeedback.innerText = err.message || 'Structure prediction failed.';
+            } finally {
+                this.isPredicting = false;
+                predictBtn.disabled = false;
+            }
+        });
     }
 
     updateState(selectedPDBs, chainSelections, pdbMetadata) {
@@ -439,6 +493,8 @@ export class WorkspaceTab {
             ${meta?.is_nmr ? `<span class="pdb-nmr-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="Showing model 1 of ${meta.num_models} - other conformers in this NMR ensemble aren't analyzed.">NMR · ${meta.num_models} models (model 1 shown)</span>` : ''}
             ${gapCount > 0 ? `<span class="pdb-gaps-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="${escapeHtml(gapTooltip)}">${gapCount} disordered ${gapLabel}</span>` : ''}
             ${meta?.source === 'pdb' ? `<span id="validation-badge-${pid}" class="pdb-validation-badge font-body-sm text-[11px] text-tertiary pl-0.5">${this._validationBadgeContent(pid)}</span>` : ''}
+            ${meta?.source === 'pdb' ? `<span id="cath-badge-${pid}" class="pdb-cath-badge font-body-sm text-[11px] text-tertiary pl-0.5">${this._cathBadgeContent(pid)}</span>` : ''}
+            ${meta?.source === 'pdb' ? `<span id="assembly-badge-${pid}" class="pdb-assembly-badge font-body-sm text-[11px] text-tertiary pl-0.5">${this._assemblyBadgeContent(pid)}</span>` : ''}
             ${citationLinkHTML}
         `;
 
@@ -459,6 +515,8 @@ export class WorkspaceTab {
 
         if (meta?.source === 'pdb') {
             this._loadValidation(pid);
+            this._loadCath(pid);
+            this._loadAssembly(pid);
         }
     }
 
@@ -495,6 +553,60 @@ export class WorkspaceTab {
         }
         const badge = this.element?.querySelector(`#validation-badge-${pid}`);
         if (badge) badge.textContent = this._validationBadgeContent(pid);
+    }
+
+    _cathBadgeContent(pid) {
+        const cached = this.cathCache[pid];
+        if (cached === undefined) return 'Checking CATH classification…';
+        if (!cached || cached.length === 0) return 'No CATH classification available';
+
+        const codes = [...new Set(cached.map(d => d.classification))];
+        return codes.length > 1
+            ? `CATH ${codes[0]} (+${codes.length - 1} more)`
+            : `CATH ${codes[0]}`;
+    }
+
+    // Same lazy-per-card fetch/cache shape as _loadValidation - real CATH
+    // fold classification only exists for real PDB entries.
+    async _loadCath(pid) {
+        if (this.cathCache[pid] !== undefined || this._cathLoading.has(pid)) return;
+        this._cathLoading.add(pid);
+        try {
+            const data = await fetchCathClassification(pid);
+            this.cathCache[pid] = data.domains;
+        } catch (err) {
+            console.error('Failed to load CATH classification for', pid, err);
+            this.cathCache[pid] = null;
+        } finally {
+            this._cathLoading.delete(pid);
+        }
+        const badge = this.element?.querySelector(`#cath-badge-${pid}`);
+        if (badge) badge.textContent = this._cathBadgeContent(pid);
+    }
+
+    _assemblyBadgeContent(pid) {
+        const cached = this.assemblyCache[pid];
+        if (cached === undefined) return 'Checking assembly state…';
+        if (!cached || !cached.oligomeric_details) return 'No assembly state available';
+        return cached.oligomeric_details.charAt(0).toUpperCase() + cached.oligomeric_details.slice(1);
+    }
+
+    // Same lazy-per-card fetch/cache shape as _loadValidation/_loadCath -
+    // real oligomeric-state metadata only exists for real PDB entries.
+    async _loadAssembly(pid) {
+        if (this.assemblyCache[pid] !== undefined || this._assemblyLoading.has(pid)) return;
+        this._assemblyLoading.add(pid);
+        try {
+            const data = await fetchAssemblyInfo(pid);
+            this.assemblyCache[pid] = data.assembly;
+        } catch (err) {
+            console.error('Failed to load assembly info for', pid, err);
+            this.assemblyCache[pid] = null;
+        } finally {
+            this._assemblyLoading.delete(pid);
+        }
+        const badge = this.element?.querySelector(`#assembly-badge-${pid}`);
+        if (badge) badge.textContent = this._assemblyBadgeContent(pid);
     }
 
     // Generalizes the per-card wwPDB validation badge above (and the

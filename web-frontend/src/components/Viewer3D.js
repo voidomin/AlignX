@@ -1,4 +1,4 @@
-import { getAlignmentPdbUrl, getStructureFileUrl } from '../api';
+import { getAlignmentPdbUrl, getStructureFileUrl, fetchMutationTolerance } from '../api';
 
 // Qualitative palette for N-structure identity coloring. Deliberately avoids
 // amber/#F59E0B (reserved for the residue-selection highlight) and the
@@ -22,6 +22,7 @@ const COLOR_SCHEME_OPTIONS = [
     { key: 'secondary', label: 'Secondary structure' },
     { key: 'spectrum', label: 'Spectrum (N→C)' },
     { key: 'confidence', label: 'pLDDT Confidence' },
+    { key: 'missense', label: 'Mutation tolerance (AlphaMissense)' },
 ];
 
 // Shared "highlighted/selected" amber semantic (matches .row-selected) -
@@ -47,6 +48,11 @@ export class Viewer3D {
     // boolean; it's just one of four color schemes now.
     currentStyle = 'cartoon';
     currentColorScheme = 'chain';
+    // Keyed by pdbId -> { [authorResi]: averagePathogenicity } once fetched
+    // (see loadMissenseScores) - unlike pLDDT, this can't be read off
+    // atoms already in the loaded model, so it's a separate lazy fetch
+    // rather than something _missenseColorPartFor can compute on its own.
+    missenseScoresByPdbId = {};
 
     // Click behavior branches on this - 'inspect' (default, informational
     // residue lookup) vs 'measure' (2-click atom-to-atom distance). Mutually
@@ -269,10 +275,37 @@ export class Viewer3D {
         this.resetCartoonStyles();
     }
 
-    setColorScheme(scheme) {
+    async setColorScheme(scheme) {
         this.currentColorScheme = scheme;
         this._updateColorSchemePopoverUI();
+        if (scheme === 'missense') {
+            await this.loadMissenseScores();
+            // The scheme may have changed again while the fetch was in
+            // flight (a quick double-click) - don't clobber a newer choice.
+            if (this.currentColorScheme !== 'missense') return;
+        }
         this.resetCartoonStyles();
+    }
+
+    // Fetches the real AlphaMissense mutation-tolerance overlay for every
+    // loaded structure that doesn't have one cached yet. A structure with
+    // no resolvable UniProt accession (e.g. ESM Atlas) or with no
+    // published AlphaMissense data correctly gets an empty map back, not
+    // an error - _missenseColorPartFor then falls back to a neutral color
+    // for it rather than crashing.
+    async loadMissenseScores() {
+        const missing = this.structures.filter(s => !(s.pdbId in this.missenseScoresByPdbId));
+        if (missing.length === 0) return;
+
+        await Promise.all(missing.map(async (structure) => {
+            try {
+                const data = await fetchMutationTolerance(structure.pdbId, structure.sourceChain !== '?' ? structure.sourceChain : undefined);
+                this.missenseScoresByPdbId[structure.pdbId] = data.tolerance?.per_residue_average || {};
+            } catch (err) {
+                console.error(`Failed to load mutation tolerance for ${structure.pdbId}:`, err);
+                this.missenseScoresByPdbId[structure.pdbId] = {};
+            }
+        }));
     }
 
     // 3Dmol's own internal rAF-driven rotation - not a custom setInterval or
@@ -349,6 +382,39 @@ export class Viewer3D {
         return { colorscheme: { prop: 'b', gradient: 'roygb', min, max } };
     }
 
+    // Green (tolerant/benign, low pathogenicity) -> red (intolerant/likely
+    // pathogenic, high pathogenicity), a linear interpolation the same way
+    // pLDDT's gradient is a built-in 3Dmol one - AlphaMissense scores have
+    // no equivalent built-in 3Dmol colorscheme name, so this is computed
+    // directly instead of going through `colorscheme`.
+    _missenseColorForScore(score) {
+        const t = Math.max(0, Math.min(1, score));
+        const from = { r: 0x22, g: 0xC5, b: 0x5E };
+        const to = { r: 0xB2, g: 0x3A, b: 0x3A };
+        const mix = (a, b) => Math.round(a + (b - a) * t);
+        return `#${[mix(from.r, to.r), mix(from.g, to.g), mix(from.b, to.b)]
+            .map(v => v.toString(16).padStart(2, '0'))
+            .join('')}`;
+    }
+
+    // Unlike pLDDT (already on every atom as B-factor), AlphaMissense
+    // scores are a separate per-residue lookup fetched into
+    // missenseScoresByPdbId (see loadMissenseScores) - `colorfunc` lets
+    // 3Dmol color each atom from that lookup directly, no need to write a
+    // synthetic per-atom property first.
+    _missenseColorPartFor(structure) {
+        const scores = this.missenseScoresByPdbId[structure.pdbId];
+        if (!scores || Object.keys(scores).length === 0) {
+            return { color: structure.color };
+        }
+        return {
+            colorfunc: (atom) => {
+                const score = scores[atom.resi];
+                return score === undefined ? '#4B5563' : this._missenseColorForScore(score);
+            },
+        };
+    }
+
     _colorPartFor(structure) {
         switch (this.currentColorScheme) {
             case 'secondary':
@@ -357,6 +423,8 @@ export class Viewer3D {
                 return { colorscheme: 'spectrum' };
             case 'confidence':
                 return this._plddtColorPartFor(structure);
+            case 'missense':
+                return this._missenseColorPartFor(structure);
             case 'chain':
             default:
                 return { color: structure.color };
@@ -814,6 +882,7 @@ export class Viewer3D {
         this.currentRunId = null;
         this.currentStyle = 'cartoon';
         this.currentColorScheme = 'chain';
+        this.missenseScoresByPdbId = {};
         this.interactionMode = 'inspect';
         this.measurePoints = [];
         this.measureHandles = [];

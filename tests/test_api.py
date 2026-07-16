@@ -1,10 +1,12 @@
 import base64
+import socket
 import tempfile
 import time
 import asyncio
 import numpy as np
 import pytest
 import pandas as pd
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock, AsyncMock, ANY
 from pathlib import Path
@@ -786,6 +788,83 @@ def test_upload_endpoint_rejects_path_traversal_session_id():
     assert response.status_code == 400
 
 
+def test_fold_sequence_endpoint_returns_chain_info_for_a_real_prediction():
+    with patch(
+        "src.backend.api.fold_sequence", new_callable=AsyncMock
+    ) as mock_fold, patch(
+        "src.backend.coordinator.PDBManager.save_uploaded_bytes"
+    ) as mock_save, patch(
+        "src.backend.coordinator.PDBManager.analyze_structure"
+    ) as mock_analyze:
+        mock_fold.return_value = "HEADER\nATOM      1  N   MET A   1\nEND\n"
+        mock_save.return_value = (True, "ok", Path("dummy_path.pdb"))
+        mock_analyze.return_value = {"chains": [{"id": "A", "residue_count": 21}]}
+
+        response = client.post(
+            "/api/fold-sequence", json={"sequence": "MVHLTPEEKSAVTALWGKVNV"}
+        )
+
+        assert response.status_code == 200
+        chains = response.json()["chains"]
+        structure_id = next(iter(chains))
+        assert structure_id.startswith("PRED-")
+        assert chains[structure_id]["source"] == "upload"
+        assert "ESMFold" in chains[structure_id]["original_filename"]
+        mock_fold.assert_called_once_with("MVHLTPEEKSAVTALWGKVNV")
+
+
+def test_fold_sequence_endpoint_rejects_a_too_short_sequence():
+    response = client.post("/api/fold-sequence", json={"sequence": "MV"})
+    assert response.status_code == 400
+    assert "10+ amino-acid" in response.json()["detail"]
+
+
+def test_fold_sequence_endpoint_rejects_a_too_long_sequence():
+    response = client.post("/api/fold-sequence", json={"sequence": "A" * 301})
+    assert response.status_code == 400
+    assert "too long" in response.json()["detail"]
+
+
+def test_fold_sequence_endpoint_returns_502_on_esmfold_failure():
+    with patch("src.backend.api.fold_sequence", new_callable=AsyncMock) as mock_fold:
+        from src.backend.esmfold_client import ESMFoldError
+
+        mock_fold.side_effect = ESMFoldError("ESMFold returned status 504")
+
+        response = client.post(
+            "/api/fold-sequence", json={"sequence": "MVHLTPEEKSAVTALWGKVNV"}
+        )
+
+        assert response.status_code == 502
+        assert "504" in response.json()["detail"]
+
+
+def test_fold_sequence_endpoint_returns_400_when_save_fails():
+    with patch(
+        "src.backend.api.fold_sequence", new_callable=AsyncMock
+    ) as mock_fold, patch(
+        "src.backend.coordinator.PDBManager.save_uploaded_bytes"
+    ) as mock_save:
+        mock_fold.return_value = "ATOM      1  N   MET A   1\n"
+        mock_save.return_value = (False, "Couldn't parse predicted structure", None)
+
+        response = client.post(
+            "/api/fold-sequence", json={"sequence": "MVHLTPEEKSAVTALWGKVNV"}
+        )
+
+        assert response.status_code == 400
+        assert "Couldn't parse" in response.json()["detail"]
+
+
+def test_fold_sequence_endpoint_rejects_path_traversal_session_id():
+    response = client.post(
+        "/api/fold-sequence",
+        params={"session_id": "../../etc"},
+        json={"sequence": "MVHLTPEEKSAVTALWGKVNV"},
+    )
+    assert response.status_code == 400
+
+
 def test_memory_endpoints():
     """Verify that memory retrieval and clear endpoints return correct structures."""
     response = client.get("/api/memory")
@@ -978,6 +1057,38 @@ def test_annotations_endpoint_400s_on_invalid_chain_param():
     assert response.status_code == 400
 
 
+def test_pae_endpoint_returns_the_matrix():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.fetch_predicted_aligned_error = AsyncMock(
+            return_value=[[0, 5], [5, 0]]
+        )
+
+        response = client.get("/api/pae?pdb_id=AF-P69905-F1")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["pdb_id"] == "AF-P69905-F1"
+        assert data["pae"] == [[0, 5], [5, 0]]
+        mock_aggregator.fetch_predicted_aligned_error.assert_called_once()
+        assert mock_aggregator.fetch_predicted_aligned_error.call_args.args[0] == (
+            "AF-P69905-F1"
+        )
+
+
+def test_pae_endpoint_404s_when_no_pae_data_is_available():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.fetch_predicted_aligned_error = AsyncMock(return_value=None)
+
+        response = client.get("/api/pae?pdb_id=4HHB")
+
+        assert response.status_code == 404
+
+
+def test_pae_endpoint_400s_on_invalid_pdb_id():
+    response = client.get("/api/pae?pdb_id=../etc")
+    assert response.status_code == 400
+
+
 def test_mutation_impact_endpoint_returns_a_real_looking_result():
     with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
         mock_aggregator.resolve_structure_uniprot_position = AsyncMock(
@@ -996,6 +1107,14 @@ def test_mutation_impact_endpoint_returns_a_real_looking_result():
             }
         )
         mock_aggregator.fetch_uniprot_features = AsyncMock(return_value=[])
+        mock_aggregator.fetch_alphamissense_scores = AsyncMock(
+            return_value={
+                "7": {
+                    "wildtype": "E",
+                    "scores": {"V": {"pathogenicity": 0.95, "class": "LPath"}},
+                }
+            }
+        )
 
         response = client.get(
             "/api/mutation-impact?pdb_id=4HHB&chain=A&resi=6&mutant=V"
@@ -1009,6 +1128,7 @@ def test_mutation_impact_endpoint_returns_a_real_looking_result():
     assert data["wildtype_residue"] == "V"
     assert data["mutant_residue"] == "V"
     assert data["clinvar"]["clinical_significance"] == "Pathogenic"
+    assert data["alphamissense"] == {"pathogenicity": 0.95, "class": "LPath"}
     assert data["highlight_chains"] == {"A": [6]}
     mock_aggregator.fetch_clinvar_significance.assert_called_once_with(
         "HBB", "V7V", ANY
@@ -1034,6 +1154,7 @@ def test_mutation_impact_endpoint_surfaces_a_known_uniprot_variant():
                 }
             ]
         )
+        mock_aggregator.fetch_alphamissense_scores = AsyncMock(return_value={})
 
         response = client.get(
             "/api/mutation-impact?pdb_id=4HHB&chain=A&resi=6&mutant=V"
@@ -1043,6 +1164,119 @@ def test_mutation_impact_endpoint_surfaces_a_known_uniprot_variant():
     data = response.json()
     assert data["clinvar"] is None
     assert data["known_uniprot_variant"]["description"] == "in HBS"
+    assert data["alphamissense"] is None
+
+
+def test_mutation_impact_endpoint_returns_none_alphamissense_when_no_scores_exist_for_this_position():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.resolve_structure_uniprot_position = AsyncMock(
+            return_value=("P68871", 7)
+        )
+        mock_aggregator.fetch_uniprot_gene_and_sequence = AsyncMock(
+            return_value={"gene": "HBB", "sequence": "MVHLTPVEK"}
+        )
+        mock_aggregator.fetch_clinvar_significance = AsyncMock(return_value=None)
+        mock_aggregator.fetch_uniprot_features = AsyncMock(return_value=[])
+        mock_aggregator.fetch_alphamissense_scores = AsyncMock(
+            return_value={"3": {"wildtype": "H", "scores": {}}}
+        )
+
+        response = client.get(
+            "/api/mutation-impact?pdb_id=4HHB&chain=A&resi=6&mutant=V"
+        )
+
+    assert response.status_code == 200
+    assert response.json()["alphamissense"] is None
+
+
+def test_mutation_tolerance_endpoint_returns_the_overlay():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.aggregate_mutation_tolerance = AsyncMock(
+            return_value={
+                "accession": "P69905",
+                "per_residue_average": {"1": 0.2, "2": 0.6},
+            }
+        )
+
+        response = client.get("/api/mutation-tolerance?pdb_id=AF-P69905-F1")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["pdb_id"] == "AF-P69905-F1"
+        assert data["tolerance"]["accession"] == "P69905"
+        assert data["tolerance"]["per_residue_average"] == {"1": 0.2, "2": 0.6}
+        call_args = mock_aggregator.aggregate_mutation_tolerance.call_args
+        assert call_args.args[0] == "AF-P69905-F1"
+        assert call_args.args[2] == "alphafold"
+
+
+def test_mutation_tolerance_endpoint_400s_on_invalid_chain_param():
+    response = client.get("/api/mutation-tolerance?pdb_id=4HHB&chain=../etc")
+    assert response.status_code == 400
+
+
+def test_cath_endpoint_returns_domains_for_a_real_pdb_entry():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.fetch_cath_classification = AsyncMock(
+            return_value=[
+                {"chain_id": "A", "domain": "4hhbA00", "classification": "1.10.490.10"}
+            ]
+        )
+
+        response = client.get("/api/cath?pdb_id=4HHB")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["pdb_id"] == "4HHB"
+        assert data["domains"][0]["classification"] == "1.10.490.10"
+        mock_aggregator.fetch_cath_classification.assert_called_once()
+
+
+def test_cath_endpoint_skips_lookup_for_non_pdb_sources():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.fetch_cath_classification = AsyncMock(return_value=[])
+
+        response = client.get("/api/cath?pdb_id=AF-P69905-F1")
+
+        assert response.status_code == 200
+        assert response.json()["domains"] == []
+        mock_aggregator.fetch_cath_classification.assert_not_called()
+
+
+def test_cath_endpoint_400s_on_invalid_pdb_id():
+    response = client.get("/api/cath?pdb_id=../etc")
+    assert response.status_code == 400
+
+
+def test_assembly_endpoint_returns_the_oligomeric_state_for_a_real_pdb_entry():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.fetch_assembly_info = AsyncMock(
+            return_value={"oligomeric_count": 4, "oligomeric_details": "tetrameric"}
+        )
+
+        response = client.get("/api/assembly?pdb_id=4HHB")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["pdb_id"] == "4HHB"
+        assert data["assembly"]["oligomeric_details"] == "tetrameric"
+        mock_aggregator.fetch_assembly_info.assert_called_once()
+
+
+def test_assembly_endpoint_skips_lookup_for_non_pdb_sources():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.fetch_assembly_info = AsyncMock(return_value=None)
+
+        response = client.get("/api/assembly?pdb_id=AF-P69905-F1")
+
+        assert response.status_code == 200
+        assert response.json()["assembly"] is None
+        mock_aggregator.fetch_assembly_info.assert_not_called()
+
+
+def test_assembly_endpoint_400s_on_invalid_pdb_id():
+    response = client.get("/api/assembly?pdb_id=../etc")
+    assert response.status_code == 400
 
 
 def test_mutation_impact_endpoint_404s_when_position_cannot_be_resolved():
@@ -1271,6 +1505,56 @@ def test_comparison_endpoint_404s_when_rmsd_matrix_missing():
             "/api/comparison?current_run_id=run_a&target_run_id=run_b"
         )
         assert response.status_code == 404
+
+
+def test_runs_trend_endpoint_returns_a_sorted_trend():
+    with patch("src.backend.api.ResultManager.get_run_trend") as mock_trend:
+        mock_trend.return_value = [
+            {
+                "run_id": "run1",
+                "timestamp": "2026-01-01 00:00:00",
+                "proteins": ["4RLT", "3UG9"],
+                "mean_rmsd": 1.0,
+                "max_rmsd": 1.5,
+            },
+            {
+                "run_id": "run2",
+                "timestamp": "2026-02-01 00:00:00",
+                "proteins": ["4RLT", "3UG9"],
+                "mean_rmsd": 2.0,
+                "max_rmsd": 2.5,
+            },
+        ]
+
+        response = client.post("/api/runs/trend", json={"run_ids": ["run1", "run2"]})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert [t["run_id"] for t in data["trend"]] == ["run1", "run2"]
+        mock_trend.assert_called_once_with(["run1", "run2"])
+
+
+def test_runs_trend_endpoint_400s_when_nothing_resolves():
+    with patch("src.backend.api.ResultManager.get_run_trend", return_value=[]):
+        response = client.post("/api/runs/trend", json={"run_ids": ["nope"]})
+        assert response.status_code == 400
+
+
+def test_runs_trend_endpoint_400s_on_invalid_run_id():
+    response = client.post("/api/runs/trend", json={"run_ids": ["../etc"]})
+    assert response.status_code == 400
+
+
+def test_runs_trend_endpoint_400s_on_invalid_session_id():
+    response = client.post(
+        "/api/runs/trend?session_id=../etc", json={"run_ids": ["run1"]}
+    )
+    assert response.status_code == 400
+
+
+def test_runs_trend_endpoint_422s_on_empty_run_ids():
+    response = client.post("/api/runs/trend", json={"run_ids": []})
+    assert response.status_code == 422
 
 
 def test_ligands_endpoint_404s_when_structure_not_found():
@@ -2741,6 +3025,284 @@ async def test_execute_alignment_job_marks_completed_on_success():
     job = api_module.alignment_jobs.pop(job_id)
     assert job["status"] == "completed"
     assert job["results"]["id"] == "run_abc"
+
+
+class TestIsUnsafeWebhookTarget:
+    def test_flags_private_loopback_link_local_and_multicast_addresses(self):
+        assert api_module._is_unsafe_webhook_target("10.0.0.5") is True
+        assert api_module._is_unsafe_webhook_target("172.16.0.1") is True
+        assert api_module._is_unsafe_webhook_target("192.168.1.1") is True
+        assert api_module._is_unsafe_webhook_target("127.0.0.1") is True
+        # Cloud metadata endpoint - link-local range.
+        assert api_module._is_unsafe_webhook_target("169.254.169.254") is True
+        assert api_module._is_unsafe_webhook_target("224.0.0.1") is True
+        assert api_module._is_unsafe_webhook_target("0.0.0.0") is True
+        assert api_module._is_unsafe_webhook_target("::1") is True
+
+    def test_allows_a_real_public_address(self):
+        assert api_module._is_unsafe_webhook_target("8.8.8.8") is False
+
+
+class TestValidateWebhookUrl:
+    @pytest.mark.asyncio
+    async def test_returns_none_for_no_url(self):
+        assert await api_module._validate_webhook_url(None) is None
+        assert await api_module._validate_webhook_url("") is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.api.socket.getaddrinfo")
+    async def test_accepts_a_url_resolving_to_a_public_address(self, mock_getaddrinfo):
+        mock_getaddrinfo.return_value = [(2, 1, 6, "", ("8.8.8.8", 0))]
+        assert await api_module._validate_webhook_url("https://example.com/hook") == (
+            "https://example.com/hook"
+        )
+
+    @pytest.mark.asyncio
+    async def test_rejects_a_non_http_scheme(self):
+        with pytest.raises(HTTPException) as exc_info:
+            await api_module._validate_webhook_url("file:///etc/passwd")
+        assert exc_info.value.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_rejects_a_url_with_no_hostname(self):
+        with pytest.raises(HTTPException) as exc_info:
+            await api_module._validate_webhook_url("https:///no-host")
+        assert exc_info.value.status_code == 400
+
+    @pytest.mark.asyncio
+    @patch("src.backend.api.socket.getaddrinfo")
+    async def test_rejects_a_hostname_resolving_to_a_private_address(
+        self, mock_getaddrinfo
+    ):
+        """The core SSRF guard: a public-looking hostname that actually
+        resolves to an internal address (e.g. an attacker-controlled DNS
+        record pointed at 169.254.169.254) must be rejected, not just a
+        raw IP literal in the URL itself."""
+        mock_getaddrinfo.return_value = [(2, 1, 6, "", ("169.254.169.254", 0))]
+        with pytest.raises(HTTPException) as exc_info:
+            await api_module._validate_webhook_url("https://attacker.example/hook")
+        assert exc_info.value.status_code == 400
+        assert "internal" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    @patch("src.backend.api.socket.getaddrinfo")
+    async def test_rejects_when_hostname_does_not_resolve(self, mock_getaddrinfo):
+        mock_getaddrinfo.side_effect = socket.gaierror("Name or service not known")
+        with pytest.raises(HTTPException) as exc_info:
+            await api_module._validate_webhook_url("https://does-not-resolve.invalid")
+        assert exc_info.value.status_code == 400
+
+
+class TestNotifyWebhook:
+    @pytest.mark.asyncio
+    @patch("src.backend.api.socket.getaddrinfo")
+    @patch("src.backend.api.httpx.AsyncClient.post")
+    async def test_posts_the_payload_to_the_given_url(
+        self, mock_post, mock_getaddrinfo
+    ):
+        mock_getaddrinfo.return_value = [(2, 1, 6, "", ("8.8.8.8", 0))]
+        mock_post.return_value = MagicMock(status_code=200)
+        await api_module._notify_webhook(
+            "https://example.com/hook", {"job_id": "j1", "status": "completed"}
+        )
+        assert mock_post.call_args.args[0] == "https://example.com/hook"
+        assert mock_post.call_args.kwargs["json"] == {
+            "job_id": "j1",
+            "status": "completed",
+        }
+
+    @pytest.mark.asyncio
+    @patch("src.backend.api.socket.getaddrinfo")
+    @patch("src.backend.api.httpx.AsyncClient.post")
+    async def test_a_failed_post_does_not_raise(self, mock_post, mock_getaddrinfo):
+        import httpx
+
+        mock_getaddrinfo.return_value = [(2, 1, 6, "", ("8.8.8.8", 0))]
+        mock_post.side_effect = httpx.ConnectError("boom")
+        # Must not raise - a bad webhook URL must never fail the underlying job.
+        await api_module._notify_webhook(
+            "https://example.com/hook", {"job_id": "j1", "status": "completed"}
+        )
+
+    @pytest.mark.asyncio
+    @patch("src.backend.api.socket.getaddrinfo")
+    @patch("src.backend.api.httpx.AsyncClient.post")
+    async def test_does_not_post_when_re_validation_at_notify_time_fails(
+        self, mock_post, mock_getaddrinfo
+    ):
+        """Even a URL that passed validation at submission time gets
+        re-checked immediately before the actual POST (see _notify_webhook's
+        docstring) - if it now resolves to an internal address, the POST
+        must not happen, and this must not raise."""
+        mock_getaddrinfo.return_value = [(2, 1, 6, "", ("169.254.169.254", 0))]
+        await api_module._notify_webhook(
+            "https://example.com/hook", {"job_id": "j1", "status": "completed"}
+        )
+        mock_post.assert_not_called()
+
+
+class TestJobWebhooks:
+    @pytest.mark.asyncio
+    @patch("src.backend.api._notify_webhook", new_callable=AsyncMock)
+    async def test_alignment_job_notifies_with_the_real_run_id_on_success(
+        self, mock_notify
+    ):
+        job_id = "test-webhook-align-success"
+        api_module.alignment_jobs[job_id] = {
+            "status": "queued",
+            "created_at": time.time(),
+        }
+        with patch(
+            "src.backend.api.AnalysisCoordinator.run_full_pipeline",
+            return_value=(True, "ok", {"id": "run_xyz"}),
+        ):
+            await api_module._execute_alignment_job(
+                job_id,
+                webhook_url="https://example.com/hook",
+                pdb_ids=["4RLT", "3UG9"],
+                chain_selection={},
+                remove_water=True,
+                remove_heteroatoms=True,
+                session_id=None,
+            )
+        api_module.alignment_jobs.pop(job_id)
+        mock_notify.assert_called_once_with(
+            "https://example.com/hook",
+            {"job_id": job_id, "status": "completed", "run_id": "run_xyz"},
+        )
+
+    @pytest.mark.asyncio
+    @patch("src.backend.api._notify_webhook", new_callable=AsyncMock)
+    async def test_alignment_job_notifies_on_failure_with_null_run_id(
+        self, mock_notify
+    ):
+        job_id = "test-webhook-align-fail"
+        api_module.alignment_jobs[job_id] = {
+            "status": "queued",
+            "created_at": time.time(),
+        }
+        with patch(
+            "src.backend.api.AnalysisCoordinator.run_full_pipeline",
+            return_value=(False, "boom", None),
+        ):
+            await api_module._execute_alignment_job(
+                job_id,
+                webhook_url="https://example.com/hook",
+                pdb_ids=["4RLT", "3UG9"],
+                chain_selection={},
+                remove_water=True,
+                remove_heteroatoms=True,
+                session_id=None,
+            )
+        api_module.alignment_jobs.pop(job_id)
+        mock_notify.assert_called_once_with(
+            "https://example.com/hook",
+            {"job_id": job_id, "status": "failed", "run_id": None},
+        )
+
+    @pytest.mark.asyncio
+    @patch("src.backend.api._notify_webhook", new_callable=AsyncMock)
+    async def test_alignment_job_skips_notification_when_no_webhook_given(
+        self, mock_notify
+    ):
+        job_id = "test-webhook-align-none"
+        api_module.alignment_jobs[job_id] = {
+            "status": "queued",
+            "created_at": time.time(),
+        }
+        with patch(
+            "src.backend.api.AnalysisCoordinator.run_full_pipeline",
+            return_value=(True, "ok", {"id": "run_xyz"}),
+        ):
+            await api_module._execute_alignment_job(
+                job_id,
+                pdb_ids=["4RLT", "3UG9"],
+                chain_selection={},
+                remove_water=True,
+                remove_heteroatoms=True,
+                session_id=None,
+            )
+        api_module.alignment_jobs.pop(job_id)
+        mock_notify.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("src.backend.api._notify_webhook", new_callable=AsyncMock)
+    async def test_clustalo_job_notifies_with_a_null_run_id(self, mock_notify):
+        job_id = "test-webhook-clustalo"
+        api_module.clustalo_jobs[job_id] = {
+            "status": "queued",
+            "created_at": time.time(),
+        }
+        with patch(
+            "src.backend.api._run_clustalo_pipeline",
+            new_callable=AsyncMock,
+            return_value={"aligned_fasta": ">a\nAAA\n"},
+        ):
+            await api_module._execute_clustalo_job(
+                job_id,
+                {"a": "AAA", "b": "AAA"},
+                webhook_url="https://example.com/hook",
+            )
+        api_module.clustalo_jobs.pop(job_id)
+        mock_notify.assert_called_once_with(
+            "https://example.com/hook",
+            {"job_id": job_id, "status": "completed", "run_id": None},
+        )
+
+    @pytest.mark.asyncio
+    @patch("src.backend.api._notify_webhook", new_callable=AsyncMock)
+    async def test_blast_job_notifies_with_a_null_run_id(self, mock_notify):
+        job_id = "test-webhook-blast"
+        api_module.blast_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+        with patch(
+            "src.backend.api._run_blast_pipeline",
+            new_callable=AsyncMock,
+            return_value={"homologs": []},
+        ):
+            await api_module._execute_blast_job(
+                job_id, "AAAAAAAAAAAAAAAAAAAA", webhook_url="https://example.com/hook"
+            )
+        api_module.blast_jobs.pop(job_id)
+        mock_notify.assert_called_once_with(
+            "https://example.com/hook",
+            {"job_id": job_id, "status": "completed", "run_id": None},
+        )
+
+
+def test_submit_alignment_job_rejects_an_invalid_webhook_url():
+    response = client.post(
+        "/api/jobs/align",
+        json={"pdb_ids": ["4RLT", "3UG9"], "webhook_url": "file:///etc/passwd"},
+    )
+    assert response.status_code == 400
+    assert "webhook_url" in response.json()["detail"]
+
+
+def test_submit_discovery_job_rejects_an_invalid_webhook_url():
+    response = client.post(
+        "/api/jobs/discover",
+        json={"pdb_id": "4RLT", "webhook_url": "ftp://example.com"},
+    )
+    assert response.status_code == 400
+
+
+def test_submit_clustalo_job_rejects_an_invalid_webhook_url():
+    response = client.post(
+        "/api/jobs/clustalo",
+        json={
+            "sequences": {"a": "AAAAAAAAAA", "b": "AAAAAAAAAA"},
+            "webhook_url": "javascript:alert(1)",
+        },
+    )
+    assert response.status_code == 400
+
+
+def test_submit_conservation_job_rejects_an_invalid_webhook_url():
+    response = client.post(
+        "/api/jobs/conservation",
+        json={"sequence": "AAAAAAAAAAAAAAAAAAAA", "webhook_url": "not-a-url"},
+    )
+    assert response.status_code == 400
 
 
 def test_suggest_endpoint_returns_error_payload_on_request_failure():

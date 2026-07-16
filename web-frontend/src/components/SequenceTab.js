@@ -73,6 +73,7 @@ export class SequenceTab {
                     <div class="section-caption">
                         Independent of Mustang's structural alignment above - a real multiple sequence alignment computed purely from each structure's own sequence, via EBI's public Clustal Omega service. Can disagree with the structural alignment for divergent sequences with similar folds.
                     </div>
+                    <input id="clustalo-webhook-url" type="url" placeholder="Notify me when done (optional webhook URL)" class="max-w-[320px] bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
                     <div id="clustalo-result-wrapper" class="overflow-x-auto rounded-md max-h-[350px]"></div>
                 </div>
 
@@ -87,6 +88,7 @@ export class SequenceTab {
                     <div class="section-caption">
                         Searches NCBI BLAST for real homologs of the selected structure's sequence, then scores real per-position conservation from their alignments (Shannon entropy) - genuinely different from the identity-based coloring above. Real BLAST searches commonly take several minutes.
                     </div>
+                    <input id="conservation-webhook-url" type="url" placeholder="Notify me when done (optional webhook URL)" class="max-w-[320px] bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
                     <div id="conservation-result-wrapper" class="overflow-x-auto rounded-md max-h-[350px]"></div>
                 </div>
 
@@ -516,7 +518,10 @@ export class SequenceTab {
                 return;
             }
 
-            const submission = await submitClustalOmegaJob(ungapped);
+            const webhookUrl = this.element.querySelector('#clustalo-webhook-url')?.value.trim();
+            const submission = webhookUrl
+                ? await submitClustalOmegaJob(ungapped, webhookUrl)
+                : await submitClustalOmegaJob(ungapped);
             wrapper.innerHTML = `
                 <div class="text-center py-8 text-secondary font-body-sm">
                     <span class="animate-spin material-symbols-outlined text-[18px]">sync</span>
@@ -632,7 +637,10 @@ export class SequenceTab {
                 return;
             }
 
-            const submission = await submitConservationJob(sequence);
+            const webhookUrl = this.element.querySelector('#conservation-webhook-url')?.value.trim();
+            const submission = webhookUrl
+                ? await submitConservationJob(sequence, webhookUrl)
+                : await submitConservationJob(sequence);
             wrapper.innerHTML = `
                 <div class="text-center py-8 text-secondary font-body-sm">
                     <span class="animate-spin material-symbols-outlined text-[18px]">sync</span>

@@ -1,4 +1,4 @@
-import { fetchHistory, getShareLink, deleteRun, clearAllHistory, updateRunNotes } from '../api';
+import { fetchHistory, getShareLink, deleteRun, clearAllHistory, updateRunNotes, fetchRunsTrend } from '../api';
 
 const PAGE_SIZE = 20;
 
@@ -25,6 +25,20 @@ export class HistoryPanel {
             </header>
 
             <div class="section-body">
+                <div class="flex flex-col gap-2 border border-border rounded-lg p-4 mb-4">
+                    <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">RMSD trend across runs</span>
+                    <span class="font-body-sm text-body-sm text-secondary">Pick 2 or more past runs (Ctrl/Cmd-click for multiple) to see how their structural similarity has shifted over time.</span>
+                    <div class="flex gap-2 items-center">
+                        <select id="trend-run-select" multiple size="4" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm"></select>
+                        <button id="trend-load-btn" class="px-3 py-1.5 rounded-md bg-accent-muted text-accent font-label-md text-label-md hover:bg-accent hover:text-white transition-colors self-start">Show trend</button>
+                    </div>
+                    <div id="trend-plotly" class="w-full h-[220px]">
+                        <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                            Select runs above and click "Show trend".
+                        </div>
+                    </div>
+                </div>
+
                 <div id="history-runs-list" class="flex flex-col">
                     <div class="text-center py-12 text-secondary font-body-sm">
                         <span class="animate-spin material-symbols-outlined text-[24px] mb-2">sync</span>
@@ -35,6 +49,7 @@ export class HistoryPanel {
         `;
         this.element = div;
         this.element.querySelector('#history-clear-all-btn').addEventListener('click', () => this.clearAll());
+        this.element.querySelector('#trend-load-btn').addEventListener('click', () => this.loadTrend());
         this.loadHistoryData();
         return div;
     }
@@ -78,6 +93,7 @@ export class HistoryPanel {
 
             this.renderRuns(this.runsList);
             this.renderLoadMoreControl();
+            this.populateTrendSelect();
         } catch (err) {
             console.error("Failed to load history data:", err);
             container.innerHTML = `
@@ -283,8 +299,82 @@ export class HistoryPanel {
             this.runsList = this.runsList.concat(newRuns);
             this.renderRuns(newRuns);
             this.renderLoadMoreControl();
+            this.populateTrendSelect();
         } catch (err) {
             console.error("Failed to load more history:", err);
         }
+    }
+
+    // Independent of the main runs list's click-to-reload row behavior -
+    // a separate multi-select avoids overloading each row's click handler
+    // with a second, conflicting meaning ("select for trend" vs "reload
+    // this run").
+    populateTrendSelect() {
+        const select = this.element.querySelector('#trend-run-select');
+        if (!select) return;
+        const previouslySelected = new Set(
+            [...select.selectedOptions].map(o => o.value)
+        );
+        select.innerHTML = "";
+        this.runsList.forEach(run => {
+            const opt = document.createElement('option');
+            opt.value = run.id;
+            opt.textContent = `${run.id} — ${run.timestamp}`;
+            opt.selected = previouslySelected.has(run.id);
+            select.appendChild(opt);
+        });
+    }
+
+    async loadTrend() {
+        const select = this.element.querySelector('#trend-run-select');
+        const div = this.element.querySelector('#trend-plotly');
+        const runIds = [...select.selectedOptions].map(o => o.value);
+
+        if (runIds.length < 2) {
+            div.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Select at least 2 runs to compare a trend.</div>`;
+            return;
+        }
+
+        div.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Loading trend&hellip;</div>`;
+        try {
+            const data = await fetchRunsTrend(runIds);
+            this.renderTrendChart(data.trend || []);
+        } catch (err) {
+            console.error("Failed to load run trend:", err);
+            div.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Failed to load run trend.</div>`;
+        }
+    }
+
+    renderTrendChart(trend) {
+        const div = this.element.querySelector('#trend-plotly');
+        if (!div) return;
+
+        if (trend.length === 0) {
+            div.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">None of the selected runs have a usable RMSD matrix.</div>`;
+            return;
+        }
+
+        div.innerHTML = "";
+        const x = trend.map(t => t.timestamp);
+        const traces = [
+            {
+                x, y: trend.map(t => t.mean_rmsd), name: 'Mean RMSD',
+                type: 'scatter', mode: 'lines+markers', line: { color: '#C9A063' },
+            },
+            {
+                x, y: trend.map(t => t.max_rmsd), name: 'Max RMSD',
+                type: 'scatter', mode: 'lines+markers', line: { color: '#8B5CF6' },
+            },
+        ];
+        const layout = {
+            height: 220,
+            margin: { l: 40, r: 10, t: 10, b: 60 },
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            font: { family: "Inter, sans-serif", size: 10, color: "#A79E8E" },
+            legend: { orientation: 'h', y: -0.3 },
+            xaxis: { tickangle: -30 },
+        };
+        Plotly.newPlot(div, traces, layout, { responsive: true, displayModeBar: false });
     }
 }

@@ -4,6 +4,7 @@ Result management and indexing for batch comparisons.
 
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+import numpy as np
 import pandas as pd
 from src.utils.logger import get_logger, sanitize_for_log
 
@@ -86,3 +87,48 @@ class ResultManager:
             return None
 
         return rmsd1_aligned - rmsd2_aligned
+
+    def get_run_trend(self, run_ids: List[str]) -> List[Dict[str, Any]]:
+        """
+        Builds a chronological RMSD trend across a user-selected *set* of
+        past runs - e.g. "did this protein family's structural similarity
+        drift over 5 runs", not just the single most-recent-vs-one-other
+        view calculate_difference() already offers. Sorted by timestamp so
+        callers can plot it directly as a time series.
+
+        Only RMSD is aggregated here, not TM-score/GDT-TS - those are
+        computed at run time (see coordinator.py) and never persisted to
+        disk the way rmsd_matrix.csv is, so trending them for arbitrary
+        past runs would mean re-running tmtools against each one's stored
+        alignment.pdb, a much heavier operation than this view is meant
+        for. A run with a missing/unreadable RMSD matrix is silently
+        skipped rather than breaking the whole trend.
+        """
+        runs_by_id = {r["id"]: r for r in self.list_runs()}
+        trend = []
+        for run_id in run_ids:
+            run = runs_by_id.get(run_id)
+            if run is None:
+                continue
+            rmsd_df = self.get_run_rmsd(run_id)
+            if rmsd_df is None:
+                continue
+
+            mask = np.triu(np.ones(rmsd_df.shape, dtype=bool), k=1)
+            values = rmsd_df.to_numpy()[mask]
+            values = values[~np.isnan(values)]
+            if len(values) == 0:
+                continue
+
+            trend.append(
+                {
+                    "run_id": run_id,
+                    "timestamp": run["timestamp"],
+                    "proteins": run["proteins"],
+                    "mean_rmsd": float(np.mean(values)),
+                    "max_rmsd": float(np.max(values)),
+                }
+            )
+
+        trend.sort(key=lambda r: r["timestamp"])
+        return trend

@@ -12,8 +12,11 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+import ipaddress
 import json
 import re
+import socket
+from urllib.parse import urlparse
 import httpx
 import numpy as np
 import pandas as pd
@@ -36,6 +39,7 @@ from src.backend.validation_service import fetch_pdbe_validation
 from src.backend.foldseek_client import FoldseekClient, FoldseekError
 from src.backend.clustalo_client import ClustalOmegaClient
 from src.backend.blast_client import BlastClient
+from src.backend.esmfold_client import fold_sequence, ESMFoldError, MAX_SEQUENCE_LENGTH
 from src.backend.database import HistoryDatabase
 from src.backend.ligand_analyzer import LigandAnalyzer
 from src.backend.interface_analyzer import InterfaceAnalyzer
@@ -514,6 +518,72 @@ async def upload_structure(
     return {"chains": {structure_id: sanitize_for_json(info)}}
 
 
+@app.post(
+    "/api/fold-sequence",
+    responses={
+        400: {
+            "description": "Invalid session_id, or an invalid/too-long protein sequence"
+        },
+        502: {"description": "ESMFold prediction failed"},
+    },
+)
+async def fold_sequence_endpoint(
+    sequence: Annotated[str, Body(..., embed=True)],
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Predicts a real 3D structure directly from a raw amino-acid sequence
+    via ESM Atlas's public ESMFold API (see esmfold_client.py) - no
+    existing public accession/ID required, unlike every other structure
+    source this app supports. Synchronous, not a background job: real
+    sequences at or below the length cap complete in single-digit-to-
+    low-double-digit seconds (verified live this session). Returns the
+    same {"chains": {...}} shape /api/upload does, tagged source="upload"
+    (this is functionally an upload of predicted, not user-provided,
+    content) - so the frontend merges it in identically and it works in
+    every downstream feature (alignment, ligand hunting, export) with no
+    new plumbing.
+    """
+    _safe_segment(session_id, "session_id")
+    sequence = (sequence or "").strip().upper()
+    if not _SAFE_PROTEIN_SEQUENCE.match(sequence):
+        raise HTTPException(
+            status_code=400,
+            detail="A real protein sequence (10+ amino-acid letters) is required.",
+        )
+    if len(sequence) > MAX_SEQUENCE_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Sequence too long ({len(sequence)} residues) - ESMFold "
+                f"prediction is capped at {MAX_SEQUENCE_LENGTH} residues to "
+                "stay within the public service's own reliable response time."
+            ),
+        )
+
+    try:
+        pdb_text = await fold_sequence(sequence)
+    except ESMFoldError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    structure_id = f"PRED-{secrets.token_hex(4).upper()}"
+    coordinator = AnalysisCoordinator(config, session_id=session_id)
+    success, msg, path = await asyncio.to_thread(
+        coordinator.pdb_manager.save_uploaded_bytes,
+        f"{structure_id}.pdb",
+        pdb_text.encode("utf-8"),
+        structure_id,
+    )
+    if not success:
+        raise HTTPException(status_code=400, detail=msg)
+
+    info = await asyncio.to_thread(coordinator.pdb_manager.analyze_structure, path)
+    info["source"] = "upload"
+    info["original_filename"] = f"Predicted from sequence ({len(sequence)} aa, ESMFold)"
+
+    return {"chains": {structure_id: sanitize_for_json(info)}}
+
+
 def _coerce_numpy_scalar(val: Any) -> Any:
     """A 0-d numpy scalar (has dtype/item, no ndim or ndim==0) converts to
     its plain Python equivalent; anything else passes through unchanged."""
@@ -642,6 +712,89 @@ def _spawn_background_task(coro) -> asyncio.Task:
     return task
 
 
+def _is_unsafe_webhook_target(ip_text: str) -> bool:
+    ip = ipaddress.ip_address(ip_text)
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local  # covers cloud metadata endpoints (169.254.169.254)
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
+def _resolve_webhook_hostname(hostname: str) -> None:
+    """Blocking DNS resolution - always called via asyncio.to_thread, never
+    directly on the event loop."""
+    try:
+        addr_infos = socket.getaddrinfo(hostname, None)
+    except socket.gaierror as e:
+        raise HTTPException(
+            status_code=400, detail=f"webhook_url hostname could not be resolved: {e}"
+        )
+    for info in addr_infos:
+        if _is_unsafe_webhook_target(info[4][0]):
+            raise HTTPException(
+                status_code=400,
+                detail="webhook_url must not resolve to a private, loopback, "
+                "link-local, or otherwise internal address.",
+            )
+
+
+async def _validate_webhook_url(url: Optional[str]) -> Optional[str]:
+    """A webhook is an outbound server-side POST triggered by user input -
+    unlike this app's existing external GETs (ClinVar/PubMed links, PDBe/
+    RCSB lookups), the URL itself is fully user-supplied, so it gets its
+    own validation rather than reusing _safe_segment (which is for path
+    segments, not full URLs). Guards against SSRF (CWE-918): rejects any
+    non-http(s) scheme, then resolves the hostname and rejects any
+    private/loopback/link-local/reserved/multicast target address - a bare
+    scheme check alone would let a request reach internal services (e.g. a
+    cloud metadata endpoint) via a public-looking hostname. This doesn't
+    defend against DNS rebinding (the hostname resolving differently at
+    request time than at validation time); doing so would mean pinning the
+    resolved IP and connecting directly to it, which httpx doesn't support
+    without a custom transport - accepted as a residual risk for a
+    fire-and-forget notification POST rather than the request path itself.
+    """
+    if not url:
+        return None
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise HTTPException(
+            status_code=400,
+            detail="webhook_url must be a real http:// or https:// URL.",
+        )
+    await asyncio.to_thread(_resolve_webhook_hostname, parsed.hostname)
+    return url
+
+
+async def _notify_webhook(url: str, payload: Dict[str, Any]) -> None:
+    """Fire-and-forget job-completion notification - a bad/unreachable
+    webhook URL must never fail the underlying job, so failures are
+    logged, not raised. Short timeout since this is just a notification,
+    not something worth blocking the job's own completion on.
+
+    Re-validates (and re-resolves) `url` right here immediately before the
+    actual POST, even though every caller already validated it once at
+    submission time - keeping the SSRF check adjacent to the sink it
+    protects, in the same function, rather than relying on a caller several
+    calls/a dict round-trip away. This also narrows (doesn't eliminate) the
+    DNS-rebinding window, since the hostname is re-resolved right before use
+    instead of only at submission time."""
+    try:
+        validated_url = await _validate_webhook_url(url)
+        if not validated_url:
+            return
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            await client.post(validated_url, json=payload)
+    except HTTPException as e:
+        logger.warning(f"Webhook URL failed validation at notify time: {e.detail}")
+    except httpx.HTTPError as e:
+        logger.warning(f"Webhook notification to {sanitize_for_log(url)} failed: {e}")
+
+
 # In-memory job registry for the async alignment pipeline. Alignment runs can take
 # minutes (Mustang + phylogenetics + rendering), so they're executed on a background
 # thread and polled via job_id rather than blocking the HTTP request.
@@ -688,11 +841,15 @@ def _run_alignment_pipeline(
     return {"message": msg, "results": sanitize_for_json(results)}
 
 
-async def _execute_alignment_job(job_id: str, **pipeline_kwargs):
+async def _execute_alignment_job(
+    job_id: str, webhook_url: Optional[str] = None, **pipeline_kwargs
+):
     alignment_jobs[job_id]["status"] = "running"
     created_at = alignment_jobs[job_id].get("created_at", time.time())
+    run_id = None
     try:
         outcome = await asyncio.to_thread(_run_alignment_pipeline, **pipeline_kwargs)
+        run_id = (outcome.get("results") or {}).get("id")
         alignment_jobs[job_id] = {
             "status": "completed",
             "created_at": created_at,
@@ -706,6 +863,15 @@ async def _execute_alignment_job(job_id: str, **pipeline_kwargs):
             "finished_at": time.time(),
             "error": str(e),
         }
+    if webhook_url:
+        await _notify_webhook(
+            webhook_url,
+            {
+                "job_id": job_id,
+                "status": alignment_jobs[job_id]["status"],
+                "run_id": run_id,
+            },
+        )
 
 
 @app.post(
@@ -720,11 +886,14 @@ async def submit_alignment_job(
     chain_selection: Annotated[Dict[str, str], Body(embed=True)] = {},
     remove_water: Annotated[bool, Body(embed=True)] = True,
     remove_heteroatoms: Annotated[bool, Body(embed=True)] = True,
+    webhook_url: Annotated[Optional[str], Body(embed=True)] = None,
     session_id: Annotated[Optional[str], Query()] = None,
 ):
     """
     Submit a Mustang multiple structural alignment run as a background job.
-    Returns immediately with a job_id; poll GET /api/jobs/{job_id} for status.
+    Returns immediately with a job_id; poll GET /api/jobs/{job_id} for
+    status - or, if webhook_url is given, receive a POST there instead
+    ({job_id, status, run_id}) once the job finishes.
     """
     if not pdb_ids or len(pdb_ids) < 2:
         raise HTTPException(
@@ -733,6 +902,7 @@ async def submit_alignment_job(
     for pid in pdb_ids:
         _safe_segment(pid, "pdb_id")
     _safe_segment(session_id, "session_id")
+    webhook_url = await _validate_webhook_url(webhook_url)
 
     job_id = uuid.uuid4().hex
     alignment_jobs[job_id] = {"status": "queued", "created_at": time.time()}
@@ -740,6 +910,7 @@ async def submit_alignment_job(
     _spawn_background_task(
         _execute_alignment_job(
             job_id,
+            webhook_url=webhook_url,
             pdb_ids=pdb_ids,
             chain_selection=chain_selection,
             remove_water=remove_water,
@@ -812,11 +983,15 @@ def _run_discovery_pipeline(
     return {"message": msg, "results": sanitize_for_json(results)}
 
 
-async def _execute_discovery_job(job_id: str, **pipeline_kwargs):
+async def _execute_discovery_job(
+    job_id: str, webhook_url: Optional[str] = None, **pipeline_kwargs
+):
     discovery_jobs[job_id]["status"] = "running"
     created_at = discovery_jobs[job_id].get("created_at", time.time())
+    run_id = None
     try:
         outcome = await asyncio.to_thread(_run_discovery_pipeline, **pipeline_kwargs)
+        run_id = (outcome.get("results") or {}).get("id")
         discovery_jobs[job_id] = {
             "status": "completed",
             "created_at": created_at,
@@ -830,6 +1005,15 @@ async def _execute_discovery_job(job_id: str, **pipeline_kwargs):
             "finished_at": time.time(),
             "error": str(e),
         }
+    if webhook_url:
+        await _notify_webhook(
+            webhook_url,
+            {
+                "job_id": job_id,
+                "status": discovery_jobs[job_id]["status"],
+                "run_id": run_id,
+            },
+        )
 
 
 @app.post(
@@ -844,13 +1028,16 @@ async def _execute_discovery_job(job_id: str, **pipeline_kwargs):
 async def submit_discovery_job(
     pdb_id: Annotated[str, Body(..., embed=True)],
     databases: Annotated[Optional[List[str]], Body(embed=True)] = None,
+    webhook_url: Annotated[Optional[str], Body(embed=True)] = None,
     session_id: Annotated[Optional[str], Query()] = None,
 ):
     """
     Submit a single-structure Foldseek discovery run as a background job:
     finds structurally similar proteins for one query structure. Unlike
     /api/jobs/align, this takes exactly one structure, not 2+.
-    Returns immediately with a job_id; poll GET /api/jobs/{job_id} for status.
+    Returns immediately with a job_id; poll GET /api/jobs/{job_id} for
+    status - or, if webhook_url is given, receive a POST there instead
+    ({job_id, status, run_id}) once the job finishes.
     """
     if not pdb_id or not pdb_id.strip():
         raise HTTPException(status_code=400, detail="pdb_id is required.")
@@ -865,6 +1052,7 @@ async def submit_discovery_job(
         except FoldseekError as e:
             raise HTTPException(status_code=400, detail=str(e))
     _safe_segment(session_id, "session_id")
+    webhook_url = await _validate_webhook_url(webhook_url)
 
     job_id = uuid.uuid4().hex
     discovery_jobs[job_id] = {"status": "queued", "created_at": time.time()}
@@ -872,6 +1060,7 @@ async def submit_discovery_job(
     _spawn_background_task(
         _execute_discovery_job(
             job_id,
+            webhook_url=webhook_url,
             pdb_id=pdb_id,
             databases=databases,
             session_id=session_id,
@@ -911,7 +1100,9 @@ async def _run_clustalo_pipeline(sequences: Dict[str, str]) -> Dict[str, Any]:
     return {"aligned_fasta": aligned_fasta}
 
 
-async def _execute_clustalo_job(job_id: str, sequences: Dict[str, str]):
+async def _execute_clustalo_job(
+    job_id: str, sequences: Dict[str, str], webhook_url: Optional[str] = None
+):
     clustalo_jobs[job_id]["status"] = "running"
     created_at = clustalo_jobs[job_id].get("created_at", time.time())
     try:
@@ -929,6 +1120,18 @@ async def _execute_clustalo_job(job_id: str, sequences: Dict[str, str]):
             "finished_at": time.time(),
             "error": str(e),
         }
+    if webhook_url:
+        # No run_id here - Clustal Omega jobs produce a standalone aligned
+        # FASTA, not a saved run in run history the way alignment/discovery
+        # jobs do.
+        await _notify_webhook(
+            webhook_url,
+            {
+                "job_id": job_id,
+                "status": clustalo_jobs[job_id]["status"],
+                "run_id": None,
+            },
+        )
 
 
 @app.post(
@@ -940,6 +1143,7 @@ async def _execute_clustalo_job(job_id: str, sequences: Dict[str, str]):
 )
 async def submit_clustalo_job(
     sequences: Annotated[Dict[str, str], Body(..., embed=True)],
+    webhook_url: Annotated[Optional[str], Body(embed=True)] = None,
 ):
     """
     Submit a true sequence-only multiple alignment as a background job via
@@ -948,7 +1152,9 @@ async def submit_clustalo_job(
     this app relies on for sequence correspondence. `sequences` should
     carry each structure's own ungapped sequence, keyed by a caller-chosen
     id (typically the pdb_id). Returns immediately with a job_id; poll
-    GET /api/jobs/{job_id} for status.
+    GET /api/jobs/{job_id} for status - or, if webhook_url is given,
+    receive a POST there instead ({job_id, status, run_id: null}) once
+    the job finishes.
     """
     if not sequences or len(sequences) < 2:
         raise HTTPException(
@@ -956,11 +1162,12 @@ async def submit_clustalo_job(
         )
     for seq_id in sequences:
         _safe_segment(seq_id, "sequence id")
+    webhook_url = await _validate_webhook_url(webhook_url)
 
     job_id = uuid.uuid4().hex
     clustalo_jobs[job_id] = {"status": "queued", "created_at": time.time()}
 
-    _spawn_background_task(_execute_clustalo_job(job_id, sequences))
+    _spawn_background_task(_execute_clustalo_job(job_id, sequences, webhook_url))
 
     return {"job_id": job_id, "status": "queued"}
 
@@ -995,7 +1202,9 @@ async def _run_blast_pipeline(sequence: str) -> Dict[str, Any]:
     return await client.find_homologs_and_score_conservation(sequence)
 
 
-async def _execute_blast_job(job_id: str, sequence: str):
+async def _execute_blast_job(
+    job_id: str, sequence: str, webhook_url: Optional[str] = None
+):
     blast_jobs[job_id]["status"] = "running"
     created_at = blast_jobs[job_id].get("created_at", time.time())
     try:
@@ -1013,6 +1222,13 @@ async def _execute_blast_job(job_id: str, sequence: str):
             "finished_at": time.time(),
             "error": str(e),
         }
+    if webhook_url:
+        # No run_id here either - a BLAST/conservation job produces a
+        # standalone homolog+conservation profile, not a saved run.
+        await _notify_webhook(
+            webhook_url,
+            {"job_id": job_id, "status": blast_jobs[job_id]["status"], "run_id": None},
+        )
 
 
 @app.post(
@@ -1024,7 +1240,10 @@ async def _execute_blast_job(job_id: str, sequence: str):
         }
     },
 )
-async def submit_conservation_job(sequence: Annotated[str, Body(..., embed=True)]):
+async def submit_conservation_job(
+    sequence: Annotated[str, Body(..., embed=True)],
+    webhook_url: Annotated[Optional[str], Body(embed=True)] = None,
+):
     """
     Submit a real per-column evolutionary conservation search as a
     background job: finds real homologs of `sequence` via NCBI BLAST, then
@@ -1033,8 +1252,10 @@ async def submit_conservation_job(sequence: Annotated[str, Body(..., embed=True)
     calculate_conservation() (identity across whatever structures happen
     to be loaded, not real evolutionary conservation), this searches a
     real homolog panel. Returns immediately with a job_id; poll
-    GET /api/jobs/{job_id} for status - budget real wall-clock time here,
-    real BLAST searches commonly take several minutes.
+    GET /api/jobs/{job_id} for status - or, if webhook_url is given,
+    receive a POST there instead ({job_id, status, run_id: null}) once
+    the job finishes. Real BLAST searches commonly take several minutes,
+    so this is the job type a webhook is most useful for.
     """
     sequence = (sequence or "").strip()
     if not _SAFE_PROTEIN_SEQUENCE.match(sequence):
@@ -1042,11 +1263,12 @@ async def submit_conservation_job(sequence: Annotated[str, Body(..., embed=True)
             status_code=400,
             detail="A real protein sequence (10+ amino-acid letters) is required.",
         )
+    webhook_url = await _validate_webhook_url(webhook_url)
 
     job_id = uuid.uuid4().hex
     blast_jobs[job_id] = {"status": "queued", "created_at": time.time()}
 
-    _spawn_background_task(_execute_blast_job(job_id, sequence))
+    _spawn_background_task(_execute_blast_job(job_id, sequence, webhook_url))
 
     return {"job_id": job_id, "status": "queued"}
 
@@ -1128,6 +1350,43 @@ def list_comparison_runs(
             ]
         )
     }
+
+
+class RunTrendRequest(BaseModel):
+    run_ids: List[str] = Field(..., min_length=1, max_length=50)
+
+
+@app.post(
+    "/api/runs/trend",
+    responses={
+        400: {
+            "description": "Invalid session_id, or no run_id resolved to a real RMSD matrix"
+        }
+    },
+)
+def get_runs_trend(
+    body: RunTrendRequest,
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Chronological RMSD trend across a user-selected set of past runs (see
+    ResultManager.get_run_trend) - how a protein set's structural
+    similarity shifted across multiple runs over time, not just a single
+    most-recent-vs-one-other comparison.
+    """
+    _safe_segment(session_id, "session_id")
+    for run_id in body.run_ids:
+        _safe_segment(run_id, "run_ids")
+
+    res_dir = results_dir / session_id if session_id else results_dir
+    manager = ResultManager(res_dir)
+    trend = manager.get_run_trend(body.run_ids)
+    if not trend:
+        raise HTTPException(
+            status_code=400,
+            detail="None of the given run_ids resolved to a real RMSD matrix.",
+        )
+    return {"trend": sanitize_for_json(trend)}
 
 
 @app.get(
@@ -1637,6 +1896,14 @@ async def get_mutation_impact(
             None,
         )
 
+        alphamissense = None
+        am_scores = await annotation_aggregator.fetch_alphamissense_scores(
+            accession, client
+        )
+        am_entry = am_scores.get(str(uniprot_position))
+        if am_entry:
+            alphamissense = am_entry["scores"].get(mutant.upper())
+
     return sanitize_for_json(
         {
             "pdb_id": pdb_id,
@@ -1649,9 +1916,106 @@ async def get_mutation_impact(
             "mutant_residue": mutant.upper(),
             "known_uniprot_variant": known_variant,
             "clinvar": clinvar,
+            "alphamissense": alphamissense,
             "highlight_chains": {chain: [resi]},
         }
     )
+
+
+@app.get(
+    "/api/mutation-tolerance",
+    responses={400: {"description": "Invalid pdb_id or chain"}},
+)
+async def get_mutation_tolerance(
+    pdb_id: Annotated[str, Query(...)],
+    chain: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Real per-residue AlphaMissense mutation-tolerance overlay for one
+    Compare-mode structure - the mean predicted pathogenicity across all 19
+    possible substitutions at each position, resolved to this structure's
+    own residue numbering (see AnnotationAggregator.
+    aggregate_mutation_tolerance). Works for any structure with a resolved
+    UniProt accession, the same way /api/annotations does.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(chain, "chain")
+
+    source = PDBManager.detect_source(pdb_id)
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        tolerance = await annotation_aggregator.aggregate_mutation_tolerance(
+            pdb_id, chain, source, client
+        )
+    return {
+        "pdb_id": pdb_id,
+        "chain": chain,
+        "tolerance": sanitize_for_json(tolerance),
+    }
+
+
+@app.get(
+    "/api/pae",
+    responses={
+        400: {"description": "Invalid pdb_id"},
+        404: {"description": "No PAE data available for this structure"},
+    },
+)
+async def get_pae(pdb_id: Annotated[str, Query(...)]):
+    """
+    Real per-residue-pair confidence matrix for an AlphaFold-sourced
+    structure (see AnnotationAggregator.fetch_predicted_aligned_error) -
+    reveals which domain pairs AlphaFold trusts are correctly positioned
+    relative to each other, unlike per-residue pLDDT.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        matrix = await annotation_aggregator.fetch_predicted_aligned_error(
+            pdb_id, client
+        )
+    if matrix is None:
+        raise HTTPException(
+            status_code=404, detail=f"No PAE data available for {pdb_id}."
+        )
+    return {"pdb_id": pdb_id, "pae": matrix}
+
+
+@app.get(
+    "/api/cath",
+    responses={400: {"description": "Invalid pdb_id"}},
+)
+async def get_cath_classification(pdb_id: Annotated[str, Query(...)]):
+    """
+    Real CATH fold classification(s) for a real PDB entry (see
+    AnnotationAggregator.fetch_cath_classification) - a standardized
+    fold-family label independent of Foldseek's own similarity search.
+    Only meaningful for source == "pdb"; anything else correctly returns
+    an empty list rather than an error.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    if PDBManager.detect_source(pdb_id) != "pdb":
+        return {"pdb_id": pdb_id, "domains": []}
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        domains = await annotation_aggregator.fetch_cath_classification(pdb_id, client)
+    return {"pdb_id": pdb_id, "domains": domains}
+
+
+@app.get(
+    "/api/assembly",
+    responses={400: {"description": "Invalid pdb_id"}},
+)
+async def get_assembly_info(pdb_id: Annotated[str, Query(...)]):
+    """
+    Real oligomeric-state metadata (e.g. "tetrameric") for a real PDB
+    entry's first biological assembly (see AnnotationAggregator.
+    fetch_assembly_info). Only meaningful for source == "pdb"; anything
+    else correctly returns null rather than an error.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    if PDBManager.detect_source(pdb_id) != "pdb":
+        return {"pdb_id": pdb_id, "assembly": None}
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        assembly = await annotation_aggregator.fetch_assembly_info(pdb_id, client)
+    return {"pdb_id": pdb_id, "assembly": assembly}
 
 
 @app.get(

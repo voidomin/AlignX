@@ -61,6 +61,16 @@ describe('api.js (no API key configured)', () => {
         expect(JSON.parse(options.body)).toEqual({ pdb_id: '1CRN' });
     });
 
+    it('submitDiscoveryJob includes webhook_url when given', async () => {
+        mockFetchOnce({ job_id: 'disc789', status: 'queued' });
+        const { submitDiscoveryJob } = await import('./api.js');
+
+        await submitDiscoveryJob('1CRN', null, 'https://example.com/hook');
+
+        const [, options] = global.fetch.mock.calls[0];
+        expect(JSON.parse(options.body)).toEqual({ pdb_id: '1CRN', webhook_url: 'https://example.com/hook' });
+    });
+
     it('submitClustalOmegaJob posts the sequences dict to the clustalo job endpoint', async () => {
         mockFetchOnce({ job_id: 'clustalo123', status: 'queued' });
         const { submitClustalOmegaJob } = await import('./api.js');
@@ -79,6 +89,19 @@ describe('api.js (no API key configured)', () => {
         await expect(submitClustalOmegaJob({ '4RLT': 'MVHL' })).rejects.toThrow('At least 2 sequences are required.');
     });
 
+    it('submitClustalOmegaJob includes webhook_url when given', async () => {
+        mockFetchOnce({ job_id: 'clustalo456', status: 'queued' });
+        const { submitClustalOmegaJob } = await import('./api.js');
+
+        await submitClustalOmegaJob({ '4RLT': 'MVHL', '3UG9': 'MVLS' }, 'https://example.com/hook');
+
+        const [, options] = global.fetch.mock.calls[0];
+        expect(JSON.parse(options.body)).toEqual({
+            sequences: { '4RLT': 'MVHL', '3UG9': 'MVLS' },
+            webhook_url: 'https://example.com/hook',
+        });
+    });
+
     it('submitConservationJob posts the sequence to the conservation job endpoint', async () => {
         mockFetchOnce({ job_id: 'blast123', status: 'queued' });
         const { submitConservationJob } = await import('./api.js');
@@ -95,6 +118,19 @@ describe('api.js (no API key configured)', () => {
         mockFetchOnce({ detail: 'A real protein sequence (10+ amino-acid letters) is required.' }, false, 400);
         const { submitConservationJob } = await import('./api.js');
         await expect(submitConservationJob('MV')).rejects.toThrow('A real protein sequence');
+    });
+
+    it('submitConservationJob includes webhook_url when given', async () => {
+        mockFetchOnce({ job_id: 'blast456', status: 'queued' });
+        const { submitConservationJob } = await import('./api.js');
+
+        await submitConservationJob('MVHLTPEEKSAVTALWGKVNV', 'https://example.com/hook');
+
+        const [, options] = global.fetch.mock.calls[0];
+        expect(JSON.parse(options.body)).toEqual({
+            sequence: 'MVHLTPEEKSAVTALWGKVNV',
+            webhook_url: 'https://example.com/hook',
+        });
     });
 
     it('pollJobUntilDone polls until status is completed', async () => {
@@ -441,6 +477,110 @@ describe('api.js request-ID validation', () => {
         mockFetchOnce({ annotation: {} });
         const { fetchAnnotations } = await import('./api.js');
         await expect(fetchAnnotations('AF-P69905-F1')).resolves.toBeDefined();
+    });
+
+    it('predictFromSequence posts the sequence and resolves with the chains shape', async () => {
+        mockFetchOnce({ chains: { 'PRED-ABCD1234': { source: 'upload' } } });
+        const { predictFromSequence } = await import('./api.js');
+        const data = await predictFromSequence('MVHLTPEEKSAVTALWGKVNV');
+        expect(Object.keys(data.chains)[0]).toBe('PRED-ABCD1234');
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/fold-sequence');
+        expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({ sequence: 'MVHLTPEEKSAVTALWGKVNV' });
+    });
+
+    it('predictFromSequence throws with the server detail message on failure', async () => {
+        mockFetchOnce({ detail: 'A real protein sequence (10+ amino-acid letters) is required.' }, false, 400);
+        const { predictFromSequence } = await import('./api.js');
+        await expect(predictFromSequence('MV')).rejects.toThrow('A real protein sequence');
+    });
+
+    it('fetchRunsTrend posts run_ids and resolves with the trend list', async () => {
+        mockFetchOnce({ trend: [{ run_id: 'run_1', mean_rmsd: 1.0, max_rmsd: 1.5 }] });
+        const { fetchRunsTrend } = await import('./api.js');
+        const data = await fetchRunsTrend(['run_1', 'run_2']);
+        expect(data.trend[0].run_id).toBe('run_1');
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/runs/trend');
+        expect(global.fetch.mock.calls[0][1].method).toBe('POST');
+        expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({ run_ids: ['run_1', 'run_2'] });
+    });
+
+    it('fetchRunsTrend throws with the server detail message on failure', async () => {
+        global.fetch = vi.fn().mockResolvedValue({
+            ok: false,
+            json: async () => ({ detail: 'None of the given run_ids resolved to a real RMSD matrix.' }),
+        });
+        const { fetchRunsTrend } = await import('./api.js');
+        await expect(fetchRunsTrend(['nope'])).rejects.toThrow('None of the given run_ids resolved');
+    });
+
+    it('fetchMutationTolerance rejects a pdbId that is not a recognized structure ID format', async () => {
+        const { fetchMutationTolerance } = await import('./api.js');
+        await expect(fetchMutationTolerance('../evil', 'A')).rejects.toThrow('Invalid pdbId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchMutationTolerance works with no chain given', async () => {
+        mockFetchOnce({ pdb_id: 'AF-P69905-F1', chain: null, tolerance: {} });
+        const { fetchMutationTolerance } = await import('./api.js');
+        await expect(fetchMutationTolerance('AF-P69905-F1')).resolves.toBeDefined();
+        expect(global.fetch.mock.calls[0][0]).not.toContain('chain=');
+    });
+
+    it('fetchMutationTolerance resolves with the { pdb_id, chain, tolerance } shape', async () => {
+        mockFetchOnce({ pdb_id: '4HHB', chain: 'A', tolerance: { accession: 'P68871', per_residue_average: { 6: 0.9 } } });
+        const { fetchMutationTolerance } = await import('./api.js');
+        const data = await fetchMutationTolerance('4HHB', 'A');
+        expect(data.tolerance.accession).toBe('P68871');
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/mutation-tolerance');
+        expect(global.fetch.mock.calls[0][0]).toContain('pdb_id=4HHB');
+        expect(global.fetch.mock.calls[0][0]).toContain('chain=A');
+    });
+
+    it('fetchCathClassification rejects a pdbId that is not a recognized structure ID format', async () => {
+        const { fetchCathClassification } = await import('./api.js');
+        await expect(fetchCathClassification('../evil')).rejects.toThrow('Invalid pdbId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchCathClassification resolves with the { pdb_id, domains } shape', async () => {
+        mockFetchOnce({ pdb_id: '4HHB', domains: [{ chain_id: 'A', domain: '4hhbA00', classification: '1.10.490.10' }] });
+        const { fetchCathClassification } = await import('./api.js');
+        const data = await fetchCathClassification('4HHB');
+        expect(data.domains[0].classification).toBe('1.10.490.10');
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/cath');
+        expect(global.fetch.mock.calls[0][0]).toContain('pdb_id=4HHB');
+    });
+
+    it('fetchAssemblyInfo rejects a pdbId that is not a recognized structure ID format', async () => {
+        const { fetchAssemblyInfo } = await import('./api.js');
+        await expect(fetchAssemblyInfo('../evil')).rejects.toThrow('Invalid pdbId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchAssemblyInfo resolves with the { pdb_id, assembly } shape', async () => {
+        mockFetchOnce({ pdb_id: '4HHB', assembly: { oligomeric_count: 4, oligomeric_details: 'tetrameric' } });
+        const { fetchAssemblyInfo } = await import('./api.js');
+        const data = await fetchAssemblyInfo('4HHB');
+        expect(data.assembly.oligomeric_details).toBe('tetrameric');
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/assembly');
+        expect(global.fetch.mock.calls[0][0]).toContain('pdb_id=4HHB');
+    });
+
+    it('fetchPae rejects a pdbId that is not a recognized structure ID format', async () => {
+        const { fetchPae } = await import('./api.js');
+        await expect(fetchPae('../evil')).rejects.toThrow('Invalid pdbId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchPae resolves with the { pdb_id, pae } shape', async () => {
+        mockFetchOnce({ pdb_id: 'AF-P69905-F1', pae: [[0, 5], [5, 0]] });
+        const { fetchPae } = await import('./api.js');
+        await expect(fetchPae('AF-P69905-F1')).resolves.toEqual({
+            pdb_id: 'AF-P69905-F1',
+            pae: [[0, 5], [5, 0]],
+        });
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/pae');
+        expect(global.fetch.mock.calls[0][0]).toContain('pdb_id=AF-P69905-F1');
     });
 
     it('fetchValidation rejects a pdbId that is not a recognized structure ID format', async () => {

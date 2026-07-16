@@ -71,6 +71,14 @@ for how to actually use each one.
 | 38 | Runnable Jupyter Notebook export | Both | [§4.2](#42-html-notebook) |
 | 39 | True sequence-only MSA (EBI Clustal Omega) | SPA | [§2.8](#28-sequence-view) |
 | 40 | True evolutionary conservation via homolog search (NCBI BLAST) | SPA | [§2.8](#28-sequence-view) |
+| 41 | AlphaFold PAE (predicted aligned error) viewer | SPA | [§2.16](#216-predicted-aligned-error-pae) |
+| 42 | AlphaMissense mutation-tolerance overlay | SPA | [§2.14](#214-mutation-impact-mapping) |
+| 43 | CATH fold classification badge | SPA | [§1](#1-structure-input) |
+| 44 | Oligomeric assembly badge | SPA | [§1](#1-structure-input) |
+| 45 | Cross-run RMSD trend report | SPA | [§5.1](#51-run-history) |
+| 46 | Async job completion webhooks | SPA | [§3](#3-discover-mode-structure-to-function) |
+| 47 | Plain-English structure-diff narrative | SPA | [§2.17](#217-structure-diff-narrative) |
+| 48 | Structure prediction from a raw sequence (ESMFold) | SPA | [§1](#1-structure-input) |
 
 ---
 
@@ -103,6 +111,23 @@ For a real PDB entry, a **"View publication"** link also appears when RCSB has
 primary-citation data for it — a direct PubMed link when a PubMed ID is on
 file, falling back to the DOI resolver otherwise. AlphaFold/SWISS-MODEL/ESM
 Atlas structures have no citation concept and show no link.
+
+Two more badges appear for real PDB entries specifically: a **CATH
+classification** badge (e.g. "CATH 1.10.490.10") — a standardized fold-family
+label independent of Foldseek's own structural-similarity search — and an
+**oligomeric assembly** badge (e.g. "Tetrameric") from RCSB's real biological
+assembly data. Both are metadata display only, fetched lazily per card the
+same way the wwPDB validation badge is.
+
+Have no accession at all — just a sequence? Click **"Predict from sequence"**
+to paste a raw amino-acid sequence (10–300 residues) and get a real predicted
+structure back via ESM Atlas's public ESMFold API, no existing public ID
+required. This is the one entry point that doesn't depend on a structure
+already being deposited somewhere; the predicted structure becomes a normal
+workspace member afterward — alignment, ligand hunting, and export all work
+on it exactly like an upload. Real sequences at this length complete in
+seconds to low tens of seconds; longer sequences are rejected upfront rather
+than left to time out against the public service's own limit.
 
 *(SPA only for now — Streamlit currently only accepts plain RCSB PDB IDs.)*
 
@@ -318,10 +343,18 @@ structure can reach ~200MB), with an automatic sparse-list fallback above a
 In the Analytics tab's Annotations sub-tab: enter a chain, residue number, and
 proposed substitution to map it onto the structure's real UniProt position,
 see the real wild-type residue and gene, and — if a matching record exists —
-the real **ClinVar clinical significance** of that substitution. Also surfaces
-any already-known UniProt natural variant at that position. Builds on §2.12's
-real residue mapping, so this works for real PDB entries as well as
-AlphaFold-sourced structures.
+the real **ClinVar clinical significance** of that substitution, plus the
+real **AlphaMissense pathogenicity score** for that exact substitution. Also
+surfaces any already-known UniProt natural variant at that position. Builds
+on §2.12's real residue mapping, so this works for real PDB entries as well
+as AlphaFold-sourced structures.
+
+A related **"Mutation tolerance (AlphaMissense)"** 3D viewer color scheme
+(alongside the existing chain/secondary-structure/spectrum/pLDDT schemes)
+colors every residue by its mean predicted pathogenicity across all 19
+possible substitutions at that position (green = tolerant, red = intolerant)
+— a proteome-wide view of mutation sensitivity, not just the one substitution
+entered above.
 
 ### 2.15 Bulk QC Sweep
 
@@ -330,6 +363,27 @@ detection, secondary-structure assignment, and (for real PDB entries) wwPDB
 validation across every loaded structure at once, with no alignment required
 — a summary table (favored %, outlier count, %helix, clashscore per structure)
 instead of clicking into each structure's card individually.
+
+### 2.16 Predicted Aligned Error (PAE)
+
+For an AlphaFold-sourced structure, a heatmap in Analytics' Quality sub-tab
+shows AlphaFold's own real per-residue-pair confidence matrix — how confident
+the model is that two residues are correctly positioned *relative to each
+other*, not just how confident it is in either residue's own position
+(pLDDT). Low error (blue) between two domains means their relative
+orientation is trustworthy; high error (red) means treat that relative
+positioning with real skepticism even where each domain's own pLDDT is high.
+
+### 2.17 Structure-Diff Narrative
+
+In Analytics' Insights sub-tab, pick any two structures in the run to get a
+plain-English paragraph describing how they differ — RMSD magnitude
+(very similar / moderate divergence / substantially different) plus, when
+available, the independent tmtools TM-score's fold-level interpretation
+(same fold with high confidence / same fold / possibly not the same fold at
+all). A user-directed, exact-pair comparison — distinct from the automated
+Insights list above it, which only ever surfaces the single best/worst pair
+across the whole run.
 
 ---
 
@@ -392,6 +446,11 @@ needed, just configuration.
 
 Discover runs are cached (annotation lookups default to a 30-day TTL) and appear
 in your Dashboard/History alongside Compare runs with a distinct `DISCOVER` badge.
+
+Discover, Clustal Omega, and BLAST conservation jobs (the three you're most
+likely to walk away from) all accept an optional **webhook URL** at submission
+time — a notification POST arrives there the moment the job finishes, so you
+don't need to keep the tab open and polling for a multi-minute search.
 
 ### 3.6 3D Structure Viewer
 
@@ -486,6 +545,15 @@ so having the link *is* the access control.
 Every run can also carry free-text **notes and tags**, added or edited inline
 from the History panel — stored in the run's existing metadata, so no new
 run-level state to migrate.
+
+Pick 2 or more past runs from the same panel to see a **cross-run RMSD trend**
+— a Plotly line chart of mean/max RMSD across your selected runs, sorted
+chronologically. Useful for the same protein family run repeatedly over
+time — did adding a new source structure or re-running with different
+parameters shift structural similarity, and in which direction. (TM-score
+isn't trended alongside RMSD here — unlike the RMSD matrix, it's computed at
+run time and never saved to disk, so trending it for arbitrary past runs
+would mean re-running the structural alignment for each one.)
 
 ### 5.2 Session Isolation
 

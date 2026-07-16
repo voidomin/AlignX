@@ -132,6 +132,19 @@ describe('DiscoveryPanel', () => {
         expect(panel.element.querySelector('#discover-error').classList.contains('hidden')).toBe(true);
     });
 
+    it('passes the webhook URL through when one is entered', async () => {
+        submitDiscoveryJob.mockResolvedValue({ job_id: 'job1', status: 'queued' });
+        pollJobUntilDone.mockResolvedValue({ status: 'completed', results: makeAnnotatedResults() });
+
+        const panel = new DiscoveryPanel();
+        panel.render();
+        panel.element.querySelector('#discover-webhook-url').value = 'https://example.com/hook';
+
+        await panel.runFor('1CRN');
+
+        expect(submitDiscoveryJob).toHaveBeenCalledWith('1CRN', ['pdb100', 'afdb50'], 'https://example.com/hook');
+    });
+
     it('surfaces a failed job as an error message', async () => {
         submitDiscoveryJob.mockResolvedValue({ job_id: 'job1', status: 'queued' });
         pollJobUntilDone.mockResolvedValue({ status: 'failed', error: 'Foldseek search failed: timed out' });

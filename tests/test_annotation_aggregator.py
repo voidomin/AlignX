@@ -2371,3 +2371,320 @@ class TestAggregateForHits:
 
         assert result["annotated_neighbor_count"] == 1
         assert result["high_confidence_annotated_count"] == 0
+
+
+class TestParseAlphafoldId:
+    def test_extracts_uniprot_accession_and_fragment(self):
+        assert AnnotationAggregator._parse_alphafold_id("AF-P69905-F1") == (
+            "P69905",
+            "F1",
+        )
+
+    def test_uppercases_accession_and_fragment(self):
+        assert AnnotationAggregator._parse_alphafold_id("af-p69905-f2") == (
+            "P69905",
+            "F2",
+        )
+
+    def test_returns_none_for_non_alphafold_id(self):
+        assert AnnotationAggregator._parse_alphafold_id("4HHB") is None
+        assert AnnotationAggregator._parse_alphafold_id("SM-P69905") is None
+        assert AnnotationAggregator._parse_alphafold_id("") is None
+
+
+class TestFetchPredictedAlignedError:
+    @pytest.mark.asyncio
+    async def test_returns_none_when_not_alphafold_sourced(self):
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_predicted_aligned_error("4HHB", client)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_matrix_from_the_first_successful_version(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data=[{"predicted_aligned_error": [[0, 5], [5, 0]]}]
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_predicted_aligned_error(
+                "AF-P69905-F1", client
+            )
+        assert result == [[0, 5], [5, 0]]
+        called_url = mock_get.call_args.args[0]
+        assert "AF-P69905-F1-predicted_aligned_error_v6.json" in called_url
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_falls_back_to_older_versions_when_latest_is_missing(self, mock_get):
+        mock_get.side_effect = [
+            _mock_response(status_code=404),
+            _mock_response(status_code=404),
+            _mock_response(json_data=[{"predicted_aligned_error": [[0, 1], [1, 0]]}]),
+        ]
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_predicted_aligned_error(
+                "AF-P69905-F1", client
+            )
+        assert result == [[0, 1], [1, 0]]
+        assert mock_get.call_count == 3
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_when_every_version_is_missing(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_predicted_aligned_error(
+                "AF-P69905-F1", client
+            )
+        assert result is None
+        assert mock_get.call_count == 6
+
+
+class TestFetchAlphamissenseScores:
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_parses_the_csv_into_a_per_position_scores_dict(self, mock_get):
+        response = _mock_response(status_code=200)
+        response.text = (
+            "protein_variant,am_pathogenicity,am_class\n"
+            "M1A,0.4454,Amb\n"
+            "M1C,0.4948,Amb\n"
+            "R2P,0.9012,LPath\n"
+        )
+        mock_get.return_value = response
+
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_alphamissense_scores("P69905", client)
+
+        assert result == {
+            "1": {
+                "wildtype": "M",
+                "scores": {
+                    "A": {"pathogenicity": 0.4454, "class": "Amb"},
+                    "C": {"pathogenicity": 0.4948, "class": "Amb"},
+                },
+            },
+            "2": {
+                "wildtype": "R",
+                "scores": {"P": {"pathogenicity": 0.9012, "class": "LPath"}},
+            },
+        }
+        called_url = mock_get.call_args.args[0]
+        assert "AF-P69905-F1-aa-substitutions.csv" in called_url
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_dict_when_not_found(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_alphamissense_scores("P69905", client)
+        assert result == {}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_skips_malformed_rows(self, mock_get):
+        response = _mock_response(status_code=200)
+        response.text = (
+            "protein_variant,am_pathogenicity,am_class\n"
+            "not_a_valid_row\n"
+            "M1A,0.4454,Amb\n"
+        )
+        mock_get.return_value = response
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_alphamissense_scores("P69905", client)
+        assert result == {
+            "1": {
+                "wildtype": "M",
+                "scores": {"A": {"pathogenicity": 0.4454, "class": "Amb"}},
+            }
+        }
+
+
+class TestAggregateMutationTolerance:
+    @pytest.mark.asyncio
+    @patch.object(AnnotationAggregator, "fetch_alphamissense_scores")
+    @patch.object(AnnotationAggregator, "_resolve_structure_accession")
+    async def test_returns_empty_when_no_accession_resolves(
+        self, mock_resolve, mock_scores
+    ):
+        mock_resolve.return_value = None
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.aggregate_mutation_tolerance(
+                "ESM-MGYP1", None, "esm_atlas", client
+            )
+        assert result == {"accession": None, "per_residue_average": {}}
+        mock_scores.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch.object(AnnotationAggregator, "fetch_alphamissense_scores")
+    @patch.object(AnnotationAggregator, "_resolve_structure_accession")
+    async def test_alphafold_source_uses_positions_directly(
+        self, mock_resolve, mock_scores
+    ):
+        mock_resolve.return_value = "P69905"
+        mock_scores.return_value = {
+            "1": {
+                "wildtype": "M",
+                "scores": {"A": {"pathogenicity": 0.2, "class": "LBen"}},
+            },
+            "2": {
+                "wildtype": "R",
+                "scores": {
+                    "P": {"pathogenicity": 0.8, "class": "LPath"},
+                    "K": {"pathogenicity": 0.4, "class": "Amb"},
+                },
+            },
+        }
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.aggregate_mutation_tolerance(
+                "AF-P69905-F1", None, "alphafold", client
+            )
+        assert result["accession"] == "P69905"
+        assert result["per_residue_average"] == pytest.approx({"1": 0.2, "2": 0.6})
+
+    @pytest.mark.asyncio
+    @patch.object(AnnotationAggregator, "resolve_uniprot_residue_mapping")
+    @patch.object(AnnotationAggregator, "fetch_alphamissense_scores")
+    @patch.object(AnnotationAggregator, "_resolve_structure_accession")
+    async def test_pdb_source_translates_through_the_real_residue_map(
+        self, mock_resolve, mock_scores, mock_residue_map
+    ):
+        mock_resolve.return_value = "P68871"
+        mock_scores.return_value = {
+            "7": {
+                "wildtype": "E",
+                "scores": {"V": {"pathogenicity": 0.95, "class": "LPath"}},
+            },
+        }
+        mock_residue_map.return_value = {7: 6}  # uniprot pos 7 -> author resi 6
+
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.aggregate_mutation_tolerance(
+                "4HHB", "B", "pdb", client
+            )
+        assert result["accession"] == "P68871"
+        assert result["per_residue_average"] == {"6": 0.95}
+
+    @pytest.mark.asyncio
+    @patch.object(AnnotationAggregator, "fetch_alphamissense_scores")
+    @patch.object(AnnotationAggregator, "_resolve_structure_accession")
+    async def test_swissmodel_source_gets_nothing(self, mock_resolve, mock_scores):
+        mock_resolve.return_value = "P69905"
+        mock_scores.return_value = {
+            "1": {
+                "wildtype": "M",
+                "scores": {"A": {"pathogenicity": 0.2, "class": "LBen"}},
+            },
+        }
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.aggregate_mutation_tolerance(
+                "SM-P69905", None, "swissmodel", client
+            )
+        assert result["per_residue_average"] == {}
+
+
+class TestFetchCathClassification:
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_parses_one_entry_per_chain_and_domain(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "4hhb": {
+                    "CATH-B": {
+                        "1.10.490.10": {
+                            "mappings": [
+                                {"chain_id": "A", "domain": "4hhbA00"},
+                                {"chain_id": "B", "domain": "4hhbB00"},
+                            ]
+                        }
+                    }
+                }
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_cath_classification("4HHB", client)
+
+        assert result == [
+            {"chain_id": "A", "domain": "4hhbA00", "classification": "1.10.490.10"},
+            {"chain_id": "B", "domain": "4hhbB00", "classification": "1.10.490.10"},
+        ]
+        called_url = mock_get.call_args.args[0]
+        assert called_url == "https://www.ebi.ac.uk/pdbe/api/mappings/cath_b/4hhb"
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_list_when_not_found(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_cath_classification("9XXX", client)
+        assert result == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_list_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("boom")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_cath_classification("4HHB", client)
+        assert result == []
+
+
+class TestFetchAssemblyInfo:
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_parses_the_real_oligomeric_state(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "pdbx_struct_assembly": {
+                    "oligomeric_count": 4,
+                    "oligomeric_details": "tetrameric",
+                }
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_assembly_info("4HHB", client)
+
+        assert result == {"oligomeric_count": 4, "oligomeric_details": "tetrameric"}
+        called_url = mock_get.call_args.args[0]
+        assert called_url == "https://data.rcsb.org/rest/v1/core/assembly/4hhb/1"
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_when_not_found(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_assembly_info("9XXX", client)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_when_response_has_no_oligomeric_data(self, mock_get):
+        mock_get.return_value = _mock_response(json_data={"pdbx_struct_assembly": {}})
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_assembly_info("4HHB", client)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("boom")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_assembly_info("4HHB", client)
+        assert result is None

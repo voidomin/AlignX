@@ -4,7 +4,10 @@ import { Viewer3D } from './Viewer3D.js';
 vi.mock('../api.js', () => ({
     getAlignmentPdbUrl: vi.fn((runId) => `http://mock/results/${runId}/alignment.pdb`),
     getStructureFileUrl: vi.fn((pdbId) => `http://mock/api/structure-file?pdb_id=${pdbId}`),
+    fetchMutationTolerance: vi.fn(),
 }));
+
+import { fetchMutationTolerance } from '../api.js';
 
 function makeMockViewer() {
     return {
@@ -34,6 +37,7 @@ let mockViewer;
 
 beforeEach(() => {
     global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => 'MOCK PDB DATA' });
+    fetchMutationTolerance.mockResolvedValue({ tolerance: { accession: null, per_residue_average: {} } });
     window.$3Dmol = {
         createViewer: vi.fn(() => {
             mockViewer = makeMockViewer();
@@ -462,6 +466,70 @@ describe('Viewer3D', () => {
             await v.loadSuperposition('run_1', ['AF-P69905-F1', '3UG9'], {}, null);
 
             v.setColorScheme('confidence');
+
+            expect(mockViewer.setStyle).toHaveBeenCalledWith({ chain: 'A' }, { cartoon: expect.objectContaining({ color: expect.any(String) }) });
+        });
+    });
+
+    describe('AlphaMissense mutation-tolerance color scheme', () => {
+        it('fetches tolerance for every structure and applies a colorfunc once loaded', async () => {
+            fetchMutationTolerance.mockResolvedValue({
+                tolerance: { accession: 'P69905', per_residue_average: { 10: 0.9 } },
+            });
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            await v.setColorScheme('missense');
+
+            expect(fetchMutationTolerance).toHaveBeenCalledWith('4RLT', 'A');
+            expect(fetchMutationTolerance).toHaveBeenCalledWith('3UG9', 'B');
+            expect(mockViewer.setStyle).toHaveBeenCalledWith(
+                { chain: 'A' },
+                { cartoon: expect.objectContaining({ colorfunc: expect.any(Function) }) }
+            );
+        });
+
+        it('colors a residue with tolerance data and falls back to a neutral color otherwise', async () => {
+            fetchMutationTolerance.mockResolvedValue({
+                tolerance: { accession: 'P69905', per_residue_average: { 10: 1 } },
+            });
+            const v = makeViewer();
+            await loadTwoStructures(v);
+            await v.setColorScheme('missense');
+
+            const [, styleArg] = mockViewer.setStyle.mock.calls[mockViewer.setStyle.mock.calls.length - 1];
+            const colorfunc = styleArg.cartoon.colorfunc;
+            expect(colorfunc({ resi: 10 })).toBe('#b23a3a');
+            expect(colorfunc({ resi: 999 })).toBe('#4B5563');
+        });
+
+        it('falls back to identity color when no tolerance data resolves for any structure', async () => {
+            fetchMutationTolerance.mockResolvedValue({ tolerance: { accession: null, per_residue_average: {} } });
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            await v.setColorScheme('missense');
+
+            expect(mockViewer.setStyle).toHaveBeenCalledWith({ chain: 'A' }, { cartoon: expect.objectContaining({ color: expect.any(String) }) });
+        });
+
+        it('does not re-fetch tolerance data already cached for a structure', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            await v.setColorScheme('missense');
+            fetchMutationTolerance.mockClear();
+            await v.setColorScheme('missense');
+
+            expect(fetchMutationTolerance).not.toHaveBeenCalled();
+        });
+
+        it('handles a fetch failure gracefully by falling back to identity color', async () => {
+            fetchMutationTolerance.mockRejectedValue(new Error('boom'));
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            await v.setColorScheme('missense');
 
             expect(mockViewer.setStyle).toHaveBeenCalledWith({ chain: 'A' }, { cartoon: expect.objectContaining({ color: expect.any(String) }) });
         });

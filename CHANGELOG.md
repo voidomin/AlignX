@@ -2,6 +2,25 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.93.0]
+
+Phase 3: a fresh, non-overlapping feature batch scoped after Phase 1+2's original 21-item backlog shipped in full. Every external dependency was verified live before committing to a design (AlphaFold PAE/AlphaMissense files, PDBe CATH mappings, RCSB assembly API, ESM Atlas's ESMFold endpoint), and one planned item (a structure-diff narrative) was deliberately narrowed after discovering the existing insights engine already covered most of what it would have duplicated.
+
+### Added
+- **AlphaFold PAE viewer**: a real per-residue-pair confidence matrix for AlphaFold-sourced structures (which domain pairs AlphaFold trusts are correctly positioned relative to each other) - a different signal than per-residue pLDDT. New heatmap in Analytics' Quality sub-tab.
+- **AlphaMissense pathogenicity overlay**: real per-substitution pathogenicity scores, averaged per residue for a new "Mutation tolerance" 3D viewer color scheme, plus the exact per-substitution score surfaced in the existing mutation-mapping UI. Works for any structure with a resolved UniProt accession, not just AlphaFold's 1:1 shortcut.
+- **CATH fold classification badge**: a standardized fold-family label for real PDB entries, independent of Foldseek's own similarity search.
+- **Oligomeric assembly badge**: real oligomeric-state metadata (e.g. "Tetrameric") for real PDB entries, via RCSB's assembly API - metadata display only, deliberately not a new interface-analysis engine.
+- **Cross-run RMSD trend report**: a chronological trend across a user-selected *set* of past runs (not just one, as the existing batch comparison does), with a new multi-select picker and Plotly line chart in the History panel.
+- **Async job completion webhooks**: an optional webhook URL on Discover/Clustal Omega/BLAST conservation job submission - a POST notification when the job finishes, instead of needing to keep the tab open and polling.
+- **Plain-English structure-diff narrative**: a user-directed "describe the difference between these two structures" picker in Analytics' Insights sub-tab (RMSD magnitude + independent TM-score interpretation), templated client-side from data already loaded - no new backend call.
+- **ESMFold structure prediction from a raw sequence**: paste any amino-acid sequence (up to 300 residues) and get a real predicted structure back, with no existing public accession required - removes the app's previous hard constraint that every structure had to already be deposited somewhere. Synchronous, not a background job (real sequences at this length complete in seconds).
+
+### Verified
+- Full backend suite: 1228 tests passing (up from 1171 at the end of Phase 2's follow-up fixes). `black`/`ruff` clean.
+- Frontend suite: 430 Vitest tests passing (up from 373). `npm run lint` clean, `npm run build` succeeds.
+- Every external API call verified live this session before implementation, not assumed: real AlphaFold PAE/AlphaMissense files for a real UniProt accession, a real CATH classification and real oligomeric state for a real PDB entry, a real multi-run RMSD trend, a real webhook POST observed on job completion, a real structure-diff narrative for a real pair, and a real ESMFold prediction completing end-to-end and working in alignment/export like any other workspace member.
+
 ## [3.92.0]
 
 Phase 2 of the feature-gap pass: the remaining 9 items from the backlog Phase 1 scoped, implemented in 10 stages (smallest/most-contained first) on one feature branch. Deeper ligand/pocket chemistry, real per-residue annotation mapping for PDB entries, mutation/ClinVar impact, a bulk QC sweep, a documented public API with a real Jupyter export, and two genuinely independent external-service integrations (EBI Clustal Omega for sequence-only MSA, NCBI BLAST for real evolutionary conservation) - the first two async job types this app has added since Foldseek Discover.
