@@ -2592,3 +2592,51 @@ class TestAggregateMutationTolerance:
                 "SM-P69905", None, "swissmodel", client
             )
         assert result["per_residue_average"] == {}
+
+
+class TestFetchCathClassification:
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_parses_one_entry_per_chain_and_domain(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "4hhb": {
+                    "CATH-B": {
+                        "1.10.490.10": {
+                            "mappings": [
+                                {"chain_id": "A", "domain": "4hhbA00"},
+                                {"chain_id": "B", "domain": "4hhbB00"},
+                            ]
+                        }
+                    }
+                }
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_cath_classification("4HHB", client)
+
+        assert result == [
+            {"chain_id": "A", "domain": "4hhbA00", "classification": "1.10.490.10"},
+            {"chain_id": "B", "domain": "4hhbB00", "classification": "1.10.490.10"},
+        ]
+        called_url = mock_get.call_args.args[0]
+        assert called_url == "https://www.ebi.ac.uk/pdbe/api/mappings/cath_b/4hhb"
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_list_when_not_found(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_cath_classification("9XXX", client)
+        assert result == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_list_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("boom")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_cath_classification("4HHB", client)
+        assert result == []

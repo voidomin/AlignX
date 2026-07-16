@@ -1136,6 +1136,39 @@ def test_mutation_tolerance_endpoint_400s_on_invalid_chain_param():
     assert response.status_code == 400
 
 
+def test_cath_endpoint_returns_domains_for_a_real_pdb_entry():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.fetch_cath_classification = AsyncMock(
+            return_value=[
+                {"chain_id": "A", "domain": "4hhbA00", "classification": "1.10.490.10"}
+            ]
+        )
+
+        response = client.get("/api/cath?pdb_id=4HHB")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["pdb_id"] == "4HHB"
+        assert data["domains"][0]["classification"] == "1.10.490.10"
+        mock_aggregator.fetch_cath_classification.assert_called_once()
+
+
+def test_cath_endpoint_skips_lookup_for_non_pdb_sources():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.fetch_cath_classification = AsyncMock(return_value=[])
+
+        response = client.get("/api/cath?pdb_id=AF-P69905-F1")
+
+        assert response.status_code == 200
+        assert response.json()["domains"] == []
+        mock_aggregator.fetch_cath_classification.assert_not_called()
+
+
+def test_cath_endpoint_400s_on_invalid_pdb_id():
+    response = client.get("/api/cath?pdb_id=../etc")
+    assert response.status_code == 400
+
+
 def test_mutation_impact_endpoint_404s_when_position_cannot_be_resolved():
     with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
         mock_aggregator.resolve_structure_uniprot_position = AsyncMock(

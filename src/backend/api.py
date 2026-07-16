@@ -1721,6 +1721,26 @@ async def get_pae(pdb_id: Annotated[str, Query(...)]):
 
 
 @app.get(
+    "/api/cath",
+    responses={400: {"description": "Invalid pdb_id"}},
+)
+async def get_cath_classification(pdb_id: Annotated[str, Query(...)]):
+    """
+    Real CATH fold classification(s) for a real PDB entry (see
+    AnnotationAggregator.fetch_cath_classification) - a standardized
+    fold-family label independent of Foldseek's own similarity search.
+    Only meaningful for source == "pdb"; anything else correctly returns
+    an empty list rather than an error.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    if PDBManager.detect_source(pdb_id) != "pdb":
+        return {"pdb_id": pdb_id, "domains": []}
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        domains = await annotation_aggregator.fetch_cath_classification(pdb_id, client)
+    return {"pdb_id": pdb_id, "domains": domains}
+
+
+@app.get(
     "/api/validation",
     responses={400: {"description": "Invalid pdb_id"}},
 )

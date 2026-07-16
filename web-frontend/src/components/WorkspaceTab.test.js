@@ -11,9 +11,10 @@ vi.mock('../api.js', () => ({
     getDiscoveryCitationsUrl: vi.fn((runId) => `http://mock/api/discover/citations?run_id=${runId}`),
     fetchValidation: vi.fn(),
     fetchQc: vi.fn(),
+    fetchCathClassification: vi.fn(),
 }));
 
-import { submitDiscoveryJob, pollJobUntilDone, fetchValidation, fetchQc } from '../api.js';
+import { submitDiscoveryJob, pollJobUntilDone, fetchValidation, fetchQc, fetchCathClassification } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new WorkspaceTab({
@@ -260,6 +261,108 @@ describe('WorkspaceTab', () => {
             tab.updateState(['4HHB'], {}, { '4HHB': { chains: [{ id: 'A', residue_count: 141 }], source: 'pdb' } });
 
             expect(fetchValidation).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('CATH classification badge', () => {
+        function makePdbTab(overrides = {}) {
+            fetchValidation.mockResolvedValue({ pdb_id: '4HHB', validation: null });
+            return makeTab({
+                selectedPDBs: ['4HHB'],
+                pdbMetadata: {
+                    '4HHB': { chains: [{ id: 'A', residue_count: 141 }], source: 'pdb' },
+                },
+                ...overrides,
+            });
+        }
+
+        it('shows a "checking" placeholder immediately, then the classification once the fetch resolves', async () => {
+            let resolveFetch;
+            fetchCathClassification.mockReturnValue(new Promise(r => { resolveFetch = r; }));
+            const tab = makePdbTab();
+            tab.render();
+
+            const badge = tab.element.querySelector('#cath-badge-4HHB');
+            expect(badge.textContent).toBe('Checking CATH classification…');
+
+            resolveFetch({
+                pdb_id: '4HHB',
+                domains: [
+                    { chain_id: 'A', domain: '4hhbA00', classification: '1.10.490.10' },
+                    { chain_id: 'B', domain: '4hhbB00', classification: '1.10.490.10' },
+                ],
+            });
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(badge.textContent).toBe('CATH 1.10.490.10');
+        });
+
+        it('shows a "+N more" suffix when more than one distinct classification exists', async () => {
+            fetchCathClassification.mockResolvedValue({
+                pdb_id: '1ABC',
+                domains: [
+                    { chain_id: 'A', domain: '1abcA00', classification: '1.10.490.10' },
+                    { chain_id: 'A', domain: '1abcA01', classification: '2.40.50.140' },
+                ],
+            });
+            const tab = makePdbTab();
+            tab.render();
+
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#cath-badge-4HHB').textContent)
+                .toBe('CATH 1.10.490.10 (+1 more)');
+        });
+
+        it('shows a graceful message when no classification is available', async () => {
+            fetchCathClassification.mockResolvedValue({ pdb_id: '4HHB', domains: [] });
+            const tab = makePdbTab();
+            tab.render();
+
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#cath-badge-4HHB').textContent)
+                .toBe('No CATH classification available');
+        });
+
+        it('shows a graceful message when the fetch itself fails', async () => {
+            fetchCathClassification.mockRejectedValue(new Error('network down'));
+            const tab = makePdbTab();
+            tab.render();
+
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#cath-badge-4HHB').textContent)
+                .toBe('No CATH classification available');
+        });
+
+        it('omits the badge entirely for non-"pdb"-source structures', () => {
+            fetchCathClassification.mockClear();
+            const tab = makeTab({
+                selectedPDBs: ['AF-P69905-F1'],
+                pdbMetadata: { 'AF-P69905-F1': { chains: [{ id: 'A', residue_count: 141 }], source: 'alphafold' } },
+            });
+            tab.render();
+
+            expect(tab.element.querySelector('.pdb-cath-badge')).toBeNull();
+            expect(fetchCathClassification).not.toHaveBeenCalled();
+        });
+
+        it('only fetches once per structure across re-renders', async () => {
+            fetchCathClassification.mockResolvedValue({ pdb_id: '4HHB', domains: [] });
+            const tab = makePdbTab();
+            tab.render();
+            await Promise.resolve();
+            await Promise.resolve();
+            fetchCathClassification.mockClear();
+
+            tab.updateState(['4HHB'], {}, { '4HHB': { chains: [{ id: 'A', residue_count: 141 }], source: 'pdb' } });
+
+            expect(fetchCathClassification).not.toHaveBeenCalled();
         });
     });
 

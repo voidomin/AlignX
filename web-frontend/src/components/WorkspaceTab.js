@@ -1,4 +1,4 @@
-import { fetchSuggestions, isValidPdbId, fetchValidation, fetchQc } from '../api';
+import { fetchSuggestions, isValidPdbId, fetchValidation, fetchQc, fetchCathClassification } from '../api';
 import { escapeHtml } from '../escapeHtml';
 import { QUICK_START_EXAMPLES } from '../quickStartExamples';
 import { DiscoveryPanel } from './DiscoveryPanel';
@@ -46,6 +46,10 @@ export class WorkspaceTab {
         // yet fetched, null = fetched but no report available.
         this.validationCache = {};
         this._validationLoading = new Set();
+        // CATH fold classification is only meaningful for real PDB entries
+        // too - same lazy-per-card fetch/cache shape as validation above.
+        this.cathCache = {};
+        this._cathLoading = new Set();
     }
 
     render() {
@@ -439,6 +443,7 @@ export class WorkspaceTab {
             ${meta?.is_nmr ? `<span class="pdb-nmr-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="Showing model 1 of ${meta.num_models} - other conformers in this NMR ensemble aren't analyzed.">NMR · ${meta.num_models} models (model 1 shown)</span>` : ''}
             ${gapCount > 0 ? `<span class="pdb-gaps-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="${escapeHtml(gapTooltip)}">${gapCount} disordered ${gapLabel}</span>` : ''}
             ${meta?.source === 'pdb' ? `<span id="validation-badge-${pid}" class="pdb-validation-badge font-body-sm text-[11px] text-tertiary pl-0.5">${this._validationBadgeContent(pid)}</span>` : ''}
+            ${meta?.source === 'pdb' ? `<span id="cath-badge-${pid}" class="pdb-cath-badge font-body-sm text-[11px] text-tertiary pl-0.5">${this._cathBadgeContent(pid)}</span>` : ''}
             ${citationLinkHTML}
         `;
 
@@ -459,6 +464,7 @@ export class WorkspaceTab {
 
         if (meta?.source === 'pdb') {
             this._loadValidation(pid);
+            this._loadCath(pid);
         }
     }
 
@@ -495,6 +501,35 @@ export class WorkspaceTab {
         }
         const badge = this.element?.querySelector(`#validation-badge-${pid}`);
         if (badge) badge.textContent = this._validationBadgeContent(pid);
+    }
+
+    _cathBadgeContent(pid) {
+        const cached = this.cathCache[pid];
+        if (cached === undefined) return 'Checking CATH classification…';
+        if (!cached || cached.length === 0) return 'No CATH classification available';
+
+        const codes = [...new Set(cached.map(d => d.classification))];
+        return codes.length > 1
+            ? `CATH ${codes[0]} (+${codes.length - 1} more)`
+            : `CATH ${codes[0]}`;
+    }
+
+    // Same lazy-per-card fetch/cache shape as _loadValidation - real CATH
+    // fold classification only exists for real PDB entries.
+    async _loadCath(pid) {
+        if (this.cathCache[pid] !== undefined || this._cathLoading.has(pid)) return;
+        this._cathLoading.add(pid);
+        try {
+            const data = await fetchCathClassification(pid);
+            this.cathCache[pid] = data.domains;
+        } catch (err) {
+            console.error('Failed to load CATH classification for', pid, err);
+            this.cathCache[pid] = null;
+        } finally {
+            this._cathLoading.delete(pid);
+        }
+        const badge = this.element?.querySelector(`#cath-badge-${pid}`);
+        if (badge) badge.textContent = this._cathBadgeContent(pid);
     }
 
     // Generalizes the per-card wwPDB validation badge above (and the

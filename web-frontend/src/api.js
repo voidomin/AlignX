@@ -543,6 +543,13 @@ export async function fetchMutationTolerance(pdbId, chain) {
     return res.json();
 }
 
+export async function fetchCathClassification(pdbId) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const res = await fetch(buildUrl('/api/cath', { pdb_id: pdbId }), { headers: authHeaders() });
+    if (!res.ok) throw new Error("CATH classification fetch failed");
+    return res.json();
+}
+
 export async function fetchPae(pdbId) {
     pdbId = assertValidPdbId(pdbId, 'pdbId');
     const res = await fetch(buildUrl('/api/pae', { pdb_id: pdbId }), { headers: authHeaders() });

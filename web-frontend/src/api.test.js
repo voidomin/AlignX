@@ -466,6 +466,21 @@ describe('api.js request-ID validation', () => {
         expect(global.fetch.mock.calls[0][0]).toContain('chain=A');
     });
 
+    it('fetchCathClassification rejects a pdbId that is not a recognized structure ID format', async () => {
+        const { fetchCathClassification } = await import('./api.js');
+        await expect(fetchCathClassification('../evil')).rejects.toThrow('Invalid pdbId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchCathClassification resolves with the { pdb_id, domains } shape', async () => {
+        mockFetchOnce({ pdb_id: '4HHB', domains: [{ chain_id: 'A', domain: '4hhbA00', classification: '1.10.490.10' }] });
+        const { fetchCathClassification } = await import('./api.js');
+        const data = await fetchCathClassification('4HHB');
+        expect(data.domains[0].classification).toBe('1.10.490.10');
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/cath');
+        expect(global.fetch.mock.calls[0][0]).toContain('pdb_id=4HHB');
+    });
+
     it('fetchPae rejects a pdbId that is not a recognized structure ID format', async () => {
         const { fetchPae } = await import('./api.js');
         await expect(fetchPae('../evil')).rejects.toThrow('Invalid pdbId');

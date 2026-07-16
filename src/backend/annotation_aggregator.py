@@ -38,6 +38,7 @@ SIFTS_BASE_URL = "https://www.ebi.ac.uk/pdbe/api/mappings/uniprot"
 # each segment's author_residue_number range) needed to translate a UniProt-
 # numbered domain/feature location onto a PDB entry's own author numbering.
 PDBE_ALL_MAPPINGS_BASE_URL = "https://www.ebi.ac.uk/pdbe/api/mappings"
+PDBE_CATH_MAPPINGS_BASE_URL = "https://www.ebi.ac.uk/pdbe/api/mappings/cath_b"
 GMGC_BASE_URL = "https://gmgc.embl.de/api/v1.0"
 UNIPROT_BASE_URL = "https://rest.uniprot.org/uniprotkb"
 ALPHAFOLD_FILES_BASE_URL = "https://alphafold.ebi.ac.uk/files"
@@ -919,6 +920,47 @@ class AnnotationAggregator:
         return await self._get_or_fetch(
             f"alphamissense:{accession}", "alphamissense", _fetch
         )
+
+    async def fetch_cath_classification(
+        self, pdb_id: str, client: httpx.AsyncClient
+    ) -> List[Dict[str, str]]:
+        """Real CATH fold classifications for a real PDB entry, via PDBe's
+        cath_b mappings endpoint - a standardized fold-family label
+        independent of Foldseek's own structural-similarity search.
+        Returns one entry per (chain, domain), e.g. [{"chain_id": "A",
+        "domain": "4hhbA00", "classification": "1.10.490.10"}, ...] since
+        a multi-domain chain can have more than one classification.
+        AlphaFold/SWISS-MODEL/ESM Atlas structures have no CATH mapping at
+        all (CATH only classifies real experimentally-solved structures) -
+        callers should only invoke this for source == "pdb"."""
+
+        async def _fetch() -> List[Dict[str, str]]:
+            try:
+                response = await client.get(
+                    f"{PDBE_CATH_MAPPINGS_BASE_URL}/{pdb_id.lower()}",
+                    headers=_JSON_ACCEPT_HEADERS,
+                )
+                if response.status_code != 200:
+                    return []
+                entry = response.json().get(pdb_id.lower(), {})
+                domains = []
+                for classification, details in (entry.get("CATH-B") or {}).items():
+                    for mapping in details.get("mappings") or []:
+                        domains.append(
+                            {
+                                "chain_id": mapping.get("chain_id"),
+                                "domain": mapping.get("domain"),
+                                "classification": classification,
+                            }
+                        )
+                return domains
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"CATH classification lookup failed for {sanitize_for_log(pdb_id)}: {e}"
+                )
+                return []
+
+        return await self._get_or_fetch(f"cath:{pdb_id}", "cath", _fetch)
 
     def _try_get_cached_go_name(self, gid: str) -> Optional[str]:
         if not self.cache_db:
