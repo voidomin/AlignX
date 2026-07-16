@@ -5,6 +5,7 @@ import asyncio
 import numpy as np
 import pytest
 import pandas as pd
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock, AsyncMock, ANY
 from pathlib import Path
@@ -2946,6 +2947,220 @@ async def test_execute_alignment_job_marks_completed_on_success():
     job = api_module.alignment_jobs.pop(job_id)
     assert job["status"] == "completed"
     assert job["results"]["id"] == "run_abc"
+
+
+class TestValidateWebhookUrl:
+    def test_returns_none_for_no_url(self):
+        assert api_module._validate_webhook_url(None) is None
+        assert api_module._validate_webhook_url("") is None
+
+    def test_accepts_a_real_http_or_https_url(self):
+        assert api_module._validate_webhook_url("https://example.com/hook") == (
+            "https://example.com/hook"
+        )
+        assert api_module._validate_webhook_url("http://example.com/hook") == (
+            "http://example.com/hook"
+        )
+
+    def test_rejects_a_non_http_scheme(self):
+        with pytest.raises(HTTPException) as exc_info:
+            api_module._validate_webhook_url("file:///etc/passwd")
+        assert exc_info.value.status_code == 400
+
+    def test_rejects_a_url_with_no_hostname(self):
+        with pytest.raises(HTTPException) as exc_info:
+            api_module._validate_webhook_url("https:///no-host")
+        assert exc_info.value.status_code == 400
+
+
+class TestNotifyWebhook:
+    @pytest.mark.asyncio
+    @patch("src.backend.api.httpx.AsyncClient.post")
+    async def test_posts_the_payload_to_the_given_url(self, mock_post):
+        mock_post.return_value = MagicMock(status_code=200)
+        await api_module._notify_webhook(
+            "https://example.com/hook", {"job_id": "j1", "status": "completed"}
+        )
+        assert mock_post.call_args.args[0] == "https://example.com/hook"
+        assert mock_post.call_args.kwargs["json"] == {
+            "job_id": "j1",
+            "status": "completed",
+        }
+
+    @pytest.mark.asyncio
+    @patch("src.backend.api.httpx.AsyncClient.post")
+    async def test_a_failed_post_does_not_raise(self, mock_post):
+        import httpx
+
+        mock_post.side_effect = httpx.ConnectError("boom")
+        # Must not raise - a bad webhook URL must never fail the underlying job.
+        await api_module._notify_webhook(
+            "https://example.com/hook", {"job_id": "j1", "status": "completed"}
+        )
+
+
+class TestJobWebhooks:
+    @pytest.mark.asyncio
+    @patch("src.backend.api._notify_webhook", new_callable=AsyncMock)
+    async def test_alignment_job_notifies_with_the_real_run_id_on_success(
+        self, mock_notify
+    ):
+        job_id = "test-webhook-align-success"
+        api_module.alignment_jobs[job_id] = {
+            "status": "queued",
+            "created_at": time.time(),
+        }
+        with patch(
+            "src.backend.api.AnalysisCoordinator.run_full_pipeline",
+            return_value=(True, "ok", {"id": "run_xyz"}),
+        ):
+            await api_module._execute_alignment_job(
+                job_id,
+                webhook_url="https://example.com/hook",
+                pdb_ids=["4RLT", "3UG9"],
+                chain_selection={},
+                remove_water=True,
+                remove_heteroatoms=True,
+                session_id=None,
+            )
+        api_module.alignment_jobs.pop(job_id)
+        mock_notify.assert_called_once_with(
+            "https://example.com/hook",
+            {"job_id": job_id, "status": "completed", "run_id": "run_xyz"},
+        )
+
+    @pytest.mark.asyncio
+    @patch("src.backend.api._notify_webhook", new_callable=AsyncMock)
+    async def test_alignment_job_notifies_on_failure_with_null_run_id(
+        self, mock_notify
+    ):
+        job_id = "test-webhook-align-fail"
+        api_module.alignment_jobs[job_id] = {
+            "status": "queued",
+            "created_at": time.time(),
+        }
+        with patch(
+            "src.backend.api.AnalysisCoordinator.run_full_pipeline",
+            return_value=(False, "boom", None),
+        ):
+            await api_module._execute_alignment_job(
+                job_id,
+                webhook_url="https://example.com/hook",
+                pdb_ids=["4RLT", "3UG9"],
+                chain_selection={},
+                remove_water=True,
+                remove_heteroatoms=True,
+                session_id=None,
+            )
+        api_module.alignment_jobs.pop(job_id)
+        mock_notify.assert_called_once_with(
+            "https://example.com/hook",
+            {"job_id": job_id, "status": "failed", "run_id": None},
+        )
+
+    @pytest.mark.asyncio
+    @patch("src.backend.api._notify_webhook", new_callable=AsyncMock)
+    async def test_alignment_job_skips_notification_when_no_webhook_given(
+        self, mock_notify
+    ):
+        job_id = "test-webhook-align-none"
+        api_module.alignment_jobs[job_id] = {
+            "status": "queued",
+            "created_at": time.time(),
+        }
+        with patch(
+            "src.backend.api.AnalysisCoordinator.run_full_pipeline",
+            return_value=(True, "ok", {"id": "run_xyz"}),
+        ):
+            await api_module._execute_alignment_job(
+                job_id,
+                pdb_ids=["4RLT", "3UG9"],
+                chain_selection={},
+                remove_water=True,
+                remove_heteroatoms=True,
+                session_id=None,
+            )
+        api_module.alignment_jobs.pop(job_id)
+        mock_notify.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("src.backend.api._notify_webhook", new_callable=AsyncMock)
+    async def test_clustalo_job_notifies_with_a_null_run_id(self, mock_notify):
+        job_id = "test-webhook-clustalo"
+        api_module.clustalo_jobs[job_id] = {
+            "status": "queued",
+            "created_at": time.time(),
+        }
+        with patch(
+            "src.backend.api._run_clustalo_pipeline",
+            new_callable=AsyncMock,
+            return_value={"aligned_fasta": ">a\nAAA\n"},
+        ):
+            await api_module._execute_clustalo_job(
+                job_id,
+                {"a": "AAA", "b": "AAA"},
+                webhook_url="https://example.com/hook",
+            )
+        api_module.clustalo_jobs.pop(job_id)
+        mock_notify.assert_called_once_with(
+            "https://example.com/hook",
+            {"job_id": job_id, "status": "completed", "run_id": None},
+        )
+
+    @pytest.mark.asyncio
+    @patch("src.backend.api._notify_webhook", new_callable=AsyncMock)
+    async def test_blast_job_notifies_with_a_null_run_id(self, mock_notify):
+        job_id = "test-webhook-blast"
+        api_module.blast_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+        with patch(
+            "src.backend.api._run_blast_pipeline",
+            new_callable=AsyncMock,
+            return_value={"homologs": []},
+        ):
+            await api_module._execute_blast_job(
+                job_id, "AAAAAAAAAAAAAAAAAAAA", webhook_url="https://example.com/hook"
+            )
+        api_module.blast_jobs.pop(job_id)
+        mock_notify.assert_called_once_with(
+            "https://example.com/hook",
+            {"job_id": job_id, "status": "completed", "run_id": None},
+        )
+
+
+def test_submit_alignment_job_rejects_an_invalid_webhook_url():
+    response = client.post(
+        "/api/jobs/align",
+        json={"pdb_ids": ["4RLT", "3UG9"], "webhook_url": "file:///etc/passwd"},
+    )
+    assert response.status_code == 400
+    assert "webhook_url" in response.json()["detail"]
+
+
+def test_submit_discovery_job_rejects_an_invalid_webhook_url():
+    response = client.post(
+        "/api/jobs/discover",
+        json={"pdb_id": "4RLT", "webhook_url": "ftp://example.com"},
+    )
+    assert response.status_code == 400
+
+
+def test_submit_clustalo_job_rejects_an_invalid_webhook_url():
+    response = client.post(
+        "/api/jobs/clustalo",
+        json={
+            "sequences": {"a": "AAAAAAAAAA", "b": "AAAAAAAAAA"},
+            "webhook_url": "javascript:alert(1)",
+        },
+    )
+    assert response.status_code == 400
+
+
+def test_submit_conservation_job_rejects_an_invalid_webhook_url():
+    response = client.post(
+        "/api/jobs/conservation",
+        json={"sequence": "AAAAAAAAAAAAAAAAAAAA", "webhook_url": "not-a-url"},
+    )
+    assert response.status_code == 400
 
 
 def test_suggest_endpoint_returns_error_payload_on_request_failure():

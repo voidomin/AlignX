@@ -180,11 +180,13 @@ export async function pollJobUntilDone(jobId, { intervalMs = 1500, onTick = null
 // caller-chosen id (typically the pdb_id). Poll the returned job_id with
 // pollJobUntilDone(); the completed job's `aligned_fasta` field is the real
 // gap-padded aligned FASTA text.
-export async function submitClustalOmegaJob(sequences) {
+export async function submitClustalOmegaJob(sequences, webhookUrl) {
+    const body = { sequences };
+    if (webhookUrl) body.webhook_url = webhookUrl;
     const res = await fetch(buildUrl('/api/jobs/clustalo'), {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ sequences })
+        body: JSON.stringify(body)
     });
     if (!res.ok) {
         const errData = await res.json();
@@ -200,11 +202,13 @@ export async function submitClustalOmegaJob(sequences) {
 // take several minutes - poll the returned job_id with pollJobUntilDone()
 // using a generous interval. The completed job's `conservation_profile`
 // field is a list of {position, conservation, num_homologs, most_common}.
-export async function submitConservationJob(sequence) {
+export async function submitConservationJob(sequence, webhookUrl) {
+    const body = { sequence };
+    if (webhookUrl) body.webhook_url = webhookUrl;
     const res = await fetch(buildUrl('/api/jobs/conservation'), {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ sequence })
+        body: JSON.stringify(body)
     });
     if (!res.ok) {
         const errData = await res.json();
@@ -213,9 +217,10 @@ export async function submitConservationJob(sequence) {
     return res.json();
 }
 
-export async function submitDiscoveryJob(pdbId, databases) {
+export async function submitDiscoveryJob(pdbId, databases, webhookUrl) {
     const body = { pdb_id: pdbId };
     if (databases && databases.length > 0) body.databases = databases;
+    if (webhookUrl) body.webhook_url = webhookUrl;
     const res = await fetch(buildUrl('/api/jobs/discover'), {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),

@@ -61,6 +61,16 @@ describe('api.js (no API key configured)', () => {
         expect(JSON.parse(options.body)).toEqual({ pdb_id: '1CRN' });
     });
 
+    it('submitDiscoveryJob includes webhook_url when given', async () => {
+        mockFetchOnce({ job_id: 'disc789', status: 'queued' });
+        const { submitDiscoveryJob } = await import('./api.js');
+
+        await submitDiscoveryJob('1CRN', null, 'https://example.com/hook');
+
+        const [, options] = global.fetch.mock.calls[0];
+        expect(JSON.parse(options.body)).toEqual({ pdb_id: '1CRN', webhook_url: 'https://example.com/hook' });
+    });
+
     it('submitClustalOmegaJob posts the sequences dict to the clustalo job endpoint', async () => {
         mockFetchOnce({ job_id: 'clustalo123', status: 'queued' });
         const { submitClustalOmegaJob } = await import('./api.js');
@@ -79,6 +89,19 @@ describe('api.js (no API key configured)', () => {
         await expect(submitClustalOmegaJob({ '4RLT': 'MVHL' })).rejects.toThrow('At least 2 sequences are required.');
     });
 
+    it('submitClustalOmegaJob includes webhook_url when given', async () => {
+        mockFetchOnce({ job_id: 'clustalo456', status: 'queued' });
+        const { submitClustalOmegaJob } = await import('./api.js');
+
+        await submitClustalOmegaJob({ '4RLT': 'MVHL', '3UG9': 'MVLS' }, 'https://example.com/hook');
+
+        const [, options] = global.fetch.mock.calls[0];
+        expect(JSON.parse(options.body)).toEqual({
+            sequences: { '4RLT': 'MVHL', '3UG9': 'MVLS' },
+            webhook_url: 'https://example.com/hook',
+        });
+    });
+
     it('submitConservationJob posts the sequence to the conservation job endpoint', async () => {
         mockFetchOnce({ job_id: 'blast123', status: 'queued' });
         const { submitConservationJob } = await import('./api.js');
@@ -95,6 +118,19 @@ describe('api.js (no API key configured)', () => {
         mockFetchOnce({ detail: 'A real protein sequence (10+ amino-acid letters) is required.' }, false, 400);
         const { submitConservationJob } = await import('./api.js');
         await expect(submitConservationJob('MV')).rejects.toThrow('A real protein sequence');
+    });
+
+    it('submitConservationJob includes webhook_url when given', async () => {
+        mockFetchOnce({ job_id: 'blast456', status: 'queued' });
+        const { submitConservationJob } = await import('./api.js');
+
+        await submitConservationJob('MVHLTPEEKSAVTALWGKVNV', 'https://example.com/hook');
+
+        const [, options] = global.fetch.mock.calls[0];
+        expect(JSON.parse(options.body)).toEqual({
+            sequence: 'MVHLTPEEKSAVTALWGKVNV',
+            webhook_url: 'https://example.com/hook',
+        });
     });
 
     it('pollJobUntilDone polls until status is completed', async () => {

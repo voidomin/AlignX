@@ -314,6 +314,31 @@ describe('SequenceTab', () => {
             expect(wrapper.querySelectorAll('tbody tr')).toHaveLength(2);
         });
 
+        it('passes the webhook URL through when one is entered', async () => {
+            fetchSequence.mockResolvedValue({
+                sequences: { '4RLT': 'MVHL', '3UG9': 'MVLSH' },
+                conservation: [],
+            });
+            submitClustalOmegaJob.mockResolvedValue({ job_id: 'job-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({ status: 'completed', aligned_fasta: '>4RLT\nMVHL\n>3UG9\nMVLSH' });
+
+            const tab = new SequenceTab();
+            tab.render();
+            tab.updateResults('run_123', { rmsd: 1.0 });
+            await Promise.resolve();
+            tab.element.querySelector('#clustalo-webhook-url').value = 'https://example.com/hook';
+
+            tab.element.querySelector('#clustalo-run-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(submitClustalOmegaJob).toHaveBeenCalledWith(
+                { '4RLT': 'MVHL', '3UG9': 'MVLSH' },
+                'https://example.com/hook'
+            );
+        });
+
         it('shows the real failure reason when the job fails', async () => {
             fetchSequence.mockResolvedValue({
                 sequences: { '4RLT': 'MVHL', '3UG9': 'MVLS' },
@@ -432,6 +457,22 @@ describe('SequenceTab', () => {
             const wrapper = tab.element.querySelector('#conservation-result-wrapper');
             expect(wrapper.textContent).toContain('10 real homolog');
             expect(wrapper.querySelectorAll('td[title]')).toHaveLength(2);
+        });
+
+        it('passes the webhook URL through when one is entered', async () => {
+            submitConservationJob.mockResolvedValue({ job_id: 'blast-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({ status: 'completed', num_hits: 1, conservation_profile: [] });
+
+            const tab = new SequenceTab();
+            await setUpWithSequences(tab);
+            tab.element.querySelector('#conservation-webhook-url').value = 'https://example.com/hook';
+
+            tab.element.querySelector('#conservation-run-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(submitConservationJob).toHaveBeenCalledWith('MVHLTPEEKSAVTAL', 'https://example.com/hook');
         });
 
         it('shows the real failure reason when the BLAST job fails', async () => {

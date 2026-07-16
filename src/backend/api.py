@@ -14,6 +14,7 @@ matplotlib.use("Agg")
 
 import json
 import re
+from urllib.parse import urlparse
 import httpx
 import numpy as np
 import pandas as pd
@@ -642,6 +643,36 @@ def _spawn_background_task(coro) -> asyncio.Task:
     return task
 
 
+def _validate_webhook_url(url: Optional[str]) -> Optional[str]:
+    """A webhook is an outbound server-side POST triggered by user input -
+    unlike this app's existing external GETs (ClinVar/PubMed links, PDBe/
+    RCSB lookups), the URL itself is fully user-supplied, so it gets its
+    own validation rather than reusing _safe_segment (which is for path
+    segments, not full URLs). Only accepts http(s) with a real hostname -
+    rejects file://, data://, and other schemes that could be misused."""
+    if not url:
+        return None
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise HTTPException(
+            status_code=400,
+            detail="webhook_url must be a real http:// or https:// URL.",
+        )
+    return url
+
+
+async def _notify_webhook(url: str, payload: Dict[str, Any]) -> None:
+    """Fire-and-forget job-completion notification - a bad/unreachable
+    webhook URL must never fail the underlying job, so failures are
+    logged, not raised. Short timeout since this is just a notification,
+    not something worth blocking the job's own completion on."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            await client.post(url, json=payload)
+    except httpx.HTTPError as e:
+        logger.warning(f"Webhook notification to {sanitize_for_log(url)} failed: {e}")
+
+
 # In-memory job registry for the async alignment pipeline. Alignment runs can take
 # minutes (Mustang + phylogenetics + rendering), so they're executed on a background
 # thread and polled via job_id rather than blocking the HTTP request.
@@ -688,11 +719,15 @@ def _run_alignment_pipeline(
     return {"message": msg, "results": sanitize_for_json(results)}
 
 
-async def _execute_alignment_job(job_id: str, **pipeline_kwargs):
+async def _execute_alignment_job(
+    job_id: str, webhook_url: Optional[str] = None, **pipeline_kwargs
+):
     alignment_jobs[job_id]["status"] = "running"
     created_at = alignment_jobs[job_id].get("created_at", time.time())
+    run_id = None
     try:
         outcome = await asyncio.to_thread(_run_alignment_pipeline, **pipeline_kwargs)
+        run_id = (outcome.get("results") or {}).get("id")
         alignment_jobs[job_id] = {
             "status": "completed",
             "created_at": created_at,
@@ -706,6 +741,15 @@ async def _execute_alignment_job(job_id: str, **pipeline_kwargs):
             "finished_at": time.time(),
             "error": str(e),
         }
+    if webhook_url:
+        await _notify_webhook(
+            webhook_url,
+            {
+                "job_id": job_id,
+                "status": alignment_jobs[job_id]["status"],
+                "run_id": run_id,
+            },
+        )
 
 
 @app.post(
@@ -720,11 +764,14 @@ async def submit_alignment_job(
     chain_selection: Annotated[Dict[str, str], Body(embed=True)] = {},
     remove_water: Annotated[bool, Body(embed=True)] = True,
     remove_heteroatoms: Annotated[bool, Body(embed=True)] = True,
+    webhook_url: Annotated[Optional[str], Body(embed=True)] = None,
     session_id: Annotated[Optional[str], Query()] = None,
 ):
     """
     Submit a Mustang multiple structural alignment run as a background job.
-    Returns immediately with a job_id; poll GET /api/jobs/{job_id} for status.
+    Returns immediately with a job_id; poll GET /api/jobs/{job_id} for
+    status - or, if webhook_url is given, receive a POST there instead
+    ({job_id, status, run_id}) once the job finishes.
     """
     if not pdb_ids or len(pdb_ids) < 2:
         raise HTTPException(
@@ -733,6 +780,7 @@ async def submit_alignment_job(
     for pid in pdb_ids:
         _safe_segment(pid, "pdb_id")
     _safe_segment(session_id, "session_id")
+    webhook_url = _validate_webhook_url(webhook_url)
 
     job_id = uuid.uuid4().hex
     alignment_jobs[job_id] = {"status": "queued", "created_at": time.time()}
@@ -740,6 +788,7 @@ async def submit_alignment_job(
     _spawn_background_task(
         _execute_alignment_job(
             job_id,
+            webhook_url=webhook_url,
             pdb_ids=pdb_ids,
             chain_selection=chain_selection,
             remove_water=remove_water,
@@ -812,11 +861,15 @@ def _run_discovery_pipeline(
     return {"message": msg, "results": sanitize_for_json(results)}
 
 
-async def _execute_discovery_job(job_id: str, **pipeline_kwargs):
+async def _execute_discovery_job(
+    job_id: str, webhook_url: Optional[str] = None, **pipeline_kwargs
+):
     discovery_jobs[job_id]["status"] = "running"
     created_at = discovery_jobs[job_id].get("created_at", time.time())
+    run_id = None
     try:
         outcome = await asyncio.to_thread(_run_discovery_pipeline, **pipeline_kwargs)
+        run_id = (outcome.get("results") or {}).get("id")
         discovery_jobs[job_id] = {
             "status": "completed",
             "created_at": created_at,
@@ -830,6 +883,15 @@ async def _execute_discovery_job(job_id: str, **pipeline_kwargs):
             "finished_at": time.time(),
             "error": str(e),
         }
+    if webhook_url:
+        await _notify_webhook(
+            webhook_url,
+            {
+                "job_id": job_id,
+                "status": discovery_jobs[job_id]["status"],
+                "run_id": run_id,
+            },
+        )
 
 
 @app.post(
@@ -844,13 +906,16 @@ async def _execute_discovery_job(job_id: str, **pipeline_kwargs):
 async def submit_discovery_job(
     pdb_id: Annotated[str, Body(..., embed=True)],
     databases: Annotated[Optional[List[str]], Body(embed=True)] = None,
+    webhook_url: Annotated[Optional[str], Body(embed=True)] = None,
     session_id: Annotated[Optional[str], Query()] = None,
 ):
     """
     Submit a single-structure Foldseek discovery run as a background job:
     finds structurally similar proteins for one query structure. Unlike
     /api/jobs/align, this takes exactly one structure, not 2+.
-    Returns immediately with a job_id; poll GET /api/jobs/{job_id} for status.
+    Returns immediately with a job_id; poll GET /api/jobs/{job_id} for
+    status - or, if webhook_url is given, receive a POST there instead
+    ({job_id, status, run_id}) once the job finishes.
     """
     if not pdb_id or not pdb_id.strip():
         raise HTTPException(status_code=400, detail="pdb_id is required.")
@@ -865,6 +930,7 @@ async def submit_discovery_job(
         except FoldseekError as e:
             raise HTTPException(status_code=400, detail=str(e))
     _safe_segment(session_id, "session_id")
+    webhook_url = _validate_webhook_url(webhook_url)
 
     job_id = uuid.uuid4().hex
     discovery_jobs[job_id] = {"status": "queued", "created_at": time.time()}
@@ -872,6 +938,7 @@ async def submit_discovery_job(
     _spawn_background_task(
         _execute_discovery_job(
             job_id,
+            webhook_url=webhook_url,
             pdb_id=pdb_id,
             databases=databases,
             session_id=session_id,
@@ -911,7 +978,9 @@ async def _run_clustalo_pipeline(sequences: Dict[str, str]) -> Dict[str, Any]:
     return {"aligned_fasta": aligned_fasta}
 
 
-async def _execute_clustalo_job(job_id: str, sequences: Dict[str, str]):
+async def _execute_clustalo_job(
+    job_id: str, sequences: Dict[str, str], webhook_url: Optional[str] = None
+):
     clustalo_jobs[job_id]["status"] = "running"
     created_at = clustalo_jobs[job_id].get("created_at", time.time())
     try:
@@ -929,6 +998,18 @@ async def _execute_clustalo_job(job_id: str, sequences: Dict[str, str]):
             "finished_at": time.time(),
             "error": str(e),
         }
+    if webhook_url:
+        # No run_id here - Clustal Omega jobs produce a standalone aligned
+        # FASTA, not a saved run in run history the way alignment/discovery
+        # jobs do.
+        await _notify_webhook(
+            webhook_url,
+            {
+                "job_id": job_id,
+                "status": clustalo_jobs[job_id]["status"],
+                "run_id": None,
+            },
+        )
 
 
 @app.post(
@@ -940,6 +1021,7 @@ async def _execute_clustalo_job(job_id: str, sequences: Dict[str, str]):
 )
 async def submit_clustalo_job(
     sequences: Annotated[Dict[str, str], Body(..., embed=True)],
+    webhook_url: Annotated[Optional[str], Body(embed=True)] = None,
 ):
     """
     Submit a true sequence-only multiple alignment as a background job via
@@ -948,7 +1030,9 @@ async def submit_clustalo_job(
     this app relies on for sequence correspondence. `sequences` should
     carry each structure's own ungapped sequence, keyed by a caller-chosen
     id (typically the pdb_id). Returns immediately with a job_id; poll
-    GET /api/jobs/{job_id} for status.
+    GET /api/jobs/{job_id} for status - or, if webhook_url is given,
+    receive a POST there instead ({job_id, status, run_id: null}) once
+    the job finishes.
     """
     if not sequences or len(sequences) < 2:
         raise HTTPException(
@@ -956,11 +1040,12 @@ async def submit_clustalo_job(
         )
     for seq_id in sequences:
         _safe_segment(seq_id, "sequence id")
+    webhook_url = _validate_webhook_url(webhook_url)
 
     job_id = uuid.uuid4().hex
     clustalo_jobs[job_id] = {"status": "queued", "created_at": time.time()}
 
-    _spawn_background_task(_execute_clustalo_job(job_id, sequences))
+    _spawn_background_task(_execute_clustalo_job(job_id, sequences, webhook_url))
 
     return {"job_id": job_id, "status": "queued"}
 
@@ -995,7 +1080,9 @@ async def _run_blast_pipeline(sequence: str) -> Dict[str, Any]:
     return await client.find_homologs_and_score_conservation(sequence)
 
 
-async def _execute_blast_job(job_id: str, sequence: str):
+async def _execute_blast_job(
+    job_id: str, sequence: str, webhook_url: Optional[str] = None
+):
     blast_jobs[job_id]["status"] = "running"
     created_at = blast_jobs[job_id].get("created_at", time.time())
     try:
@@ -1013,6 +1100,13 @@ async def _execute_blast_job(job_id: str, sequence: str):
             "finished_at": time.time(),
             "error": str(e),
         }
+    if webhook_url:
+        # No run_id here either - a BLAST/conservation job produces a
+        # standalone homolog+conservation profile, not a saved run.
+        await _notify_webhook(
+            webhook_url,
+            {"job_id": job_id, "status": blast_jobs[job_id]["status"], "run_id": None},
+        )
 
 
 @app.post(
@@ -1024,7 +1118,10 @@ async def _execute_blast_job(job_id: str, sequence: str):
         }
     },
 )
-async def submit_conservation_job(sequence: Annotated[str, Body(..., embed=True)]):
+async def submit_conservation_job(
+    sequence: Annotated[str, Body(..., embed=True)],
+    webhook_url: Annotated[Optional[str], Body(embed=True)] = None,
+):
     """
     Submit a real per-column evolutionary conservation search as a
     background job: finds real homologs of `sequence` via NCBI BLAST, then
@@ -1033,8 +1130,10 @@ async def submit_conservation_job(sequence: Annotated[str, Body(..., embed=True)
     calculate_conservation() (identity across whatever structures happen
     to be loaded, not real evolutionary conservation), this searches a
     real homolog panel. Returns immediately with a job_id; poll
-    GET /api/jobs/{job_id} for status - budget real wall-clock time here,
-    real BLAST searches commonly take several minutes.
+    GET /api/jobs/{job_id} for status - or, if webhook_url is given,
+    receive a POST there instead ({job_id, status, run_id: null}) once
+    the job finishes. Real BLAST searches commonly take several minutes,
+    so this is the job type a webhook is most useful for.
     """
     sequence = (sequence or "").strip()
     if not _SAFE_PROTEIN_SEQUENCE.match(sequence):
@@ -1042,11 +1141,12 @@ async def submit_conservation_job(sequence: Annotated[str, Body(..., embed=True)
             status_code=400,
             detail="A real protein sequence (10+ amino-acid letters) is required.",
         )
+    webhook_url = _validate_webhook_url(webhook_url)
 
     job_id = uuid.uuid4().hex
     blast_jobs[job_id] = {"status": "queued", "created_at": time.time()}
 
-    _spawn_background_task(_execute_blast_job(job_id, sequence))
+    _spawn_background_task(_execute_blast_job(job_id, sequence, webhook_url))
 
     return {"job_id": job_id, "status": "queued"}
 
