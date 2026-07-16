@@ -760,6 +760,25 @@ class AnnotationAggregator:
 
         return await self._get_or_fetch(f"gmgc:{gene_id}", "gmgc", _fetch)
 
+    @staticmethod
+    def _parse_uniprot_feature(f: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """One raw UniProt feature entry, flattened to this app's shape -
+        or None if it's not a type this app cares about (see
+        _UNIPROT_FEATURE_TYPES) or has no resolvable start/end location."""
+        if f.get("type") not in _UNIPROT_FEATURE_TYPES:
+            return None
+        loc = f.get("location") or {}
+        start = (loc.get("start") or {}).get("value")
+        end = (loc.get("end") or {}).get("value")
+        if start is None or end is None:
+            return None
+        return {
+            "type": f["type"],
+            "description": f.get("description") or "",
+            "start": start,
+            "end": end,
+        }
+
     async def fetch_uniprot_features(
         self, accession: str, client: httpx.AsyncClient
     ) -> List[Dict[str, Any]]:
@@ -777,24 +796,9 @@ class AnnotationAggregator:
                 response = await client.get(url, headers=_JSON_ACCEPT_HEADERS)
                 if response.status_code != 200:
                     return []
-                features = []
-                for f in response.json().get("features") or []:
-                    if f.get("type") not in _UNIPROT_FEATURE_TYPES:
-                        continue
-                    loc = f.get("location") or {}
-                    start = (loc.get("start") or {}).get("value")
-                    end = (loc.get("end") or {}).get("value")
-                    if start is None or end is None:
-                        continue
-                    features.append(
-                        {
-                            "type": f["type"],
-                            "description": f.get("description") or "",
-                            "start": start,
-                            "end": end,
-                        }
-                    )
-                return features
+                raw_features = response.json().get("features") or []
+                parsed = (self._parse_uniprot_feature(f) for f in raw_features)
+                return [feature for feature in parsed if feature is not None]
             except httpx.HTTPError as e:
                 logger.warning(
                     f"UniProt features lookup failed for {sanitize_for_log(accession)}: {e}"
@@ -898,6 +902,24 @@ class AnnotationAggregator:
             )
         return None
 
+    @staticmethod
+    def _domain_residues(
+        domain: Dict[str, Any], residue_map: Optional[Dict[int, int]]
+    ) -> List[int]:
+        """Residues a domain's locations cover, translated through
+        residue_map if given - an unmapped UniProt position (no entry in
+        residue_map) is silently dropped rather than mismapped. `None`
+        means no translation needed (AlphaFold's 1:1 numbering shortcut),
+        not "map everything to nothing"."""
+        raw = {
+            r
+            for loc in domain.get("locations") or []
+            for r in range(loc["start"], loc["end"] + 1)
+        }
+        if residue_map is None:
+            return sorted(raw)
+        return sorted(residue_map[r] for r in raw if r in residue_map)
+
     async def _attach_domain_highlight_chains(
         self,
         domains: List[Dict[str, Any]],
@@ -911,43 +933,26 @@ class AnnotationAggregator:
         AlphaFold models are numbered 1..N to exactly match their source
         UniProt sequence, by construction - so InterPro's UniProt-numbered
         domain locations can be used directly as this structure's own
-        residue numbers. A real PDB entry's author numbering routinely
-        differs from UniProt numbering (crystallization constructs,
-        non-1-start numbering, tags) - resolve_uniprot_residue_mapping()'s
-        real SIFTS segment mapping translates through that for
-        source == "pdb" too; any UniProt position with no mapped author
-        residue (a gap/insertion/unmapped region) is silently dropped
-        rather than mismapped."""
+        residue numbers (_domain_residues' residue_map=None case). A real
+        PDB entry's author numbering routinely differs from UniProt
+        numbering (crystallization constructs, non-1-start numbering,
+        tags) - resolve_uniprot_residue_mapping()'s real SIFTS segment
+        mapping translates through that for source == "pdb" too."""
+        residue_map: Optional[Dict[int, int]] = None
         if source == "alphafold" and chain:
-            for domain in domains:
-                residues = sorted(
-                    {
-                        r
-                        for loc in domain.get("locations") or []
-                        for r in range(loc["start"], loc["end"] + 1)
-                    }
-                )
-                domain["highlight_chains"] = {chain: residues} if residues else None
-            return
-
-        if source == "pdb" and chain and domains:
+            pass  # residue_map stays None - AlphaFold's 1:1 shortcut
+        elif source == "pdb" and chain and domains:
             residue_map = await self.resolve_uniprot_residue_mapping(
                 pdb_id, chain, client
             )
+        else:
             for domain in domains:
-                residues = sorted(
-                    {
-                        residue_map[r]
-                        for loc in domain.get("locations") or []
-                        for r in range(loc["start"], loc["end"] + 1)
-                        if r in residue_map
-                    }
-                )
-                domain["highlight_chains"] = {chain: residues} if residues else None
+                domain["highlight_chains"] = None
             return
 
         for domain in domains:
-            domain["highlight_chains"] = None
+            residues = self._domain_residues(domain, residue_map)
+            domain["highlight_chains"] = {chain: residues} if residues else None
 
     async def _attach_feature_highlight_chains(
         self,

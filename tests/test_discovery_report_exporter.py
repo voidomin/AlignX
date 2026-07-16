@@ -155,12 +155,13 @@ def test_template_str_is_cached_after_first_read():
 
 def test_export_reraises_after_logging_on_render_failure():
     exporter = DiscoveryReportExporter()
+    results = _make_results()
     with patch(
         "src.backend.discovery_report_exporter.Template.render",
         side_effect=RuntimeError("boom"),
     ):
         with pytest.raises(RuntimeError, match="boom"):
-            exporter.export(_make_results())
+            exporter.export(results)
 
 
 class TestFmt:

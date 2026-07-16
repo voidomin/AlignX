@@ -756,9 +756,7 @@ export class Viewer3D {
         const b = atom;
         this.measurePoints.push(b);
 
-        const distance = Math.sqrt(
-            (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2
-        );
+        const distance = Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 
         if (this.viewer.addLine) {
             this.measureHandles.push(this.viewer.addLine({

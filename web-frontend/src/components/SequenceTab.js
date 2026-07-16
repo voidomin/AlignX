@@ -508,7 +508,7 @@ export class SequenceTab {
         try {
             const data = await fetchSequence(this.currentRunId);
             const ungapped = Object.fromEntries(
-                Object.entries(data.sequences || {}).map(([id, seq]) => [id, seq.replace(/-/g, '')])
+                Object.entries(data.sequences || {}).map(([id, seq]) => [id, seq.replaceAll('-', '')])
             );
 
             if (Object.keys(ungapped).length < 2) {
@@ -557,7 +557,14 @@ export class SequenceTab {
             for (let i = 0; i < seqLen; i++) {
                 const char = seq[i] || '-';
                 const isConservedColumn = char !== '-' && headers.every(h => (sequences[h][i] || '-') === char);
-                const bgColor = isConservedColumn ? "#ff4757" : (char === '-' ? "#2f3542" : "transparent");
+                let bgColor;
+                if (isConservedColumn) {
+                    bgColor = "#ff4757";
+                } else if (char === '-') {
+                    bgColor = "#2f3542";
+                } else {
+                    bgColor = "transparent";
+                }
                 residuesHtml += `<td class="text-center font-mono border border-border-subtle" style="background-color: ${bgColor}; min-width: 22px; height: 24px; font-size: 12px; color: #fff;">${escapeHtml(char)}</td>`;
             }
             rowsHtml += `
@@ -618,7 +625,7 @@ export class SequenceTab {
 
         try {
             const data = await fetchSequence(this.currentRunId);
-            const sequence = (data.sequences?.[header] || '').replace(/-/g, '');
+            const sequence = (data.sequences?.[header] || '').replaceAll('-', '');
 
             if (sequence.length < 10) {
                 wrapper.innerHTML = `<div class="text-center py-8 text-secondary font-body-sm">Sequence too short for a BLAST search.</div>`;

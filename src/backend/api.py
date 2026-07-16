@@ -237,6 +237,7 @@ app.mount("/raw", StaticFiles(directory=str(raw_dir)), name="raw")
 
 _SAFE_PATH_SEGMENT = re.compile(r"^[A-Za-z0-9_-]+$")
 _TEXT_PLAIN = "text/plain"
+_ALIGNMENT_PDB_FILENAME = "alignment.pdb"
 
 
 def _safe_segment(value: Optional[str], field_name: str) -> Optional[str]:
@@ -315,7 +316,13 @@ def get_settings():
     return _current_settings()
 
 
-@app.post("/api/settings", responses={400: {"description": "Invalid settings"}})
+@app.post(
+    "/api/settings",
+    responses={
+        400: {"description": "Invalid settings"},
+        500: {"description": "Failed to persist settings to config.yaml"},
+    },
+)
 def update_settings(update: SettingsUpdate):
     """Apply and persist new settings. `config` is a single shared dict
     every request-scoped coordinator/manager already reads from at
@@ -1197,7 +1204,7 @@ def get_contact_map(
     _safe_segment(session_id, "session_id")
 
     run, res_dir = _lookup_run_and_result_dir(run_id, session_id)
-    alignment_pdb = res_dir / "alignment.pdb"
+    alignment_pdb = res_dir / _ALIGNMENT_PDB_FILENAME
     if not alignment_pdb.exists() or not run.get("pdb_ids"):
         raise HTTPException(
             status_code=404, detail=f"No alignment output found for run {run_id}."
@@ -1237,7 +1244,7 @@ def get_difference_distance(
     _safe_segment(session_id, "session_id")
 
     run, res_dir = _lookup_run_and_result_dir(run_id, session_id)
-    alignment_pdb = res_dir / "alignment.pdb"
+    alignment_pdb = res_dir / _ALIGNMENT_PDB_FILENAME
     alignment_fasta = res_dir / "alignment.fasta"
     if (
         not alignment_pdb.exists()
@@ -2162,7 +2169,7 @@ def get_lab_notebook(
     # reconstruct them from the run_id rather than trust stringified values.
     results = dict(results)
     results["result_dir"] = res_dir
-    results["alignment_pdb"] = res_dir / "alignment.pdb"
+    results["alignment_pdb"] = res_dir / _ALIGNMENT_PDB_FILENAME
 
     try:
         exporter = NotebookExporter()
@@ -2427,7 +2434,7 @@ def get_report_zip(
 
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-        alignment_pdb = res_dir / "alignment.pdb"
+        alignment_pdb = res_dir / _ALIGNMENT_PDB_FILENAME
         if alignment_pdb.exists():
             zip_file.write(alignment_pdb, arcname=f"alignment_{run_id}.pdb")
 
