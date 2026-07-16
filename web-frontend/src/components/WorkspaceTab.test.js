@@ -12,9 +12,10 @@ vi.mock('../api.js', () => ({
     fetchValidation: vi.fn(),
     fetchQc: vi.fn(),
     fetchCathClassification: vi.fn(),
+    fetchAssemblyInfo: vi.fn(),
 }));
 
-import { submitDiscoveryJob, pollJobUntilDone, fetchValidation, fetchQc, fetchCathClassification } from '../api.js';
+import { submitDiscoveryJob, pollJobUntilDone, fetchValidation, fetchQc, fetchCathClassification, fetchAssemblyInfo } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new WorkspaceTab({
@@ -363,6 +364,88 @@ describe('WorkspaceTab', () => {
             tab.updateState(['4HHB'], {}, { '4HHB': { chains: [{ id: 'A', residue_count: 141 }], source: 'pdb' } });
 
             expect(fetchCathClassification).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('oligomeric assembly badge', () => {
+        function makePdbTab(overrides = {}) {
+            fetchValidation.mockResolvedValue({ pdb_id: '4HHB', validation: null });
+            fetchCathClassification.mockResolvedValue({ pdb_id: '4HHB', domains: [] });
+            return makeTab({
+                selectedPDBs: ['4HHB'],
+                pdbMetadata: {
+                    '4HHB': { chains: [{ id: 'A', residue_count: 141 }], source: 'pdb' },
+                },
+                ...overrides,
+            });
+        }
+
+        it('shows a "checking" placeholder immediately, then the oligomeric state once the fetch resolves', async () => {
+            let resolveFetch;
+            fetchAssemblyInfo.mockReturnValue(new Promise(r => { resolveFetch = r; }));
+            const tab = makePdbTab();
+            tab.render();
+
+            const badge = tab.element.querySelector('#assembly-badge-4HHB');
+            expect(badge.textContent).toBe('Checking assembly state…');
+
+            resolveFetch({
+                pdb_id: '4HHB',
+                assembly: { oligomeric_count: 4, oligomeric_details: 'tetrameric' },
+            });
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(badge.textContent).toBe('Tetrameric');
+        });
+
+        it('shows a graceful message when no assembly state is available', async () => {
+            fetchAssemblyInfo.mockResolvedValue({ pdb_id: '4HHB', assembly: null });
+            const tab = makePdbTab();
+            tab.render();
+
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#assembly-badge-4HHB').textContent)
+                .toBe('No assembly state available');
+        });
+
+        it('shows a graceful message when the fetch itself fails', async () => {
+            fetchAssemblyInfo.mockRejectedValue(new Error('network down'));
+            const tab = makePdbTab();
+            tab.render();
+
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#assembly-badge-4HHB').textContent)
+                .toBe('No assembly state available');
+        });
+
+        it('omits the badge entirely for non-"pdb"-source structures', () => {
+            fetchAssemblyInfo.mockClear();
+            const tab = makeTab({
+                selectedPDBs: ['AF-P69905-F1'],
+                pdbMetadata: { 'AF-P69905-F1': { chains: [{ id: 'A', residue_count: 141 }], source: 'alphafold' } },
+            });
+            tab.render();
+
+            expect(tab.element.querySelector('.pdb-assembly-badge')).toBeNull();
+            expect(fetchAssemblyInfo).not.toHaveBeenCalled();
+        });
+
+        it('only fetches once per structure across re-renders', async () => {
+            fetchAssemblyInfo.mockResolvedValue({ pdb_id: '4HHB', assembly: null });
+            const tab = makePdbTab();
+            tab.render();
+            await Promise.resolve();
+            await Promise.resolve();
+            fetchAssemblyInfo.mockClear();
+
+            tab.updateState(['4HHB'], {}, { '4HHB': { chains: [{ id: 'A', residue_count: 141 }], source: 'pdb' } });
+
+            expect(fetchAssemblyInfo).not.toHaveBeenCalled();
         });
     });
 

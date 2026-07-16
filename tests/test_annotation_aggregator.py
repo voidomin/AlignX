@@ -2640,3 +2640,51 @@ class TestFetchCathClassification:
         async with httpx.AsyncClient() as client:
             result = await aggregator.fetch_cath_classification("4HHB", client)
         assert result == []
+
+
+class TestFetchAssemblyInfo:
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_parses_the_real_oligomeric_state(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "pdbx_struct_assembly": {
+                    "oligomeric_count": 4,
+                    "oligomeric_details": "tetrameric",
+                }
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_assembly_info("4HHB", client)
+
+        assert result == {"oligomeric_count": 4, "oligomeric_details": "tetrameric"}
+        called_url = mock_get.call_args.args[0]
+        assert called_url == "https://data.rcsb.org/rest/v1/core/assembly/4hhb/1"
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_when_not_found(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_assembly_info("9XXX", client)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_when_response_has_no_oligomeric_data(self, mock_get):
+        mock_get.return_value = _mock_response(json_data={"pdbx_struct_assembly": {}})
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_assembly_info("4HHB", client)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("boom")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_assembly_info("4HHB", client)
+        assert result is None

@@ -1741,6 +1741,25 @@ async def get_cath_classification(pdb_id: Annotated[str, Query(...)]):
 
 
 @app.get(
+    "/api/assembly",
+    responses={400: {"description": "Invalid pdb_id"}},
+)
+async def get_assembly_info(pdb_id: Annotated[str, Query(...)]):
+    """
+    Real oligomeric-state metadata (e.g. "tetrameric") for a real PDB
+    entry's first biological assembly (see AnnotationAggregator.
+    fetch_assembly_info). Only meaningful for source == "pdb"; anything
+    else correctly returns null rather than an error.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    if PDBManager.detect_source(pdb_id) != "pdb":
+        return {"pdb_id": pdb_id, "assembly": None}
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        assembly = await annotation_aggregator.fetch_assembly_info(pdb_id, client)
+    return {"pdb_id": pdb_id, "assembly": assembly}
+
+
+@app.get(
     "/api/validation",
     responses={400: {"description": "Invalid pdb_id"}},
 )

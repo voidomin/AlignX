@@ -39,6 +39,7 @@ SIFTS_BASE_URL = "https://www.ebi.ac.uk/pdbe/api/mappings/uniprot"
 # numbered domain/feature location onto a PDB entry's own author numbering.
 PDBE_ALL_MAPPINGS_BASE_URL = "https://www.ebi.ac.uk/pdbe/api/mappings"
 PDBE_CATH_MAPPINGS_BASE_URL = "https://www.ebi.ac.uk/pdbe/api/mappings/cath_b"
+RCSB_ASSEMBLY_BASE_URL = "https://data.rcsb.org/rest/v1/core/assembly"
 GMGC_BASE_URL = "https://gmgc.embl.de/api/v1.0"
 UNIPROT_BASE_URL = "https://rest.uniprot.org/uniprotkb"
 ALPHAFOLD_FILES_BASE_URL = "https://alphafold.ebi.ac.uk/files"
@@ -961,6 +962,41 @@ class AnnotationAggregator:
                 return []
 
         return await self._get_or_fetch(f"cath:{pdb_id}", "cath", _fetch)
+
+    async def fetch_assembly_info(
+        self, pdb_id: str, client: httpx.AsyncClient
+    ) -> Optional[Dict[str, Any]]:
+        """Real oligomeric-state metadata for a real PDB entry's first
+        biological assembly, via RCSB's assembly API - e.g. {"oligomeric_
+        count": 4, "oligomeric_details": "tetrameric"} for 4HHB. Deliberately
+        metadata-only (not a new interface-analysis engine - that's
+        InterfaceAnalyzer's job, see calculate_interface()). Only meaningful
+        for source == "pdb"; returns None if nothing resolves."""
+
+        async def _fetch() -> Optional[Dict[str, Any]]:
+            try:
+                response = await client.get(
+                    f"{RCSB_ASSEMBLY_BASE_URL}/{pdb_id.lower()}/1",
+                    headers=_JSON_ACCEPT_HEADERS,
+                )
+                if response.status_code != 200:
+                    return None
+                assembly = response.json().get("pdbx_struct_assembly") or {}
+                oligomeric_count = assembly.get("oligomeric_count")
+                oligomeric_details = assembly.get("oligomeric_details")
+                if oligomeric_count is None and oligomeric_details is None:
+                    return None
+                return {
+                    "oligomeric_count": oligomeric_count,
+                    "oligomeric_details": oligomeric_details,
+                }
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"RCSB assembly lookup failed for {sanitize_for_log(pdb_id)}: {e}"
+                )
+                return None
+
+        return await self._get_or_fetch(f"assembly:{pdb_id}", "assembly", _fetch)
 
     def _try_get_cached_go_name(self, gid: str) -> Optional[str]:
         if not self.cache_db:

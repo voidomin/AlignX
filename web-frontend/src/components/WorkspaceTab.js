@@ -1,4 +1,4 @@
-import { fetchSuggestions, isValidPdbId, fetchValidation, fetchQc, fetchCathClassification } from '../api';
+import { fetchSuggestions, isValidPdbId, fetchValidation, fetchQc, fetchCathClassification, fetchAssemblyInfo } from '../api';
 import { escapeHtml } from '../escapeHtml';
 import { QUICK_START_EXAMPLES } from '../quickStartExamples';
 import { DiscoveryPanel } from './DiscoveryPanel';
@@ -50,6 +50,10 @@ export class WorkspaceTab {
         // too - same lazy-per-card fetch/cache shape as validation above.
         this.cathCache = {};
         this._cathLoading = new Set();
+        // Real oligomeric-state metadata (e.g. "tetrameric") - same shape
+        // again, metadata display only, not a new interface-analysis engine.
+        this.assemblyCache = {};
+        this._assemblyLoading = new Set();
     }
 
     render() {
@@ -444,6 +448,7 @@ export class WorkspaceTab {
             ${gapCount > 0 ? `<span class="pdb-gaps-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="${escapeHtml(gapTooltip)}">${gapCount} disordered ${gapLabel}</span>` : ''}
             ${meta?.source === 'pdb' ? `<span id="validation-badge-${pid}" class="pdb-validation-badge font-body-sm text-[11px] text-tertiary pl-0.5">${this._validationBadgeContent(pid)}</span>` : ''}
             ${meta?.source === 'pdb' ? `<span id="cath-badge-${pid}" class="pdb-cath-badge font-body-sm text-[11px] text-tertiary pl-0.5">${this._cathBadgeContent(pid)}</span>` : ''}
+            ${meta?.source === 'pdb' ? `<span id="assembly-badge-${pid}" class="pdb-assembly-badge font-body-sm text-[11px] text-tertiary pl-0.5">${this._assemblyBadgeContent(pid)}</span>` : ''}
             ${citationLinkHTML}
         `;
 
@@ -465,6 +470,7 @@ export class WorkspaceTab {
         if (meta?.source === 'pdb') {
             this._loadValidation(pid);
             this._loadCath(pid);
+            this._loadAssembly(pid);
         }
     }
 
@@ -530,6 +536,31 @@ export class WorkspaceTab {
         }
         const badge = this.element?.querySelector(`#cath-badge-${pid}`);
         if (badge) badge.textContent = this._cathBadgeContent(pid);
+    }
+
+    _assemblyBadgeContent(pid) {
+        const cached = this.assemblyCache[pid];
+        if (cached === undefined) return 'Checking assembly state…';
+        if (!cached || !cached.oligomeric_details) return 'No assembly state available';
+        return cached.oligomeric_details.charAt(0).toUpperCase() + cached.oligomeric_details.slice(1);
+    }
+
+    // Same lazy-per-card fetch/cache shape as _loadValidation/_loadCath -
+    // real oligomeric-state metadata only exists for real PDB entries.
+    async _loadAssembly(pid) {
+        if (this.assemblyCache[pid] !== undefined || this._assemblyLoading.has(pid)) return;
+        this._assemblyLoading.add(pid);
+        try {
+            const data = await fetchAssemblyInfo(pid);
+            this.assemblyCache[pid] = data.assembly;
+        } catch (err) {
+            console.error('Failed to load assembly info for', pid, err);
+            this.assemblyCache[pid] = null;
+        } finally {
+            this._assemblyLoading.delete(pid);
+        }
+        const badge = this.element?.querySelector(`#assembly-badge-${pid}`);
+        if (badge) badge.textContent = this._assemblyBadgeContent(pid);
     }
 
     // Generalizes the per-card wwPDB validation badge above (and the

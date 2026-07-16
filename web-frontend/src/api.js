@@ -550,6 +550,13 @@ export async function fetchCathClassification(pdbId) {
     return res.json();
 }
 
+export async function fetchAssemblyInfo(pdbId) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const res = await fetch(buildUrl('/api/assembly', { pdb_id: pdbId }), { headers: authHeaders() });
+    if (!res.ok) throw new Error("Assembly info fetch failed");
+    return res.json();
+}
+
 export async function fetchPae(pdbId) {
     pdbId = assertValidPdbId(pdbId, 'pdbId');
     const res = await fetch(buildUrl('/api/pae', { pdb_id: pdbId }), { headers: authHeaders() });

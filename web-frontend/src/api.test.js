@@ -481,6 +481,21 @@ describe('api.js request-ID validation', () => {
         expect(global.fetch.mock.calls[0][0]).toContain('pdb_id=4HHB');
     });
 
+    it('fetchAssemblyInfo rejects a pdbId that is not a recognized structure ID format', async () => {
+        const { fetchAssemblyInfo } = await import('./api.js');
+        await expect(fetchAssemblyInfo('../evil')).rejects.toThrow('Invalid pdbId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchAssemblyInfo resolves with the { pdb_id, assembly } shape', async () => {
+        mockFetchOnce({ pdb_id: '4HHB', assembly: { oligomeric_count: 4, oligomeric_details: 'tetrameric' } });
+        const { fetchAssemblyInfo } = await import('./api.js');
+        const data = await fetchAssemblyInfo('4HHB');
+        expect(data.assembly.oligomeric_details).toBe('tetrameric');
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/assembly');
+        expect(global.fetch.mock.calls[0][0]).toContain('pdb_id=4HHB');
+    });
+
     it('fetchPae rejects a pdbId that is not a recognized structure ID format', async () => {
         const { fetchPae } = await import('./api.js');
         await expect(fetchPae('../evil')).rejects.toThrow('Invalid pdbId');
