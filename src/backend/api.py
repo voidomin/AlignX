@@ -34,12 +34,19 @@ from src.backend.discovery_coordinator import DiscoveryCoordinator
 from src.backend.annotation_aggregator import AnnotationAggregator
 from src.backend.validation_service import fetch_pdbe_validation
 from src.backend.foldseek_client import FoldseekClient, FoldseekError
+from src.backend.clustalo_client import ClustalOmegaClient
+from src.backend.blast_client import BlastClient
 from src.backend.database import HistoryDatabase
 from src.backend.ligand_analyzer import LigandAnalyzer
 from src.backend.interface_analyzer import InterfaceAnalyzer
 from src.backend.pdb_manager import PDBManager
 from src.backend.rmsd_analyzer import RMSDAnalyzer
+from src.backend.ramachandran_service import RamachandranService
 from src.backend.result_manager import ResultManager
+from src.backend.rmsd_calculator import (
+    get_structure_contact_map,
+    get_difference_distance_matrix,
+)
 
 logger = get_logger()
 
@@ -64,9 +71,13 @@ except Exception:
 async def lifespan(app: FastAPI):
     sweep_task = asyncio.create_task(_sweep_alignment_jobs())
     discovery_sweep_task = asyncio.create_task(_sweep_discovery_jobs())
+    clustalo_sweep_task = asyncio.create_task(_sweep_clustalo_jobs())
+    blast_sweep_task = asyncio.create_task(_sweep_blast_jobs())
     yield
     sweep_task.cancel()
     discovery_sweep_task.cancel()
+    clustalo_sweep_task.cancel()
+    blast_sweep_task.cancel()
 
 
 # Initialize FastAPI App
@@ -244,10 +255,11 @@ def _safe_segment(value: Optional[str], field_name: str) -> Optional[str]:
 
 # Initialize Backend Managers
 history_db = HistoryDatabase()
-ligand_analyzer = LigandAnalyzer(config)
+ligand_analyzer = LigandAnalyzer(config, cache_db=history_db)
 interface_analyzer = InterfaceAnalyzer()
 annotation_aggregator = AnnotationAggregator(config, cache_db=history_db)
 rmsd_analyzer = RMSDAnalyzer(config)
+ramachandran_service = RamachandranService()
 
 
 @app.get("/health")
@@ -436,6 +448,7 @@ async def analyze_chains(
                 chain_info[pid]["method"] = meta.get("method", "N/A")
                 chain_info[pid]["resolution"] = meta.get("resolution", "N/A")
                 chain_info[pid]["organism"] = meta.get("organism", "N/A")
+                chain_info[pid]["citation"] = meta.get("citation")
     except Exception as e:
         logger.warning(f"Failed to fetch PDB title metadata: {e}")
 
@@ -739,10 +752,16 @@ async def submit_alignment_job(
 )
 def get_alignment_job(job_id: str):
     """
-    Poll the status/result of a submitted job (alignment or discovery - job
-    IDs are unique uuid4 hex strings, so one polling endpoint covers both).
+    Poll the status/result of a submitted job (alignment, discovery,
+    Clustal Omega, or BLAST conservation - job IDs are unique uuid4 hex
+    strings, so one polling endpoint covers all of them).
     """
-    job = alignment_jobs.get(job_id) or discovery_jobs.get(job_id)
+    job = (
+        alignment_jobs.get(job_id)
+        or discovery_jobs.get(job_id)
+        or clustalo_jobs.get(job_id)
+        or blast_jobs.get(job_id)
+    )
     if job is None:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found.")
     return {"job_id": job_id, **job}
@@ -851,6 +870,176 @@ async def submit_discovery_job(
             session_id=session_id,
         )
     )
+
+    return {"job_id": job_id, "status": "queued"}
+
+
+# In-memory job registry for the async sequence-only MSA pipeline (EBI
+# Clustal Omega - see clustalo_client.py). Mirrors discovery_jobs above,
+# but doesn't need asyncio.to_thread the way alignment/discovery jobs do:
+# submit/poll/fetch here are all async network I/O with no CPU-bound or
+# blocking-file-I/O step, so the pipeline runs directly on the event loop
+# inside its own background task.
+clustalo_jobs: Dict[str, Dict[str, Any]] = {}
+
+
+async def _sweep_clustalo_jobs():
+    """Periodically drop finished Clustal Omega jobs older than _JOB_TTL_SECONDS."""
+    while True:
+        await asyncio.sleep(_JOB_SWEEP_INTERVAL_SECONDS)
+        now = time.time()
+        stale_ids = [
+            jid
+            for jid, job in clustalo_jobs.items()
+            if job.get("status") in ("completed", "failed")
+            and now - job.get("finished_at", now) > _JOB_TTL_SECONDS
+        ]
+        for jid in stale_ids:
+            clustalo_jobs.pop(jid, None)
+
+
+async def _run_clustalo_pipeline(sequences: Dict[str, str]) -> Dict[str, Any]:
+    client = ClustalOmegaClient(config)
+    aligned_fasta = await client.align(sequences)
+    return {"aligned_fasta": aligned_fasta}
+
+
+async def _execute_clustalo_job(job_id: str, sequences: Dict[str, str]):
+    clustalo_jobs[job_id]["status"] = "running"
+    created_at = clustalo_jobs[job_id].get("created_at", time.time())
+    try:
+        outcome = await _run_clustalo_pipeline(sequences)
+        clustalo_jobs[job_id] = {
+            "status": "completed",
+            "created_at": created_at,
+            "finished_at": time.time(),
+            **outcome,
+        }
+    except Exception as e:
+        clustalo_jobs[job_id] = {
+            "status": "failed",
+            "created_at": created_at,
+            "finished_at": time.time(),
+            "error": str(e),
+        }
+
+
+@app.post(
+    "/api/jobs/clustalo",
+    status_code=202,
+    responses={
+        400: {"description": "Fewer than 2 sequences, or an invalid sequence id"}
+    },
+)
+async def submit_clustalo_job(
+    sequences: Annotated[Dict[str, str], Body(..., embed=True)],
+):
+    """
+    Submit a true sequence-only multiple alignment as a background job via
+    EBI's Clustal Omega REST API (see clustalo_client.py) - independent of
+    Mustang's structural alignment, which every other alignment view in
+    this app relies on for sequence correspondence. `sequences` should
+    carry each structure's own ungapped sequence, keyed by a caller-chosen
+    id (typically the pdb_id). Returns immediately with a job_id; poll
+    GET /api/jobs/{job_id} for status.
+    """
+    if not sequences or len(sequences) < 2:
+        raise HTTPException(
+            status_code=400, detail="At least 2 sequences are required."
+        )
+    for seq_id in sequences:
+        _safe_segment(seq_id, "sequence id")
+
+    job_id = uuid.uuid4().hex
+    clustalo_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    _spawn_background_task(_execute_clustalo_job(job_id, sequences))
+
+    return {"job_id": job_id, "status": "queued"}
+
+
+# In-memory job registry for the async BLAST-homolog-conservation pipeline
+# (see blast_client.py) - mirrors clustalo_jobs above (pure async network
+# I/O, no asyncio.to_thread needed). Real BLAST searches take minutes and
+# NCBI policy forbids polling more than once/minute, so this is by far the
+# longest-running job type in this app - the same background-job/poll
+# pattern still applies, just with a much longer realistic wait.
+blast_jobs: Dict[str, Dict[str, Any]] = {}
+_SAFE_PROTEIN_SEQUENCE = re.compile(r"^[A-Za-z]{10,}$")
+
+
+async def _sweep_blast_jobs():
+    """Periodically drop finished BLAST jobs older than _JOB_TTL_SECONDS."""
+    while True:
+        await asyncio.sleep(_JOB_SWEEP_INTERVAL_SECONDS)
+        now = time.time()
+        stale_ids = [
+            jid
+            for jid, job in blast_jobs.items()
+            if job.get("status") in ("completed", "failed")
+            and now - job.get("finished_at", now) > _JOB_TTL_SECONDS
+        ]
+        for jid in stale_ids:
+            blast_jobs.pop(jid, None)
+
+
+async def _run_blast_pipeline(sequence: str) -> Dict[str, Any]:
+    client = BlastClient(config)
+    return await client.find_homologs_and_score_conservation(sequence)
+
+
+async def _execute_blast_job(job_id: str, sequence: str):
+    blast_jobs[job_id]["status"] = "running"
+    created_at = blast_jobs[job_id].get("created_at", time.time())
+    try:
+        outcome = await _run_blast_pipeline(sequence)
+        blast_jobs[job_id] = {
+            "status": "completed",
+            "created_at": created_at,
+            "finished_at": time.time(),
+            **outcome,
+        }
+    except Exception as e:
+        blast_jobs[job_id] = {
+            "status": "failed",
+            "created_at": created_at,
+            "finished_at": time.time(),
+            "error": str(e),
+        }
+
+
+@app.post(
+    "/api/jobs/conservation",
+    status_code=202,
+    responses={
+        400: {
+            "description": "Missing/invalid sequence (must be 10+ amino-acid letters)"
+        }
+    },
+)
+async def submit_conservation_job(sequence: Annotated[str, Body(..., embed=True)]):
+    """
+    Submit a real per-column evolutionary conservation search as a
+    background job: finds real homologs of `sequence` via NCBI BLAST, then
+    scores conservation per query position from their real alignments -
+    see blast_client.py. Unlike sequence_viewer.py's existing
+    calculate_conservation() (identity across whatever structures happen
+    to be loaded, not real evolutionary conservation), this searches a
+    real homolog panel. Returns immediately with a job_id; poll
+    GET /api/jobs/{job_id} for status - budget real wall-clock time here,
+    real BLAST searches commonly take several minutes.
+    """
+    sequence = (sequence or "").strip()
+    if not _SAFE_PROTEIN_SEQUENCE.match(sequence):
+        raise HTTPException(
+            status_code=400,
+            detail="A real protein sequence (10+ amino-acid letters) is required.",
+        )
+
+    job_id = uuid.uuid4().hex
+    blast_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    _spawn_background_task(_execute_blast_job(job_id, sequence))
 
     return {"job_id": job_id, "status": "queued"}
 
@@ -989,6 +1178,88 @@ def compare_runs(
 
 
 @app.get(
+    "/api/contact-map",
+    responses={
+        400: {"description": "Invalid run_id/pdb_id/session_id"},
+        404: {"description": "Run not found, or no contact map for this pdb_id"},
+    },
+)
+def get_contact_map(
+    run_id: Annotated[str, Query(...)],
+    pdb_id: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
+    threshold: Annotated[float, Query()] = 8.0,
+):
+    """CA-CA contact map for one structure in a completed run - see
+    rmsd_calculator.get_structure_contact_map()."""
+    _safe_segment(run_id, "run_id")
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(session_id, "session_id")
+
+    run, res_dir = _lookup_run_and_result_dir(run_id, session_id)
+    alignment_pdb = res_dir / "alignment.pdb"
+    if not alignment_pdb.exists() or not run.get("pdb_ids"):
+        raise HTTPException(
+            status_code=404, detail=f"No alignment output found for run {run_id}."
+        )
+
+    result = get_structure_contact_map(
+        alignment_pdb, run["pdb_ids"], pdb_id, threshold=threshold
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No contact map available for {pdb_id} in run {run_id}.",
+        )
+    return sanitize_for_json(result)
+
+
+@app.get(
+    "/api/difference-distance",
+    responses={
+        400: {"description": "Invalid run_id/pdb_id_a/pdb_id_b/session_id"},
+        404: {
+            "description": "Run not found, or no shared aligned columns between these two structures"
+        },
+    },
+)
+def get_difference_distance(
+    run_id: Annotated[str, Query(...)],
+    pdb_id_a: Annotated[str, Query(...)],
+    pdb_id_b: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """Difference-distance matrix between two structures in a completed
+    run's alignment - see rmsd_calculator.get_difference_distance_matrix()."""
+    _safe_segment(run_id, "run_id")
+    _safe_segment(pdb_id_a, "pdb_id_a")
+    _safe_segment(pdb_id_b, "pdb_id_b")
+    _safe_segment(session_id, "session_id")
+
+    run, res_dir = _lookup_run_and_result_dir(run_id, session_id)
+    alignment_pdb = res_dir / "alignment.pdb"
+    alignment_fasta = res_dir / "alignment.fasta"
+    if (
+        not alignment_pdb.exists()
+        or not alignment_fasta.exists()
+        or not run.get("pdb_ids")
+    ):
+        raise HTTPException(
+            status_code=404, detail=f"No alignment output found for run {run_id}."
+        )
+
+    result = get_difference_distance_matrix(
+        alignment_pdb, alignment_fasta, run["pdb_ids"], pdb_id_a, pdb_id_b
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No shared aligned columns between {pdb_id_a} and {pdb_id_b} in run {run_id}.",
+        )
+    return sanitize_for_json(result)
+
+
+@app.get(
     "/api/ligands",
     responses={
         400: {"description": "Invalid pdb_id, run_id, or session_id"},
@@ -1016,6 +1287,25 @@ def get_ligands(
 
     ligands = ligand_analyzer.get_ligands(pdb_path)
     return {"pdb_id": pdb_id, "ligands": sanitize_for_json(ligands)}
+
+
+@app.get(
+    "/api/ligand-info",
+    responses={400: {"description": "Invalid ligand_code"}},
+)
+async def get_ligand_info(ligand_code: Annotated[str, Query(...)]):
+    """
+    Resolve a 3-letter ligand/HETATM code to real chemistry (name,
+    formula, SMILES) via RCSB's Chemical Component Dictionary - see
+    LigandAnalyzer.fetch_ligand_chemistry(). Not tied to any downloaded
+    structure file or run - a pure lookup from the ligand code alone, so
+    it works for any ligand a structure's /api/ligands call surfaced.
+    """
+    _safe_segment(ligand_code, "ligand_code")
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        chemistry = await ligand_analyzer.fetch_ligand_chemistry(ligand_code, client)
+    return {"ligand_code": ligand_code.upper(), "chemistry": chemistry}
 
 
 @app.get(
@@ -1263,6 +1553,100 @@ async def get_annotations(
     return {"pdb_id": pdb_id, "annotation": sanitize_for_json(annotation)}
 
 
+_SAFE_AMINO_ACID = re.compile(r"^[A-Za-z]$")
+
+
+@app.get(
+    "/api/mutation-impact",
+    responses={
+        400: {"description": "Invalid pdb_id/chain/mutant"},
+        404: {"description": "Could not resolve this residue to a UniProt position"},
+    },
+)
+async def get_mutation_impact(
+    pdb_id: Annotated[str, Query(...)],
+    chain: Annotated[str, Query(...)],
+    resi: Annotated[int, Query(...)],
+    mutant: Annotated[str, Query(...)],
+):
+    """
+    Maps a structure's own author-numbered residue to its real UniProt
+    position (see AnnotationAggregator.resolve_structure_uniprot_position),
+    then looks up the real wild-type residue and gene symbol from UniProt
+    and (if a matching record exists) the real clinical significance of
+    the wildtype->mutant substitution from ClinVar. Also surfaces any
+    already-known UniProt "Natural variant" feature at that position -
+    UniProt's own variant records carry no structured pathogenicity field,
+    only free text, so ClinVar is the only source of a real classification
+    here.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(chain, "chain")
+    if not _SAFE_AMINO_ACID.match(mutant or ""):
+        raise HTTPException(
+            status_code=400, detail=f"Invalid mutant residue code: {mutant!r}"
+        )
+
+    source = PDBManager.detect_source(pdb_id)
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resolved = await annotation_aggregator.resolve_structure_uniprot_position(
+            pdb_id, chain, resi, source, client
+        )
+        if resolved is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Could not resolve {pdb_id} chain {chain} residue {resi} to a UniProt position.",
+            )
+        accession, uniprot_position = resolved
+
+        summary = await annotation_aggregator.fetch_uniprot_gene_and_sequence(
+            accession, client
+        )
+        sequence = summary.get("sequence")
+        wildtype_residue = (
+            sequence[uniprot_position - 1]
+            if sequence and 1 <= uniprot_position <= len(sequence)
+            else None
+        )
+
+        clinvar = None
+        gene = summary.get("gene")
+        if gene and wildtype_residue:
+            variant_notation = (
+                f"{wildtype_residue.upper()}{uniprot_position}{mutant.upper()}"
+            )
+            clinvar = await annotation_aggregator.fetch_clinvar_significance(
+                gene, variant_notation, client
+            )
+
+        features = await annotation_aggregator.fetch_uniprot_features(accession, client)
+        known_variant = next(
+            (
+                f
+                for f in features
+                if f["type"] == "Natural variant"
+                and f["start"] <= uniprot_position <= f["end"]
+            ),
+            None,
+        )
+
+    return sanitize_for_json(
+        {
+            "pdb_id": pdb_id,
+            "chain": chain,
+            "resi": resi,
+            "accession": accession,
+            "gene": gene,
+            "uniprot_position": uniprot_position,
+            "wildtype_residue": wildtype_residue,
+            "mutant_residue": mutant.upper(),
+            "known_uniprot_variant": known_variant,
+            "clinvar": clinvar,
+            "highlight_chains": {chain: [resi]},
+        }
+    )
+
+
 @app.get(
     "/api/validation",
     responses={400: {"description": "Invalid pdb_id"}},
@@ -1285,6 +1669,64 @@ async def get_validation(pdb_id: Annotated[str, Query(...)]):
     async with httpx.AsyncClient(timeout=15.0) as client:
         validation = await fetch_pdbe_validation(pdb_id, client)
     return {"pdb_id": pdb_id, "validation": validation}
+
+
+@app.get(
+    "/api/qc",
+    responses={
+        400: {"description": "Invalid pdb_id/run_id/session_id"},
+        404: {"description": "Structure not found in the active workspace"},
+    },
+)
+async def get_qc(
+    pdb_id: Annotated[str, Query(...)],
+    run_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Standalone per-structure QC: Ramachandran outliers + secondary
+    structure (the same backbone-torsion computations coordinator.py
+    already runs for a full alignment) plus, for real PDB entries, real
+    wwPDB validation - all for one already-downloaded structure, no
+    alignment required. Powers the Workspace tab's "Run QC on all" sweep,
+    generalizing the per-card validation badge that already exists there
+    to every structure at once.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    pdb_path = _find_structure_pdb_path(pdb_id, run_id, session_id)
+    if not pdb_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Structure PDB for {pdb_id} not found in active workspace.",
+        )
+
+    torsion_data = await asyncio.to_thread(
+        ramachandran_service.calculate_torsion_angles, pdb_path
+    )
+    ramachandran_stats = None
+    secondary_structure_stats = None
+    if torsion_data:
+        ramachandran_stats = ramachandran_service.aggregate_metrics(torsion_data)
+        secondary_structure_stats = ramachandran_service.aggregate_secondary_structure(
+            torsion_data
+        )
+
+    validation = None
+    if PDBManager.detect_source(pdb_id) == "pdb":
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            validation = await fetch_pdbe_validation(pdb_id, client)
+
+    return sanitize_for_json(
+        {
+            "pdb_id": pdb_id,
+            "ramachandran_stats": ramachandran_stats,
+            "secondary_structure_stats": secondary_structure_stats,
+            "validation": validation,
+        }
+    )
 
 
 @app.get("/api/memory")
@@ -1403,6 +1845,48 @@ def delete_history_run(
 
     history_db.delete_run(run_id)
     return {"deleted": run_id}
+
+
+class RunNotesUpdate(BaseModel):
+    notes: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+
+@app.put(
+    "/api/history/{run_id}/notes",
+    responses={
+        400: {"description": "Invalid run_id"},
+        403: {"description": "Run belongs to a different session"},
+        404: {"description": "Run not found in the history database"},
+    },
+)
+def update_run_notes(
+    run_id: str,
+    body: RunNotesUpdate,
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Add/update a run's free-text notes and/or tags, stored in the run's
+    existing metadata JSON column (see HistoryDatabase.update_run_notes -
+    no schema change needed). Same session-ownership check as
+    delete_history_run: a shared-run-link viewer can read but not edit
+    someone else's run's notes.
+    """
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    run = history_db.get_run(run_id)
+    if not run:
+        raise HTTPException(
+            status_code=404, detail=f"Run {run_id} not found in history database."
+        )
+    if run.get("session_id") and run["session_id"] != session_id:
+        raise HTTPException(
+            status_code=403, detail="This run belongs to a different session."
+        )
+
+    history_db.update_run_notes(run_id, notes=body.notes, tags=body.tags)
+    return {"run_id": run_id, "notes": body.notes, "tags": body.tags}
 
 
 @app.delete("/api/history")
@@ -1704,6 +2188,79 @@ def get_lab_notebook(
         logger.exception("Failed to generate lab notebook")
         raise HTTPException(
             status_code=500, detail=f"Failed to generate lab notebook: {str(e)}"
+        )
+
+
+@app.get(
+    "/api/notebook/ipynb",
+    responses={
+        400: {"description": "Invalid run_id or session_id"},
+        404: {"description": "Run not found in the history database"},
+        500: {"description": "Jupyter notebook generation failed"},
+    },
+)
+def get_lab_notebook_ipynb(
+    request: Request,
+    run_id: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Generate and retrieve a real, runnable Jupyter notebook for a run -
+    see NotebookExporter.export_ipynb(). Unlike GET /api/notebook's static
+    HTML snapshot, every code cell here re-fetches this run's data live
+    from this same deployment's own REST API (request.base_url), so it
+    keeps working correctly regardless of which host actually served it.
+    """
+    from src.backend.notebook_exporter import NotebookExporter
+    from fastapi.responses import FileResponse
+
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    run = history_db.get_run(run_id)
+    if not run:
+        raise HTTPException(
+            status_code=404, detail=f"Run {run_id} not found in history database."
+        )
+
+    res_dir = project_root / "results"
+    if session_id:
+        res_dir = res_dir / session_id
+    res_dir = res_dir / run_id
+
+    metadata = run.get("metadata", {})
+    results = metadata.get("results") or {
+        "stats": metadata.get("stats", {}),
+        "id": run_id,
+        "pdb_ids": run.get("pdb_ids", []),
+    }
+    results = dict(results)
+    results["result_dir"] = res_dir
+
+    try:
+        exporter = NotebookExporter()
+        base_url = str(request.base_url).rstrip("/")
+        notebook_path = exporter.export_ipynb(
+            results, run_id, insights=results.get("insights"), base_url=base_url
+        )
+
+        if not notebook_path or not notebook_path.exists():
+            raise HTTPException(
+                status_code=500,
+                detail="Jupyter notebook file was not created successfully.",
+            )
+
+        return FileResponse(
+            path=str(notebook_path),
+            media_type="application/x-ipynb+json",
+            filename=f"lab_notebook_{run_id}.ipynb",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Failed to generate Jupyter notebook")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate Jupyter notebook: {str(e)}"
         )
 
 

@@ -1,7 +1,11 @@
+import json
 import logging
+import re
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional
+from urllib.parse import quote
 
+import httpx
 import numpy as np
 import pandas as pd
 
@@ -11,6 +15,14 @@ from src.utils.logger import sanitize_for_log
 
 logger = logging.getLogger(__name__)
 
+RCSB_CHEMCOMP_BASE_URL = "https://data.rcsb.org/rest/v1/core/chemcomp"
+
+# Ligand/HETATM codes are always alnum (occasionally with a trailing digit
+# for numbered variants) - this allowlist keeps the RCSB request path safe
+# regardless of caller, same defense-in-depth pattern validation_service.py
+# uses for pdb_id.
+_SAFE_LIGAND_CODE = re.compile(r"^[A-Za-z0-9]+$")
+
 
 class LigandAnalyzer:
     """
@@ -18,14 +30,23 @@ class LigandAnalyzer:
     Identifies ligands (HETATM) and finds interacting residues.
     """
 
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: Dict[str, Any] = None, cache_db: Optional[Any] = None):
         """
         Initialize the LigandAnalyzer.
 
         Args:
             config: Optional configuration dictionary
+            cache_db: Optional HistoryDatabase-like object (duck-typed via
+                get_annotation_cache/set_annotation_cache, same pattern
+                AnnotationAggregator already uses) for caching ligand
+                chemistry lookups - static data, so worth persisting
+                across requests/users the same way GO-term names are.
         """
         self.config = config or {}
+        self.cache_db = cache_db
+        self.cache_ttl_days = (
+            (config or {}).get("annotation", {}).get("cache_ttl_days", 30)
+        )
         # Water, crystallization buffer/cryoprotectant components, and
         # non-catalytic monatomic ions - none of these are ever biologically
         # meaningful ligands, so they're excluded outright. Catalytic/
@@ -419,10 +440,32 @@ class LigandAnalyzer:
                 ],
                 "center": c["center"],
                 "score": round(c["score"], 2),
+                "volume_estimate_a3": self._cluster_convex_hull_volume(c["residues"]),
                 "heuristic": True,
             }
             for i, c in enumerate(selected)
         ]
+
+    @staticmethod
+    def _cluster_convex_hull_volume(residues: list) -> Optional[float]:
+        """Convex-hull volume (Angstrom^3) over a pocket candidate's own CA
+        coordinates - a rough size signal, not a validated cavity volume: a
+        convex hull always over-estimates a true concave binding cavity
+        (which is exactly what makes it a pocket rather than a bump), and
+        this app has no real geometric cavity detector (fpocket-equivalent)
+        to compare against. Returns None if the cluster is too small or too
+        close to coplanar for scipy to construct a hull from (needs >=4
+        non-coplanar points in 3D)."""
+        from scipy.spatial import ConvexHull
+        from scipy.spatial import QhullError
+
+        coords = np.array([r["CA"].get_coord() for r in residues])
+        if len(coords) < 4:
+            return None
+        try:
+            return round(float(ConvexHull(coords).volume), 1)
+        except QhullError:
+            return None
 
     def calculate_interaction_similarity(
         self, all_interactions: List[Dict[str, Any]]
@@ -490,3 +533,93 @@ class LigandAnalyzer:
             return 0.0
         union = len(set_i | set_j)
         return len(set_i & set_j) / union if union > 0 else 0.0
+
+    async def fetch_ligand_chemistry(
+        self, ligand_code: str, client: httpx.AsyncClient
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Resolves a 3-letter ligand/HETATM code (e.g. "HEM", "STI") to real
+        chemistry - name, formula, SMILES - via RCSB's Chemical Component
+        Dictionary. Until now this app only ever showed the bare 3-letter
+        code with no context ("what is ligand STI?" was a dead end).
+        Cached the same way GO-term names already are (this data is
+        static, so re-looking it up per request/user is wasteful) via the
+        same duck-typed cache_db this constructor now accepts.
+
+        Returns None on any failure (not found, network error, unexpected
+        shape, or an unsafe code) - never raises.
+        """
+        if not _SAFE_LIGAND_CODE.match(ligand_code or ""):
+            logger.warning(
+                f"Rejected unsafe ligand_code: {sanitize_for_log(ligand_code)!r}"
+            )
+            return None
+
+        cache_key = f"chemcomp:{ligand_code.upper()}"
+        if self.cache_db:
+            try:
+                cached = self.cache_db.get_annotation_cache(
+                    cache_key, self.cache_ttl_days
+                )
+                if cached is not None:
+                    return json.loads(cached)
+            except Exception as e:
+                logger.warning(
+                    f"Ligand chemistry cache read failed for "
+                    f"{sanitize_for_log(ligand_code)}: {e}"
+                )
+
+        result = await self._fetch_ligand_chemistry_live(ligand_code, client)
+
+        if self.cache_db:
+            try:
+                self.cache_db.set_annotation_cache(
+                    cache_key, "chemcomp", json.dumps(result)
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Ligand chemistry cache write failed for "
+                    f"{sanitize_for_log(ligand_code)}: {e}"
+                )
+
+        return result
+
+    @staticmethod
+    async def _fetch_ligand_chemistry_live(
+        ligand_code: str, client: httpx.AsyncClient
+    ) -> Optional[Dict[str, Any]]:
+        safe_code = quote(ligand_code.upper(), safe="")
+        try:
+            response = await client.get(
+                f"{RCSB_CHEMCOMP_BASE_URL}/{safe_code}",
+                headers={"Accept": "application/json"},
+            )
+            if response.status_code != 200:
+                return None
+
+            data = response.json()
+            chem = data.get("chem_comp") or {}
+            descriptor = data.get("rcsb_chem_comp_descriptor") or {}
+            if not chem.get("name") and not chem.get("formula"):
+                return None
+
+            return {
+                "id": ligand_code.upper(),
+                "name": chem.get("name"),
+                "formula": chem.get("formula"),
+                "formula_weight": chem.get("formula_weight"),
+                "smiles": descriptor.get("SMILES"),
+                "inchi_key": descriptor.get("InChIKey"),
+            }
+        except httpx.HTTPError as e:
+            logger.warning(
+                f"Ligand chemistry lookup failed for "
+                f"{sanitize_for_log(ligand_code)}: {e}"
+            )
+            return None
+        except Exception as e:
+            logger.warning(
+                f"Failed to parse ligand chemistry response for "
+                f"{sanitize_for_log(ligand_code)}: {e}"
+            )
+            return None

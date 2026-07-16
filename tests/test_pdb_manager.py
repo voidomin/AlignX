@@ -1160,3 +1160,111 @@ class TestCachedLocalFileHit:
         assert success is True
         assert "Using local file" in msg
         cache_manager.update_access.assert_called_once_with("1A0J")
+
+
+class TestParseRcsbCitation:
+    def test_parses_a_real_looking_citation(self):
+        citation = {
+            "pdbx_database_id_PubMed": 6726807,
+            "pdbx_database_id_DOI": "10.1016/0022-2836(84)90472-8",
+            "rcsb_authors": ["Fermi, G.", "Perutz, M.F."],
+            "title": "The crystal structure of human deoxyhaemoglobin at 1.74 A resolution",
+        }
+        result = PDBManager._parse_rcsb_citation(citation)
+        assert result == {
+            "pubmed_id": 6726807,
+            "doi": "10.1016/0022-2836(84)90472-8",
+            "authors": ["Fermi, G.", "Perutz, M.F."],
+            "title": "The crystal structure of human deoxyhaemoglobin at 1.74 A resolution",
+        }
+
+    def test_returns_none_for_no_citation(self):
+        assert PDBManager._parse_rcsb_citation(None) is None
+
+    def test_returns_none_when_neither_pubmed_nor_doi_present(self):
+        citation = {"rcsb_authors": ["Someone"], "title": "A paper"}
+        assert PDBManager._parse_rcsb_citation(citation) is None
+
+    def test_defaults_missing_authors_to_empty_list(self):
+        citation = {"pdbx_database_id_PubMed": 123, "title": "A paper"}
+        result = PDBManager._parse_rcsb_citation(citation)
+        assert result["authors"] == []
+
+
+class TestParseRcsbEntryCitation:
+    def test_entry_carries_the_parsed_citation_through(self):
+        entry = {
+            "struct": {"title": "Deoxyhaemoglobin"},
+            "exptl": [{"method": "X-RAY DIFFRACTION"}],
+            "rcsb_entry_info": {"resolution_combined": [1.74]},
+            "polymer_entities": [],
+            "rcsb_primary_citation": {
+                "pdbx_database_id_PubMed": 6726807,
+                "pdbx_database_id_DOI": "10.1016/0022-2836(84)90472-8",
+                "rcsb_authors": ["Fermi, G."],
+                "title": "The crystal structure of human deoxyhaemoglobin",
+            },
+        }
+        result = PDBManager._parse_rcsb_entry(entry)
+        assert result["citation"]["pubmed_id"] == 6726807
+        assert result["citation"]["doi"] == "10.1016/0022-2836(84)90472-8"
+
+    def test_entry_with_no_citation_field_gets_none(self):
+        entry = {
+            "struct": {"title": "Some structure"},
+            "exptl": [],
+            "rcsb_entry_info": {},
+            "polymer_entities": [],
+        }
+        result = PDBManager._parse_rcsb_entry(entry)
+        assert result["citation"] is None
+
+
+class TestFetchMetadataCitation:
+    @pytest.mark.asyncio
+    @patch("src.backend.pdb_manager.httpx.AsyncClient.post")
+    async def test_fetch_metadata_surfaces_a_real_looking_citation(
+        self, mock_post, mock_config
+    ):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "data": {
+                "entries": [
+                    {
+                        "rcsb_id": "4HHB",
+                        "struct": {"title": "Deoxyhaemoglobin"},
+                        "exptl": [{"method": "X-RAY DIFFRACTION"}],
+                        "rcsb_entry_info": {"resolution_combined": [1.74]},
+                        "polymer_entities": [],
+                        "rcsb_primary_citation": {
+                            "pdbx_database_id_PubMed": 6726807,
+                            "pdbx_database_id_DOI": "10.1016/0022-2836(84)90472-8",
+                            "rcsb_authors": ["Fermi, G."],
+                            "title": "The crystal structure of human deoxyhaemoglobin",
+                        },
+                    }
+                ]
+            }
+        }
+        mock_post.return_value = mock_response
+        manager = PDBManager(mock_config)
+
+        result = await manager.fetch_metadata(["4HHB"])
+
+        assert result["4HHB"]["citation"]["pubmed_id"] == 6726807
+        assert result["4HHB"]["citation"]["doi"] == "10.1016/0022-2836(84)90472-8"
+
+    @pytest.mark.asyncio
+    @patch("src.backend.pdb_manager.httpx.AsyncClient.post")
+    async def test_fetch_metadata_defaults_citation_to_none_on_failure(
+        self, mock_post, mock_config
+    ):
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_post.return_value = mock_response
+        manager = PDBManager(mock_config)
+
+        result = await manager.fetch_metadata(["4HHB"])
+
+        assert result["4HHB"]["citation"] is None

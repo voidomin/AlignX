@@ -319,6 +319,66 @@ class TestRunCrud:
         assert db.get_run("run_1") is None
         assert db.get_run("run_2") is not None
 
+    def test_update_run_notes_sets_notes_and_tags(self, db):
+        db.save_run("run_1", "Run 1", ["4RLT"], Path("results/run_1"))
+
+        assert (
+            db.update_run_notes(
+                "run_1", notes="Interesting fold", tags=["kinase", "review"]
+            )
+            is True
+        )
+
+        run = db.get_run("run_1")
+        assert run["metadata"]["notes"] == "Interesting fold"
+        assert run["metadata"]["tags"] == ["kinase", "review"]
+
+    def test_update_run_notes_preserves_existing_metadata(self, db):
+        db.save_run(
+            "run_1",
+            "Run 1",
+            ["4RLT"],
+            Path("results/run_1"),
+            metadata={"stats": {"mean_rmsd": 1.5}},
+        )
+
+        db.update_run_notes("run_1", notes="A note")
+
+        run = db.get_run("run_1")
+        assert run["metadata"]["stats"] == {"mean_rmsd": 1.5}
+        assert run["metadata"]["notes"] == "A note"
+
+    def test_update_run_notes_only_touches_fields_explicitly_passed(self, db):
+        db.save_run(
+            "run_1",
+            "Run 1",
+            ["4RLT"],
+            Path("results/run_1"),
+            metadata={"notes": "Original note", "tags": ["a"]},
+        )
+
+        db.update_run_notes("run_1", tags=["b", "c"])
+
+        run = db.get_run("run_1")
+        assert run["metadata"]["notes"] == "Original note"
+        assert run["metadata"]["tags"] == ["b", "c"]
+
+    def test_update_run_notes_empty_string_clears_an_existing_note(self, db):
+        db.save_run(
+            "run_1",
+            "Run 1",
+            ["4RLT"],
+            Path("results/run_1"),
+            metadata={"notes": "Original note"},
+        )
+
+        db.update_run_notes("run_1", notes="")
+
+        assert db.get_run("run_1")["metadata"]["notes"] == ""
+
+    def test_update_run_notes_returns_false_for_unknown_run(self, db):
+        assert db.update_run_notes("does_not_exist", notes="x") is False
+
 
 class TestCacheManagementMethods:
     def test_register_and_retrieve_cache_item(self, db):

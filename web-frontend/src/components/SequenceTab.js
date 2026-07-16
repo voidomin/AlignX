@@ -1,4 +1,5 @@
-import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl, getAlignmentReportUrl, getLabNotebookUrl, getCitationsUrl, getRmsdCsvUrl, getHeatmapPngUrl, getReportZipUrl, getNewickUrl } from '../api';
+import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl, getAlignmentReportUrl, getLabNotebookUrl, getLabNotebookIpynbUrl, getCitationsUrl, getRmsdCsvUrl, getHeatmapPngUrl, getReportZipUrl, getNewickUrl, submitClustalOmegaJob, submitConservationJob, pollJobUntilDone } from '../api';
+import { escapeHtml } from '../escapeHtml';
 
 const REPORT_SECTIONS = [
     { key: 'summary', label: 'Summary' },
@@ -54,11 +55,39 @@ export class SequenceTab {
 
                 <div class="flex flex-col gap-3">
                     <span class="eyebrow">Sequence alignment view</span>
+                    <div class="section-caption">
+                        Coloring shows identity across the structures loaded in this run, not true evolutionary conservation - see "True sequence-only MSA" below for a real homolog-based conservation profile.
+                    </div>
                     <div id="sequence-alignment-grid-wrapper" class="overflow-x-auto rounded-md max-h-[350px]">
                         <div class="text-center py-8 text-secondary font-body-sm">
                             Run alignment to generate sequence view.
                         </div>
                     </div>
+                </div>
+
+                <div class="flex flex-col gap-3 border-t border-border pt-6">
+                    <div class="flex items-center justify-between">
+                        <span class="eyebrow">True sequence-only MSA (Clustal Omega)</span>
+                        <button id="clustalo-run-btn" class="btn-secondary py-1.5 px-3 rounded-md font-label-md text-label-md" disabled>Run true sequence alignment</button>
+                    </div>
+                    <div class="section-caption">
+                        Independent of Mustang's structural alignment above - a real multiple sequence alignment computed purely from each structure's own sequence, via EBI's public Clustal Omega service. Can disagree with the structural alignment for divergent sequences with similar folds.
+                    </div>
+                    <div id="clustalo-result-wrapper" class="overflow-x-auto rounded-md max-h-[350px]"></div>
+                </div>
+
+                <div class="flex flex-col gap-3 border-t border-border pt-6">
+                    <div class="flex items-center justify-between">
+                        <span class="eyebrow">Real evolutionary conservation (NCBI BLAST)</span>
+                        <div class="flex items-center gap-2">
+                            <select id="conservation-structure-select" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[160px]"></select>
+                            <button id="conservation-run-btn" class="btn-secondary py-1.5 px-3 rounded-md font-label-md text-label-md" disabled>Find real homologs</button>
+                        </div>
+                    </div>
+                    <div class="section-caption">
+                        Searches NCBI BLAST for real homologs of the selected structure's sequence, then scores real per-position conservation from their alignments (Shannon entropy) - genuinely different from the identity-based coloring above. Real BLAST searches commonly take several minutes.
+                    </div>
+                    <div id="conservation-result-wrapper" class="overflow-x-auto rounded-md max-h-[350px]"></div>
                 </div>
 
                 <div class="flex flex-col gap-3 border-t border-border pt-6">
@@ -86,6 +115,10 @@ export class SequenceTab {
                     <div class="flex items-center justify-between py-2 border-b border-border-subtle">
                         <span class="font-body-sm text-body-sm text-primary font-mono">lab_notebook.html</span>
                         <a id="download-notebook-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">View Notebook</a>
+                    </div>
+                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
+                        <span class="font-body-sm text-body-sm text-primary font-mono">lab_notebook.ipynb</span>
+                        <a id="download-notebook-ipynb-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download Jupyter Notebook</a>
                     </div>
                     <div class="flex items-center justify-between py-2 border-b border-border-subtle">
                         <span class="font-body-sm text-body-sm text-primary font-mono">mustang_report.pdf</span>
@@ -139,6 +172,9 @@ export class SequenceTab {
         motifInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') this.searchMotif(motifInput.value);
         });
+
+        this.element.querySelector('#clustalo-run-btn').addEventListener('click', () => this.runClustalOmegaAlignment());
+        this.element.querySelector('#conservation-run-btn').addEventListener('click', () => this.runConservationSearch());
     }
 
     async searchMotif(query) {
@@ -244,6 +280,9 @@ export class SequenceTab {
         if (this.element) {
             this.element.querySelector('#motif-search-input').value = "";
             this.element.querySelector('#motif-results-container').innerHTML = "";
+            this.element.querySelector('#clustalo-result-wrapper').innerHTML = "";
+            this.element.querySelector('#conservation-result-wrapper').innerHTML = "";
+            this.element.querySelector('#conservation-structure-select').innerHTML = "";
         }
     }
 
@@ -263,6 +302,7 @@ export class SequenceTab {
         const pdbLink = this.element.querySelector('#download-pdb-link');
         const fastaLink = this.element.querySelector('#download-fasta-link');
         const notebookLink = this.element.querySelector('#download-notebook-link');
+        const notebookIpynbLink = this.element.querySelector('#download-notebook-ipynb-link');
         const reportLink = this.element.querySelector('#download-report-link');
         const citationsLink = this.element.querySelector('#download-citations-link');
         const rmsdCsvLink = this.element.querySelector('#download-rmsd-csv-link');
@@ -271,6 +311,12 @@ export class SequenceTab {
         const zipLink = this.element.querySelector('#download-zip-link');
         const motifBtn = this.element.querySelector('#motif-search-btn');
         motifBtn.disabled = !this.currentRunId;
+
+        const clustaloBtn = this.element.querySelector('#clustalo-run-btn');
+        clustaloBtn.disabled = !this.currentRunId;
+
+        const conservationBtn = this.element.querySelector('#conservation-run-btn');
+        conservationBtn.disabled = !this.currentRunId;
 
         if (this.currentRunId) {
             pdbLink.href = getAlignmentPdbUrl(this.currentRunId);
@@ -281,6 +327,9 @@ export class SequenceTab {
 
             notebookLink.href = getLabNotebookUrl(this.currentRunId);
             notebookLink.classList.remove('opacity-55', 'pointer-events-none');
+
+            notebookIpynbLink.href = getLabNotebookIpynbUrl(this.currentRunId);
+            notebookIpynbLink.classList.remove('opacity-55', 'pointer-events-none');
 
             citationsLink.href = getCitationsUrl(this.currentRunId);
             citationsLink.classList.remove('opacity-55', 'pointer-events-none');
@@ -308,6 +357,9 @@ export class SequenceTab {
 
             notebookLink.href = "#";
             notebookLink.classList.add('opacity-55', 'pointer-events-none');
+
+            notebookIpynbLink.href = "#";
+            notebookIpynbLink.classList.add('opacity-55', 'pointer-events-none');
 
             citationsLink.href = "#";
             citationsLink.classList.add('opacity-55', 'pointer-events-none');
@@ -343,6 +395,8 @@ export class SequenceTab {
         try {
             const data = await fetchSequence(this.currentRunId);
             const { sequences, conservation } = data;
+
+            this._populateConservationStructureSelect(Object.keys(sequences));
 
             // Render colored scrollable grid
             let rowsHtml = "";
@@ -417,5 +471,211 @@ export class SequenceTab {
                 </div>
             `;
         }
+    }
+
+    static _parseFasta(text) {
+        const result = {};
+        let current = null;
+        (text || '').split(/\r?\n/).forEach(line => {
+            if (line.startsWith('>')) {
+                current = line.slice(1).trim();
+                result[current] = '';
+            } else if (current) {
+                result[current] += line.trim();
+            }
+        });
+        return result;
+    }
+
+    // Independent of loadSequenceGrid() above - reuses the same run's raw
+    // sequences (gaps stripped, since Mustang's structural correspondence
+    // is exactly what this alignment must NOT depend on) but submits them
+    // fresh to EBI's Clustal Omega service for a real sequence-only MSA,
+    // rather than reading anything Mustang already computed.
+    async runClustalOmegaAlignment() {
+        if (!this.currentRunId) return;
+        const btn = this.element.querySelector('#clustalo-run-btn');
+        const wrapper = this.element.querySelector('#clustalo-result-wrapper');
+
+        btn.disabled = true;
+        wrapper.innerHTML = `
+            <div class="text-center py-8 text-secondary font-body-sm">
+                <span class="animate-spin material-symbols-outlined text-[18px]">sync</span>
+                Submitting sequences to EBI Clustal Omega…
+            </div>
+        `;
+
+        try {
+            const data = await fetchSequence(this.currentRunId);
+            const ungapped = Object.fromEntries(
+                Object.entries(data.sequences || {}).map(([id, seq]) => [id, seq.replace(/-/g, '')])
+            );
+
+            if (Object.keys(ungapped).length < 2) {
+                wrapper.innerHTML = `<div class="text-center py-8 text-secondary font-body-sm">Need at least 2 structures for a sequence alignment.</div>`;
+                return;
+            }
+
+            const submission = await submitClustalOmegaJob(ungapped);
+            wrapper.innerHTML = `
+                <div class="text-center py-8 text-secondary font-body-sm">
+                    <span class="animate-spin material-symbols-outlined text-[18px]">sync</span>
+                    Waiting on EBI Clustal Omega (this can take a couple of minutes)…
+                </div>
+            `;
+
+            const job = await pollJobUntilDone(submission.job_id, { intervalMs: 5000 });
+            if (job.status === 'failed') {
+                wrapper.innerHTML = `<div class="text-center py-8 text-error font-body-sm">Clustal Omega alignment failed: ${escapeHtml(job.error || 'unknown error')}</div>`;
+                return;
+            }
+
+            this.renderClustalOmegaResult(job.aligned_fasta);
+        } catch (err) {
+            console.error("Clustal Omega alignment failed:", err);
+            wrapper.innerHTML = `<div class="text-center py-8 text-error font-body-sm">Failed to run sequence-only alignment.</div>`;
+        } finally {
+            btn.disabled = !this.currentRunId;
+        }
+    }
+
+    renderClustalOmegaResult(alignedFastaText) {
+        const wrapper = this.element.querySelector('#clustalo-result-wrapper');
+        const sequences = SequenceTab._parseFasta(alignedFastaText);
+        const headers = Object.keys(sequences);
+
+        if (headers.length === 0) {
+            wrapper.innerHTML = `<div class="text-center py-8 text-error font-body-sm">Could not parse the returned alignment.</div>`;
+            return;
+        }
+
+        const seqLen = Math.max(...headers.map(h => sequences[h].length));
+        let rowsHtml = "";
+        headers.forEach(header => {
+            const seq = sequences[header];
+            let residuesHtml = "";
+            for (let i = 0; i < seqLen; i++) {
+                const char = seq[i] || '-';
+                const isConservedColumn = char !== '-' && headers.every(h => (sequences[h][i] || '-') === char);
+                const bgColor = isConservedColumn ? "#ff4757" : (char === '-' ? "#2f3542" : "transparent");
+                residuesHtml += `<td class="text-center font-mono border border-border-subtle" style="background-color: ${bgColor}; min-width: 22px; height: 24px; font-size: 12px; color: #fff;">${escapeHtml(char)}</td>`;
+            }
+            rowsHtml += `
+                <tr class="border-b border-border-subtle">
+                    <td class="sticky left-0 bg-surface-raised text-primary pr-4 pl-2 font-bold font-mono border-r border-border whitespace-nowrap min-w-[120px] text-body-sm">${escapeHtml(header)}</td>
+                    ${residuesHtml}
+                </tr>
+            `;
+        });
+
+        wrapper.innerHTML = `
+            <table class="text-left border-collapse">
+                <tbody>
+                    ${rowsHtml}
+                </tbody>
+            </table>
+        `;
+    }
+
+    _populateConservationStructureSelect(headers) {
+        const select = this.element.querySelector('#conservation-structure-select');
+        const previousValue = select.value;
+        select.innerHTML = "";
+        headers.forEach(header => {
+            const opt = document.createElement('option');
+            opt.value = header;
+            opt.textContent = header;
+            select.appendChild(opt);
+        });
+        if (headers.includes(previousValue)) {
+            select.value = previousValue;
+        }
+    }
+
+    // Independent of both loadSequenceGrid() and runClustalOmegaAlignment()
+    // above - searches a real external homolog database (NCBI BLAST) for
+    // just the one selected structure's sequence, rather than comparing
+    // sequences already loaded in this workspace against each other.
+    async runConservationSearch() {
+        if (!this.currentRunId) return;
+        const select = this.element.querySelector('#conservation-structure-select');
+        const header = select.value;
+        const btn = this.element.querySelector('#conservation-run-btn');
+        const wrapper = this.element.querySelector('#conservation-result-wrapper');
+
+        if (!header) {
+            wrapper.innerHTML = `<div class="text-center py-8 text-secondary font-body-sm">No structure available to search.</div>`;
+            return;
+        }
+
+        btn.disabled = true;
+        wrapper.innerHTML = `
+            <div class="text-center py-8 text-secondary font-body-sm">
+                <span class="animate-spin material-symbols-outlined text-[18px]">sync</span>
+                Submitting ${escapeHtml(header)}'s sequence to NCBI BLAST…
+            </div>
+        `;
+
+        try {
+            const data = await fetchSequence(this.currentRunId);
+            const sequence = (data.sequences?.[header] || '').replace(/-/g, '');
+
+            if (sequence.length < 10) {
+                wrapper.innerHTML = `<div class="text-center py-8 text-secondary font-body-sm">Sequence too short for a BLAST search.</div>`;
+                return;
+            }
+
+            const submission = await submitConservationJob(sequence);
+            wrapper.innerHTML = `
+                <div class="text-center py-8 text-secondary font-body-sm">
+                    <span class="animate-spin material-symbols-outlined text-[18px]">sync</span>
+                    Waiting on NCBI BLAST (real searches commonly take several minutes)…
+                </div>
+            `;
+
+            const job = await pollJobUntilDone(submission.job_id, { intervalMs: 15000 });
+            if (job.status === 'failed') {
+                wrapper.innerHTML = `<div class="text-center py-8 text-error font-body-sm">BLAST conservation search failed: ${escapeHtml(job.error || 'unknown error')}</div>`;
+                return;
+            }
+
+            this.renderConservationResult(header, job.conservation_profile, job.num_hits);
+        } catch (err) {
+            console.error("Conservation search failed:", err);
+            wrapper.innerHTML = `<div class="text-center py-8 text-error font-body-sm">Failed to run conservation search.</div>`;
+        } finally {
+            btn.disabled = !this.currentRunId;
+        }
+    }
+
+    renderConservationResult(header, profile, numHits) {
+        const wrapper = this.element.querySelector('#conservation-result-wrapper');
+        if (!profile || profile.length === 0) {
+            wrapper.innerHTML = `<div class="text-center py-8 text-error font-body-sm">No conservation profile returned.</div>`;
+            return;
+        }
+
+        let residuesHtml = "";
+        profile.forEach(p => {
+            const score = p.conservation;
+            const char = p.most_common || '-';
+            const bgColor = score == null ? "#2f3542" : `rgba(255, 71, 87, ${score.toFixed(2)})`;
+            const title = score == null
+                ? 'No homolog coverage at this position'
+                : `Conservation: ${(score * 100).toFixed(1)}% (${p.num_homologs} homologs)`;
+            residuesHtml += `<td class="text-center font-mono border border-border-subtle" style="background-color: ${bgColor}; min-width: 22px; height: 24px; font-size: 12px; color: #fff;" title="${escapeHtml(title)}">${escapeHtml(char)}</td>`;
+        });
+
+        wrapper.innerHTML = `
+            <div class="font-body-sm text-[11px] text-secondary pb-2">${numHits} real homolog(s) found via NCBI BLAST</div>
+            <table class="text-left border-collapse">
+                <tbody>
+                    <tr class="border-b border-border-subtle">
+                        <td class="sticky left-0 bg-surface-raised text-primary pr-4 pl-2 font-bold font-mono border-r border-border whitespace-nowrap min-w-[120px] text-body-sm">${escapeHtml(header)}</td>
+                        ${residuesHtml}
+                    </tr>
+                </tbody>
+            </table>
+        `;
     }
 }

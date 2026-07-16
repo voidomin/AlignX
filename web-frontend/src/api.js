@@ -174,6 +174,45 @@ export async function pollJobUntilDone(jobId, { intervalMs = 1500, onTick = null
     }
 }
 
+// True sequence-only MSA via EBI's Clustal Omega, independent of Mustang's
+// structural alignment - see clustalo_client.py. `sequences` should be each
+// structure's own ungapped sequence (not a Mustang-aligned one), keyed by a
+// caller-chosen id (typically the pdb_id). Poll the returned job_id with
+// pollJobUntilDone(); the completed job's `aligned_fasta` field is the real
+// gap-padded aligned FASTA text.
+export async function submitClustalOmegaJob(sequences) {
+    const res = await fetch(buildUrl('/api/jobs/clustalo'), {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ sequences })
+    });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Clustal Omega submission failed");
+    }
+    return res.json();
+}
+
+// Real per-column evolutionary conservation via NCBI BLAST homolog search -
+// see blast_client.py. `sequence` should be one structure's own raw (ungapped)
+// sequence; the job searches for real homologs and scores conservation per
+// query position from their real alignments. Real BLAST searches commonly
+// take several minutes - poll the returned job_id with pollJobUntilDone()
+// using a generous interval. The completed job's `conservation_profile`
+// field is a list of {position, conservation, num_homologs, most_common}.
+export async function submitConservationJob(sequence) {
+    const res = await fetch(buildUrl('/api/jobs/conservation'), {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ sequence })
+    });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Conservation search submission failed");
+    }
+    return res.json();
+}
+
 export async function submitDiscoveryJob(pdbId, databases) {
     const body = { pdb_id: pdbId };
     if (databases && databases.length > 0) body.databases = databases;
@@ -232,6 +271,19 @@ export async function fetchLigands(pdbId, runId) {
     if (runId) params.run_id = assertSafeSegment(runId, 'runId');
     const res = await fetch(buildUrl('/api/ligands', params), { headers: authHeaders() });
     if (!res.ok) throw new Error("Ligands fetch failed");
+    return res.json();
+}
+
+// Resolves a bare 3-letter ligand/HETATM code (not the composite
+// RESNAME_CHAIN_RESI id fetchLigands() returns) to real chemistry - name,
+// formula, SMILES - via RCSB's Chemical Component Dictionary. Not tied to
+// any structure/run - works from the ligand code alone. Always returns
+// { ligand_code, chemistry } - chemistry is null if nothing resolved,
+// never a 404, so callers don't need a special error path for that case.
+export async function fetchLigandInfo(ligandCode) {
+    ligandCode = assertSafeSegment(ligandCode, 'ligandCode');
+    const res = await fetch(buildUrl('/api/ligand-info', { ligand_code: ligandCode }), { headers: authHeaders() });
+    if (!res.ok) throw new Error("Ligand info fetch failed");
     return res.json();
 }
 
@@ -309,6 +361,24 @@ export async function deleteRun(runId) {
     return res.json();
 }
 
+// Adds/updates a run's free-text notes and/or tags, stored in the run's
+// existing metadata (see HistoryDatabase.update_run_notes - no schema
+// change involved). Pass notes/tags as null to leave that field untouched;
+// pass "" or [] to explicitly clear it.
+export async function updateRunNotes(runId, { notes, tags } = {}) {
+    runId = assertSafeSegment(runId, 'runId');
+    const res = await fetch(buildUrl(`/api/history/${runId}/notes`), {
+        method: 'PUT',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: notes ?? null, tags: tags ?? null }),
+    });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Failed to update run notes");
+    }
+    return res.json();
+}
+
 export async function clearAllHistory() {
     const res = await fetch(buildUrl('/api/history'), { method: 'DELETE', headers: authHeaders() });
     if (!res.ok) {
@@ -379,6 +449,14 @@ export function getLabNotebookUrl(runId) {
     return withApiKey(buildUrl('/api/notebook', { run_id: runId }));
 }
 
+// A real, runnable Jupyter notebook for this run - unlike getLabNotebookUrl's
+// static HTML snapshot, every code cell re-fetches this run's data live from
+// this same deployment's own documented REST API (see /api/notebook/ipynb).
+export function getLabNotebookIpynbUrl(runId) {
+    runId = assertSafeSegment(runId, 'runId');
+    return withApiKey(buildUrl('/api/notebook/ipynb', { run_id: runId }));
+}
+
 export function getCitationsUrl(runId) {
     runId = assertSafeSegment(runId, 'runId');
     return withApiKey(buildUrl('/api/report/citations', { run_id: runId }));
@@ -419,10 +497,64 @@ export async function fetchAnnotations(pdbId, chain) {
 // structures (AlphaFold/SWISS-MODEL/ESMFold have no experimental
 // validation report) rather than a 404, so callers don't need a special
 // error path for that expected case.
+// Maps a structure's own author-numbered residue to its real UniProt
+// position, then looks up the real wild-type residue/gene from UniProt and
+// (if a matching record exists) the real ClinVar clinical significance of
+// the wildtype->mutant substitution - see AnnotationAggregator.
+// resolve_structure_uniprot_position()/fetch_clinvar_significance().
+export async function fetchMutationImpact(pdbId, chain, resi, mutant) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    chain = assertSafeSegment(chain, 'chain');
+    const params = { pdb_id: pdbId, chain, resi, mutant };
+    const res = await fetch(buildUrl('/api/mutation-impact', params), { headers: authHeaders() });
+    if (!res.ok) throw new Error("Mutation impact fetch failed");
+    return res.json();
+}
+
 export async function fetchValidation(pdbId) {
     pdbId = assertValidPdbId(pdbId, 'pdbId');
     const res = await fetch(buildUrl('/api/validation', { pdb_id: pdbId }), { headers: authHeaders() });
     if (!res.ok) throw new Error("Validation fetch failed");
+    return res.json();
+}
+
+// Standalone per-structure QC (Ramachandran + secondary structure +, for
+// real PDB entries, wwPDB validation) - no alignment required, unlike the
+// same computations inside a completed run's results. Powers the Workspace
+// tab's "Run QC on all" sweep.
+export async function fetchQc(pdbId, runId) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const params = { pdb_id: pdbId };
+    if (runId) params.run_id = assertSafeSegment(runId, 'runId');
+    const res = await fetch(buildUrl('/api/qc', params), { headers: authHeaders() });
+    if (!res.ok) throw new Error("QC fetch failed");
+    return res.json();
+}
+
+// One structure's own CA-CA contact map from a completed run's alignment -
+// see rmsd_calculator.get_structure_contact_map(). Returns either a dense
+// `matrix` or, above the residue cap, a sparse `contacts` list - never both.
+export async function fetchContactMap(runId, pdbId, threshold) {
+    runId = assertSafeSegment(runId, 'runId');
+    pdbId = assertSafeSegment(pdbId, 'pdbId');
+    const params = { run_id: runId, pdb_id: pdbId };
+    if (threshold !== undefined) params.threshold = threshold;
+    const res = await fetch(buildUrl('/api/contact-map', params), { headers: authHeaders() });
+    if (!res.ok) throw new Error("Contact map fetch failed");
+    return res.json();
+}
+
+// Difference-distance matrix between two structures in a completed run's
+// alignment - see rmsd_calculator.get_difference_distance_matrix(). Returns
+// either a dense `matrix` or, above the column cap, a sparse `differences`
+// list - never both.
+export async function fetchDifferenceDistance(runId, pdbIdA, pdbIdB) {
+    runId = assertSafeSegment(runId, 'runId');
+    pdbIdA = assertSafeSegment(pdbIdA, 'pdbIdA');
+    pdbIdB = assertSafeSegment(pdbIdB, 'pdbIdB');
+    const params = { run_id: runId, pdb_id_a: pdbIdA, pdb_id_b: pdbIdB };
+    const res = await fetch(buildUrl('/api/difference-distance', params), { headers: authHeaders() });
+    if (!res.ok) throw new Error("Difference-distance fetch failed");
     return res.json();
 }
 

@@ -6,9 +6,10 @@ vi.mock('../api.js', () => ({
     getShareLink: vi.fn((runId) => `http://localhost/?shared_run=${runId}`),
     deleteRun: vi.fn(),
     clearAllHistory: vi.fn(),
+    updateRunNotes: vi.fn(),
 }));
 
-import { fetchHistory, getShareLink, deleteRun, clearAllHistory } from '../api.js';
+import { fetchHistory, getShareLink, deleteRun, clearAllHistory, updateRunNotes } from '../api.js';
 
 function makeRun(id) {
     return { id, timestamp: '2026-01-01', pdb_ids: ['4RLT', '3UG9'], status: 'success' };
@@ -251,5 +252,105 @@ describe('HistoryPanel', () => {
         await Promise.resolve();
 
         expect(clearAllHistory).not.toHaveBeenCalled();
+    });
+
+    describe('notes & tags', () => {
+        it('shows existing tags and a note preview under the run row', async () => {
+            fetchHistory.mockResolvedValue({
+                runs: [{ ...makeRun('run_1'), metadata: { notes: 'Interesting fold', tags: ['kinase', 'review'] } }],
+                total: 1,
+            });
+
+            const panel = new HistoryPanel({ onReloadRun: vi.fn(), onClose: vi.fn() });
+            panel.render();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const row = panel.element.querySelector('#history-runs-list > div');
+            const tagsDisplay = row.querySelector('[data-field="tags-display"]');
+            expect(tagsDisplay.textContent).toContain('kinase');
+            expect(tagsDisplay.textContent).toContain('review');
+            expect(tagsDisplay.textContent).toContain('Interesting fold');
+        });
+
+        it('opens the notes editor pre-filled with existing values, without triggering onReloadRun', async () => {
+            const onReloadRun = vi.fn();
+            fetchHistory.mockResolvedValue({
+                runs: [{ ...makeRun('run_1'), metadata: { notes: 'Existing note', tags: ['a', 'b'] } }],
+                total: 1,
+            });
+
+            const panel = new HistoryPanel({ onReloadRun, onClose: vi.fn() });
+            panel.render();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const row = panel.element.querySelector('#history-runs-list > div');
+            row.querySelector('.notes-toggle-btn').click();
+
+            const editor = row.querySelector('[data-field="notes-editor"]');
+            expect(editor.classList.contains('hidden')).toBe(false);
+            expect(row.querySelector('.notes-input').value).toBe('Existing note');
+            expect(row.querySelector('.tags-input').value).toBe('a, b');
+            expect(onReloadRun).not.toHaveBeenCalled();
+        });
+
+        it('saves notes and tags, then re-renders the display and hides the editor', async () => {
+            updateRunNotes.mockResolvedValue({ run_id: 'run_1', notes: 'New note', tags: ['x', 'y'] });
+            fetchHistory.mockResolvedValue({ runs: [makeRun('run_1')], total: 1 });
+
+            const panel = new HistoryPanel({ onReloadRun: vi.fn(), onClose: vi.fn() });
+            panel.render();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const row = panel.element.querySelector('#history-runs-list > div');
+            row.querySelector('.notes-toggle-btn').click();
+            row.querySelector('.notes-input').value = 'New note';
+            row.querySelector('.tags-input').value = 'x, y';
+            row.querySelector('.notes-save-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(updateRunNotes).toHaveBeenCalledWith('run_1', { notes: 'New note', tags: ['x', 'y'] });
+            const editor = row.querySelector('[data-field="notes-editor"]');
+            expect(editor.classList.contains('hidden')).toBe(true);
+            expect(row.querySelector('[data-field="tags-display"]').textContent).toContain('New note');
+        });
+
+        it('cancels the editor without saving', async () => {
+            fetchHistory.mockResolvedValue({ runs: [makeRun('run_1')], total: 1 });
+
+            const panel = new HistoryPanel({ onReloadRun: vi.fn(), onClose: vi.fn() });
+            panel.render();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const row = panel.element.querySelector('#history-runs-list > div');
+            row.querySelector('.notes-toggle-btn').click();
+            row.querySelector('.notes-cancel-btn').click();
+
+            expect(updateRunNotes).not.toHaveBeenCalled();
+            expect(row.querySelector('[data-field="notes-editor"]').classList.contains('hidden')).toBe(true);
+        });
+
+        it('shows an alert and keeps the editor open when saving fails', async () => {
+            updateRunNotes.mockRejectedValue(new Error('boom'));
+            fetchHistory.mockResolvedValue({ runs: [makeRun('run_1')], total: 1 });
+
+            const panel = new HistoryPanel({ onReloadRun: vi.fn(), onClose: vi.fn() });
+            panel.render();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const row = panel.element.querySelector('#history-runs-list > div');
+            row.querySelector('.notes-toggle-btn').click();
+            row.querySelector('.notes-save-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(alert).toHaveBeenCalledWith('boom');
+            expect(row.querySelector('[data-field="notes-editor"]').classList.contains('hidden')).toBe(false);
+        });
     });
 });

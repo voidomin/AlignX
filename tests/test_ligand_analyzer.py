@@ -1,3 +1,6 @@
+from unittest.mock import Mock, patch
+
+import httpx
 import pandas as pd
 import pytest
 
@@ -246,6 +249,29 @@ class TestFindCandidatePockets:
         found_resi = {r["resi"] for r in top["residues"]}
         assert found_resi.issubset({1, 50, 100, 150})
         assert len(top["center"]) == 3
+        # The 4 cluster centers form a real tetrahedron (non-coplanar), so
+        # a convex hull volume should compute to a real positive value.
+        assert top["volume_estimate_a3"] is not None
+        assert top["volume_estimate_a3"] > 0
+
+    def test_volume_estimate_is_none_for_a_coplanar_cluster(self, tmp_path):
+        # All 4 residue centers share z=0 - scipy's ConvexHull can't
+        # construct a 3D hull from coplanar points, so this must degrade
+        # to None rather than raising.
+        lines = []
+        lines += _residue_lines(1, "LEU", "A", 1, (0.0, 0.0, 0.0))
+        lines += _residue_lines(6, "PHE", "A", 50, (4.0, 0.0, 0.0))
+        lines += _residue_lines(11, "TRP", "A", 100, (0.0, 4.0, 0.0))
+        lines += _residue_lines(16, "TYR", "A", 150, (4.0, 4.0, 0.0))
+        lines.append("TER")
+        pdb_file = tmp_path / "coplanar_pocket.pdb"
+        pdb_file.write_text("\n".join(lines) + "\n")
+        analyzer = LigandAnalyzer()
+
+        pockets = analyzer.find_candidate_pockets(pdb_file)
+
+        assert len(pockets) >= 1
+        assert pockets[0]["volume_estimate_a3"] is None
 
     def test_no_surface_residues_returns_empty_list(self, fixture_pdb):
         # fixture_pdb's ALA/GLY pair is too small/isolated a residue set to
@@ -336,6 +362,136 @@ class TestJaccardScore:
 
     def test_disjoint_sets_score_zero(self):
         assert LigandAnalyzer._jaccard_score({"A"}, {"B"}) == 0.0
+
+
+def _mock_response(status_code=200, json_data=None):
+    mock = Mock()
+    mock.status_code = status_code
+    mock.json.return_value = json_data or {}
+    return mock
+
+
+class TestFetchLigandChemistry:
+    @pytest.mark.asyncio
+    @patch("src.backend.ligand_analyzer.httpx.AsyncClient.get")
+    async def test_parses_name_formula_and_smiles(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "chem_comp": {
+                    "name": "PROTOPORPHYRIN IX CONTAINING FE",
+                    "formula": "C34 H32 Fe N4 O4",
+                    "formula_weight": 616.487,
+                },
+                "rcsb_chem_comp_descriptor": {
+                    "SMILES": "CC1=C(C=C)C2=CC3=C(C)C(CCC(O)=O)=C4C=C5C(CCC(O)=O)=C(C)C6=CC7=C(C)C(C=C)=C8C=C1[N-]2[Fe+2]([N-]34)([N-]56)N78",
+                    "InChIKey": "KABFMIBPWCXCRK-RGGAHWMASA-L",
+                },
+            }
+        )
+        analyzer = LigandAnalyzer()
+        async with httpx.AsyncClient() as client:
+            result = await analyzer.fetch_ligand_chemistry("HEM", client)
+
+        assert result["id"] == "HEM"
+        assert result["name"] == "PROTOPORPHYRIN IX CONTAINING FE"
+        assert result["formula"] == "C34 H32 Fe N4 O4"
+        assert result["formula_weight"] == 616.487
+        assert result["smiles"].startswith("CC1=C")
+        assert result["inchi_key"] == "KABFMIBPWCXCRK-RGGAHWMASA-L"
+
+    @pytest.mark.asyncio
+    @patch("src.backend.ligand_analyzer.httpx.AsyncClient.get")
+    async def test_lowercases_input_before_the_request(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={"chem_comp": {"name": "HEME", "formula": "C34 H32 Fe N4 O4"}}
+        )
+        analyzer = LigandAnalyzer()
+        async with httpx.AsyncClient() as client:
+            result = await analyzer.fetch_ligand_chemistry("hem", client)
+
+        assert result["id"] == "HEM"
+        assert mock_get.call_args.args[0].endswith("/HEM")
+
+    @pytest.mark.asyncio
+    @patch("src.backend.ligand_analyzer.httpx.AsyncClient.get")
+    async def test_returns_none_when_no_name_or_formula_present(self, mock_get):
+        mock_get.return_value = _mock_response(json_data={"chem_comp": {}})
+        analyzer = LigandAnalyzer()
+        async with httpx.AsyncClient() as client:
+            result = await analyzer.fetch_ligand_chemistry("XXX", client)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.ligand_analyzer.httpx.AsyncClient.get")
+    async def test_returns_none_on_non_200(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        analyzer = LigandAnalyzer()
+        async with httpx.AsyncClient() as client:
+            result = await analyzer.fetch_ligand_chemistry("ZZZ", client)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.ligand_analyzer.httpx.AsyncClient.get")
+    async def test_returns_none_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        analyzer = LigandAnalyzer()
+        async with httpx.AsyncClient() as client:
+            result = await analyzer.fetch_ligand_chemistry("HEM", client)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.ligand_analyzer.httpx.AsyncClient.get")
+    async def test_rejects_an_unsafe_ligand_code_without_making_a_request(
+        self, mock_get
+    ):
+        analyzer = LigandAnalyzer()
+        async with httpx.AsyncClient() as client:
+            result = await analyzer.fetch_ligand_chemistry("../etc/passwd", client)
+        assert result is None
+        mock_get.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("src.backend.ligand_analyzer.httpx.AsyncClient.get")
+    async def test_uses_cache_on_second_call_not_network(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={"chem_comp": {"name": "HEME", "formula": "C34 H32 Fe N4 O4"}}
+        )
+        cache_store = {}
+
+        class FakeCacheDb:
+            def get_annotation_cache(self, key, max_age_days):
+                return cache_store.get(key)
+
+            def set_annotation_cache(self, key, service, payload):
+                cache_store[key] = payload
+
+        analyzer = LigandAnalyzer(cache_db=FakeCacheDb())
+        async with httpx.AsyncClient() as client:
+            first = await analyzer.fetch_ligand_chemistry("HEM", client)
+            second = await analyzer.fetch_ligand_chemistry("HEM", client)
+
+        assert first == second
+        mock_get.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("src.backend.ligand_analyzer.httpx.AsyncClient.get")
+    async def test_cache_read_failure_falls_back_to_network(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={"chem_comp": {"name": "HEME", "formula": "C34 H32 Fe N4 O4"}}
+        )
+
+        class BrokenCacheDb:
+            def get_annotation_cache(self, key, max_age_days):
+                raise RuntimeError("cache down")
+
+            def set_annotation_cache(self, key, service, payload):
+                raise RuntimeError("cache down")
+
+        analyzer = LigandAnalyzer(cache_db=BrokenCacheDb())
+        async with httpx.AsyncClient() as client:
+            result = await analyzer.fetch_ligand_chemistry("HEM", client)
+
+        assert result["name"] == "HEME"
 
     def test_partial_overlap(self):
         assert LigandAnalyzer._jaccard_score({"A", "B"}, {"A", "C"}) == pytest.approx(

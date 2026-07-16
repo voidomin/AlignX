@@ -833,8 +833,14 @@ class PDBManager:
         return results
 
     @staticmethod
-    def _empty_metadata() -> Dict[str, str]:
-        return {"title": "N/A", "method": "N/A", "resolution": "N/A", "organism": "N/A"}
+    def _empty_metadata() -> Dict[str, Any]:
+        return {
+            "title": "N/A",
+            "method": "N/A",
+            "resolution": "N/A",
+            "organism": "N/A",
+            "citation": None,
+        }
 
     @staticmethod
     def _classify_pdb_ids(
@@ -933,6 +939,12 @@ class PDBManager:
             polymer_entities {
               rcsb_entity_source_organism { scientific_name }
             }
+            rcsb_primary_citation {
+              pdbx_database_id_PubMed
+              pdbx_database_id_DOI
+              rcsb_authors
+              title
+            }
           }
         }
         """
@@ -966,11 +978,35 @@ class PDBManager:
                 organism = sources[0].get("scientific_name", "N/A")
                 break
 
+        citation = entry.get("rcsb_primary_citation") or None
+
         return {
             "title": struct.get("title", "N/A"),
             "method": exptl_list[0].get("method", "N/A") if exptl_list else "N/A",
             "resolution": f"{res_list[0]:.2f} \u00c5" if res_list else "N/A",
             "organism": organism,
+            "citation": PDBManager._parse_rcsb_citation(citation),
+        }
+
+    @staticmethod
+    def _parse_rcsb_citation(
+        citation: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """Real primary-citation metadata for this entry's original
+        publication (PubMed ID, DOI, authors, title) - None if RCSB has no
+        primary citation on file for it (rare, but happens for some
+        entries)."""
+        if not citation:
+            return None
+        pubmed_id = citation.get("pdbx_database_id_PubMed")
+        doi = citation.get("pdbx_database_id_DOI")
+        if pubmed_id is None and not doi:
+            return None
+        return {
+            "pubmed_id": pubmed_id,
+            "doi": doi,
+            "authors": citation.get("rcsb_authors") or [],
+            "title": citation.get("title"),
         }
 
     async def _fetch_alphafold_metadata(

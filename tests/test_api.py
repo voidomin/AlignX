@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import pandas as pd
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, MagicMock, AsyncMock, ANY
 from pathlib import Path
 
 import src.backend.api as api_module
@@ -371,6 +371,59 @@ def test_delete_history_run_allows_deleting_a_legacy_run_with_no_session_id():
         mock_db.delete_run.assert_called_once_with("run_1")
 
 
+def test_update_run_notes_sets_notes_and_tags():
+    with patch("src.backend.api.history_db") as mock_db:
+        mock_db.get_run.return_value = {"id": "run_1", "session_id": "sess_1"}
+        response = client.put(
+            "/api/history/run_1/notes?session_id=sess_1",
+            json={"notes": "Interesting fold", "tags": ["kinase", "review"]},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["notes"] == "Interesting fold"
+        assert data["tags"] == ["kinase", "review"]
+        mock_db.update_run_notes.assert_called_once_with(
+            "run_1", notes="Interesting fold", tags=["kinase", "review"]
+        )
+
+
+def test_update_run_notes_404s_for_unknown_run():
+    with patch("src.backend.api.history_db") as mock_db:
+        mock_db.get_run.return_value = None
+        response = client.put(
+            "/api/history/does_not_exist/notes?session_id=sess_1",
+            json={"notes": "x"},
+        )
+
+        assert response.status_code == 404
+        mock_db.update_run_notes.assert_not_called()
+
+
+def test_update_run_notes_403s_for_a_different_sessions_run():
+    with patch("src.backend.api.history_db") as mock_db:
+        mock_db.get_run.return_value = {"id": "run_1", "session_id": "someone_else"}
+        response = client.put(
+            "/api/history/run_1/notes?session_id=sess_1",
+            json={"notes": "x"},
+        )
+
+        assert response.status_code == 403
+        mock_db.update_run_notes.assert_not_called()
+
+
+def test_update_run_notes_allows_editing_a_legacy_run_with_no_session_id():
+    with patch("src.backend.api.history_db") as mock_db:
+        mock_db.get_run.return_value = {"id": "run_1", "session_id": None}
+        response = client.put(
+            "/api/history/run_1/notes?session_id=sess_1",
+            json={"notes": "x"},
+        )
+
+        assert response.status_code == 200
+        mock_db.update_run_notes.assert_called_once_with("run_1", notes="x", tags=None)
+
+
 def test_clear_history_falls_back_to_a_global_wipe_without_a_session_id():
     """The bundled SPA doesn't send session_id anywhere today, so omitting
     it must still work (matching the single-user Streamlit app this is
@@ -414,6 +467,12 @@ def test_chains_endpoint():
                 "method": "X-RAY DIFFRACTION",
                 "resolution": "2.10 Å",
                 "organism": "Homo sapiens",
+                "citation": {
+                    "pubmed_id": 12345,
+                    "doi": "10.1000/xyz",
+                    "authors": ["Someone, A."],
+                    "title": "A paper",
+                },
             }
         }
 
@@ -428,6 +487,7 @@ def test_chains_endpoint():
         assert data["chains"]["4RLT"]["resolution"] == "2.10 Å"
         assert data["chains"]["4RLT"]["organism"] == "Homo sapiens"
         assert data["chains"]["4RLT"]["source"] == "pdb"
+        assert data["chains"]["4RLT"]["citation"]["pubmed_id"] == 12345
 
 
 def test_chains_endpoint_tags_source_for_alphafold_id():
@@ -918,6 +978,98 @@ def test_annotations_endpoint_400s_on_invalid_chain_param():
     assert response.status_code == 400
 
 
+def test_mutation_impact_endpoint_returns_a_real_looking_result():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.resolve_structure_uniprot_position = AsyncMock(
+            return_value=("P68871", 7)
+        )
+        mock_aggregator.fetch_uniprot_gene_and_sequence = AsyncMock(
+            return_value={"gene": "HBB", "sequence": "MVHLTPVEK"}
+        )
+        mock_aggregator.fetch_clinvar_significance = AsyncMock(
+            return_value={
+                "variation_id": "15333",
+                "accession": "VCV000015333",
+                "title": "NM_000518.5(HBB):c.20A>T (p.Glu7Val)",
+                "clinical_significance": "Pathogenic",
+                "review_status": "criteria provided, multiple submitters, no conflicts",
+            }
+        )
+        mock_aggregator.fetch_uniprot_features = AsyncMock(return_value=[])
+
+        response = client.get(
+            "/api/mutation-impact?pdb_id=4HHB&chain=A&resi=6&mutant=V"
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["accession"] == "P68871"
+    assert data["gene"] == "HBB"
+    assert data["uniprot_position"] == 7
+    assert data["wildtype_residue"] == "V"
+    assert data["mutant_residue"] == "V"
+    assert data["clinvar"]["clinical_significance"] == "Pathogenic"
+    assert data["highlight_chains"] == {"A": [6]}
+    mock_aggregator.fetch_clinvar_significance.assert_called_once_with(
+        "HBB", "V7V", ANY
+    )
+
+
+def test_mutation_impact_endpoint_surfaces_a_known_uniprot_variant():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.resolve_structure_uniprot_position = AsyncMock(
+            return_value=("P68871", 7)
+        )
+        mock_aggregator.fetch_uniprot_gene_and_sequence = AsyncMock(
+            return_value={"gene": None, "sequence": None}
+        )
+        mock_aggregator.fetch_clinvar_significance = AsyncMock(return_value=None)
+        mock_aggregator.fetch_uniprot_features = AsyncMock(
+            return_value=[
+                {
+                    "type": "Natural variant",
+                    "description": "in HBS",
+                    "start": 7,
+                    "end": 7,
+                }
+            ]
+        )
+
+        response = client.get(
+            "/api/mutation-impact?pdb_id=4HHB&chain=A&resi=6&mutant=V"
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["clinvar"] is None
+    assert data["known_uniprot_variant"]["description"] == "in HBS"
+
+
+def test_mutation_impact_endpoint_404s_when_position_cannot_be_resolved():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.resolve_structure_uniprot_position = AsyncMock(
+            return_value=None
+        )
+
+        response = client.get(
+            "/api/mutation-impact?pdb_id=4HHB&chain=A&resi=6&mutant=V"
+        )
+
+    assert response.status_code == 404
+
+
+def test_mutation_impact_endpoint_400s_on_invalid_chain():
+    response = client.get(
+        "/api/mutation-impact?pdb_id=4HHB&chain=../etc&resi=6&mutant=V"
+    )
+    assert response.status_code == 400
+
+
+def test_mutation_impact_endpoint_400s_on_invalid_mutant():
+    response = client.get("/api/mutation-impact?pdb_id=4HHB&chain=A&resi=6&mutant=XX")
+    assert response.status_code == 400
+
+
 def test_validation_endpoint_for_a_real_pdb_entry():
     with patch(
         "src.backend.api.fetch_pdbe_validation",
@@ -953,6 +1105,44 @@ def test_validation_endpoint_skips_the_fetch_for_non_pdb_sources():
 
 def test_validation_endpoint_400s_on_invalid_pdb_id():
     response = client.get("/api/validation?pdb_id=../etc")
+    assert response.status_code == 400
+
+
+def test_ligand_info_endpoint():
+    with patch(
+        "src.backend.api.ligand_analyzer.fetch_ligand_chemistry",
+        AsyncMock(
+            return_value={
+                "id": "HEM",
+                "name": "PROTOPORPHYRIN IX CONTAINING FE",
+                "formula": "C34 H32 Fe N4 O4",
+                "smiles": "CC1=C...",
+            }
+        ),
+    ) as mock_fetch:
+        response = client.get("/api/ligand-info?ligand_code=HEM")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ligand_code"] == "HEM"
+    assert data["chemistry"]["name"] == "PROTOPORPHYRIN IX CONTAINING FE"
+    mock_fetch.assert_called_once()
+    assert mock_fetch.call_args.args[0] == "HEM"
+
+
+def test_ligand_info_endpoint_returns_none_chemistry_gracefully():
+    with patch(
+        "src.backend.api.ligand_analyzer.fetch_ligand_chemistry",
+        AsyncMock(return_value=None),
+    ):
+        response = client.get("/api/ligand-info?ligand_code=ZZZ")
+
+    assert response.status_code == 200
+    assert response.json() == {"ligand_code": "ZZZ", "chemistry": None}
+
+
+def test_ligand_info_endpoint_400s_on_invalid_ligand_code():
+    response = client.get("/api/ligand-info?ligand_code=../etc")
     assert response.status_code == 400
 
 
@@ -1124,6 +1314,72 @@ def test_pockets_endpoint_404s_when_structure_not_found():
 
 def test_pockets_endpoint_400s_on_invalid_pdb_id():
     response = client.get("/api/pockets?pdb_id=../etc")
+    assert response.status_code == 400
+
+
+def test_qc_endpoint_returns_real_looking_stats_for_a_pdb_entry(tmp_path):
+    pdb_file = tmp_path / "4hhb.pdb"
+    pdb_file.write_text("ATOM      1  N   MET A   1      27.340  24.430   2.614\n")
+
+    with patch(
+        "src.backend.api._find_structure_pdb_path", return_value=pdb_file
+    ), patch(
+        "src.backend.api.ramachandran_service.calculate_torsion_angles",
+        return_value={"A": "dummy_dataframe"},
+    ), patch(
+        "src.backend.api.ramachandran_service.aggregate_metrics",
+        return_value={"favored_percent": 92.5, "outlier_count": 2},
+    ), patch(
+        "src.backend.api.ramachandran_service.aggregate_secondary_structure",
+        return_value={
+            "helix_percent": 80.3,
+            "sheet_percent": 5.0,
+            "coil_percent": 14.7,
+        },
+    ), patch(
+        "src.backend.api.fetch_pdbe_validation",
+        AsyncMock(return_value={"clashscore": {"value": 1.2}}),
+    ):
+        response = client.get("/api/qc?pdb_id=4HHB")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["pdb_id"] == "4HHB"
+    assert data["ramachandran_stats"]["favored_percent"] == 92.5
+    assert data["secondary_structure_stats"]["helix_percent"] == 80.3
+    assert data["validation"]["clashscore"]["value"] == 1.2
+
+
+def test_qc_endpoint_skips_validation_for_non_pdb_sources(tmp_path):
+    pdb_file = tmp_path / "af.cif"
+    pdb_file.write_text("dummy")
+
+    with patch(
+        "src.backend.api._find_structure_pdb_path", return_value=pdb_file
+    ), patch(
+        "src.backend.api.ramachandran_service.calculate_torsion_angles",
+        return_value=None,
+    ), patch(
+        "src.backend.api.fetch_pdbe_validation", AsyncMock()
+    ) as mock_validation:
+        response = client.get("/api/qc?pdb_id=AF-P69905-F1")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["validation"] is None
+    assert data["ramachandran_stats"] is None
+    assert data["secondary_structure_stats"] is None
+    mock_validation.assert_not_called()
+
+
+def test_qc_endpoint_404s_when_structure_not_found():
+    with patch("src.backend.api._find_structure_pdb_path", return_value=None):
+        response = client.get("/api/qc?pdb_id=4HHB")
+    assert response.status_code == 404
+
+
+def test_qc_endpoint_400s_on_invalid_pdb_id():
+    response = client.get("/api/qc?pdb_id=../etc")
     assert response.status_code == 400
 
 
@@ -1587,6 +1843,84 @@ def test_notebook_endpoint_500s_on_unexpected_exporter_error():
         assert "disk full" in response.json()["detail"]
 
 
+def test_notebook_ipynb_endpoint_returns_a_real_file(tmp_path):
+    dummy_ipynb = tmp_path / "dummy.ipynb"
+    dummy_ipynb.write_text('{"cells": [], "nbformat": 4}')
+
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "src.backend.notebook_exporter.NotebookExporter.export_ipynb"
+    ) as mock_export:
+        mock_export.return_value = dummy_ipynb
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT", "3UG9"],
+            "metadata": {
+                "results": {
+                    "stats": {"mean_rmsd": 1.25},
+                    "id": "run_123",
+                    "pdb_ids": ["4RLT", "3UG9"],
+                }
+            },
+        }
+
+        response = client.get("/api/notebook/ipynb?run_id=run_123")
+
+        assert response.status_code == 200
+        assert "dummy.ipynb" not in response.headers["content-disposition"]
+        assert "lab_notebook_run_123.ipynb" in response.headers["content-disposition"]
+        mock_export.assert_called_once()
+        call_args = mock_export.call_args
+        assert call_args[0][1] == "run_123"
+        assert call_args[1]["base_url"] == "http://testserver"
+
+
+def test_notebook_ipynb_endpoint_404s_for_unknown_run():
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        response = client.get("/api/notebook/ipynb?run_id=nope")
+        assert response.status_code == 404
+
+
+def test_notebook_ipynb_endpoint_500s_when_file_not_actually_created(tmp_path):
+    missing_ipynb = tmp_path / "never_written.ipynb"
+
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "src.backend.notebook_exporter.NotebookExporter.export_ipynb"
+    ) as mock_export:
+        mock_export.return_value = missing_ipynb
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT"],
+            "metadata": {"results": {"stats": {}, "id": "run_123"}},
+        }
+
+        response = client.get("/api/notebook/ipynb?run_id=run_123")
+
+        assert response.status_code == 500
+        assert "not created successfully" in response.json()["detail"]
+
+
+def test_notebook_ipynb_endpoint_500s_on_unexpected_exporter_error():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
+        "src.backend.notebook_exporter.NotebookExporter.export_ipynb"
+    ) as mock_export:
+        mock_export.side_effect = RuntimeError("disk full")
+        mock_get_run.return_value = {
+            "id": "run_123",
+            "pdb_ids": ["4RLT"],
+            "metadata": {"results": {"stats": {}, "id": "run_123"}},
+        }
+
+        response = client.get("/api/notebook/ipynb?run_id=run_123")
+
+        assert response.status_code == 500
+        assert "disk full" in response.json()["detail"]
+
+
+def test_notebook_ipynb_endpoint_400s_on_invalid_run_id():
+    response = client.get("/api/notebook/ipynb?run_id=../etc")
+    assert response.status_code == 400
+
+
 def test_rmsd_csv_endpoint_returns_a_real_csv():
     with patch("src.backend.api.history_db.get_run") as mock_get_run:
         mock_get_run.return_value = {
@@ -1689,6 +2023,135 @@ def test_newick_endpoint_404s_for_unknown_run():
     with patch("src.backend.api.history_db.get_run", return_value=None):
         response = client.get("/api/report/newick?run_id=nope")
         assert response.status_code == 404
+
+
+def _write_two_structure_alignment(res_dir, coords_a, coords_b):
+    lines = ["MODEL     1"]
+    for i, (x, y, z) in enumerate(coords_a, start=1):
+        lines.append(
+            f"ATOM  {i:5d}  CA  ALA A{i:4d}    {x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00           C"
+        )
+    lines.append("ENDMDL")
+    lines.append("MODEL     2")
+    for i, (x, y, z) in enumerate(coords_b, start=1):
+        lines.append(
+            f"ATOM  {i:5d}  CA  ALA A{i:4d}    {x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00           C"
+        )
+    lines.append("ENDMDL")
+    lines.append("END\n")
+    (res_dir / "alignment.pdb").write_text("\n".join(lines))
+    seq = "A" * len(coords_a)
+    (res_dir / "alignment.fasta").write_text(f">structA\n{seq}\n>structB\n{seq}\n")
+
+
+def test_contact_map_endpoint_returns_a_real_matrix(tmp_path):
+    _write_two_structure_alignment(
+        tmp_path,
+        [[0.0, 0.0, 0.0], [3.0, 4.0, 0.0], [100.0, 0.0, 0.0]],
+        [[0.0, 0.0, 0.0], [3.0, 4.0, 0.0], [100.0, 0.0, 0.0]],
+    )
+
+    with patch(
+        "src.backend.api._lookup_run_and_result_dir",
+        return_value=({"id": "run_123", "pdb_ids": ["structA", "structB"]}, tmp_path),
+    ):
+        response = client.get("/api/contact-map?run_id=run_123&pdb_id=structA")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["pdb_id"] == "structA"
+    assert data["residue_count"] == 3
+    assert data["matrix"][0][1] == 1
+    assert data["matrix"][0][2] == 0
+
+
+def test_contact_map_endpoint_404s_when_pdb_id_not_in_alignment(tmp_path):
+    _write_two_structure_alignment(tmp_path, [[0.0, 0.0, 0.0]], [[0.0, 0.0, 0.0]])
+
+    with patch(
+        "src.backend.api._lookup_run_and_result_dir",
+        return_value=({"id": "run_123", "pdb_ids": ["structA", "structB"]}, tmp_path),
+    ):
+        response = client.get("/api/contact-map?run_id=run_123&pdb_id=does_not_exist")
+
+    assert response.status_code == 404
+
+
+def test_contact_map_endpoint_404s_when_alignment_files_missing(tmp_path):
+    with patch(
+        "src.backend.api._lookup_run_and_result_dir",
+        return_value=({"id": "run_123", "pdb_ids": ["structA", "structB"]}, tmp_path),
+    ):
+        response = client.get("/api/contact-map?run_id=run_123&pdb_id=structA")
+
+    assert response.status_code == 404
+
+
+def test_contact_map_endpoint_404s_for_unknown_run():
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        response = client.get("/api/contact-map?run_id=nope&pdb_id=structA")
+        assert response.status_code == 404
+
+
+def test_contact_map_endpoint_400s_on_invalid_run_id():
+    response = client.get("/api/contact-map?run_id=../etc&pdb_id=structA")
+    assert response.status_code == 400
+
+
+def test_difference_distance_endpoint_returns_a_real_matrix(tmp_path):
+    _write_two_structure_alignment(
+        tmp_path,
+        [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0], [0.0, 5.0, 0.0]],
+        [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0], [20.0, 5.0, 0.0]],
+    )
+
+    with patch(
+        "src.backend.api._lookup_run_and_result_dir",
+        return_value=({"id": "run_123", "pdb_ids": ["structA", "structB"]}, tmp_path),
+    ):
+        response = client.get(
+            "/api/difference-distance?run_id=run_123&pdb_id_a=structA&pdb_id_b=structB"
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["pdb_id_a"] == "structA"
+    assert data["pdb_id_b"] == "structB"
+    assert data["column_count"] == 3
+    assert data["matrix"][0][1] == pytest.approx(0.0)
+    assert data["matrix"][0][2] != pytest.approx(0.0)
+
+
+def test_difference_distance_endpoint_404s_when_no_shared_columns(tmp_path):
+    _write_two_structure_alignment(
+        tmp_path, [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]], [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]]
+    )
+    (tmp_path / "alignment.fasta").write_text(">structA\nAA--\n>structB\n--AA\n")
+
+    with patch(
+        "src.backend.api._lookup_run_and_result_dir",
+        return_value=({"id": "run_123", "pdb_ids": ["structA", "structB"]}, tmp_path),
+    ):
+        response = client.get(
+            "/api/difference-distance?run_id=run_123&pdb_id_a=structA&pdb_id_b=structB"
+        )
+
+    assert response.status_code == 404
+
+
+def test_difference_distance_endpoint_404s_for_unknown_run():
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        response = client.get(
+            "/api/difference-distance?run_id=nope&pdb_id_a=structA&pdb_id_b=structB"
+        )
+        assert response.status_code == 404
+
+
+def test_difference_distance_endpoint_400s_on_invalid_pdb_id():
+    response = client.get(
+        "/api/difference-distance?run_id=run_123&pdb_id_a=../etc&pdb_id_b=structB"
+    )
+    assert response.status_code == 400
 
 
 def test_report_zip_endpoint_bundles_every_available_artifact(tmp_path):
@@ -2037,6 +2500,218 @@ async def test_discovery_job_sweep_drops_old_finished_jobs_but_keeps_recent_and_
 
     remaining = set(api_module.discovery_jobs.keys())
     assert remaining == {"recent_completed", "still_running"}
+
+
+def test_clustalo_job_submission_returns_queued():
+    """Submitting a valid Clustal Omega job returns a job_id immediately
+    with status "queued" - it must not block on the (slow, EBI-rate-
+    limited) submit/poll/fetch pipeline."""
+    api_module.clustalo_jobs.clear()
+    response = client.post(
+        "/api/jobs/clustalo", json={"sequences": {"4RLT": "MVHL", "3UG9": "MVLS"}}
+    )
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "queued"
+    assert body["job_id"] in api_module.clustalo_jobs
+    api_module.clustalo_jobs.clear()
+
+
+def test_clustalo_job_submission_rejects_fewer_than_two_sequences():
+    response = client.post("/api/jobs/clustalo", json={"sequences": {"4RLT": "MVHL"}})
+    assert response.status_code == 400
+
+
+def test_clustalo_job_submission_rejects_an_unsafe_sequence_id():
+    response = client.post(
+        "/api/jobs/clustalo",
+        json={"sequences": {"../etc": "MVHL", "3UG9": "MVLS"}},
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_clustalo_job_execution_completes_and_is_pollable():
+    """Directly exercises _execute_clustalo_job (the background task the
+    endpoint schedules) end-to-end, then confirms GET /api/jobs/{job_id} -
+    the same polling endpoint used for alignment/discovery jobs - surfaces
+    the real aligned FASTA result."""
+    api_module.clustalo_jobs.clear()
+    job_id = "test-clustalo-job"
+    api_module.clustalo_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    with patch(
+        "src.backend.api.ClustalOmegaClient.align", new_callable=AsyncMock
+    ) as mock_align:
+        mock_align.return_value = ">4RLT\nMV--HL\n>3UG9\n-MVLSH"
+        await api_module._execute_clustalo_job(
+            job_id, {"4RLT": "MVHL", "3UG9": "MVLSH"}
+        )
+
+    poll = client.get(f"/api/jobs/{job_id}")
+    assert poll.json()["status"] == "completed"
+    assert poll.json()["aligned_fasta"] == ">4RLT\nMV--HL\n>3UG9\n-MVLSH"
+
+    api_module.clustalo_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_clustalo_job_execution_surfaces_pipeline_failure():
+    api_module.clustalo_jobs.clear()
+    job_id = "test-clustalo-job-fail"
+    api_module.clustalo_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    with patch(
+        "src.backend.api.ClustalOmegaClient.align", new_callable=AsyncMock
+    ) as mock_align:
+        from src.backend.clustalo_client import ClustalOmegaError
+
+        mock_align.side_effect = ClustalOmegaError("Clustal Omega submission failed")
+        await api_module._execute_clustalo_job(
+            job_id, {"4RLT": "MVHL", "3UG9": "MVLSH"}
+        )
+
+    poll = client.get(f"/api/jobs/{job_id}")
+    assert poll.json()["status"] == "failed"
+    assert "Clustal Omega submission failed" in poll.json()["error"]
+
+    api_module.clustalo_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_clustalo_job_sweep_drops_old_finished_jobs_but_keeps_recent_and_running():
+    now = time.time()
+    api_module.clustalo_jobs.clear()
+    api_module.clustalo_jobs.update(
+        {
+            "old_completed": {"status": "completed", "finished_at": now - 10_000},
+            "recent_completed": {"status": "completed", "finished_at": now},
+            "still_running": {"status": "running", "created_at": now - 10_000},
+        }
+    )
+
+    with patch.object(api_module, "_JOB_TTL_SECONDS", 60), patch(
+        "asyncio.sleep", new_callable=AsyncMock
+    ) as mock_sleep:
+        mock_sleep.side_effect = [None, asyncio.CancelledError()]
+        with pytest.raises(asyncio.CancelledError):
+            await api_module._sweep_clustalo_jobs()
+
+    remaining = set(api_module.clustalo_jobs.keys())
+    assert remaining == {"recent_completed", "still_running"}
+    api_module.clustalo_jobs.clear()
+
+
+def test_conservation_job_submission_returns_queued():
+    """Submitting a valid conservation job returns a job_id immediately
+    with status "queued" - it must not block on the (very slow,
+    minutes-long) BLAST submit/poll/fetch pipeline."""
+    api_module.blast_jobs.clear()
+    response = client.post(
+        "/api/jobs/conservation",
+        json={"sequence": "MVHLTPEEKSAVTALWGKVNVDEVGGEALGRLLVVYPWTQRFFESFGDLS"},
+    )
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "queued"
+    assert body["job_id"] in api_module.blast_jobs
+    api_module.blast_jobs.clear()
+
+
+def test_conservation_job_submission_rejects_a_too_short_sequence():
+    response = client.post("/api/jobs/conservation", json={"sequence": "MVHL"})
+    assert response.status_code == 400
+
+
+def test_conservation_job_submission_rejects_non_amino_acid_characters():
+    response = client.post(
+        "/api/jobs/conservation", json={"sequence": "MVHL123$%^EEKSAVTALWG"}
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_conservation_job_execution_completes_and_is_pollable():
+    """Directly exercises _execute_blast_job (the background task the
+    endpoint schedules) end-to-end, then confirms GET /api/jobs/{job_id} -
+    the same polling endpoint used for every other job type - surfaces the
+    real conservation profile result."""
+    api_module.blast_jobs.clear()
+    job_id = "test-blast-job"
+    api_module.blast_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    with patch(
+        "src.backend.api.BlastClient.find_homologs_and_score_conservation",
+        new_callable=AsyncMock,
+    ) as mock_find:
+        mock_find.return_value = {
+            "rid": "rid-1",
+            "num_hits": 10,
+            "conservation_profile": [
+                {
+                    "position": 1,
+                    "conservation": 1.0,
+                    "num_homologs": 10,
+                    "most_common": "M",
+                }
+            ],
+        }
+        await api_module._execute_blast_job(job_id, "MVHLTPEEK")
+
+    poll = client.get(f"/api/jobs/{job_id}")
+    assert poll.json()["status"] == "completed"
+    assert poll.json()["num_hits"] == 10
+    assert poll.json()["conservation_profile"][0]["most_common"] == "M"
+
+    api_module.blast_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_conservation_job_execution_surfaces_pipeline_failure():
+    api_module.blast_jobs.clear()
+    job_id = "test-blast-job-fail"
+    api_module.blast_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    with patch(
+        "src.backend.api.BlastClient.find_homologs_and_score_conservation",
+        new_callable=AsyncMock,
+    ) as mock_find:
+        from src.backend.blast_client import BlastError
+
+        mock_find.side_effect = BlastError(
+            "BLAST job rid-1 did not complete within 1200s"
+        )
+        await api_module._execute_blast_job(job_id, "MVHLTPEEK")
+
+    poll = client.get(f"/api/jobs/{job_id}")
+    assert poll.json()["status"] == "failed"
+    assert "did not complete within 1200s" in poll.json()["error"]
+
+    api_module.blast_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_blast_job_sweep_drops_old_finished_jobs_but_keeps_recent_and_running():
+    now = time.time()
+    api_module.blast_jobs.clear()
+    api_module.blast_jobs.update(
+        {
+            "old_completed": {"status": "completed", "finished_at": now - 10_000},
+            "recent_completed": {"status": "completed", "finished_at": now},
+            "still_running": {"status": "running", "created_at": now - 10_000},
+        }
+    )
+
+    with patch.object(api_module, "_JOB_TTL_SECONDS", 60), patch(
+        "asyncio.sleep", new_callable=AsyncMock
+    ) as mock_sleep:
+        mock_sleep.side_effect = [None, asyncio.CancelledError()]
+        with pytest.raises(asyncio.CancelledError):
+            await api_module._sweep_blast_jobs()
+
+    remaining = set(api_module.blast_jobs.keys())
+    assert remaining == {"recent_completed", "still_running"}
+    api_module.blast_jobs.clear()
 
 
 @pytest.mark.asyncio

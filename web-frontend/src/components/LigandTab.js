@@ -1,4 +1,4 @@
-import { fetchInteractions, fetchLigands, fetchChains, fetchInterface } from '../api';
+import { fetchInteractions, fetchLigands, fetchChains, fetchInterface, fetchLigandInfo, fetchPockets } from '../api';
 import { buildContactRow } from '../utils/interactionRenderers';
 
 export class LigandTab {
@@ -42,6 +42,7 @@ export class LigandTab {
                 <div class="flex gap-4">
                     <span id="ligand-sasa-badge" class="font-label-sm text-label-sm text-secondary hidden">SASA: -- Å²</span>
                 </div>
+                <div id="ligand-chemistry-info" class="font-body-sm text-[11px] text-secondary hidden"></div>
 
                 <div class="flex items-baseline justify-between mt-2 pt-4 border-t border-border">
                     <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Molecular interactions</span>
@@ -72,6 +73,24 @@ export class LigandTab {
                         <span class="font-body-sm text-body-sm text-secondary">Jaccard index of pocket residue composition</span>
                     </div>
                     <div id="pocket-similarity-heatmap" class="w-full h-[320px]"></div>
+                </div>
+
+                <div id="candidate-pockets-section" class="hidden flex-col gap-2 mt-2 pt-4 border-t border-border">
+                    <div class="flex items-baseline justify-between">
+                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Candidate binding pockets</span>
+                        <span class="font-body-sm text-body-sm text-secondary">Heuristic - no bound ligand to analyze directly</span>
+                    </div>
+                    <table class="w-full text-left border-collapse">
+                        <thead class="font-label-sm text-label-sm text-secondary">
+                        <tr>
+                            <th class="px-0 py-2 border-b border-border font-medium">Rank</th>
+                            <th class="px-3 py-2 border-b border-border font-medium">Lining residues</th>
+                            <th class="px-3 py-2 border-b border-border font-medium text-right">Score</th>
+                            <th class="px-3 py-2 border-b border-border font-medium text-right">Est. volume (&Aring;&sup3;)</th>
+                        </tr>
+                        </thead>
+                        <tbody id="candidate-pockets-table-body" class="font-body-sm text-body-sm text-primary font-mono divide-y divide-border-subtle"></tbody>
+                    </table>
                 </div>
 
                 <div id="interface-section" class="hidden flex-col gap-3 mt-2 pt-4 border-t border-border">
@@ -153,6 +172,7 @@ export class LigandTab {
         }
         this.populateDropdown();
         await this.loadAvailableChains();
+        await this.loadCandidatePockets();
     }
 
     updateLigands(ligands, runId, selectedPDBs, pocketSimilarity = null) {
@@ -167,6 +187,7 @@ export class LigandTab {
         this.clearTable();
         this.renderPocketSimilarity();
         this.loadAvailableChains();
+        this.loadCandidatePockets();
     }
 
     async loadAvailableChains() {
@@ -186,6 +207,72 @@ export class LigandTab {
             this.availableChains = [];
         }
         this.renderInterfaceSection();
+    }
+
+    // Heuristic candidate-pocket detection (LigandAnalyzer.find_candidate_pockets)
+    // only makes sense once a structure has confirmed NO real bound ligand -
+    // otherwise the real interaction analysis above is strictly more useful.
+    async loadCandidatePockets() {
+        if (!this.element) return;
+        const section = this.element.querySelector('#candidate-pockets-section');
+        const pdbId = this.selectedPDBs[this.currentStructureIndex];
+
+        if (!pdbId || this.ligandsList.length > 0) {
+            section.classList.add('hidden');
+            section.classList.remove('flex');
+            return;
+        }
+
+        try {
+            const data = await fetchPockets(pdbId, this.currentRunId);
+            this.renderCandidatePockets(data.pockets || []);
+        } catch (err) {
+            console.error("Failed to load candidate pockets:", err);
+            this.renderCandidatePockets([]);
+        }
+    }
+
+    renderCandidatePockets(pockets) {
+        if (!this.element) return;
+        const section = this.element.querySelector('#candidate-pockets-section');
+        const body = this.element.querySelector('#candidate-pockets-table-body');
+
+        if (!pockets || pockets.length === 0) {
+            section.classList.add('hidden');
+            section.classList.remove('flex');
+            return;
+        }
+        section.classList.remove('hidden');
+        section.classList.add('flex');
+
+        body.innerHTML = "";
+        pockets.forEach(pocket => {
+            const tr = document.createElement('tr');
+
+            const rankCell = document.createElement('td');
+            rankCell.className = "py-1.5";
+            rankCell.textContent = pocket.rank;
+            tr.appendChild(rankCell);
+
+            const residuesCell = document.createElement('td');
+            residuesCell.className = "px-3 py-1.5";
+            residuesCell.textContent = (pocket.residues || [])
+                .map(r => `${r.resn} ${r.chain}${r.resi}`)
+                .join(', ');
+            tr.appendChild(residuesCell);
+
+            const scoreCell = document.createElement('td');
+            scoreCell.className = "px-3 py-1.5 text-right";
+            scoreCell.textContent = pocket.score;
+            tr.appendChild(scoreCell);
+
+            const volumeCell = document.createElement('td');
+            volumeCell.className = "px-3 py-1.5 text-right";
+            volumeCell.textContent = pocket.volume_estimate_a3 != null ? pocket.volume_estimate_a3 : '--';
+            tr.appendChild(volumeCell);
+
+            body.appendChild(tr);
+        });
     }
 
     renderInterfaceSection() {
@@ -375,8 +462,9 @@ export class LigandTab {
         if (!this.element) return;
         const desc = this.element.querySelector('#ligand-pocket-desc');
         desc.innerText = "Perform an alignment and select a ligand from the list to analyze atomic interactions in the binding pocket.";
-        
+
         this.element.querySelector('#ligand-sasa-badge').classList.add('hidden');
+        this.element.querySelector('#ligand-chemistry-info').classList.add('hidden');
         this.element.querySelector('#interaction-count').innerText = "0 Found";
         
         this.element.querySelector('#interactions-table-body').innerHTML = `
@@ -421,6 +509,11 @@ export class LigandTab {
             this.onLigandSelected(this.currentStructureIndex, ligandId, contacts);
 
             desc.innerText = `Conserved catalytic pocket near ligand ${metadata.ligand}. Stable hydrophobic cluster showing coordinated interactions.`;
+
+            // Fire-and-forget - doesn't block interaction-table rendering,
+            // and a slow/failed chemistry lookup shouldn't affect the rest
+            // of this view.
+            this.loadLigandChemistry(ligandId);
 
             if (metadata.pocket_sasa) {
                 sasaBadge.innerText = `SASA: ${metadata.pocket_sasa.toFixed(1)} Å²`;
@@ -472,6 +565,37 @@ export class LigandTab {
                     </td>
                 </tr>
             `;
+        }
+    }
+
+    // Resolves "what is this ligand?" via RCSB's Chemical Component
+    // Dictionary - independent of the interaction analysis above (a slow
+    // or failed lookup here never blocks it). ligandsList already carries
+    // the bare 3-letter code as `.name` (the composite ligandId is
+    // RESNAME_CHAIN_RESI, not directly usable for a chemistry lookup).
+    async loadLigandChemistry(ligandId) {
+        const info = this.element.querySelector('#ligand-chemistry-info');
+        if (!info) return;
+
+        const ligand = this.ligandsList.find(l => l.id === ligandId);
+        const code = ligand ? ligand.name : ligandId.split('_')[0];
+
+        info.textContent = 'Looking up ligand chemistry…';
+        info.classList.remove('hidden');
+
+        try {
+            const data = await fetchLigandInfo(code);
+            if (!data.chemistry) {
+                info.textContent = `${code}: no chemistry data found.`;
+                return;
+            }
+            const c = data.chemistry;
+            const parts = [c.name, c.formula].filter(Boolean);
+            info.textContent = parts.length > 0 ? parts.join(' · ') : `${code}: no chemistry data found.`;
+            info.title = c.smiles ? `SMILES: ${c.smiles}` : '';
+        } catch (err) {
+            console.error("Failed to load ligand chemistry:", err);
+            info.textContent = `${code}: chemistry lookup failed.`;
         }
     }
 }

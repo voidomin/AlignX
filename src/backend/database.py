@@ -248,6 +248,49 @@ class HistoryDatabase:
             logger.exception(f"Failed to retrieve run {sanitize_for_log(run_id)}")
             return None
 
+    def update_run_notes(
+        self,
+        run_id: str,
+        notes: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+    ) -> bool:
+        """
+        Adds/updates a run's free-text notes and/or tags in its existing
+        metadata JSON blob - no schema change needed, runs.metadata
+        already stores arbitrary JSON (results, stats, etc.). Only the
+        keys explicitly passed (not None) are touched; everything else
+        already in metadata is preserved untouched. Pass notes="" to
+        clear an existing note, or tags=[] to clear existing tags -
+        that's different from passing None, which leaves the field alone.
+        Returns False if run_id doesn't exist.
+        """
+        try:
+            with sqlite3.connect(self.db_path, timeout=30) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT metadata FROM runs WHERE id = ?", (run_id,))
+                row = cursor.fetchone()
+                if row is None:
+                    return False
+
+                metadata = json.loads(row["metadata"]) if row["metadata"] else {}
+                if notes is not None:
+                    metadata["notes"] = notes
+                if tags is not None:
+                    metadata["tags"] = tags
+
+                cursor.execute(
+                    "UPDATE runs SET metadata = ? WHERE id = ?",
+                    (json.dumps(metadata), run_id),
+                )
+                conn.commit()
+            return True
+        except Exception:
+            logger.exception(
+                f"Failed to update notes for run {sanitize_for_log(run_id)}"
+            )
+            return False
+
     def delete_run(self, run_id: str) -> bool:
         """Delete a run from the database."""
         try:

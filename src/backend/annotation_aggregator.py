@@ -32,8 +32,20 @@ QUICKGO_BASE_URL = "https://www.ebi.ac.uk/QuickGO/services"
 STRING_BASE_URL = "https://version-12-0.string-db.org/api/json"
 REACTOME_BASE_URL = "https://reactome.org/ContentService"
 SIFTS_BASE_URL = "https://www.ebi.ac.uk/pdbe/api/mappings/uniprot"
+# The unfiltered /mappings/{pdb_id} endpoint (distinct from SIFTS_BASE_URL's
+# /mappings/uniprot/{pdb_id}) - that one only resolves an accession; this one
+# carries the real per-segment residue-level mapping (unp_start/unp_end plus
+# each segment's author_residue_number range) needed to translate a UniProt-
+# numbered domain/feature location onto a PDB entry's own author numbering.
+PDBE_ALL_MAPPINGS_BASE_URL = "https://www.ebi.ac.uk/pdbe/api/mappings"
 GMGC_BASE_URL = "https://gmgc.embl.de/api/v1.0"
 UNIPROT_BASE_URL = "https://rest.uniprot.org/uniprotkb"
+# NCBI's E-utilities work keyless at 3 req/s - fast enough for one
+# interactive mutation lookup (a single esearch+esummary pair), no
+# dedicated rate limiter needed the way the batch STRING/Foldseek fetches
+# have (those loop over many neighbors in one job; this doesn't).
+CLINVAR_ESEARCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+CLINVAR_ESUMMARY_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
 
 # UniProt's own /features list carries ~15 feature types per entry (Chain,
 # Domain, Helix, Beta strand, Turn, Glycosylation, ...); most duplicate a
@@ -326,6 +338,186 @@ class AnnotationAggregator:
         if cache is not None:
             cache[pdb_id] = chain_accessions
         return chain_accessions.get(chain_id)
+
+    @staticmethod
+    def _residue_map_from_segment(segment: Dict[str, Any]) -> Dict[int, int]:
+        """One SIFTS segment's UniProt<->author-numbering range, walked in
+        lockstep - standard SIFTS convention is no internal gaps within a
+        single segment (a real gap/insertion shows up as a separate
+        segment instead), so a clean 1:1 span is the expected case; a
+        segment whose UniProt and author spans differ in length is skipped
+        rather than mismapped."""
+        unp_start, unp_end = segment.get("unp_start"), segment.get("unp_end")
+        author_start = (segment.get("start") or {}).get("author_residue_number")
+        author_end = (segment.get("end") or {}).get("author_residue_number")
+        if None in (unp_start, unp_end, author_start, author_end):
+            return {}
+        span = unp_end - unp_start
+        if span != author_end - author_start:
+            return {}
+        return {unp_start + offset: author_start + offset for offset in range(span + 1)}
+
+    async def resolve_uniprot_residue_mapping(
+        self, pdb_id: str, chain_id: str, client: httpx.AsyncClient
+    ) -> Dict[int, int]:
+        """Real per-residue {uniprot_position: author_residue_number} map
+        for one chain of a PDB entry, via PDBe's unfiltered
+        /mappings/{pdb_id} endpoint - distinct from
+        resolve_pdb_uniprot_accession()'s /mappings/uniprot/{pdb_id}, which
+        only resolves the accession, not per-residue positions. This is
+        what lets a UniProt-numbered domain/feature location be translated
+        onto a real PDB entry's own (often different) author numbering,
+        closing the gap _attach_domain_highlight_chains()/
+        _attach_feature_highlight_chains() used to flag as PDB-unsupported.
+        Returns {} if nothing resolves for this chain."""
+
+        async def _fetch() -> Dict[str, Any]:
+            try:
+                response = await client.get(
+                    f"{PDBE_ALL_MAPPINGS_BASE_URL}/{pdb_id.lower()}",
+                    headers=_JSON_ACCEPT_HEADERS,
+                )
+                if response.status_code != 200:
+                    return {}
+                return response.json().get(pdb_id.lower(), {})
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"PDBe residue-mapping lookup failed for {sanitize_for_log(pdb_id)}: {e}"
+                )
+                return {}
+
+        entry = await self._get_or_fetch(
+            f"pdbe_mappings:{pdb_id}", "pdbe_mappings", _fetch
+        )
+
+        residue_map: Dict[int, int] = {}
+        for accession_info in (entry.get("UniProt") or {}).values():
+            for segment in accession_info.get("mappings", []):
+                if segment.get("chain_id") != chain_id:
+                    continue
+                residue_map.update(self._residue_map_from_segment(segment))
+        return residue_map
+
+    async def resolve_structure_uniprot_position(
+        self,
+        pdb_id: str,
+        chain: Optional[str],
+        author_resi: int,
+        source: str,
+        client: httpx.AsyncClient,
+    ) -> Optional[Tuple[str, int]]:
+        """Resolves one of a structure's own author-numbered residues to
+        (uniprot_accession, uniprot_position) - the inverse direction of
+        resolve_uniprot_residue_mapping()'s UniProt->author translation,
+        needed for looking up a residue the *structure* numbers in
+        UniProt/ClinVar's own protein-position numbering (e.g. for mutation
+        mapping). AlphaFold's 1:1 numbering makes the position identical to
+        the author number; a real PDB entry inverts the real SIFTS segment
+        map. Returns None if the structure has no resolvable accession, or
+        (for a PDB entry) no segment maps to this exact author residue."""
+        accession = await self._resolve_structure_accession(
+            pdb_id, chain, source, client, None
+        )
+        if not accession:
+            return None
+        if source == "alphafold":
+            return accession, author_resi
+        if source == "pdb" and chain:
+            residue_map = await self.resolve_uniprot_residue_mapping(
+                pdb_id, chain, client
+            )
+            for uniprot_pos, mapped_author_resi in residue_map.items():
+                if mapped_author_resi == author_resi:
+                    return accession, uniprot_pos
+        return None
+
+    async def fetch_uniprot_gene_and_sequence(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> Dict[str, Optional[str]]:
+        """Fetches a protein's gene symbol (ClinVar's own gene-based search
+        term) and full sequence (to read off the real wild-type residue at
+        a resolved UniProt position) from the same UniProt entry
+        fetch_uniprot_features() already targets."""
+
+        async def _fetch() -> Dict[str, Optional[str]]:
+            try:
+                response = await client.get(
+                    f"{UNIPROT_BASE_URL}/{accession}.json",
+                    headers=_JSON_ACCEPT_HEADERS,
+                )
+                if response.status_code != 200:
+                    return {"gene": None, "sequence": None}
+                data = response.json()
+                genes = data.get("genes") or []
+                gene = (genes[0].get("geneName") or {}).get("value") if genes else None
+                sequence = (data.get("sequence") or {}).get("value")
+                return {"gene": gene, "sequence": sequence}
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"UniProt gene/sequence lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return {"gene": None, "sequence": None}
+
+        return await self._get_or_fetch(
+            f"uniprot_summary:{accession}", "uniprot_summary", _fetch
+        )
+
+    async def fetch_clinvar_significance(
+        self, gene: str, variant_notation: str, client: httpx.AsyncClient
+    ) -> Optional[Dict[str, Any]]:
+        """Looks up a gene+variant's real clinical significance via NCBI's
+        keyless ClinVar E-utilities: esearch (find matching variant
+        records) then esummary (fetch the top match's real classification).
+        `variant_notation` is matched as free text against ClinVar's own
+        indexed fields, so either short form ("E7V") or HGVS protein
+        notation ("p.Glu7Val") works. Returns None if nothing resolves."""
+
+        async def _fetch() -> Optional[Dict[str, Any]]:
+            try:
+                search_response = await client.get(
+                    CLINVAR_ESEARCH_URL,
+                    params={
+                        "db": "clinvar",
+                        "term": f"{gene}[gene] AND {variant_notation}",
+                        "retmode": "json",
+                    },
+                )
+                if search_response.status_code != 200:
+                    return None
+                ids = (
+                    search_response.json().get("esearchresult", {}).get("idlist") or []
+                )
+                if not ids:
+                    return None
+
+                summary_response = await client.get(
+                    CLINVAR_ESUMMARY_URL,
+                    params={"db": "clinvar", "id": ids[0], "retmode": "json"},
+                )
+                if summary_response.status_code != 200:
+                    return None
+                record = summary_response.json().get("result", {}).get(ids[0])
+                if not record:
+                    return None
+
+                classification = record.get("germline_classification") or {}
+                return {
+                    "variation_id": ids[0],
+                    "accession": record.get("accession"),
+                    "title": record.get("title"),
+                    "clinical_significance": classification.get("description"),
+                    "review_status": classification.get("review_status"),
+                }
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"ClinVar lookup failed for {sanitize_for_log(gene)} "
+                    f"{sanitize_for_log(variant_notation)}: {e}"
+                )
+                return None
+
+        return await self._get_or_fetch(
+            f"clinvar:{gene}:{variant_notation}", "clinvar", _fetch
+        )
 
     async def resolve_accession(
         self,
@@ -706,52 +898,89 @@ class AnnotationAggregator:
             )
         return None
 
-    @staticmethod
-    def _attach_domain_highlight_chains(
-        domains: List[Dict[str, Any]], chain: Optional[str], source: str
+    async def _attach_domain_highlight_chains(
+        self,
+        domains: List[Dict[str, Any]],
+        chain: Optional[str],
+        source: str,
+        pdb_id: str,
+        client: httpx.AsyncClient,
     ) -> None:
         """Mutates each domain dict in place with a highlight_chains field.
 
         AlphaFold models are numbered 1..N to exactly match their source
         UniProt sequence, by construction - so InterPro's UniProt-numbered
         domain locations can be used directly as this structure's own
-        residue numbers. That's NOT true for a real PDB entry (author
-        numbering routinely differs from UniProt numbering - crystallization
-        constructs, non-1-start numbering, tags - which would need real
-        SIFTS segment-mapping to translate correctly, out of scope here),
-        so this only ever populates for source == "alphafold"."""
-        if source != "alphafold" or not chain:
+        residue numbers. A real PDB entry's author numbering routinely
+        differs from UniProt numbering (crystallization constructs,
+        non-1-start numbering, tags) - resolve_uniprot_residue_mapping()'s
+        real SIFTS segment mapping translates through that for
+        source == "pdb" too; any UniProt position with no mapped author
+        residue (a gap/insertion/unmapped region) is silently dropped
+        rather than mismapped."""
+        if source == "alphafold" and chain:
             for domain in domains:
-                domain["highlight_chains"] = None
+                residues = sorted(
+                    {
+                        r
+                        for loc in domain.get("locations") or []
+                        for r in range(loc["start"], loc["end"] + 1)
+                    }
+                )
+                domain["highlight_chains"] = {chain: residues} if residues else None
+            return
+
+        if source == "pdb" and chain and domains:
+            residue_map = await self.resolve_uniprot_residue_mapping(
+                pdb_id, chain, client
+            )
+            for domain in domains:
+                residues = sorted(
+                    {
+                        residue_map[r]
+                        for loc in domain.get("locations") or []
+                        for r in range(loc["start"], loc["end"] + 1)
+                        if r in residue_map
+                    }
+                )
+                domain["highlight_chains"] = {chain: residues} if residues else None
             return
 
         for domain in domains:
-            residues = sorted(
-                {
-                    r
-                    for loc in domain.get("locations") or []
-                    for r in range(loc["start"], loc["end"] + 1)
-                }
-            )
-            domain["highlight_chains"] = {chain: residues} if residues else None
+            domain["highlight_chains"] = None
 
-    @staticmethod
-    def _attach_feature_highlight_chains(
-        features: List[Dict[str, Any]], chain: Optional[str], source: str
+    async def _attach_feature_highlight_chains(
+        self,
+        features: List[Dict[str, Any]],
+        chain: Optional[str],
+        source: str,
+        pdb_id: str,
+        client: httpx.AsyncClient,
     ) -> None:
-        """Same AlphaFold-only 1:1-numbering shortcut as
-        _attach_domain_highlight_chains() above - see that method's
-        docstring for why real PDB entries are out of scope here (would
-        need a new residue-level SIFTS segment fetch this codebase doesn't
-        do yet)."""
-        if source != "alphafold" or not chain:
+        """Same AlphaFold 1:1-numbering shortcut plus real PDB residue-map
+        translation as _attach_domain_highlight_chains() above - see that
+        method's docstring."""
+        if source == "alphafold" and chain:
             for feature in features:
-                feature["highlight_chains"] = None
+                residues = list(range(feature["start"], feature["end"] + 1))
+                feature["highlight_chains"] = {chain: residues} if residues else None
+            return
+
+        if source == "pdb" and chain and features:
+            residue_map = await self.resolve_uniprot_residue_mapping(
+                pdb_id, chain, client
+            )
+            for feature in features:
+                residues = [
+                    residue_map[r]
+                    for r in range(feature["start"], feature["end"] + 1)
+                    if r in residue_map
+                ]
+                feature["highlight_chains"] = {chain: residues} if residues else None
             return
 
         for feature in features:
-            residues = list(range(feature["start"], feature["end"] + 1))
-            feature["highlight_chains"] = {chain: residues} if residues else None
+            feature["highlight_chains"] = None
 
     async def aggregate_for_structure(
         self,
@@ -800,8 +1029,12 @@ class AnnotationAggregator:
         for term in quickgo_terms:
             term["name"] = names.get(term.get("id"))
 
-        self._attach_domain_highlight_chains(domains, chain, source)
-        self._attach_feature_highlight_chains(uniprot_features, chain, source)
+        await self._attach_domain_highlight_chains(
+            domains, chain, source, pdb_id, client
+        )
+        await self._attach_feature_highlight_chains(
+            uniprot_features, chain, source, pdb_id, client
+        )
 
         result["domains"] = domains
         result["uniprot_features"] = uniprot_features

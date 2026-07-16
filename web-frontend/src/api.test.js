@@ -61,6 +61,42 @@ describe('api.js (no API key configured)', () => {
         expect(JSON.parse(options.body)).toEqual({ pdb_id: '1CRN' });
     });
 
+    it('submitClustalOmegaJob posts the sequences dict to the clustalo job endpoint', async () => {
+        mockFetchOnce({ job_id: 'clustalo123', status: 'queued' });
+        const { submitClustalOmegaJob } = await import('./api.js');
+
+        const result = await submitClustalOmegaJob({ '4RLT': 'MVHL', '3UG9': 'MVLS' });
+
+        expect(result.job_id).toBe('clustalo123');
+        const [url, options] = global.fetch.mock.calls[0];
+        expect(url).toContain('/api/jobs/clustalo');
+        expect(JSON.parse(options.body)).toEqual({ sequences: { '4RLT': 'MVHL', '3UG9': 'MVLS' } });
+    });
+
+    it('submitClustalOmegaJob throws with the backend detail message on failure', async () => {
+        mockFetchOnce({ detail: 'At least 2 sequences are required.' }, false, 400);
+        const { submitClustalOmegaJob } = await import('./api.js');
+        await expect(submitClustalOmegaJob({ '4RLT': 'MVHL' })).rejects.toThrow('At least 2 sequences are required.');
+    });
+
+    it('submitConservationJob posts the sequence to the conservation job endpoint', async () => {
+        mockFetchOnce({ job_id: 'blast123', status: 'queued' });
+        const { submitConservationJob } = await import('./api.js');
+
+        const result = await submitConservationJob('MVHLTPEEKSAVTALWGKVNV');
+
+        expect(result.job_id).toBe('blast123');
+        const [url, options] = global.fetch.mock.calls[0];
+        expect(url).toContain('/api/jobs/conservation');
+        expect(JSON.parse(options.body)).toEqual({ sequence: 'MVHLTPEEKSAVTALWGKVNV' });
+    });
+
+    it('submitConservationJob throws with the backend detail message on failure', async () => {
+        mockFetchOnce({ detail: 'A real protein sequence (10+ amino-acid letters) is required.' }, false, 400);
+        const { submitConservationJob } = await import('./api.js');
+        await expect(submitConservationJob('MV')).rejects.toThrow('A real protein sequence');
+    });
+
     it('pollJobUntilDone polls until status is completed', async () => {
         const responses = [
             { status: 'queued' },
@@ -152,6 +188,11 @@ describe('api.js (no API key configured)', () => {
     it('getLabNotebookUrl points at the notebook endpoint for the given run', async () => {
         const { getLabNotebookUrl } = await import('./api.js');
         expect(getLabNotebookUrl('run_1')).toContain('/api/notebook?run_id=run_1');
+    });
+
+    it('getLabNotebookIpynbUrl points at the ipynb notebook endpoint for the given run', async () => {
+        const { getLabNotebookIpynbUrl } = await import('./api.js');
+        expect(getLabNotebookIpynbUrl('run_1')).toContain('/api/notebook/ipynb?run_id=run_1');
     });
 
     it('getDiscoveryReportUrl points at the discover report endpoint for the given run', async () => {
@@ -416,6 +457,120 @@ describe('api.js request-ID validation', () => {
             validation: { clashscore: { value: 1.2 } },
         });
         expect(global.fetch.mock.calls[0][0]).toContain('/api/validation');
+        expect(global.fetch.mock.calls[0][0]).toContain('pdb_id=4HHB');
+    });
+
+    it('fetchLigandInfo rejects an unsafe ligand code', async () => {
+        const { fetchLigandInfo } = await import('./api.js');
+        await expect(fetchLigandInfo('../evil')).rejects.toThrow('Invalid ligandCode');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchLigandInfo resolves with the { ligand_code, chemistry } shape', async () => {
+        mockFetchOnce({ ligand_code: 'HEM', chemistry: { name: 'HEME', formula: 'C34 H32 Fe N4 O4' } });
+        const { fetchLigandInfo } = await import('./api.js');
+        await expect(fetchLigandInfo('HEM')).resolves.toEqual({
+            ligand_code: 'HEM',
+            chemistry: { name: 'HEME', formula: 'C34 H32 Fe N4 O4' },
+        });
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/ligand-info');
+        expect(global.fetch.mock.calls[0][0]).toContain('ligand_code=HEM');
+    });
+
+    it('fetchContactMap rejects an unsafe pdbId', async () => {
+        const { fetchContactMap } = await import('./api.js');
+        await expect(fetchContactMap('run_1', '../evil')).rejects.toThrow('Invalid pdbId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchContactMap resolves with the run/pdb-scoped contact map shape', async () => {
+        mockFetchOnce({ pdb_id: '4HHB', residue_count: 3, capped: false, matrix: [[0, 1, 0], [1, 0, 0], [0, 0, 0]], contacts: null });
+        const { fetchContactMap } = await import('./api.js');
+        const data = await fetchContactMap('run_1', '4HHB', 8.0);
+        expect(data.residue_count).toBe(3);
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/contact-map');
+        expect(global.fetch.mock.calls[0][0]).toContain('run_id=run_1');
+        expect(global.fetch.mock.calls[0][0]).toContain('pdb_id=4HHB');
+        expect(global.fetch.mock.calls[0][0]).toContain('threshold=8');
+    });
+
+    it('fetchDifferenceDistance rejects an unsafe pdbIdB', async () => {
+        const { fetchDifferenceDistance } = await import('./api.js');
+        await expect(fetchDifferenceDistance('run_1', '4HHB', '../evil')).rejects.toThrow('Invalid pdbIdB');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchDifferenceDistance resolves with the pairwise difference-matrix shape', async () => {
+        mockFetchOnce({ pdb_id_a: '4HHB', pdb_id_b: '3UG9', column_count: 2, capped: false, matrix: [[0, 1.2], [1.2, 0]], differences: null });
+        const { fetchDifferenceDistance } = await import('./api.js');
+        const data = await fetchDifferenceDistance('run_1', '4HHB', '3UG9');
+        expect(data.column_count).toBe(2);
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/difference-distance');
+        expect(global.fetch.mock.calls[0][0]).toContain('pdb_id_a=4HHB');
+        expect(global.fetch.mock.calls[0][0]).toContain('pdb_id_b=3UG9');
+    });
+
+    it('fetchMutationImpact rejects an unsafe chain', async () => {
+        const { fetchMutationImpact } = await import('./api.js');
+        await expect(fetchMutationImpact('4HHB', '../evil', 6, 'V')).rejects.toThrow('Invalid chain');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchMutationImpact resolves with the mutation-impact shape', async () => {
+        mockFetchOnce({
+            accession: 'P68871', uniprot_position: 7, wildtype_residue: 'V', mutant_residue: 'V',
+            gene: 'HBB', clinvar: { clinical_significance: 'Pathogenic' }, known_uniprot_variant: null,
+            highlight_chains: { A: [6] },
+        });
+        const { fetchMutationImpact } = await import('./api.js');
+        const data = await fetchMutationImpact('4HHB', 'A', 6, 'V');
+        expect(data.gene).toBe('HBB');
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/mutation-impact');
+        expect(global.fetch.mock.calls[0][0]).toContain('pdb_id=4HHB');
+        expect(global.fetch.mock.calls[0][0]).toContain('chain=A');
+        expect(global.fetch.mock.calls[0][0]).toContain('resi=6');
+        expect(global.fetch.mock.calls[0][0]).toContain('mutant=V');
+    });
+
+    it('updateRunNotes rejects an unsafe runId', async () => {
+        const { updateRunNotes } = await import('./api.js');
+        await expect(updateRunNotes('../evil', { notes: 'x' })).rejects.toThrow('Invalid runId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('updateRunNotes PUTs notes and tags as JSON', async () => {
+        mockFetchOnce({ run_id: 'run_1', notes: 'Interesting fold', tags: ['kinase'] });
+        const { updateRunNotes } = await import('./api.js');
+        const data = await updateRunNotes('run_1', { notes: 'Interesting fold', tags: ['kinase'] });
+        expect(data.notes).toBe('Interesting fold');
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/history/run_1/notes');
+        expect(global.fetch.mock.calls[0][1].method).toBe('PUT');
+        expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({ notes: 'Interesting fold', tags: ['kinase'] });
+    });
+
+    it('updateRunNotes throws with the backend detail message on failure', async () => {
+        mockFetchOnce({ detail: 'Run not found in history database.' }, false, 404);
+        const { updateRunNotes } = await import('./api.js');
+        await expect(updateRunNotes('run_1', { notes: 'x' })).rejects.toThrow('Run not found in history database.');
+    });
+
+    it('fetchQc rejects a pdbId that is not a recognized structure ID format', async () => {
+        const { fetchQc } = await import('./api.js');
+        await expect(fetchQc('../evil')).rejects.toThrow('Invalid pdbId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchQc resolves with the QC shape', async () => {
+        mockFetchOnce({
+            pdb_id: '4HHB',
+            ramachandran_stats: { favored_percent: 92.5 },
+            secondary_structure_stats: { helix_percent: 80.3 },
+            validation: { clashscore: { value: 1.2 } },
+        });
+        const { fetchQc } = await import('./api.js');
+        const data = await fetchQc('4HHB');
+        expect(data.ramachandran_stats.favored_percent).toBe(92.5);
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/qc');
         expect(global.fetch.mock.calls[0][0]).toContain('pdb_id=4HHB');
     });
 });

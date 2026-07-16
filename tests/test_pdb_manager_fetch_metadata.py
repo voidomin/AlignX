@@ -55,6 +55,7 @@ class TestParseRcsbEntry:
             "method": "X-RAY DIFFRACTION",
             "resolution": "1.85 Å",
             "organism": "Homo sapiens",
+            "citation": None,
         }
 
     def test_missing_fields_fall_back_to_na(self):
@@ -64,6 +65,7 @@ class TestParseRcsbEntry:
             "method": "N/A",
             "resolution": "N/A",
             "organism": "N/A",
+            "citation": None,
         }
 
 

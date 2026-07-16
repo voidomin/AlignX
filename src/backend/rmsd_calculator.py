@@ -3,7 +3,7 @@ import pandas as pd
 from pathlib import Path
 from typing import List, Dict, Optional, Any, Tuple
 from Bio.PDB import PDBParser
-from src.utils.logger import get_logger
+from src.utils.logger import get_logger, sanitize_for_log
 
 logger = get_logger()
 
@@ -334,6 +334,202 @@ def calculate_structure_rmsd(
 
     except Exception:
         logger.exception("PyRMSD Error")
+        return None
+
+
+# --- CONTACT MAPS & DIFFERENCE-DISTANCE MATRICES ---
+
+# Above this many residues/columns, a dense NxN matrix serialized to JSON
+# gets prohibitively large (8 bytes/float * N^2 - a 5000-residue complex
+# would be ~200MB) - return a thresholded sparse list instead.
+MAX_DENSE_MATRIX_RESIDUES = 3000
+DEFAULT_CONTACT_THRESHOLD_A = 8.0
+DEFAULT_NOTABLE_SHIFT_A = 3.0
+
+
+def calculate_pairwise_distance_matrix(coords: np.ndarray) -> np.ndarray:
+    """NxN Euclidean distance matrix for one set of coordinates."""
+    if len(coords) == 0:
+        return np.zeros((0, 0))
+    diff = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
+    return np.sqrt(np.sum(diff**2, axis=-1))
+
+
+def calculate_contact_map(
+    coords: np.ndarray, threshold: float = DEFAULT_CONTACT_THRESHOLD_A
+) -> np.ndarray:
+    """Binary CA-CA contact map (1 = within `threshold` Angstroms), with the
+    diagonal (self-contacts) explicitly zeroed."""
+    distances = calculate_pairwise_distance_matrix(coords)
+    contacts = (distances < threshold).astype(int)
+    np.fill_diagonal(contacts, 0)
+    return contacts
+
+
+def calculate_difference_distance_matrix(
+    coords1: np.ndarray, coords2: np.ndarray
+) -> np.ndarray:
+    """Element-wise difference between two structures' own pairwise
+    CA-CA distance matrices, over the same (already-aligned) column
+    ordering - reveals domain movements a single global RMSD hides,
+    since a rigid-body shift of one domain leaves its internal
+    distances unchanged while every distance to the other domain
+    shifts together."""
+    return np.abs(
+        calculate_pairwise_distance_matrix(coords1)
+        - calculate_pairwise_distance_matrix(coords2)
+    )
+
+
+def get_structure_contact_map(
+    alignment_pdb: Path,
+    pdb_ids: List[str],
+    pdb_id: str,
+    threshold: float = DEFAULT_CONTACT_THRESHOLD_A,
+    max_residues: int = MAX_DENSE_MATRIX_RESIDUES,
+) -> Optional[Dict[str, Any]]:
+    """
+    A single structure's own CA-CA contact map, keyed to its real residue
+    order (not the alignment's gapped columns - a contact map describes
+    one structure's own geometry).
+
+    `pdb_ids` must be the run's original, order-matched structure id list
+    (Mustang's own PDB/FASTA output preserves this input order, but its
+    FASTA headers get their own filename-derived labels - e.g. "4hhb.pdb"
+    lowercased - so `pdb_id` is resolved to a position in `pdb_ids` here
+    rather than by matching against alignment_fasta's record text).
+
+    Returns a dict with either a dense `matrix` (residue_count <=
+    max_residues) or a sparse `contacts` list of [i, j] index pairs
+    (above that cap) - never both. Returns None if `pdb_id` isn't in
+    `pdb_ids` or has no CA atoms.
+    """
+    try:
+        if pdb_id not in pdb_ids:
+            return None
+        idx = pdb_ids.index(pdb_id)
+
+        parser = PDBParser(QUIET=True)
+        structure = parser.get_structure("aln", str(alignment_pdb))
+        entities = _select_structures(structure, len(pdb_ids))
+        if idx >= len(entities):
+            return None
+
+        coords = np.array(
+            [atom.coord for atom in entities[idx].get_atoms() if atom.name == "CA"]
+        )
+        if len(coords) == 0:
+            return None
+
+        n = len(coords)
+        if n > max_residues:
+            distances = calculate_pairwise_distance_matrix(coords)
+            i_idx, j_idx = np.where(np.triu(distances < threshold, k=1))
+            return {
+                "pdb_id": pdb_id,
+                "residue_count": n,
+                "threshold_a": threshold,
+                "capped": True,
+                "matrix": None,
+                "contacts": np.stack([i_idx, j_idx], axis=1).tolist(),
+            }
+
+        contacts = calculate_contact_map(coords, threshold)
+        return {
+            "pdb_id": pdb_id,
+            "residue_count": n,
+            "threshold_a": threshold,
+            "capped": False,
+            "matrix": contacts.tolist(),
+            "contacts": None,
+        }
+    except Exception:
+        logger.exception(f"Failed to build contact map for {sanitize_for_log(pdb_id)}")
+        return None
+
+
+def get_difference_distance_matrix(
+    alignment_pdb: Path,
+    alignment_fasta: Path,
+    pdb_ids: List[str],
+    pdb_id_a: str,
+    pdb_id_b: str,
+    max_residues: int = MAX_DENSE_MATRIX_RESIDUES,
+    notable_shift_a: float = DEFAULT_NOTABLE_SHIFT_A,
+) -> Optional[Dict[str, Any]]:
+    """
+    Difference-distance matrix between two structures in the same
+    alignment, over their commonly-aligned columns (reuses
+    _build_structure_data/_common_aligned_coords, same basis as the
+    existing pairwise TM-score/GDT-TS calculation).
+
+    `pdb_ids` must be the run's original, order-matched structure id list
+    (see get_structure_contact_map's docstring for why - `pdb_id_a`/
+    `pdb_id_b` are resolved to positions in `pdb_ids`, assumed to match
+    alignment_fasta's record order 1:1, rather than by matching against
+    the FASTA's own record text).
+
+    Returns a dict with either a dense `matrix` (column_count <=
+    max_residues) or a sparse `differences` list of [i, j, diff] triples
+    for shifts above `notable_shift_a` Angstroms (above that cap) - never
+    both. Returns None if either id isn't in `pdb_ids` or they share no
+    aligned columns.
+    """
+    try:
+        if pdb_id_a not in pdb_ids or pdb_id_b not in pdb_ids:
+            return None
+        idx_a, idx_b = pdb_ids.index(pdb_id_a), pdb_ids.index(pdb_id_b)
+
+        from Bio import SeqIO
+
+        alignment = list(SeqIO.parse(alignment_fasta, "fasta"))
+        if len(alignment) < 2 or idx_a >= len(alignment) or idx_b >= len(alignment):
+            return None
+        seq_len = len(alignment[0].seq)
+
+        parser = PDBParser(QUIET=True)
+        structure = parser.get_structure("aln", str(alignment_pdb))
+        entities = _select_structures(structure, len(alignment))
+
+        structure_data = _build_structure_data(alignment, entities, seq_len)
+        c1, c2 = _common_aligned_coords(
+            structure_data[idx_a], structure_data[idx_b], seq_len
+        )
+        if not c1:
+            return None
+
+        c1, c2 = np.array(c1), np.array(c2)
+        n = len(c1)
+        if n > max_residues:
+            diff_matrix = calculate_difference_distance_matrix(c1, c2)
+            i_idx, j_idx = np.where(np.triu(diff_matrix > notable_shift_a, k=1))
+            differences = [
+                [int(i), int(j), float(diff_matrix[i, j])]
+                for i, j in zip(i_idx, j_idx, strict=False)
+            ]
+            return {
+                "pdb_id_a": pdb_id_a,
+                "pdb_id_b": pdb_id_b,
+                "column_count": n,
+                "capped": True,
+                "matrix": None,
+                "differences": differences,
+            }
+
+        diff_matrix = calculate_difference_distance_matrix(c1, c2)
+        return {
+            "pdb_id_a": pdb_id_a,
+            "pdb_id_b": pdb_id_b,
+            "column_count": n,
+            "capped": False,
+            "matrix": diff_matrix.tolist(),
+            "differences": None,
+        }
+    except Exception:
+        logger.exception(
+            f"Failed to build difference-distance matrix for "
+            f"{sanitize_for_log(pdb_id_a)}/{sanitize_for_log(pdb_id_b)}"
+        )
         return None
 
 
