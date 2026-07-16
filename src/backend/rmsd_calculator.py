@@ -424,7 +424,7 @@ def get_structure_contact_map(
         n = len(coords)
         if n > max_residues:
             distances = calculate_pairwise_distance_matrix(coords)
-            i_idx, j_idx = np.where(np.triu(distances < threshold, k=1))
+            i_idx, j_idx = np.nonzero(np.triu(distances < threshold, k=1))
             return {
                 "pdb_id": pdb_id,
                 "residue_count": n,
@@ -502,7 +502,7 @@ def get_difference_distance_matrix(
         n = len(c1)
         if n > max_residues:
             diff_matrix = calculate_difference_distance_matrix(c1, c2)
-            i_idx, j_idx = np.where(np.triu(diff_matrix > notable_shift_a, k=1))
+            i_idx, j_idx = np.nonzero(np.triu(diff_matrix > notable_shift_a, k=1))
             differences = [
                 [int(i), int(j), float(diff_matrix[i, j])]
                 for i, j in zip(i_idx, j_idx, strict=False)

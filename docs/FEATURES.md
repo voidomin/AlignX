@@ -59,6 +59,18 @@ for how to actually use each one.
 | 26 | Heuristic candidate binding-pocket finder (no bound ligand needed) | Both | [§2.6](#26-ligand-hunter) |
 | 27 | AlphaFold domain "Highlight in 3D" | SPA | [§2.12](#212-functional-annotation) |
 | 28 | NMR ensemble / disordered-region metadata badges | SPA | [§1](#1-structure-input) |
+| 29 | Ligand chemistry lookup (name/formula/SMILES/InChIKey) | SPA | [§2.6](#26-ligand-hunter) |
+| 30 | Druggability volume estimate for candidate pockets | SPA | [§2.6](#26-ligand-hunter) |
+| 31 | Contact maps & inter-structure difference-distance matrices | SPA | [§2.13](#213-contact-maps--difference-distance-matrices) |
+| 32 | Real PDB-entry UniProt residue mapping ("Highlight in 3D" for real PDB entries) | SPA | [§2.12](#212-functional-annotation) |
+| 33 | Mutation impact mapping + ClinVar clinical significance | SPA | [§2.14](#214-mutation-impact-mapping) |
+| 34 | Literature links (PubMed/DOI) on structure cards | SPA | [§1](#1-structure-input) |
+| 35 | Run notes & tags | Both | [§5.1](#51-run-history) |
+| 36 | Bulk QC sweep across every loaded structure | SPA | [§2.15](#215-bulk-qc-sweep) |
+| 37 | Documented public REST API (`/docs`) | Both | [§4.6](#46-rest-api) |
+| 38 | Runnable Jupyter Notebook export | Both | [§4.2](#42-html-notebook) |
+| 39 | True sequence-only MSA (EBI Clustal Omega) | SPA | [§2.8](#28-sequence-view) |
+| 40 | True evolutionary conservation via homolog search (NCBI BLAST) | SPA | [§2.8](#28-sequence-view) |
 
 ---
 
@@ -86,6 +98,11 @@ badge makes that explicit instead of silently doing it with no indication),
 and a **"N disordered regions"** badge when the deposited structure has gaps
 in its own residue numbering (a region never resolved in the crystal
 structure) — hover either for the specifics.
+
+For a real PDB entry, a **"View publication"** link also appears when RCSB has
+primary-citation data for it — a direct PubMed link when a PubMed ID is on
+file, falling back to the DOI resolver otherwise. AlphaFold/SWISS-MODEL/ESM
+Atlas structures have no citation concept and show no link.
 
 *(SPA only for now — Streamlit currently only accepts plain RCSB PDB IDs.)*
 
@@ -179,14 +196,21 @@ alike each ligand's chemical environment is to every other one in the run —
 useful for spotting a conserved active site (or a surprisingly divergent one)
 across otherwise-similar structures.
 
+Select any detected ligand to see a **"what is this?"** chemistry line — its
+real name, molecular formula, SMILES, and InChIKey, resolved from RCSB's
+Chemical Component Dictionary and cached the same way GO terms already are.
+
 **No bound ligand?** A heuristic **candidate binding-pocket finder** looks for
 surface-exposed residues that spatially cluster with residues from a distant
 part of the sequence (the standard signature of a fold packing together to
 form a concave pocket wall), ranked by cluster size and hydrophobic/aromatic
-content. Every result is explicitly labeled a computational prediction, not a
-validated pocket (unlike a real geometric cavity detector such as fpocket,
-which this doesn't attempt to replicate) — useful for AlphaFold/ESM Atlas
-structures, which essentially never come with a co-crystallized ligand.
+content, plus a **convex-hull volume estimate** for each candidate. Every
+result is explicitly labeled a computational prediction, not a validated
+pocket or a validated volume (unlike a real geometric cavity detector such as
+fpocket, which this doesn't attempt to replicate — a convex hull
+over-estimates a true concave cavity, so treat it as a rough size signal, not
+a measured one) — useful for AlphaFold/ESM Atlas structures, which essentially
+never come with a co-crystallized ligand.
 
 ### 2.7 Phylogenetic Tree
 
@@ -205,6 +229,21 @@ which vary.
 see every match across every structure in a table, and jump straight to a
 **"Highlight Motif in 3D Viewer"** button that selects every matched residue
 across all aligned structures at once.
+
+The default conservation highlighting is identity across whatever structures
+you loaded, not a true evolutionary measure — labeled honestly as such. Two
+background jobs (mirroring Discover mode's submit/poll/fetch job pattern) add
+the real thing:
+
+- **True sequence-only MSA** — a real multiple sequence alignment computed
+  purely from each loaded structure's own sequence via EBI's Clustal Omega,
+  independent of Mustang's structural alignment. Can legitimately disagree
+  with it for divergent sequences that still share a similar fold.
+- **True evolutionary conservation** — searches NCBI BLAST for real homologs
+  of a selected structure's sequence and scores real per-position conservation
+  (Shannon entropy) from their alignment. This is the longest-running job in
+  the app (real BLAST searches commonly take minutes), genuinely different
+  from the identity-across-loaded-structures default above.
 
 ### 2.9 Dashboard
 
@@ -249,16 +288,48 @@ useful for confirming a shared function isn't just a shared fold. STRING
 interaction partners are not included (no source for the taxon ID this needs,
 unlike Discover mode which gets one free from each Foldseek hit).
 
-For an **AlphaFold-sourced structure**, each domain also gets a **"Highlight
-in 3D"** button that jumps straight to that domain's real residue range in
-the 3D viewer — safe here specifically because AlphaFold models are numbered
-1..N to exactly match their source UniProt sequence, so InterPro's
-UniProt-numbered domain positions are usable directly as real structure
-residue numbers. This deliberately isn't offered for a plain PDB entry (author
-numbering commonly differs from UniProt numbering and would need real SIFTS
-segment-mapping to translate correctly) or for Discover mode's neighbor-
-aggregated domains (a domain's position in a structurally similar neighbor
-protein says nothing about where it'd fall in the query's own numbering).
+For an **AlphaFold-sourced structure**, each domain/feature gets a **"Highlight
+in 3D"** button that jumps straight to its real residue range in the 3D
+viewer — safe here specifically because AlphaFold models are numbered 1..N to
+exactly match their source UniProt sequence, so InterPro's UniProt-numbered
+positions are usable directly as real structure residue numbers.
+
+A **real PDB entry** now gets working "Highlight in 3D" too, via a real
+per-segment PDBe SIFTS residue mapping that translates each UniProt position
+to that entry's own author residue numbering (which commonly differs —
+crystallization constructs, non-1-start numbering, tags — so a naive 1:1
+passthrough would highlight the wrong residues). This deliberately isn't
+offered for Discover mode's neighbor-aggregated domains (a domain's position
+in a structurally similar neighbor protein says nothing about where it'd fall
+in the query's own numbering).
+
+### 2.13 Contact Maps & Difference-Distance Matrices
+
+In the Analytics tab's RMSD Matrix sub-tab: a real CA-CA **contact map** for
+any one structure in the run (thresholded at 8Å), and a real
+**difference-distance matrix** between any two structures over their commonly
+aligned columns — reveals domain movements a single global RMSD number hides.
+Computed on demand rather than stored with the run (a dense matrix for a large
+structure can reach ~200MB), with an automatic sparse-list fallback above a
+3000-residue/column cap.
+
+### 2.14 Mutation Impact Mapping
+
+In the Analytics tab's Annotations sub-tab: enter a chain, residue number, and
+proposed substitution to map it onto the structure's real UniProt position,
+see the real wild-type residue and gene, and — if a matching record exists —
+the real **ClinVar clinical significance** of that substitution. Also surfaces
+any already-known UniProt natural variant at that position. Builds on §2.12's
+real residue mapping, so this works for real PDB entries as well as
+AlphaFold-sourced structures.
+
+### 2.15 Bulk QC Sweep
+
+A **"Run QC on all"** button in the Workspace tab runs Ramachandran outlier
+detection, secondary-structure assignment, and (for real PDB entries) wwPDB
+validation across every loaded structure at once, with no alignment required
+— a summary table (favored %, outlier count, %helix, clashscore per structure)
+instead of clicking into each structure's card individually.
 
 ---
 
@@ -361,6 +432,11 @@ A standalone, self-contained HTML export with an embedded 3D viewer and every
 analysis figure baked in — open it in any browser, no server or install required,
 useful for sharing a result with someone who doesn't have StructScope running.
 
+A separate **Jupyter Notebook** export (`.ipynb`) gives you a real, runnable
+notebook instead of a static snapshot — its code cells re-fetch that run's
+data live from the REST API (§4.6), so you can keep exploring the result
+programmatically rather than just viewing a fixed report.
+
 ### 4.3 Discover Export
 
 *(SPA only)* Export a completed Discover run as a standalone HTML report or raw
@@ -379,6 +455,13 @@ full report.
 One button bundles every generated artifact for a run — the aligned PDB and
 FASTA, the RMSD matrix CSV, the heatmap PNG, and an auto-generated lab
 notebook HTML — into a single ZIP download.
+
+### 4.6 REST API
+
+Every backend route is documented and explorable at `/docs` (FastAPI's own
+Swagger UI) and machine-readable at `/openapi.json` — useful if you want to
+script against StructScope directly instead of only using the UI, or want to
+understand exactly what data the Jupyter export (§4.2) is re-fetching.
 
 ---
 
@@ -399,6 +482,10 @@ results in a read-only view with a clear banner. This is intentionally
 world-readable by anyone who has the link (not gated by an extra "make shareable"
 step): a run's ID is long and random enough that it can't practically be guessed,
 so having the link *is* the access control.
+
+Every run can also carry free-text **notes and tags**, added or edited inline
+from the History panel — stored in the run's existing metadata, so no new
+run-level state to migrate.
 
 ### 5.2 Session Isolation
 

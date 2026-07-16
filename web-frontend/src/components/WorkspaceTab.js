@@ -364,97 +364,102 @@ export class WorkspaceTab {
             return;
         }
 
-        this.selectedPDBs.forEach(pid => {
-            const meta = this.pdbMetadata[pid];
-            const div = document.createElement('div');
-            div.className = "flex flex-col gap-1.5 p-3 rounded-md bg-surface-raised border border-border-subtle";
+        this.selectedPDBs.forEach(pid => this._renderPDBCard(pid, container));
+    }
 
-            let chainsOptionsHTML = "";
-            if (meta?.chains) {
-                meta.chains.forEach(c => {
-                    const selectedAttr = (this.chainSelections[pid] === c.id) ? "selected" : "";
-                    chainsOptionsHTML += `<option value="${c.id}" ${selectedAttr}>Chain ${c.id} (${c.residue_count} residues)</option>`;
-                });
-            } else {
-                chainsOptionsHTML = `<option value="A">Chain A</option>`;
-            }
+    _chainsOptionsHTML(pid, meta) {
+        if (!meta?.chains) return `<option value="A">Chain A</option>`;
+        return meta.chains
+            .map(c => {
+                const selectedAttr = (this.chainSelections[pid] === c.id) ? "selected" : "";
+                return `<option value="${c.id}" ${selectedAttr}>Chain ${c.id} (${c.residue_count} residues)</option>`;
+            })
+            .join('');
+    }
 
-            const sourceLabel = SOURCE_LABELS[meta?.source] || 'PDB';
-            const metaParts = meta
-                ? [meta.method, meta.resolution, meta.organism].filter(v => v && v !== 'N/A')
-                : [];
-            if (meta?.source === 'upload' && meta.original_filename) {
-                metaParts.push(escapeHtml(meta.original_filename));
-            }
+    // RCSB's primary-citation lookup - prefer a PubMed link when an ID is
+    // present (more reliably resolvable than every DOI), fall back to the
+    // DOI resolver otherwise. AlphaFold/SWISS-MODEL/ESMFold structures have
+    // no citation concept, so meta has no `citation` field for those at all.
+    _citationLinkHTML(meta) {
+        if (!meta?.citation?.pubmed_id && !meta?.citation?.doi) return '';
+        const citation = meta.citation;
+        const href = citation.pubmed_id
+            ? `https://pubmed.ncbi.nlm.nih.gov/${citation.pubmed_id}/`
+            : `https://doi.org/${citation.doi}`;
+        const label = citation.pubmed_id ? 'PubMed' : 'DOI';
+        return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" class="pdb-citation-link font-body-sm text-[11px] text-accent hover:underline pl-0.5" title="${escapeHtml(citation.title || '')}">View publication (${label})</a>`;
+    }
 
-            // NMR ensembles only ever have model 1 analyzed (Mustang/RMSD/
-            // ligand analysis all need one consistent conformer, not a
-            // silently-arbitrary mix of several) - surfacing that plainly
-            // beats leaving it invisible, which is what happened before.
-            const gapChains = (meta?.chains || []).filter(c => c.gaps?.length > 0);
-            const gapCount = gapChains.reduce((sum, c) => sum + c.gaps.length, 0);
-            const gapTooltip = gapChains
-                .flatMap(c => c.gaps.map(g => `Chain ${c.id}: residues ${g.after + 1}-${g.before - 1} missing`))
-                .join('; ');
-            const gapLabel = gapCount === 1 ? 'region' : 'regions';
+    _renderPDBCard(pid, container) {
+        const meta = this.pdbMetadata[pid];
+        const div = document.createElement('div');
+        div.className = "flex flex-col gap-1.5 p-3 rounded-md bg-surface-raised border border-border-subtle";
 
-            // RCSB's primary-citation lookup - prefer a PubMed link when
-            // an ID is present (more reliably resolvable than every DOI),
-            // fall back to the DOI resolver otherwise. AlphaFold/SWISS-
-            // MODEL/ESMFold structures have no citation concept, so meta
-            // has no `citation` field for those at all.
-            let citationLinkHTML = '';
-            if (meta?.citation?.pubmed_id || meta?.citation?.doi) {
-                const citation = meta.citation;
-                const href = citation.pubmed_id
-                    ? `https://pubmed.ncbi.nlm.nih.gov/${citation.pubmed_id}/`
-                    : `https://doi.org/${citation.doi}`;
-                const label = citation.pubmed_id ? 'PubMed' : 'DOI';
-                citationLinkHTML = `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" class="pdb-citation-link font-body-sm text-[11px] text-accent hover:underline pl-0.5" title="${escapeHtml(citation.title || '')}">View publication (${label})</a>`;
-            }
+        const chainsOptionsHTML = this._chainsOptionsHTML(pid, meta);
 
-            div.innerHTML = `
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                        <span class="font-headline-sm text-body-md font-bold text-primary font-mono">${pid}</span>
-                        <span class="px-1.5 py-0.5 rounded-md bg-surface border border-border-subtle font-mono text-[10px] text-secondary uppercase source-badge">${sourceLabel}</span>
-                        <select class="bg-surface border border-border rounded-md px-2 py-1 text-body-sm text-secondary focus:outline-none focus:border-accent font-mono chain-select" data-pdb="${pid}">
-                            ${chainsOptionsHTML}
-                        </select>
-                    </div>
-                    <div class="flex items-center gap-1">
-                        <button class="discover-structure-btn font-label-sm text-label-sm text-secondary hover:text-accent px-2 py-1 rounded-md hover:bg-surface transition-colors whitespace-nowrap" data-pdb="${pid}">What is this?</button>
-                        <button class="text-error hover:text-red-400 p-1 rounded-md hover:bg-surface transition-colors remove-pdb-btn" data-pdb="${pid}">
-                            <span class="material-symbols-outlined text-[18px]">delete</span>
-                        </button>
-                    </div>
+        const sourceLabel = SOURCE_LABELS[meta?.source] || 'PDB';
+        const metaParts = meta
+            ? [meta.method, meta.resolution, meta.organism].filter(v => v && v !== 'N/A')
+            : [];
+        if (meta?.source === 'upload' && meta.original_filename) {
+            metaParts.push(escapeHtml(meta.original_filename));
+        }
+
+        // NMR ensembles only ever have model 1 analyzed (Mustang/RMSD/
+        // ligand analysis all need one consistent conformer, not a
+        // silently-arbitrary mix of several) - surfacing that plainly
+        // beats leaving it invisible, which is what happened before.
+        const gapChains = (meta?.chains || []).filter(c => c.gaps?.length > 0);
+        const gapCount = gapChains.reduce((sum, c) => sum + c.gaps.length, 0);
+        const gapTooltip = gapChains
+            .flatMap(c => c.gaps.map(g => `Chain ${c.id}: residues ${g.after + 1}-${g.before - 1} missing`))
+            .join('; ');
+        const gapLabel = gapCount === 1 ? 'region' : 'regions';
+
+        const citationLinkHTML = this._citationLinkHTML(meta);
+
+        div.innerHTML = `
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="font-headline-sm text-body-md font-bold text-primary font-mono">${pid}</span>
+                    <span class="px-1.5 py-0.5 rounded-md bg-surface border border-border-subtle font-mono text-[10px] text-secondary uppercase source-badge">${sourceLabel}</span>
+                    <select class="bg-surface border border-border rounded-md px-2 py-1 text-body-sm text-secondary focus:outline-none focus:border-accent font-mono chain-select" data-pdb="${pid}">
+                        ${chainsOptionsHTML}
+                    </select>
                 </div>
-                ${metaParts.length > 0 ? `<span class="pdb-meta-line font-body-sm text-[11px] text-secondary pl-0.5">${metaParts.join(' · ')}</span>` : ''}
-                ${meta?.is_nmr ? `<span class="pdb-nmr-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="Showing model 1 of ${meta.num_models} - other conformers in this NMR ensemble aren't analyzed.">NMR · ${meta.num_models} models (model 1 shown)</span>` : ''}
-                ${gapCount > 0 ? `<span class="pdb-gaps-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="${escapeHtml(gapTooltip)}">${gapCount} disordered ${gapLabel}</span>` : ''}
-                ${meta?.source === 'pdb' ? `<span id="validation-badge-${pid}" class="pdb-validation-badge font-body-sm text-[11px] text-tertiary pl-0.5">${this._validationBadgeContent(pid)}</span>` : ''}
-                ${citationLinkHTML}
-            `;
+                <div class="flex items-center gap-1">
+                    <button class="discover-structure-btn font-label-sm text-label-sm text-secondary hover:text-accent px-2 py-1 rounded-md hover:bg-surface transition-colors whitespace-nowrap" data-pdb="${pid}">What is this?</button>
+                    <button class="text-error hover:text-red-400 p-1 rounded-md hover:bg-surface transition-colors remove-pdb-btn" data-pdb="${pid}">
+                        <span class="material-symbols-outlined text-[18px]">delete</span>
+                    </button>
+                </div>
+            </div>
+            ${metaParts.length > 0 ? `<span class="pdb-meta-line font-body-sm text-[11px] text-secondary pl-0.5">${metaParts.join(' · ')}</span>` : ''}
+            ${meta?.is_nmr ? `<span class="pdb-nmr-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="Showing model 1 of ${meta.num_models} - other conformers in this NMR ensemble aren't analyzed.">NMR · ${meta.num_models} models (model 1 shown)</span>` : ''}
+            ${gapCount > 0 ? `<span class="pdb-gaps-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="${escapeHtml(gapTooltip)}">${gapCount} disordered ${gapLabel}</span>` : ''}
+            ${meta?.source === 'pdb' ? `<span id="validation-badge-${pid}" class="pdb-validation-badge font-body-sm text-[11px] text-tertiary pl-0.5">${this._validationBadgeContent(pid)}</span>` : ''}
+            ${citationLinkHTML}
+        `;
 
-            // Bind events
-            div.querySelector('.chain-select').addEventListener('change', (e) => {
-                this.onChainSelection(pid, e.target.value);
-            });
-
-            div.querySelector('.remove-pdb-btn').addEventListener('click', () => {
-                this.onRemovePDB(pid);
-            });
-
-            div.querySelector('.discover-structure-btn').addEventListener('click', () => {
-                this.showDiscoveryPanel(pid);
-            });
-
-            container.appendChild(div);
-
-            if (meta?.source === 'pdb') {
-                this._loadValidation(pid);
-            }
+        // Bind events
+        div.querySelector('.chain-select').addEventListener('change', (e) => {
+            this.onChainSelection(pid, e.target.value);
         });
+
+        div.querySelector('.remove-pdb-btn').addEventListener('click', () => {
+            this.onRemovePDB(pid);
+        });
+
+        div.querySelector('.discover-structure-btn').addEventListener('click', () => {
+            this.showDiscoveryPanel(pid);
+        });
+
+        container.appendChild(div);
+
+        if (meta?.source === 'pdb') {
+            this._loadValidation(pid);
+        }
     }
 
     _validationBadgeContent(pid) {
