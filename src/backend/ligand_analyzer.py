@@ -550,7 +550,9 @@ class LigandAnalyzer:
         shape, or an unsafe code) - never raises.
         """
         if not _SAFE_LIGAND_CODE.match(ligand_code or ""):
-            logger.warning(f"Rejected unsafe ligand_code: {ligand_code!r}")
+            logger.warning(
+                f"Rejected unsafe ligand_code: {sanitize_for_log(ligand_code)!r}"
+            )
             return None
 
         cache_key = f"chemcomp:{ligand_code.upper()}"

@@ -3,7 +3,7 @@ import pandas as pd
 from pathlib import Path
 from typing import List, Dict, Optional, Any, Tuple
 from Bio.PDB import PDBParser
-from src.utils.logger import get_logger
+from src.utils.logger import get_logger, sanitize_for_log
 
 logger = get_logger()
 
@@ -444,7 +444,7 @@ def get_structure_contact_map(
             "contacts": None,
         }
     except Exception:
-        logger.exception(f"Failed to build contact map for {pdb_id}")
+        logger.exception(f"Failed to build contact map for {sanitize_for_log(pdb_id)}")
         return None
 
 
@@ -527,7 +527,8 @@ def get_difference_distance_matrix(
         }
     except Exception:
         logger.exception(
-            f"Failed to build difference-distance matrix for {pdb_id_a}/{pdb_id_b}"
+            f"Failed to build difference-distance matrix for "
+            f"{sanitize_for_log(pdb_id_a)}/{sanitize_for_log(pdb_id_b)}"
         )
         return None
 
