@@ -1130,6 +1130,43 @@ def list_comparison_runs(
     }
 
 
+class RunTrendRequest(BaseModel):
+    run_ids: List[str] = Field(..., min_length=1, max_length=50)
+
+
+@app.post(
+    "/api/runs/trend",
+    responses={
+        400: {
+            "description": "Invalid session_id, or no run_id resolved to a real RMSD matrix"
+        }
+    },
+)
+def get_runs_trend(
+    body: RunTrendRequest,
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Chronological RMSD trend across a user-selected set of past runs (see
+    ResultManager.get_run_trend) - how a protein set's structural
+    similarity shifted across multiple runs over time, not just a single
+    most-recent-vs-one-other comparison.
+    """
+    _safe_segment(session_id, "session_id")
+    for run_id in body.run_ids:
+        _safe_segment(run_id, "run_ids")
+
+    res_dir = results_dir / session_id if session_id else results_dir
+    manager = ResultManager(res_dir)
+    trend = manager.get_run_trend(body.run_ids)
+    if not trend:
+        raise HTTPException(
+            status_code=400,
+            detail="None of the given run_ids resolved to a real RMSD matrix.",
+        )
+    return {"trend": sanitize_for_json(trend)}
+
+
 @app.get(
     "/api/comparison",
     responses={

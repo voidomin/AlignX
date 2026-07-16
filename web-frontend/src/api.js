@@ -534,6 +534,19 @@ export async function fetchQc(pdbId, runId) {
 // One structure's own CA-CA contact map from a completed run's alignment -
 // see rmsd_calculator.get_structure_contact_map(). Returns either a dense
 // `matrix` or, above the residue cap, a sparse `contacts` list - never both.
+export async function fetchRunsTrend(runIds) {
+    const res = await fetch(buildUrl('/api/runs/trend'), {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ run_ids: runIds }),
+    });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Run trend fetch failed");
+    }
+    return res.json();
+}
+
 export async function fetchMutationTolerance(pdbId, chain) {
     pdbId = assertValidPdbId(pdbId, 'pdbId');
     const params = { pdb_id: pdbId };

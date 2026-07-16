@@ -1428,6 +1428,56 @@ def test_comparison_endpoint_404s_when_rmsd_matrix_missing():
         assert response.status_code == 404
 
 
+def test_runs_trend_endpoint_returns_a_sorted_trend():
+    with patch("src.backend.api.ResultManager.get_run_trend") as mock_trend:
+        mock_trend.return_value = [
+            {
+                "run_id": "run1",
+                "timestamp": "2026-01-01 00:00:00",
+                "proteins": ["4RLT", "3UG9"],
+                "mean_rmsd": 1.0,
+                "max_rmsd": 1.5,
+            },
+            {
+                "run_id": "run2",
+                "timestamp": "2026-02-01 00:00:00",
+                "proteins": ["4RLT", "3UG9"],
+                "mean_rmsd": 2.0,
+                "max_rmsd": 2.5,
+            },
+        ]
+
+        response = client.post("/api/runs/trend", json={"run_ids": ["run1", "run2"]})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert [t["run_id"] for t in data["trend"]] == ["run1", "run2"]
+        mock_trend.assert_called_once_with(["run1", "run2"])
+
+
+def test_runs_trend_endpoint_400s_when_nothing_resolves():
+    with patch("src.backend.api.ResultManager.get_run_trend", return_value=[]):
+        response = client.post("/api/runs/trend", json={"run_ids": ["nope"]})
+        assert response.status_code == 400
+
+
+def test_runs_trend_endpoint_400s_on_invalid_run_id():
+    response = client.post("/api/runs/trend", json={"run_ids": ["../etc"]})
+    assert response.status_code == 400
+
+
+def test_runs_trend_endpoint_400s_on_invalid_session_id():
+    response = client.post(
+        "/api/runs/trend?session_id=../etc", json={"run_ids": ["run1"]}
+    )
+    assert response.status_code == 400
+
+
+def test_runs_trend_endpoint_422s_on_empty_run_ids():
+    response = client.post("/api/runs/trend", json={"run_ids": []})
+    assert response.status_code == 422
+
+
 def test_ligands_endpoint_404s_when_structure_not_found():
     with patch("pathlib.Path.exists", return_value=False):
         response = client.get("/api/ligands?pdb_id=4RLT")

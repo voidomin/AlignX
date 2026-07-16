@@ -443,6 +443,25 @@ describe('api.js request-ID validation', () => {
         await expect(fetchAnnotations('AF-P69905-F1')).resolves.toBeDefined();
     });
 
+    it('fetchRunsTrend posts run_ids and resolves with the trend list', async () => {
+        mockFetchOnce({ trend: [{ run_id: 'run_1', mean_rmsd: 1.0, max_rmsd: 1.5 }] });
+        const { fetchRunsTrend } = await import('./api.js');
+        const data = await fetchRunsTrend(['run_1', 'run_2']);
+        expect(data.trend[0].run_id).toBe('run_1');
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/runs/trend');
+        expect(global.fetch.mock.calls[0][1].method).toBe('POST');
+        expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({ run_ids: ['run_1', 'run_2'] });
+    });
+
+    it('fetchRunsTrend throws with the server detail message on failure', async () => {
+        global.fetch = vi.fn().mockResolvedValue({
+            ok: false,
+            json: async () => ({ detail: 'None of the given run_ids resolved to a real RMSD matrix.' }),
+        });
+        const { fetchRunsTrend } = await import('./api.js');
+        await expect(fetchRunsTrend(['nope'])).rejects.toThrow('None of the given run_ids resolved');
+    });
+
     it('fetchMutationTolerance rejects a pdbId that is not a recognized structure ID format', async () => {
         const { fetchMutationTolerance } = await import('./api.js');
         await expect(fetchMutationTolerance('../evil', 'A')).rejects.toThrow('Invalid pdbId');

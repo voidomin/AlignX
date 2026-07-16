@@ -7,9 +7,10 @@ vi.mock('../api.js', () => ({
     deleteRun: vi.fn(),
     clearAllHistory: vi.fn(),
     updateRunNotes: vi.fn(),
+    fetchRunsTrend: vi.fn(),
 }));
 
-import { fetchHistory, getShareLink, deleteRun, clearAllHistory, updateRunNotes } from '../api.js';
+import { fetchHistory, getShareLink, deleteRun, clearAllHistory, updateRunNotes, fetchRunsTrend } from '../api.js';
 
 function makeRun(id) {
     return { id, timestamp: '2026-01-01', pdb_ids: ['4RLT', '3UG9'], status: 'success' };
@@ -19,12 +20,14 @@ describe('HistoryPanel', () => {
     afterEach(() => {
         vi.clearAllMocks();
         vi.unstubAllGlobals();
+        delete global.Plotly;
     });
 
     beforeEach(() => {
         Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
         vi.stubGlobal('confirm', vi.fn(() => true));
         vi.stubGlobal('alert', vi.fn());
+        global.Plotly = { newPlot: vi.fn() };
     });
 
     it('shows an empty state when there are no runs', async () => {
@@ -351,6 +354,97 @@ describe('HistoryPanel', () => {
 
             expect(alert).toHaveBeenCalledWith('boom');
             expect(row.querySelector('[data-field="notes-editor"]').classList.contains('hidden')).toBe(false);
+        });
+    });
+
+    describe('RMSD trend across runs', () => {
+        function selectOptions(select, values) {
+            [...select.options].forEach(o => { o.selected = values.includes(o.value); });
+        }
+
+        it('populates the trend selector from the loaded runs list', async () => {
+            fetchHistory.mockResolvedValue({ runs: [makeRun('run_1'), makeRun('run_2')], total: 2 });
+
+            const panel = new HistoryPanel({ onReloadRun: vi.fn(), onClose: vi.fn() });
+            panel.render();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const select = panel.element.querySelector('#trend-run-select');
+            expect([...select.options].map(o => o.value)).toEqual(['run_1', 'run_2']);
+        });
+
+        it('shows a message instead of fetching when fewer than 2 runs are selected', async () => {
+            fetchHistory.mockResolvedValue({ runs: [makeRun('run_1'), makeRun('run_2')], total: 2 });
+            const panel = new HistoryPanel({ onReloadRun: vi.fn(), onClose: vi.fn() });
+            panel.render();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            selectOptions(panel.element.querySelector('#trend-run-select'), ['run_1']);
+            panel.element.querySelector('#trend-load-btn').click();
+            await Promise.resolve();
+
+            expect(fetchRunsTrend).not.toHaveBeenCalled();
+            expect(panel.element.querySelector('#trend-plotly').textContent)
+                .toContain('Select at least 2 runs');
+        });
+
+        it('loads and renders a trend chart for the selected runs', async () => {
+            fetchHistory.mockResolvedValue({ runs: [makeRun('run_1'), makeRun('run_2')], total: 2 });
+            fetchRunsTrend.mockResolvedValue({
+                trend: [
+                    { run_id: 'run_1', timestamp: '2026-01-01', proteins: ['4RLT'], mean_rmsd: 1.0, max_rmsd: 1.5 },
+                    { run_id: 'run_2', timestamp: '2026-02-01', proteins: ['4RLT'], mean_rmsd: 2.0, max_rmsd: 2.5 },
+                ],
+            });
+            const panel = new HistoryPanel({ onReloadRun: vi.fn(), onClose: vi.fn() });
+            panel.render();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            selectOptions(panel.element.querySelector('#trend-run-select'), ['run_1', 'run_2']);
+            panel.element.querySelector('#trend-load-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(fetchRunsTrend).toHaveBeenCalledWith(['run_1', 'run_2']);
+            expect(global.Plotly.newPlot).toHaveBeenCalled();
+        });
+
+        it('shows a message when none of the selected runs resolve to a usable trend', async () => {
+            fetchHistory.mockResolvedValue({ runs: [makeRun('run_1'), makeRun('run_2')], total: 2 });
+            fetchRunsTrend.mockResolvedValue({ trend: [] });
+            const panel = new HistoryPanel({ onReloadRun: vi.fn(), onClose: vi.fn() });
+            panel.render();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            selectOptions(panel.element.querySelector('#trend-run-select'), ['run_1', 'run_2']);
+            panel.element.querySelector('#trend-load-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(global.Plotly.newPlot).not.toHaveBeenCalled();
+            expect(panel.element.querySelector('#trend-plotly').textContent)
+                .toContain('usable RMSD matrix');
+        });
+
+        it('shows a graceful message when the trend fetch fails', async () => {
+            fetchHistory.mockResolvedValue({ runs: [makeRun('run_1'), makeRun('run_2')], total: 2 });
+            fetchRunsTrend.mockRejectedValue(new Error('boom'));
+            const panel = new HistoryPanel({ onReloadRun: vi.fn(), onClose: vi.fn() });
+            panel.render();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            selectOptions(panel.element.querySelector('#trend-run-select'), ['run_1', 'run_2']);
+            panel.element.querySelector('#trend-load-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(panel.element.querySelector('#trend-plotly').textContent)
+                .toContain('Failed to load run trend.');
         });
     });
 });
