@@ -865,6 +865,61 @@ class AnnotationAggregator:
 
         return await self._get_or_fetch(f"pae:{uniprot_id}:{fragment}", "pae", _fetch)
 
+    async def fetch_alphamissense_scores(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> Dict[str, Dict[str, Any]]:
+        """Real per-substitution pathogenicity scores from AlphaMissense,
+        keyed by UniProt position (as a string, since a JSON round-trip
+        through the annotation cache would silently coerce int keys to
+        strings anyway - keeping them strings from the start avoids a
+        cache-hit-vs-miss inconsistency): {"132": {"wildtype": "R",
+        "scores": {"A": {"pathogenicity": 0.42, "class": "Amb"}, ...}}}.
+        AlphaMissense was only ever published for a protein's first
+        AlphaFold fragment (it doesn't follow AlphaFold's multi-fragment
+        split for proteins over ~2700 residues), so this is looked up by
+        accession alone - works for any structure with a resolved
+        accession (see _resolve_structure_accession), not just an
+        AlphaFold-sourced one the way fetch_predicted_aligned_error is."""
+
+        async def _fetch() -> Dict[str, Dict[str, Any]]:
+            url = f"{ALPHAFOLD_FILES_BASE_URL}/AF-{accession}-F1-aa-substitutions.csv"
+            try:
+                response = await client.get(url)
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"AlphaMissense lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return {}
+            if response.status_code != 200:
+                return {}
+
+            by_position: Dict[str, Dict[str, Any]] = {}
+            for line in response.text.splitlines()[1:]:  # skip the header row
+                parts = line.split(",")
+                if len(parts) != 3:
+                    continue
+                variant, score_str, variant_class = parts
+                if len(variant) < 3:
+                    continue
+                wildtype, alt = variant[0], variant[-1]
+                try:
+                    position = str(int(variant[1:-1]))
+                    pathogenicity = float(score_str)
+                except ValueError:
+                    continue
+                entry = by_position.setdefault(
+                    position, {"wildtype": wildtype, "scores": {}}
+                )
+                entry["scores"][alt] = {
+                    "pathogenicity": pathogenicity,
+                    "class": variant_class,
+                }
+            return by_position
+
+        return await self._get_or_fetch(
+            f"alphamissense:{accession}", "alphamissense", _fetch
+        )
+
     def _try_get_cached_go_name(self, gid: str) -> Optional[str]:
         if not self.cache_db:
             return None
@@ -1118,6 +1173,51 @@ class AnnotationAggregator:
             deduped_terms.append(term)
         result["go_terms"] = deduped_terms
         result["reactome_pathways"] = reactome_pathways
+        return result
+
+    async def aggregate_mutation_tolerance(
+        self,
+        pdb_id: str,
+        chain: Optional[str],
+        source: str,
+        client: httpx.AsyncClient,
+    ) -> Dict[str, Any]:
+        """Real per-residue mutation-tolerance overlay for one Compare-mode
+        structure - the mean AlphaMissense pathogenicity across all 19
+        possible substitutions at each position, translated onto this
+        structure's own residue numbering. Same accession resolution and
+        AlphaFold-1:1-vs-real-SIFTS-mapping split _attach_domain_highlight_
+        chains() already uses; SWISS-MODEL/ESM Atlas structures correctly
+        get nothing back, same scope those methods already have."""
+        accession = await self._resolve_structure_accession(
+            pdb_id, chain, source, client, None
+        )
+        result: Dict[str, Any] = {"accession": accession, "per_residue_average": {}}
+        if not accession:
+            return result
+
+        scores = await self.fetch_alphamissense_scores(accession, client)
+        if not scores:
+            return result
+
+        averages = {
+            position: sum(s["pathogenicity"] for s in entry["scores"].values())
+            / len(entry["scores"])
+            for position, entry in scores.items()
+            if entry.get("scores")
+        }
+
+        if source == "alphafold":
+            result["per_residue_average"] = averages
+        elif source == "pdb" and chain:
+            residue_map = await self.resolve_uniprot_residue_mapping(
+                pdb_id, chain, client
+            )
+            result["per_residue_average"] = {
+                str(author_resi): averages[str(uniprot_pos)]
+                for uniprot_pos, author_resi in residue_map.items()
+                if str(uniprot_pos) in averages
+            }
         return result
 
     @staticmethod

@@ -443,6 +443,29 @@ describe('api.js request-ID validation', () => {
         await expect(fetchAnnotations('AF-P69905-F1')).resolves.toBeDefined();
     });
 
+    it('fetchMutationTolerance rejects a pdbId that is not a recognized structure ID format', async () => {
+        const { fetchMutationTolerance } = await import('./api.js');
+        await expect(fetchMutationTolerance('../evil', 'A')).rejects.toThrow('Invalid pdbId');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('fetchMutationTolerance works with no chain given', async () => {
+        mockFetchOnce({ pdb_id: 'AF-P69905-F1', chain: null, tolerance: {} });
+        const { fetchMutationTolerance } = await import('./api.js');
+        await expect(fetchMutationTolerance('AF-P69905-F1')).resolves.toBeDefined();
+        expect(global.fetch.mock.calls[0][0]).not.toContain('chain=');
+    });
+
+    it('fetchMutationTolerance resolves with the { pdb_id, chain, tolerance } shape', async () => {
+        mockFetchOnce({ pdb_id: '4HHB', chain: 'A', tolerance: { accession: 'P68871', per_residue_average: { 6: 0.9 } } });
+        const { fetchMutationTolerance } = await import('./api.js');
+        const data = await fetchMutationTolerance('4HHB', 'A');
+        expect(data.tolerance.accession).toBe('P68871');
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/mutation-tolerance');
+        expect(global.fetch.mock.calls[0][0]).toContain('pdb_id=4HHB');
+        expect(global.fetch.mock.calls[0][0]).toContain('chain=A');
+    });
+
     it('fetchPae rejects a pdbId that is not a recognized structure ID format', async () => {
         const { fetchPae } = await import('./api.js');
         await expect(fetchPae('../evil')).rejects.toThrow('Invalid pdbId');

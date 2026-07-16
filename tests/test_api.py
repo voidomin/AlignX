@@ -1028,6 +1028,14 @@ def test_mutation_impact_endpoint_returns_a_real_looking_result():
             }
         )
         mock_aggregator.fetch_uniprot_features = AsyncMock(return_value=[])
+        mock_aggregator.fetch_alphamissense_scores = AsyncMock(
+            return_value={
+                "7": {
+                    "wildtype": "E",
+                    "scores": {"V": {"pathogenicity": 0.95, "class": "LPath"}},
+                }
+            }
+        )
 
         response = client.get(
             "/api/mutation-impact?pdb_id=4HHB&chain=A&resi=6&mutant=V"
@@ -1041,6 +1049,7 @@ def test_mutation_impact_endpoint_returns_a_real_looking_result():
     assert data["wildtype_residue"] == "V"
     assert data["mutant_residue"] == "V"
     assert data["clinvar"]["clinical_significance"] == "Pathogenic"
+    assert data["alphamissense"] == {"pathogenicity": 0.95, "class": "LPath"}
     assert data["highlight_chains"] == {"A": [6]}
     mock_aggregator.fetch_clinvar_significance.assert_called_once_with(
         "HBB", "V7V", ANY
@@ -1066,6 +1075,7 @@ def test_mutation_impact_endpoint_surfaces_a_known_uniprot_variant():
                 }
             ]
         )
+        mock_aggregator.fetch_alphamissense_scores = AsyncMock(return_value={})
 
         response = client.get(
             "/api/mutation-impact?pdb_id=4HHB&chain=A&resi=6&mutant=V"
@@ -1075,6 +1085,55 @@ def test_mutation_impact_endpoint_surfaces_a_known_uniprot_variant():
     data = response.json()
     assert data["clinvar"] is None
     assert data["known_uniprot_variant"]["description"] == "in HBS"
+    assert data["alphamissense"] is None
+
+
+def test_mutation_impact_endpoint_returns_none_alphamissense_when_no_scores_exist_for_this_position():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.resolve_structure_uniprot_position = AsyncMock(
+            return_value=("P68871", 7)
+        )
+        mock_aggregator.fetch_uniprot_gene_and_sequence = AsyncMock(
+            return_value={"gene": "HBB", "sequence": "MVHLTPVEK"}
+        )
+        mock_aggregator.fetch_clinvar_significance = AsyncMock(return_value=None)
+        mock_aggregator.fetch_uniprot_features = AsyncMock(return_value=[])
+        mock_aggregator.fetch_alphamissense_scores = AsyncMock(
+            return_value={"3": {"wildtype": "H", "scores": {}}}
+        )
+
+        response = client.get(
+            "/api/mutation-impact?pdb_id=4HHB&chain=A&resi=6&mutant=V"
+        )
+
+    assert response.status_code == 200
+    assert response.json()["alphamissense"] is None
+
+
+def test_mutation_tolerance_endpoint_returns_the_overlay():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.aggregate_mutation_tolerance = AsyncMock(
+            return_value={
+                "accession": "P69905",
+                "per_residue_average": {"1": 0.2, "2": 0.6},
+            }
+        )
+
+        response = client.get("/api/mutation-tolerance?pdb_id=AF-P69905-F1")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["pdb_id"] == "AF-P69905-F1"
+        assert data["tolerance"]["accession"] == "P69905"
+        assert data["tolerance"]["per_residue_average"] == {"1": 0.2, "2": 0.6}
+        call_args = mock_aggregator.aggregate_mutation_tolerance.call_args
+        assert call_args.args[0] == "AF-P69905-F1"
+        assert call_args.args[2] == "alphafold"
+
+
+def test_mutation_tolerance_endpoint_400s_on_invalid_chain_param():
+    response = client.get("/api/mutation-tolerance?pdb_id=4HHB&chain=../etc")
+    assert response.status_code == 400
 
 
 def test_mutation_impact_endpoint_404s_when_position_cannot_be_resolved():

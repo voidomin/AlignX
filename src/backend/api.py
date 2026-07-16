@@ -1637,6 +1637,14 @@ async def get_mutation_impact(
             None,
         )
 
+        alphamissense = None
+        am_scores = await annotation_aggregator.fetch_alphamissense_scores(
+            accession, client
+        )
+        am_entry = am_scores.get(str(uniprot_position))
+        if am_entry:
+            alphamissense = am_entry["scores"].get(mutant.upper())
+
     return sanitize_for_json(
         {
             "pdb_id": pdb_id,
@@ -1649,9 +1657,41 @@ async def get_mutation_impact(
             "mutant_residue": mutant.upper(),
             "known_uniprot_variant": known_variant,
             "clinvar": clinvar,
+            "alphamissense": alphamissense,
             "highlight_chains": {chain: [resi]},
         }
     )
+
+
+@app.get(
+    "/api/mutation-tolerance",
+    responses={400: {"description": "Invalid pdb_id or chain"}},
+)
+async def get_mutation_tolerance(
+    pdb_id: Annotated[str, Query(...)],
+    chain: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Real per-residue AlphaMissense mutation-tolerance overlay for one
+    Compare-mode structure - the mean predicted pathogenicity across all 19
+    possible substitutions at each position, resolved to this structure's
+    own residue numbering (see AnnotationAggregator.
+    aggregate_mutation_tolerance). Works for any structure with a resolved
+    UniProt accession, the same way /api/annotations does.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(chain, "chain")
+
+    source = PDBManager.detect_source(pdb_id)
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        tolerance = await annotation_aggregator.aggregate_mutation_tolerance(
+            pdb_id, chain, source, client
+        )
+    return {
+        "pdb_id": pdb_id,
+        "chain": chain,
+        "tolerance": sanitize_for_json(tolerance),
+    }
 
 
 @app.get(

@@ -2442,3 +2442,153 @@ class TestFetchPredictedAlignedError:
             )
         assert result is None
         assert mock_get.call_count == 6
+
+
+class TestFetchAlphamissenseScores:
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_parses_the_csv_into_a_per_position_scores_dict(self, mock_get):
+        response = _mock_response(status_code=200)
+        response.text = (
+            "protein_variant,am_pathogenicity,am_class\n"
+            "M1A,0.4454,Amb\n"
+            "M1C,0.4948,Amb\n"
+            "R2P,0.9012,LPath\n"
+        )
+        mock_get.return_value = response
+
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_alphamissense_scores("P69905", client)
+
+        assert result == {
+            "1": {
+                "wildtype": "M",
+                "scores": {
+                    "A": {"pathogenicity": 0.4454, "class": "Amb"},
+                    "C": {"pathogenicity": 0.4948, "class": "Amb"},
+                },
+            },
+            "2": {
+                "wildtype": "R",
+                "scores": {"P": {"pathogenicity": 0.9012, "class": "LPath"}},
+            },
+        }
+        called_url = mock_get.call_args.args[0]
+        assert "AF-P69905-F1-aa-substitutions.csv" in called_url
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_dict_when_not_found(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_alphamissense_scores("P69905", client)
+        assert result == {}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_skips_malformed_rows(self, mock_get):
+        response = _mock_response(status_code=200)
+        response.text = (
+            "protein_variant,am_pathogenicity,am_class\n"
+            "not_a_valid_row\n"
+            "M1A,0.4454,Amb\n"
+        )
+        mock_get.return_value = response
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_alphamissense_scores("P69905", client)
+        assert result == {
+            "1": {
+                "wildtype": "M",
+                "scores": {"A": {"pathogenicity": 0.4454, "class": "Amb"}},
+            }
+        }
+
+
+class TestAggregateMutationTolerance:
+    @pytest.mark.asyncio
+    @patch.object(AnnotationAggregator, "fetch_alphamissense_scores")
+    @patch.object(AnnotationAggregator, "_resolve_structure_accession")
+    async def test_returns_empty_when_no_accession_resolves(
+        self, mock_resolve, mock_scores
+    ):
+        mock_resolve.return_value = None
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.aggregate_mutation_tolerance(
+                "ESM-MGYP1", None, "esm_atlas", client
+            )
+        assert result == {"accession": None, "per_residue_average": {}}
+        mock_scores.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch.object(AnnotationAggregator, "fetch_alphamissense_scores")
+    @patch.object(AnnotationAggregator, "_resolve_structure_accession")
+    async def test_alphafold_source_uses_positions_directly(
+        self, mock_resolve, mock_scores
+    ):
+        mock_resolve.return_value = "P69905"
+        mock_scores.return_value = {
+            "1": {
+                "wildtype": "M",
+                "scores": {"A": {"pathogenicity": 0.2, "class": "LBen"}},
+            },
+            "2": {
+                "wildtype": "R",
+                "scores": {
+                    "P": {"pathogenicity": 0.8, "class": "LPath"},
+                    "K": {"pathogenicity": 0.4, "class": "Amb"},
+                },
+            },
+        }
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.aggregate_mutation_tolerance(
+                "AF-P69905-F1", None, "alphafold", client
+            )
+        assert result["accession"] == "P69905"
+        assert result["per_residue_average"] == pytest.approx({"1": 0.2, "2": 0.6})
+
+    @pytest.mark.asyncio
+    @patch.object(AnnotationAggregator, "resolve_uniprot_residue_mapping")
+    @patch.object(AnnotationAggregator, "fetch_alphamissense_scores")
+    @patch.object(AnnotationAggregator, "_resolve_structure_accession")
+    async def test_pdb_source_translates_through_the_real_residue_map(
+        self, mock_resolve, mock_scores, mock_residue_map
+    ):
+        mock_resolve.return_value = "P68871"
+        mock_scores.return_value = {
+            "7": {
+                "wildtype": "E",
+                "scores": {"V": {"pathogenicity": 0.95, "class": "LPath"}},
+            },
+        }
+        mock_residue_map.return_value = {7: 6}  # uniprot pos 7 -> author resi 6
+
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.aggregate_mutation_tolerance(
+                "4HHB", "B", "pdb", client
+            )
+        assert result["accession"] == "P68871"
+        assert result["per_residue_average"] == {"6": 0.95}
+
+    @pytest.mark.asyncio
+    @patch.object(AnnotationAggregator, "fetch_alphamissense_scores")
+    @patch.object(AnnotationAggregator, "_resolve_structure_accession")
+    async def test_swissmodel_source_gets_nothing(self, mock_resolve, mock_scores):
+        mock_resolve.return_value = "P69905"
+        mock_scores.return_value = {
+            "1": {
+                "wildtype": "M",
+                "scores": {"A": {"pathogenicity": 0.2, "class": "LBen"}},
+            },
+        }
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.aggregate_mutation_tolerance(
+                "SM-P69905", None, "swissmodel", client
+            )
+        assert result["per_residue_average"] == {}
