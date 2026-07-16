@@ -564,6 +564,107 @@ describe('AnalyticsTab', () => {
         });
     });
 
+    describe('structure-diff narrative', () => {
+        const heatmap = {
+            data: [{ z: [[0, 1.2], [1.2, 0]], x: ['4RLT', '3UG9'], y: ['4RLT', '3UG9'] }],
+        };
+
+        it('populates both selectors, defaulting the second to a different structure', () => {
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', { heatmap }, null, [], [], null, structuresFor(['4RLT', '3UG9']));
+
+            const a = tab.element.querySelector('#diff-narrative-pdb-a-select');
+            const b = tab.element.querySelector('#diff-narrative-pdb-b-select');
+            expect(Array.from(a.options).map(o => o.value)).toEqual(['4RLT', '3UG9']);
+            expect(b.value).toBe('3UG9');
+        });
+
+        it('describes a low-RMSD pair as very similar', () => {
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', { heatmap }, null, [], [], null, structuresFor(['4RLT', '3UG9']));
+
+            tab.element.querySelector('#diff-narrative-pdb-a-select').value = '4RLT';
+            tab.element.querySelector('#diff-narrative-pdb-b-select').value = '3UG9';
+            tab.element.querySelector('#diff-narrative-load-btn').click();
+
+            const text = tab.element.querySelector('#diff-narrative-text').textContent;
+            expect(text).toContain('very similar');
+            expect(text).toContain('1.20');
+        });
+
+        it('describes a moderate-RMSD pair accordingly', () => {
+            const moderateHeatmap = { data: [{ z: [[0, 3.5], [3.5, 0]], x: ['4RLT', '3UG9'], y: ['4RLT', '3UG9'] }] };
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', { heatmap: moderateHeatmap }, null, [], [], null, structuresFor(['4RLT', '3UG9']));
+
+            tab.element.querySelector('#diff-narrative-load-btn').click();
+
+            expect(tab.element.querySelector('#diff-narrative-text').textContent).toContain('moderate structural divergence');
+        });
+
+        it('describes a high-RMSD pair as substantially different', () => {
+            const divergentHeatmap = { data: [{ z: [[0, 8.1], [8.1, 0]], x: ['4RLT', '3UG9'], y: ['4RLT', '3UG9'] }] };
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', { heatmap: divergentHeatmap }, null, [], [], null, structuresFor(['4RLT', '3UG9']));
+
+            tab.element.querySelector('#diff-narrative-load-btn').click();
+
+            expect(tab.element.querySelector('#diff-narrative-text').textContent).toContain('substantially different');
+        });
+
+        it('appends a TM-score sentence when the independent TM-score matrix is available', () => {
+            const tmScoreMatrix = { index: ['4RLT', '3UG9'], columns: ['4RLT', '3UG9'], data: [[1.0, 0.95], [0.95, 1.0]] };
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', { heatmap }, { tmScoreMatrix }, [], [], null, structuresFor(['4RLT', '3UG9']));
+
+            tab.element.querySelector('#diff-narrative-load-btn').click();
+
+            const text = tab.element.querySelector('#diff-narrative-text').textContent;
+            expect(text).toContain('0.950');
+            expect(text).toContain('same fold with high confidence');
+        });
+
+        it('flags a low TM-score as possibly not the same fold', () => {
+            const tmScoreMatrix = { index: ['4RLT', '3UG9'], columns: ['4RLT', '3UG9'], data: [[1.0, 0.3], [0.3, 1.0]] };
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', { heatmap }, { tmScoreMatrix }, [], [], null, structuresFor(['4RLT', '3UG9']));
+
+            tab.element.querySelector('#diff-narrative-load-btn').click();
+
+            expect(tab.element.querySelector('#diff-narrative-text').textContent).toContain('may not share the same fold');
+        });
+
+        it('prompts for two different structures when the same one is selected twice', () => {
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', { heatmap }, null, [], [], null, structuresFor(['4RLT', '3UG9']));
+
+            tab.element.querySelector('#diff-narrative-pdb-a-select').value = '4RLT';
+            tab.element.querySelector('#diff-narrative-pdb-b-select').value = '4RLT';
+            tab.element.querySelector('#diff-narrative-load-btn').click();
+
+            expect(tab.element.querySelector('#diff-narrative-text').textContent)
+                .toBe('Select two different structures to compare.');
+        });
+
+        it('shows a graceful message when no RMSD data is available yet', () => {
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4RLT', '3UG9']));
+
+            tab.element.querySelector('#diff-narrative-load-btn').click();
+
+            expect(tab.element.querySelector('#diff-narrative-text').textContent)
+                .toContain('run alignment first');
+        });
+    });
+
     describe('map a mutation', () => {
         function setUpForMutation(tab) {
             tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
