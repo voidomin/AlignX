@@ -1,4 +1,5 @@
 import base64
+import socket
 import tempfile
 import time
 import asyncio
@@ -3026,27 +3027,69 @@ async def test_execute_alignment_job_marks_completed_on_success():
     assert job["results"]["id"] == "run_abc"
 
 
-class TestValidateWebhookUrl:
-    def test_returns_none_for_no_url(self):
-        assert api_module._validate_webhook_url(None) is None
-        assert api_module._validate_webhook_url("") is None
+class TestIsUnsafeWebhookTarget:
+    def test_flags_private_loopback_link_local_and_multicast_addresses(self):
+        assert api_module._is_unsafe_webhook_target("10.0.0.5") is True
+        assert api_module._is_unsafe_webhook_target("172.16.0.1") is True
+        assert api_module._is_unsafe_webhook_target("192.168.1.1") is True
+        assert api_module._is_unsafe_webhook_target("127.0.0.1") is True
+        # Cloud metadata endpoint - link-local range.
+        assert api_module._is_unsafe_webhook_target("169.254.169.254") is True
+        assert api_module._is_unsafe_webhook_target("224.0.0.1") is True
+        assert api_module._is_unsafe_webhook_target("0.0.0.0") is True
+        assert api_module._is_unsafe_webhook_target("::1") is True
 
-    def test_accepts_a_real_http_or_https_url(self):
-        assert api_module._validate_webhook_url("https://example.com/hook") == (
+    def test_allows_a_real_public_address(self):
+        assert api_module._is_unsafe_webhook_target("8.8.8.8") is False
+
+
+class TestValidateWebhookUrl:
+    @pytest.mark.asyncio
+    async def test_returns_none_for_no_url(self):
+        assert await api_module._validate_webhook_url(None) is None
+        assert await api_module._validate_webhook_url("") is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.api.socket.getaddrinfo")
+    async def test_accepts_a_url_resolving_to_a_public_address(self, mock_getaddrinfo):
+        mock_getaddrinfo.return_value = [(2, 1, 6, "", ("8.8.8.8", 0))]
+        assert await api_module._validate_webhook_url("https://example.com/hook") == (
             "https://example.com/hook"
         )
-        assert api_module._validate_webhook_url("http://example.com/hook") == (
-            "http://example.com/hook"
-        )
 
-    def test_rejects_a_non_http_scheme(self):
+    @pytest.mark.asyncio
+    async def test_rejects_a_non_http_scheme(self):
         with pytest.raises(HTTPException) as exc_info:
-            api_module._validate_webhook_url("file:///etc/passwd")
+            await api_module._validate_webhook_url("file:///etc/passwd")
         assert exc_info.value.status_code == 400
 
-    def test_rejects_a_url_with_no_hostname(self):
+    @pytest.mark.asyncio
+    async def test_rejects_a_url_with_no_hostname(self):
         with pytest.raises(HTTPException) as exc_info:
-            api_module._validate_webhook_url("https:///no-host")
+            await api_module._validate_webhook_url("https:///no-host")
+        assert exc_info.value.status_code == 400
+
+    @pytest.mark.asyncio
+    @patch("src.backend.api.socket.getaddrinfo")
+    async def test_rejects_a_hostname_resolving_to_a_private_address(
+        self, mock_getaddrinfo
+    ):
+        """The core SSRF guard: a public-looking hostname that actually
+        resolves to an internal address (e.g. an attacker-controlled DNS
+        record pointed at 169.254.169.254) must be rejected, not just a
+        raw IP literal in the URL itself."""
+        mock_getaddrinfo.return_value = [(2, 1, 6, "", ("169.254.169.254", 0))]
+        with pytest.raises(HTTPException) as exc_info:
+            await api_module._validate_webhook_url("https://attacker.example/hook")
+        assert exc_info.value.status_code == 400
+        assert "internal" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    @patch("src.backend.api.socket.getaddrinfo")
+    async def test_rejects_when_hostname_does_not_resolve(self, mock_getaddrinfo):
+        mock_getaddrinfo.side_effect = socket.gaierror("Name or service not known")
+        with pytest.raises(HTTPException) as exc_info:
+            await api_module._validate_webhook_url("https://does-not-resolve.invalid")
         assert exc_info.value.status_code == 400
 
 

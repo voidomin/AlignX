@@ -12,8 +12,10 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+import ipaddress
 import json
 import re
+import socket
 from urllib.parse import urlparse
 import httpx
 import numpy as np
@@ -710,13 +712,52 @@ def _spawn_background_task(coro) -> asyncio.Task:
     return task
 
 
-def _validate_webhook_url(url: Optional[str]) -> Optional[str]:
+def _is_unsafe_webhook_target(ip_text: str) -> bool:
+    ip = ipaddress.ip_address(ip_text)
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local  # covers cloud metadata endpoints (169.254.169.254)
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
+def _resolve_webhook_hostname(hostname: str) -> None:
+    """Blocking DNS resolution - always called via asyncio.to_thread, never
+    directly on the event loop."""
+    try:
+        addr_infos = socket.getaddrinfo(hostname, None)
+    except socket.gaierror as e:
+        raise HTTPException(
+            status_code=400, detail=f"webhook_url hostname could not be resolved: {e}"
+        )
+    for info in addr_infos:
+        if _is_unsafe_webhook_target(info[4][0]):
+            raise HTTPException(
+                status_code=400,
+                detail="webhook_url must not resolve to a private, loopback, "
+                "link-local, or otherwise internal address.",
+            )
+
+
+async def _validate_webhook_url(url: Optional[str]) -> Optional[str]:
     """A webhook is an outbound server-side POST triggered by user input -
     unlike this app's existing external GETs (ClinVar/PubMed links, PDBe/
     RCSB lookups), the URL itself is fully user-supplied, so it gets its
     own validation rather than reusing _safe_segment (which is for path
-    segments, not full URLs). Only accepts http(s) with a real hostname -
-    rejects file://, data://, and other schemes that could be misused."""
+    segments, not full URLs). Guards against SSRF (CWE-918): rejects any
+    non-http(s) scheme, then resolves the hostname and rejects any
+    private/loopback/link-local/reserved/multicast target address - a bare
+    scheme check alone would let a request reach internal services (e.g. a
+    cloud metadata endpoint) via a public-looking hostname. This doesn't
+    defend against DNS rebinding (the hostname resolving differently at
+    request time than at validation time); doing so would mean pinning the
+    resolved IP and connecting directly to it, which httpx doesn't support
+    without a custom transport - accepted as a residual risk for a
+    fire-and-forget notification POST rather than the request path itself.
+    """
     if not url:
         return None
     parsed = urlparse(url)
@@ -725,6 +766,7 @@ def _validate_webhook_url(url: Optional[str]) -> Optional[str]:
             status_code=400,
             detail="webhook_url must be a real http:// or https:// URL.",
         )
+    await asyncio.to_thread(_resolve_webhook_hostname, parsed.hostname)
     return url
 
 
@@ -847,7 +889,7 @@ async def submit_alignment_job(
     for pid in pdb_ids:
         _safe_segment(pid, "pdb_id")
     _safe_segment(session_id, "session_id")
-    webhook_url = _validate_webhook_url(webhook_url)
+    webhook_url = await _validate_webhook_url(webhook_url)
 
     job_id = uuid.uuid4().hex
     alignment_jobs[job_id] = {"status": "queued", "created_at": time.time()}
@@ -997,7 +1039,7 @@ async def submit_discovery_job(
         except FoldseekError as e:
             raise HTTPException(status_code=400, detail=str(e))
     _safe_segment(session_id, "session_id")
-    webhook_url = _validate_webhook_url(webhook_url)
+    webhook_url = await _validate_webhook_url(webhook_url)
 
     job_id = uuid.uuid4().hex
     discovery_jobs[job_id] = {"status": "queued", "created_at": time.time()}
@@ -1107,7 +1149,7 @@ async def submit_clustalo_job(
         )
     for seq_id in sequences:
         _safe_segment(seq_id, "sequence id")
-    webhook_url = _validate_webhook_url(webhook_url)
+    webhook_url = await _validate_webhook_url(webhook_url)
 
     job_id = uuid.uuid4().hex
     clustalo_jobs[job_id] = {"status": "queued", "created_at": time.time()}
@@ -1208,7 +1250,7 @@ async def submit_conservation_job(
             status_code=400,
             detail="A real protein sequence (10+ amino-acid letters) is required.",
         )
-    webhook_url = _validate_webhook_url(webhook_url)
+    webhook_url = await _validate_webhook_url(webhook_url)
 
     job_id = uuid.uuid4().hex
     blast_jobs[job_id] = {"status": "queued", "created_at": time.time()}
