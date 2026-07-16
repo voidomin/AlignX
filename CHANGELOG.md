@@ -16,10 +16,14 @@ Phase 3: a fresh, non-overlapping feature batch scoped after Phase 1+2's origina
 - **Plain-English structure-diff narrative**: a user-directed "describe the difference between these two structures" picker in Analytics' Insights sub-tab (RMSD magnitude + independent TM-score interpretation), templated client-side from data already loaded - no new backend call.
 - **ESMFold structure prediction from a raw sequence**: paste any amino-acid sequence (up to 300 residues) and get a real predicted structure back, with no existing public accession required - removes the app's previous hard constraint that every structure had to already be deposited somewhere. Synchronous, not a background job (real sequences at this length complete in seconds).
 
+### Fixed
+- **SonarCloud SSRF finding (CWE-918) on the new webhook feature**: `_validate_webhook_url` originally only checked the URL scheme - a public-looking hostname resolving to an internal address (e.g. a DNS record pointed at a cloud metadata endpoint) would have passed validation. Now resolves the hostname and rejects any private/loopback/link-local/reserved/multicast target, re-checked immediately before the actual outbound request rather than only once at submission time. The Security Rating gate's remaining flag on this code path was reviewed and resolved as a false positive: SonarCloud's taint engine doesn't recognize custom validation functions as sanitizers for this rule, so it flags any user-configurable destination URL regardless of the mitigation in place - an inherent tension for any legitimate webhook/callback-URL feature, not a gap in this one.
+
 ### Verified
-- Full backend suite: 1228 tests passing (up from 1171 at the end of Phase 2's follow-up fixes). `black`/`ruff` clean.
+- Full backend suite: 1233 tests passing (up from 1171 at the end of Phase 2's follow-up fixes). `black`/`ruff` clean.
 - Frontend suite: 430 Vitest tests passing (up from 373). `npm run lint` clean, `npm run build` succeeds.
 - Every external API call verified live this session before implementation, not assumed: real AlphaFold PAE/AlphaMissense files for a real UniProt accession, a real CATH classification and real oligomeric state for a real PDB entry, a real multi-run RMSD trend, a real webhook POST observed on job completion, a real structure-diff narrative for a real pair, and a real ESMFold prediction completing end-to-end and working in alignment/export like any other workspace member.
+- SonarCloud Quality Gate: green (Security Rating A on New Code, coverage 92.3%, 0 code smells/bugs introduced).
 
 ## [3.92.0]
 
