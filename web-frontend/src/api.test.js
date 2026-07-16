@@ -479,6 +479,21 @@ describe('api.js request-ID validation', () => {
         await expect(fetchAnnotations('AF-P69905-F1')).resolves.toBeDefined();
     });
 
+    it('predictFromSequence posts the sequence and resolves with the chains shape', async () => {
+        mockFetchOnce({ chains: { 'PRED-ABCD1234': { source: 'upload' } } });
+        const { predictFromSequence } = await import('./api.js');
+        const data = await predictFromSequence('MVHLTPEEKSAVTALWGKVNV');
+        expect(Object.keys(data.chains)[0]).toBe('PRED-ABCD1234');
+        expect(global.fetch.mock.calls[0][0]).toContain('/api/fold-sequence');
+        expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({ sequence: 'MVHLTPEEKSAVTALWGKVNV' });
+    });
+
+    it('predictFromSequence throws with the server detail message on failure', async () => {
+        mockFetchOnce({ detail: 'A real protein sequence (10+ amino-acid letters) is required.' }, false, 400);
+        const { predictFromSequence } = await import('./api.js');
+        await expect(predictFromSequence('MV')).rejects.toThrow('A real protein sequence');
+    });
+
     it('fetchRunsTrend posts run_ids and resolves with the trend list', async () => {
         mockFetchOnce({ trend: [{ run_id: 'run_1', mean_rmsd: 1.0, max_rmsd: 1.5 }] });
         const { fetchRunsTrend } = await import('./api.js');

@@ -26,6 +26,7 @@ export class WorkspaceTab {
         this.onAddPDB = props.onAddPDB;
         this.onAddManyPDBs = props.onAddManyPDBs;
         this.onUploadStructure = props.onUploadStructure;
+        this.onPredictFromSequence = props.onPredictFromSequence;
         this.onRemovePDB = props.onRemovePDB;
         this.onChainSelection = props.onChainSelection;
         this.onRunAlignment = props.onRunAlignment;
@@ -35,6 +36,8 @@ export class WorkspaceTab {
         this.isUploading = false;
         this.suggestTimeout = null;
         this.batchInputVisible = false;
+        this.predictInputVisible = false;
+        this.isPredicting = false;
         this.discoveryPanelVisible = false;
         this.discoveryPanel = new DiscoveryPanel({
             onClose: () => this.hideDiscoveryPanel(),
@@ -82,6 +85,7 @@ export class WorkspaceTab {
                         <button id="workspace-toggle-batch-add-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Paste multiple IDs</button>
                         <button id="workspace-upload-structure-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Upload a structure file</button>
                         <input id="workspace-upload-structure-input" type="file" accept=".pdb,.ent,.cif" class="hidden"/>
+                        <button id="workspace-toggle-predict-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Predict from sequence</button>
                     </div>
                     <span id="workspace-upload-structure-feedback" class="font-body-sm text-[11px] text-secondary"></span>
 
@@ -90,6 +94,14 @@ export class WorkspaceTab {
                         <div class="flex items-center gap-3">
                             <button id="workspace-batch-add-btn" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Add All</button>
                             <span id="workspace-batch-add-feedback" class="font-body-sm text-[11px] text-secondary"></span>
+                        </div>
+                    </div>
+
+                    <div id="workspace-predict-container" class="flex flex-col gap-2 ${this.predictInputVisible ? '' : 'hidden'}">
+                        <textarea id="workspace-predict-sequence-input" rows="3" placeholder="Paste a raw amino-acid sequence (10-300 residues) to predict its structure via ESMFold - no existing accession needed" class="w-full bg-surface-raised border border-border rounded-md px-3 py-2 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase"></textarea>
+                        <div class="flex items-center gap-3">
+                            <button id="workspace-predict-btn" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Predict Structure</button>
+                            <span id="workspace-predict-feedback" class="font-body-sm text-[11px] text-secondary"></span>
                         </div>
                     </div>
 
@@ -272,6 +284,40 @@ export class WorkspaceTab {
                 uploadFeedback.innerText = err.message || `Upload of ${file.name} failed.`;
             } finally {
                 this.isUploading = false;
+            }
+        });
+
+        const togglePredictBtn = this.element.querySelector('#workspace-toggle-predict-btn');
+        const predictContainer = this.element.querySelector('#workspace-predict-container');
+        const predictInput = this.element.querySelector('#workspace-predict-sequence-input');
+        const predictBtn = this.element.querySelector('#workspace-predict-btn');
+        const predictFeedback = this.element.querySelector('#workspace-predict-feedback');
+
+        togglePredictBtn.addEventListener('click', () => {
+            this.predictInputVisible = !this.predictInputVisible;
+            predictContainer.classList.toggle('hidden', !this.predictInputVisible);
+            if (this.predictInputVisible) predictInput.focus();
+        });
+
+        predictBtn.addEventListener('click', async () => {
+            const sequence = predictInput.value.trim().toUpperCase().replace(/\s+/g, '');
+            if (sequence.length < 10) {
+                predictFeedback.innerText = 'A sequence of at least 10 residues is required.';
+                return;
+            }
+
+            this.isPredicting = true;
+            predictBtn.disabled = true;
+            predictFeedback.innerText = `Predicting structure for ${sequence.length} residues (this can take up to a minute)…`;
+            try {
+                await this.onPredictFromSequence(sequence);
+                predictFeedback.innerText = `Structure predicted for ${sequence.length} residues.`;
+                predictInput.value = "";
+            } catch (err) {
+                predictFeedback.innerText = err.message || 'Structure prediction failed.';
+            } finally {
+                this.isPredicting = false;
+                predictBtn.disabled = false;
             }
         });
     }

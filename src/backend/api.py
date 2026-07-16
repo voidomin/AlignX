@@ -37,6 +37,7 @@ from src.backend.validation_service import fetch_pdbe_validation
 from src.backend.foldseek_client import FoldseekClient, FoldseekError
 from src.backend.clustalo_client import ClustalOmegaClient
 from src.backend.blast_client import BlastClient
+from src.backend.esmfold_client import fold_sequence, ESMFoldError, MAX_SEQUENCE_LENGTH
 from src.backend.database import HistoryDatabase
 from src.backend.ligand_analyzer import LigandAnalyzer
 from src.backend.interface_analyzer import InterfaceAnalyzer
@@ -511,6 +512,72 @@ async def upload_structure(
     info = await asyncio.to_thread(coordinator.pdb_manager.analyze_structure, path)
     info["source"] = "upload"
     info["original_filename"] = file.filename
+
+    return {"chains": {structure_id: sanitize_for_json(info)}}
+
+
+@app.post(
+    "/api/fold-sequence",
+    responses={
+        400: {
+            "description": "Invalid session_id, or an invalid/too-long protein sequence"
+        },
+        502: {"description": "ESMFold prediction failed"},
+    },
+)
+async def fold_sequence_endpoint(
+    sequence: Annotated[str, Body(..., embed=True)],
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Predicts a real 3D structure directly from a raw amino-acid sequence
+    via ESM Atlas's public ESMFold API (see esmfold_client.py) - no
+    existing public accession/ID required, unlike every other structure
+    source this app supports. Synchronous, not a background job: real
+    sequences at or below the length cap complete in single-digit-to-
+    low-double-digit seconds (verified live this session). Returns the
+    same {"chains": {...}} shape /api/upload does, tagged source="upload"
+    (this is functionally an upload of predicted, not user-provided,
+    content) - so the frontend merges it in identically and it works in
+    every downstream feature (alignment, ligand hunting, export) with no
+    new plumbing.
+    """
+    _safe_segment(session_id, "session_id")
+    sequence = (sequence or "").strip().upper()
+    if not _SAFE_PROTEIN_SEQUENCE.match(sequence):
+        raise HTTPException(
+            status_code=400,
+            detail="A real protein sequence (10+ amino-acid letters) is required.",
+        )
+    if len(sequence) > MAX_SEQUENCE_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Sequence too long ({len(sequence)} residues) - ESMFold "
+                f"prediction is capped at {MAX_SEQUENCE_LENGTH} residues to "
+                "stay within the public service's own reliable response time."
+            ),
+        )
+
+    try:
+        pdb_text = await fold_sequence(sequence)
+    except ESMFoldError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    structure_id = f"PRED-{secrets.token_hex(4).upper()}"
+    coordinator = AnalysisCoordinator(config, session_id=session_id)
+    success, msg, path = await asyncio.to_thread(
+        coordinator.pdb_manager.save_uploaded_bytes,
+        f"{structure_id}.pdb",
+        pdb_text.encode("utf-8"),
+        structure_id,
+    )
+    if not success:
+        raise HTTPException(status_code=400, detail=msg)
+
+    info = await asyncio.to_thread(coordinator.pdb_manager.analyze_structure, path)
+    info["source"] = "upload"
+    info["original_filename"] = f"Predicted from sequence ({len(sequence)} aa, ESMFold)"
 
     return {"chains": {structure_id: sanitize_for_json(info)}}
 

@@ -135,6 +135,24 @@ export async function uploadStructure(file) {
     return res.json();
 }
 
+// Real ab-initio structure prediction directly from a raw amino-acid
+// sequence via ESM Atlas's public ESMFold API - no existing accession
+// needed, unlike every other structure source. Synchronous (not a
+// background job): returns the same {"chains": {...}} shape
+// uploadStructure() does.
+export async function predictFromSequence(sequence) {
+    const res = await fetch(buildUrl('/api/fold-sequence'), {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ sequence })
+    });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Structure prediction failed");
+    }
+    return res.json();
+}
+
 export async function runAlignment(pdbIds, chainSelections, removeWater, removeHeteroatoms) {
     const res = await fetch(buildUrl('/api/jobs/align'), {
         method: 'POST',

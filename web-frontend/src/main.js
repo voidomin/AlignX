@@ -10,7 +10,7 @@ import { ComparisonTab } from './components/ComparisonTab';
 import { HistoryPanel } from './components/HistoryPanel';
 import { DashboardTab } from './components/DashboardTab';
 import { SettingsTab } from './components/SettingsTab';
-import { fetchChains, runAlignment, pollJobUntilDone, fetchLigands, getAlignmentReportUrl, isValidPdbId, uploadStructure as apiUploadStructure, fetchRun, setApiKeyOverride } from './api';
+import { fetchChains, runAlignment, pollJobUntilDone, fetchLigands, getAlignmentReportUrl, isValidPdbId, uploadStructure as apiUploadStructure, predictFromSequence as apiPredictFromSequence, fetchRun, setApiKeyOverride } from './api';
 
 class App {
     static MAX_PROTEINS = 20; // matches config.yaml's core.max_proteins default
@@ -58,6 +58,7 @@ class App {
             onAddPDB: (pdbId) => this.addPDB(pdbId),
             onAddManyPDBs: (pdbIds) => this.addManyPDBs(pdbIds),
             onUploadStructure: (file) => this.uploadStructure(file),
+            onPredictFromSequence: (sequence) => this.predictFromSequence(sequence),
             onRemovePDB: (pdbId) => this.removePDB(pdbId),
             onChainSelection: (pdbId, chainId) => {
                 this.chainSelections[pdbId] = chainId;
@@ -307,6 +308,26 @@ class App {
         }
 
         const data = await apiUploadStructure(file);
+        const structureId = Object.keys(data.chains)[0];
+        const info = data.chains[structureId];
+
+        this.pdbMetadata[structureId] = info;
+        if (info.chains && info.chains.length > 0) {
+            this.chainSelections[structureId] = info.chains[0].id;
+        }
+        this.selectedPDBs.push(structureId);
+        this.workspaceTab.updateState(this.selectedPDBs, this.chainSelections, this.pdbMetadata);
+        this.syncViewerToStructureCount();
+    }
+
+    // Same one-round-trip shape as uploadStructure() above - the predict
+    // endpoint already returns full chain info for the structure it saved.
+    async predictFromSequence(sequence) {
+        if (this.selectedPDBs.length >= App.MAX_PROTEINS) {
+            throw new Error(`Workspace limit is ${App.MAX_PROTEINS} structures.`);
+        }
+
+        const data = await apiPredictFromSequence(sequence);
         const structureId = Object.keys(data.chains)[0];
         const info = data.chains[structureId];
 

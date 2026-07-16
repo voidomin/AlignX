@@ -25,6 +25,7 @@ function makeTab(overrides = {}) {
         onAddPDB: vi.fn(),
         onAddManyPDBs: vi.fn().mockResolvedValue({ added: [], overCap: 0 }),
         onUploadStructure: vi.fn().mockResolvedValue(undefined),
+        onPredictFromSequence: vi.fn().mockResolvedValue(undefined),
         onRemovePDB: vi.fn(),
         onChainSelection: vi.fn(),
         onRunAlignment: vi.fn(),
@@ -853,6 +854,79 @@ describe('WorkspaceTab', () => {
             expect(row.querySelector('script')).toBeNull();
             expect(row.querySelector('.pdb-meta-line').textContent)
                 .toContain('<script>alert(1)</script>.pdb');
+        });
+    });
+
+    describe('predict from sequence', () => {
+        it('clicking "Predict from sequence" reveals the sequence input', () => {
+            const tab = makeTab();
+            tab.render();
+
+            const container = tab.element.querySelector('#workspace-predict-container');
+            expect(container.classList.contains('hidden')).toBe(true);
+
+            tab.element.querySelector('#workspace-toggle-predict-btn').click();
+
+            expect(container.classList.contains('hidden')).toBe(false);
+        });
+
+        it('rejects a sequence shorter than 10 residues without calling the callback', async () => {
+            const onPredictFromSequence = vi.fn();
+            const tab = makeTab({ onPredictFromSequence });
+            tab.render();
+
+            tab.element.querySelector('#workspace-predict-sequence-input').value = 'MV';
+            tab.element.querySelector('#workspace-predict-btn').click();
+            await Promise.resolve();
+
+            expect(onPredictFromSequence).not.toHaveBeenCalled();
+            expect(tab.element.querySelector('#workspace-predict-feedback').innerText)
+                .toBe('A sequence of at least 10 residues is required.');
+        });
+
+        it('calls onPredictFromSequence with the normalized sequence and reports success', async () => {
+            const onPredictFromSequence = vi.fn().mockResolvedValue(undefined);
+            const tab = makeTab({ onPredictFromSequence });
+            tab.render();
+
+            tab.element.querySelector('#workspace-predict-sequence-input').value = ' mvhltpeek savtalwgkv nv ';
+            tab.element.querySelector('#workspace-predict-btn').click();
+            await onPredictFromSequence.mock.results[0].value;
+
+            expect(onPredictFromSequence).toHaveBeenCalledWith('MVHLTPEEKSAVTALWGKVNV');
+            expect(tab.element.querySelector('#workspace-predict-feedback').innerText)
+                .toBe('Structure predicted for 21 residues.');
+            expect(tab.element.querySelector('#workspace-predict-sequence-input').value).toBe('');
+        });
+
+        it('reports the error message when prediction fails', async () => {
+            const onPredictFromSequence = vi.fn().mockRejectedValue(new Error('ESMFold returned status 504'));
+            const tab = makeTab({ onPredictFromSequence });
+            tab.render();
+
+            tab.element.querySelector('#workspace-predict-sequence-input').value = 'MVHLTPEEKSAVTALWGKVNV';
+            tab.element.querySelector('#workspace-predict-btn').click();
+            await onPredictFromSequence.mock.results[0].value.catch(() => {});
+
+            expect(tab.element.querySelector('#workspace-predict-feedback').innerText)
+                .toBe('ESMFold returned status 504');
+        });
+
+        it('disables the predict button while a prediction is in flight', async () => {
+            let resolvePredict;
+            const onPredictFromSequence = vi.fn(() => new Promise(r => { resolvePredict = r; }));
+            const tab = makeTab({ onPredictFromSequence });
+            tab.render();
+
+            tab.element.querySelector('#workspace-predict-sequence-input').value = 'MVHLTPEEKSAVTALWGKVNV';
+            const btn = tab.element.querySelector('#workspace-predict-btn');
+            btn.click();
+            await Promise.resolve();
+
+            expect(btn.disabled).toBe(true);
+            resolvePredict();
+            await onPredictFromSequence.mock.results[0].value;
+            expect(btn.disabled).toBe(false);
         });
     });
 

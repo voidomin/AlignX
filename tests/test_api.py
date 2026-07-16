@@ -787,6 +787,83 @@ def test_upload_endpoint_rejects_path_traversal_session_id():
     assert response.status_code == 400
 
 
+def test_fold_sequence_endpoint_returns_chain_info_for_a_real_prediction():
+    with patch(
+        "src.backend.api.fold_sequence", new_callable=AsyncMock
+    ) as mock_fold, patch(
+        "src.backend.coordinator.PDBManager.save_uploaded_bytes"
+    ) as mock_save, patch(
+        "src.backend.coordinator.PDBManager.analyze_structure"
+    ) as mock_analyze:
+        mock_fold.return_value = "HEADER\nATOM      1  N   MET A   1\nEND\n"
+        mock_save.return_value = (True, "ok", Path("dummy_path.pdb"))
+        mock_analyze.return_value = {"chains": [{"id": "A", "residue_count": 21}]}
+
+        response = client.post(
+            "/api/fold-sequence", json={"sequence": "MVHLTPEEKSAVTALWGKVNV"}
+        )
+
+        assert response.status_code == 200
+        chains = response.json()["chains"]
+        structure_id = next(iter(chains))
+        assert structure_id.startswith("PRED-")
+        assert chains[structure_id]["source"] == "upload"
+        assert "ESMFold" in chains[structure_id]["original_filename"]
+        mock_fold.assert_called_once_with("MVHLTPEEKSAVTALWGKVNV")
+
+
+def test_fold_sequence_endpoint_rejects_a_too_short_sequence():
+    response = client.post("/api/fold-sequence", json={"sequence": "MV"})
+    assert response.status_code == 400
+    assert "10+ amino-acid" in response.json()["detail"]
+
+
+def test_fold_sequence_endpoint_rejects_a_too_long_sequence():
+    response = client.post("/api/fold-sequence", json={"sequence": "A" * 301})
+    assert response.status_code == 400
+    assert "too long" in response.json()["detail"]
+
+
+def test_fold_sequence_endpoint_returns_502_on_esmfold_failure():
+    with patch("src.backend.api.fold_sequence", new_callable=AsyncMock) as mock_fold:
+        from src.backend.esmfold_client import ESMFoldError
+
+        mock_fold.side_effect = ESMFoldError("ESMFold returned status 504")
+
+        response = client.post(
+            "/api/fold-sequence", json={"sequence": "MVHLTPEEKSAVTALWGKVNV"}
+        )
+
+        assert response.status_code == 502
+        assert "504" in response.json()["detail"]
+
+
+def test_fold_sequence_endpoint_returns_400_when_save_fails():
+    with patch(
+        "src.backend.api.fold_sequence", new_callable=AsyncMock
+    ) as mock_fold, patch(
+        "src.backend.coordinator.PDBManager.save_uploaded_bytes"
+    ) as mock_save:
+        mock_fold.return_value = "ATOM      1  N   MET A   1\n"
+        mock_save.return_value = (False, "Couldn't parse predicted structure", None)
+
+        response = client.post(
+            "/api/fold-sequence", json={"sequence": "MVHLTPEEKSAVTALWGKVNV"}
+        )
+
+        assert response.status_code == 400
+        assert "Couldn't parse" in response.json()["detail"]
+
+
+def test_fold_sequence_endpoint_rejects_path_traversal_session_id():
+    response = client.post(
+        "/api/fold-sequence",
+        params={"session_id": "../../etc"},
+        json={"sequence": "MVHLTPEEKSAVTALWGKVNV"},
+    )
+    assert response.status_code == 400
+
+
 def test_memory_endpoints():
     """Verify that memory retrieval and clear endpoints return correct structures."""
     response = client.get("/api/memory")
