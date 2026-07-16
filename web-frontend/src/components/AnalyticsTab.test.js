@@ -6,9 +6,10 @@ vi.mock('../api.js', () => ({
     fetchContactMap: vi.fn(),
     fetchDifferenceDistance: vi.fn(),
     fetchMutationImpact: vi.fn(),
+    fetchPae: vi.fn(),
 }));
 
-import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact } from '../api.js';
+import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new AnalyticsTab(overrides);
@@ -507,6 +508,59 @@ describe('AnalyticsTab', () => {
 
             expect(global.Plotly.newPlot).not.toHaveBeenCalled();
             expect(tab.element.querySelector('#diff-distance-plotly').textContent).toContain('5000 aligned columns');
+        });
+    });
+
+    describe('PAE viewer', () => {
+        it('only lists AlphaFold-sourced structures in the selector', () => {
+            const tab = makeTab();
+            tab.render();
+
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB', 'AF-P69905-F1', '2HHB']));
+
+            const select = tab.element.querySelector('#pae-pdb-select');
+            expect(Array.from(select.options).map(o => o.value)).toEqual(['AF-P69905-F1']);
+        });
+
+        it('loads and renders a PAE heatmap on button click', async () => {
+            fetchPae.mockResolvedValue({ pdb_id: 'AF-P69905-F1', pae: [[0, 5], [5, 0]] });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['AF-P69905-F1']));
+
+            tab.element.querySelector('#pae-load-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(fetchPae).toHaveBeenCalledWith('AF-P69905-F1');
+            expect(global.Plotly.newPlot).toHaveBeenCalled();
+        });
+
+        it('shows a graceful message when no PAE data is available', async () => {
+            fetchPae.mockRejectedValue(new Error('boom'));
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['AF-P69905-F1']));
+
+            tab.element.querySelector('#pae-load-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(global.Plotly.newPlot).not.toHaveBeenCalled();
+            expect(tab.element.querySelector('#pae-plotly').textContent).toContain('No PAE data available');
+        });
+
+        it('does nothing when no AlphaFold structure is selected', async () => {
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB']));
+
+            tab.element.querySelector('#pae-load-btn').click();
+            await Promise.resolve();
+
+            expect(fetchPae).not.toHaveBeenCalled();
         });
     });
 

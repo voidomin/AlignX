@@ -2371,3 +2371,74 @@ class TestAggregateForHits:
 
         assert result["annotated_neighbor_count"] == 1
         assert result["high_confidence_annotated_count"] == 0
+
+
+class TestParseAlphafoldId:
+    def test_extracts_uniprot_accession_and_fragment(self):
+        assert AnnotationAggregator._parse_alphafold_id("AF-P69905-F1") == (
+            "P69905",
+            "F1",
+        )
+
+    def test_uppercases_accession_and_fragment(self):
+        assert AnnotationAggregator._parse_alphafold_id("af-p69905-f2") == (
+            "P69905",
+            "F2",
+        )
+
+    def test_returns_none_for_non_alphafold_id(self):
+        assert AnnotationAggregator._parse_alphafold_id("4HHB") is None
+        assert AnnotationAggregator._parse_alphafold_id("SM-P69905") is None
+        assert AnnotationAggregator._parse_alphafold_id("") is None
+
+
+class TestFetchPredictedAlignedError:
+    @pytest.mark.asyncio
+    async def test_returns_none_when_not_alphafold_sourced(self):
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_predicted_aligned_error("4HHB", client)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_matrix_from_the_first_successful_version(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data=[{"predicted_aligned_error": [[0, 5], [5, 0]]}]
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_predicted_aligned_error(
+                "AF-P69905-F1", client
+            )
+        assert result == [[0, 5], [5, 0]]
+        called_url = mock_get.call_args.args[0]
+        assert "AF-P69905-F1-predicted_aligned_error_v6.json" in called_url
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_falls_back_to_older_versions_when_latest_is_missing(self, mock_get):
+        mock_get.side_effect = [
+            _mock_response(status_code=404),
+            _mock_response(status_code=404),
+            _mock_response(json_data=[{"predicted_aligned_error": [[0, 1], [1, 0]]}]),
+        ]
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_predicted_aligned_error(
+                "AF-P69905-F1", client
+            )
+        assert result == [[0, 1], [1, 0]]
+        assert mock_get.call_count == 3
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_when_every_version_is_missing(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_predicted_aligned_error(
+                "AF-P69905-F1", client
+            )
+        assert result is None
+        assert mock_get.call_count == 6

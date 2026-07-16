@@ -40,6 +40,7 @@ SIFTS_BASE_URL = "https://www.ebi.ac.uk/pdbe/api/mappings/uniprot"
 PDBE_ALL_MAPPINGS_BASE_URL = "https://www.ebi.ac.uk/pdbe/api/mappings"
 GMGC_BASE_URL = "https://gmgc.embl.de/api/v1.0"
 UNIPROT_BASE_URL = "https://rest.uniprot.org/uniprotkb"
+ALPHAFOLD_FILES_BASE_URL = "https://alphafold.ebi.ac.uk/files"
 # NCBI's E-utilities work keyless at 3 req/s - fast enough for one
 # interactive mutation lookup (a single esearch+esummary pair), no
 # dedicated rate limiter needed the way the batch STRING/Foldseek fetches
@@ -67,6 +68,12 @@ _JSON_ACCEPT_HEADERS = {"Accept": "application/json"}
 # Foldseek's AlphaFold DB hits are named "AF-{UniProt}-F{fragment}[-v{n}] ...",
 # which embeds a UniProt accession directly - free to extract, no lookup.
 _AFDB_TARGET_PATTERN = re.compile(r"^AF-([A-Z0-9]+)-F\d+", re.IGNORECASE)
+# Compare-mode's own AlphaFold workspace IDs are "AF-{UniProt}-F{fragment}"
+# (see pdb_manager.py's _fetch_alphafold_response) - same accession+fragment
+# shape as a Foldseek AFDB target, but with no trailing "-model_v6 ..." to
+# strip, so this needs its own pattern rather than reusing
+# _AFDB_TARGET_PATTERN (which anchors on that trailing text being absent).
+_ALPHAFOLD_ID_PATTERN = re.compile(r"^AF-([A-Z0-9]+)-(F\d+)", re.IGNORECASE)
 
 # pdb100 hits are named "{pdbid}-assembly{n}.cif.gz_{chain} {title}", e.g.
 # "1ab1-assembly1.cif.gz_A SI FORM CRAMBIN" or, for a specific biological
@@ -808,6 +815,55 @@ class AnnotationAggregator:
         return await self._get_or_fetch(
             f"uniprot_features:{accession}", "uniprot_features", _fetch
         )
+
+    @staticmethod
+    def _parse_alphafold_id(pdb_id: str) -> Optional[Tuple[str, str]]:
+        """Pulls (uniprot_id, fragment) out of a Compare-mode AlphaFold
+        workspace ID, e.g. "AF-P69905-F1" -> ("P69905", "F1"). None for
+        anything that isn't AlphaFold-sourced."""
+        match = _ALPHAFOLD_ID_PATTERN.match((pdb_id or "").strip())
+        if not match:
+            return None
+        return match.group(1).upper(), match.group(2).upper()
+
+    async def fetch_predicted_aligned_error(
+        self, pdb_id: str, client: httpx.AsyncClient
+    ) -> Optional[List[List[float]]]:
+        """Real per-residue-pair confidence matrix for an AlphaFold model -
+        a different signal than per-residue pLDDT (which says how
+        confident AlphaFold is in *one* residue's own position, not how
+        confident it is in that residue's position *relative to* another,
+        which is what actually matters for judging whether two domains are
+        correctly oriented relative to each other). Only exists for
+        AlphaFold-sourced structures; returns None for anything else or if
+        no matching PAE file is found (tries the same version fallback
+        chain pdb_manager.py's own AlphaFold downloader does, since not
+        every entry has been reprocessed onto the latest model version)."""
+        parsed = self._parse_alphafold_id(pdb_id)
+        if not parsed:
+            return None
+        uniprot_id, fragment = parsed
+
+        async def _fetch() -> Optional[List[List[float]]]:
+            for v in ("6", "5", "4", "3", "2", "1"):
+                url = (
+                    f"{ALPHAFOLD_FILES_BASE_URL}/AF-{uniprot_id}-{fragment}"
+                    f"-predicted_aligned_error_v{v}.json"
+                )
+                try:
+                    response = await client.get(url)
+                except httpx.HTTPError as e:
+                    logger.warning(
+                        f"PAE lookup failed for {sanitize_for_log(pdb_id)}: {e}"
+                    )
+                    return None
+                if response.status_code == 200:
+                    payload = response.json()
+                    entry = payload[0] if payload else {}
+                    return entry.get("predicted_aligned_error")
+            return None
+
+        return await self._get_or_fetch(f"pae:{uniprot_id}:{fragment}", "pae", _fetch)
 
     def _try_get_cached_go_name(self, gid: str) -> Optional[str]:
         if not self.cache_db:

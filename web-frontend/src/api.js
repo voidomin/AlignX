@@ -534,6 +534,13 @@ export async function fetchQc(pdbId, runId) {
 // One structure's own CA-CA contact map from a completed run's alignment -
 // see rmsd_calculator.get_structure_contact_map(). Returns either a dense
 // `matrix` or, above the residue cap, a sparse `contacts` list - never both.
+export async function fetchPae(pdbId) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const res = await fetch(buildUrl('/api/pae', { pdb_id: pdbId }), { headers: authHeaders() });
+    if (!res.ok) throw new Error("PAE fetch failed");
+    return res.json();
+}
+
 export async function fetchContactMap(runId, pdbId, threshold) {
     runId = assertSafeSegment(runId, 'runId');
     pdbId = assertSafeSegment(pdbId, 'pdbId');

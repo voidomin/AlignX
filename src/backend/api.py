@@ -1655,6 +1655,32 @@ async def get_mutation_impact(
 
 
 @app.get(
+    "/api/pae",
+    responses={
+        400: {"description": "Invalid pdb_id"},
+        404: {"description": "No PAE data available for this structure"},
+    },
+)
+async def get_pae(pdb_id: Annotated[str, Query(...)]):
+    """
+    Real per-residue-pair confidence matrix for an AlphaFold-sourced
+    structure (see AnnotationAggregator.fetch_predicted_aligned_error) -
+    reveals which domain pairs AlphaFold trusts are correctly positioned
+    relative to each other, unlike per-residue pLDDT.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        matrix = await annotation_aggregator.fetch_predicted_aligned_error(
+            pdb_id, client
+        )
+    if matrix is None:
+        raise HTTPException(
+            status_code=404, detail=f"No PAE data available for {pdb_id}."
+        )
+    return {"pdb_id": pdb_id, "pae": matrix}
+
+
+@app.get(
     "/api/validation",
     responses={400: {"description": "Invalid pdb_id"}},
 )
