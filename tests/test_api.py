@@ -3095,8 +3095,12 @@ class TestValidateWebhookUrl:
 
 class TestNotifyWebhook:
     @pytest.mark.asyncio
+    @patch("src.backend.api.socket.getaddrinfo")
     @patch("src.backend.api.httpx.AsyncClient.post")
-    async def test_posts_the_payload_to_the_given_url(self, mock_post):
+    async def test_posts_the_payload_to_the_given_url(
+        self, mock_post, mock_getaddrinfo
+    ):
+        mock_getaddrinfo.return_value = [(2, 1, 6, "", ("8.8.8.8", 0))]
         mock_post.return_value = MagicMock(status_code=200)
         await api_module._notify_webhook(
             "https://example.com/hook", {"job_id": "j1", "status": "completed"}
@@ -3108,15 +3112,33 @@ class TestNotifyWebhook:
         }
 
     @pytest.mark.asyncio
+    @patch("src.backend.api.socket.getaddrinfo")
     @patch("src.backend.api.httpx.AsyncClient.post")
-    async def test_a_failed_post_does_not_raise(self, mock_post):
+    async def test_a_failed_post_does_not_raise(self, mock_post, mock_getaddrinfo):
         import httpx
 
+        mock_getaddrinfo.return_value = [(2, 1, 6, "", ("8.8.8.8", 0))]
         mock_post.side_effect = httpx.ConnectError("boom")
         # Must not raise - a bad webhook URL must never fail the underlying job.
         await api_module._notify_webhook(
             "https://example.com/hook", {"job_id": "j1", "status": "completed"}
         )
+
+    @pytest.mark.asyncio
+    @patch("src.backend.api.socket.getaddrinfo")
+    @patch("src.backend.api.httpx.AsyncClient.post")
+    async def test_does_not_post_when_re_validation_at_notify_time_fails(
+        self, mock_post, mock_getaddrinfo
+    ):
+        """Even a URL that passed validation at submission time gets
+        re-checked immediately before the actual POST (see _notify_webhook's
+        docstring) - if it now resolves to an internal address, the POST
+        must not happen, and this must not raise."""
+        mock_getaddrinfo.return_value = [(2, 1, 6, "", ("169.254.169.254", 0))]
+        await api_module._notify_webhook(
+            "https://example.com/hook", {"job_id": "j1", "status": "completed"}
+        )
+        mock_post.assert_not_called()
 
 
 class TestJobWebhooks:

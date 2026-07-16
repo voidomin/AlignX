@@ -774,10 +774,23 @@ async def _notify_webhook(url: str, payload: Dict[str, Any]) -> None:
     """Fire-and-forget job-completion notification - a bad/unreachable
     webhook URL must never fail the underlying job, so failures are
     logged, not raised. Short timeout since this is just a notification,
-    not something worth blocking the job's own completion on."""
+    not something worth blocking the job's own completion on.
+
+    Re-validates (and re-resolves) `url` right here immediately before the
+    actual POST, even though every caller already validated it once at
+    submission time - keeping the SSRF check adjacent to the sink it
+    protects, in the same function, rather than relying on a caller several
+    calls/a dict round-trip away. This also narrows (doesn't eliminate) the
+    DNS-rebinding window, since the hostname is re-resolved right before use
+    instead of only at submission time."""
     try:
+        validated_url = await _validate_webhook_url(url)
+        if not validated_url:
+            return
         async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.post(url, json=payload)
+            await client.post(validated_url, json=payload)
+    except HTTPException as e:
+        logger.warning(f"Webhook URL failed validation at notify time: {e.detail}")
     except httpx.HTTPError as e:
         logger.warning(f"Webhook notification to {sanitize_for_log(url)} failed: {e}")
 
