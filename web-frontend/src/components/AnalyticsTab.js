@@ -1,5 +1,6 @@
 import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae } from '../api';
 import { renderDomainList, renderGoTermList, renderFeatureList } from '../utils/annotationRenderers';
+import { createInsightIconSvg } from '../utils/insightIcons';
 
 // Renders one insight string's markdown-lite **bold** segments as real
 // <strong> DOM nodes, built via createElement/createTextNode rather than
@@ -1125,11 +1126,10 @@ export class AnalyticsTab {
                 const { icon, text } = splitInsightIcon(rawText);
                 const li = document.createElement('li');
                 li.className = "font-body-sm text-primary border border-border-subtle rounded-md p-2 flex items-start gap-2";
-                if (icon) {
-                    const iconSpan = document.createElement('span');
-                    iconSpan.className = "material-symbols-outlined text-[16px] text-accent shrink-0 leading-none mt-0.5";
-                    iconSpan.textContent = icon;
-                    li.appendChild(iconSpan);
+                const iconSvg = icon ? createInsightIconSvg(icon) : null;
+                if (iconSvg) {
+                    iconSvg.classList.add('text-accent', 'shrink-0', 'mt-0.5');
+                    li.appendChild(iconSvg);
                 }
                 const textSpan = document.createElement('span');
                 appendMarkdownLiteBold(textSpan, text);
