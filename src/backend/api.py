@@ -272,7 +272,7 @@ rmsd_analyzer = RMSDAnalyzer(config)
 ramachandran_service = RamachandranService()
 
 
-@app.get("/health")
+@app.get("/health", tags=["System"])
 def health_check():
     """Health check endpoint to verify backend service is running."""
     coordinator = AnalysisCoordinator(config)
@@ -316,7 +316,7 @@ class SettingsUpdate(BaseModel):
     viewer_default_style: str = "cartoon"
 
 
-@app.get("/api/settings")
+@app.get("/api/settings", tags=["System"])
 def get_settings():
     """Read the runtime-editable subset of the pipeline config. There's no
     settings page anywhere in the SPA today (the Streamlit app's
@@ -327,6 +327,7 @@ def get_settings():
 
 @app.post(
     "/api/settings",
+    tags=["System"],
     responses={
         400: {"description": "Invalid settings"},
         500: {"description": "Failed to persist settings to config.yaml"},
@@ -367,7 +368,7 @@ def update_settings(update: SettingsUpdate):
     return _current_settings()
 
 
-@app.post("/api/settings/reset")
+@app.post("/api/settings/reset", tags=["System"])
 def reset_settings():
     """Restore the same hardcoded defaults Streamlit's "Restore Defaults"
     button uses (pages/3_Settings.py's DEFAULT_SETTINGS)."""
@@ -375,7 +376,7 @@ def reset_settings():
     return update_settings(defaults)
 
 
-@app.get("/api/suggest")
+@app.get("/api/suggest", tags=["Structures"])
 def get_rcsb_suggestions(q: Annotated[str, Query(..., min_length=1)]):
     """
     Fetch matching PDB IDs from RCSB Suggest API.
@@ -409,6 +410,7 @@ def get_rcsb_suggestions(q: Annotated[str, Query(..., min_length=1)]):
 
 @app.post(
     "/api/chains",
+    tags=["Structures"],
     responses={
         400: {
             "description": "Invalid pdb_id/session_id, an empty pdb_ids list, or a structure failed to download"
@@ -473,6 +475,7 @@ async def analyze_chains(
 
 @app.post(
     "/api/upload",
+    tags=["Structures"],
     responses={
         400: {
             "description": "Invalid session_id, an unsupported file extension, or the uploaded file failed to parse as a real structure"
@@ -525,6 +528,7 @@ async def upload_structure(
 
 @app.post(
     "/api/fold-sequence",
+    tags=["Structures"],
     responses={
         400: {
             "description": "Invalid session_id, or an invalid/too-long protein sequence"
@@ -881,6 +885,7 @@ async def _execute_alignment_job(
 
 @app.post(
     "/api/jobs/align",
+    tags=["Jobs"],
     status_code=202,
     responses={
         400: {"description": "Fewer than 2 PDB IDs, or an invalid pdb_id/session_id"}
@@ -929,6 +934,7 @@ async def submit_alignment_job(
 
 @app.get(
     "/api/jobs/{job_id}",
+    tags=["Jobs"],
     responses={
         404: {"description": "No alignment or discovery job exists with this job_id"}
     },
@@ -1025,6 +1031,7 @@ async def _execute_discovery_job(
 
 @app.post(
     "/api/jobs/discover",
+    tags=["Jobs"],
     status_code=202,
     responses={
         400: {
@@ -1143,6 +1150,7 @@ async def _execute_clustalo_job(
 
 @app.post(
     "/api/jobs/clustalo",
+    tags=["Jobs"],
     status_code=202,
     responses={
         400: {"description": "Fewer than 2 sequences, or an invalid sequence id"}
@@ -1240,6 +1248,7 @@ async def _execute_blast_job(
 
 @app.post(
     "/api/jobs/conservation",
+    tags=["Jobs"],
     status_code=202,
     responses={
         400: {
@@ -1372,6 +1381,7 @@ async def _execute_ddmut_job(
 
 @app.post(
     "/api/jobs/ddg-stability",
+    tags=["Jobs"],
     status_code=202,
     responses={
         400: {"description": "Invalid pdb_id/chain/resi/mutant"},
@@ -1443,6 +1453,7 @@ async def submit_ddmut_job(
 
 @app.post(
     "/api/clusters",
+    tags=["Comparison"],
     responses={
         400: {"description": "Malformed rmsd_df payload or fewer than 2 structures"}
     },
@@ -1494,6 +1505,7 @@ def get_clusters(
 
 @app.get(
     "/api/comparison/runs",
+    tags=["Comparison"],
     responses={400: {"description": "Invalid exclude_run_id or session_id"}},
 )
 def list_comparison_runs(
@@ -1526,6 +1538,7 @@ class RunTrendRequest(BaseModel):
 
 @app.post(
     "/api/runs/trend",
+    tags=["Comparison"],
     responses={
         400: {
             "description": "Invalid session_id, or no run_id resolved to a real RMSD matrix"
@@ -1559,6 +1572,7 @@ def get_runs_trend(
 
 @app.get(
     "/api/comparison",
+    tags=["Comparison"],
     responses={
         400: {
             "description": "Invalid run_id/session_id, or no overlapping proteins between the two runs"
@@ -1631,6 +1645,7 @@ _MAX_SCREEN_TARGETS = 50
 
 @app.post(
     "/api/screen",
+    tags=["Comparison"],
     responses={
         400: {
             "description": "Invalid reference_pdb_id/target_pdb_ids, or too many targets"
@@ -1713,6 +1728,7 @@ async def screen_structures(
 
 @app.get(
     "/api/contact-map",
+    tags=["Comparison"],
     responses={
         400: {"description": "Invalid run_id/pdb_id/session_id"},
         404: {"description": "Run not found, or no contact map for this pdb_id"},
@@ -1750,6 +1766,7 @@ def get_contact_map(
 
 @app.get(
     "/api/difference-distance",
+    tags=["Comparison"],
     responses={
         400: {"description": "Invalid run_id/pdb_id_a/pdb_id_b/session_id"},
         404: {
@@ -1801,6 +1818,7 @@ _MAX_MORPH_FRAMES = 200
 
 @app.get(
     "/api/morph",
+    tags=["Comparison"],
     responses={
         400: {
             "description": "Invalid run_id/pdb_id_a/pdb_id_b/session_id, or num_frames out of range"
@@ -1860,6 +1878,7 @@ def get_morph(
 
 @app.get(
     "/api/ligands",
+    tags=["Ligands & Interfaces"],
     responses={
         400: {"description": "Invalid pdb_id, run_id, or session_id"},
         404: {"description": "Structure PDB not found in the active workspace"},
@@ -1890,6 +1909,7 @@ def get_ligands(
 
 @app.get(
     "/api/ligand-info",
+    tags=["Ligands & Interfaces"],
     responses={400: {"description": "Invalid ligand_code"}},
 )
 async def get_ligand_info(ligand_code: Annotated[str, Query(...)]):
@@ -1909,6 +1929,7 @@ async def get_ligand_info(ligand_code: Annotated[str, Query(...)]):
 
 @app.get(
     "/api/pockets",
+    tags=["Ligands & Interfaces"],
     responses={
         400: {"description": "Invalid pdb_id, run_id, or session_id"},
         404: {"description": "Structure PDB not found in the active workspace"},
@@ -1946,6 +1967,7 @@ def get_pockets(
 
 @app.get(
     "/api/structure-file",
+    tags=["Structures"],
     responses={
         400: {"description": "Invalid pdb_id, run_id, or session_id"},
         404: {"description": "Structure PDB not found in the active workspace"},
@@ -2020,6 +2042,7 @@ def _find_structure_pdb_path(
 
 @app.get(
     "/api/interactions",
+    tags=["Ligands & Interfaces"],
     responses={
         400: {"description": "Invalid pdb_id, ligand_id, run_id, or session_id"},
         404: {"description": "Structure PDB not found in the active workspace"},
@@ -2092,6 +2115,7 @@ def _add_aligned_resi(
 
 @app.get(
     "/api/interface",
+    tags=["Ligands & Interfaces"],
     responses={
         400: {"description": "Invalid pdb_id, chain_a, chain_b, run_id, or session_id"},
         404: {"description": "Structure PDB not found in the active workspace"},
@@ -2128,6 +2152,7 @@ def get_interface(
 
 @app.get(
     "/api/annotations",
+    tags=["Annotations"],
     responses={400: {"description": "Invalid pdb_id or chain"}},
 )
 async def get_annotations(
@@ -2157,6 +2182,7 @@ _SAFE_AMINO_ACID = re.compile(r"^[A-Za-z]$")
 
 @app.get(
     "/api/mutation-impact",
+    tags=["Annotations"],
     responses={
         400: {"description": "Invalid pdb_id/chain/mutant"},
         404: {"description": "Could not resolve this residue to a UniProt position"},
@@ -2257,6 +2283,7 @@ async def get_mutation_impact(
 
 @app.get(
     "/api/mutation-tolerance",
+    tags=["Annotations"],
     responses={400: {"description": "Invalid pdb_id or chain"}},
 )
 async def get_mutation_tolerance(
@@ -2288,6 +2315,7 @@ async def get_mutation_tolerance(
 
 @app.get(
     "/api/pae",
+    tags=["Annotations"],
     responses={
         400: {"description": "Invalid pdb_id"},
         404: {"description": "No PAE data available for this structure"},
@@ -2314,6 +2342,7 @@ async def get_pae(pdb_id: Annotated[str, Query(...)]):
 
 @app.get(
     "/api/cath",
+    tags=["Structures"],
     responses={400: {"description": "Invalid pdb_id"}},
 )
 async def get_cath_classification(pdb_id: Annotated[str, Query(...)]):
@@ -2334,6 +2363,7 @@ async def get_cath_classification(pdb_id: Annotated[str, Query(...)]):
 
 @app.get(
     "/api/assembly",
+    tags=["Structures"],
     responses={400: {"description": "Invalid pdb_id"}},
 )
 async def get_assembly_info(pdb_id: Annotated[str, Query(...)]):
@@ -2353,6 +2383,7 @@ async def get_assembly_info(pdb_id: Annotated[str, Query(...)]):
 
 @app.get(
     "/api/validation",
+    tags=["Structures"],
     responses={400: {"description": "Invalid pdb_id"}},
 )
 async def get_validation(pdb_id: Annotated[str, Query(...)]):
@@ -2377,6 +2408,7 @@ async def get_validation(pdb_id: Annotated[str, Query(...)]):
 
 @app.get(
     "/api/qc",
+    tags=["Structures"],
     responses={
         400: {"description": "Invalid pdb_id/run_id/session_id"},
         404: {"description": "Structure not found in the active workspace"},
@@ -2433,7 +2465,7 @@ async def get_qc(
     )
 
 
-@app.get("/api/memory")
+@app.get("/api/memory", tags=["System"])
 def get_memory_stats():
     """
     Get backend process memory footprint (RSS) in MB.
@@ -2449,7 +2481,7 @@ def get_memory_stats():
         return {"ram_mb": 150.0, "status": "error", "message": str(e)}
 
 
-@app.post("/api/memory/clear")
+@app.post("/api/memory/clear", tags=["System"])
 def clear_memory():
     """
     Trigger garbage collection to release unused memory.
@@ -2485,7 +2517,7 @@ def _lighten_run_for_list(run: Dict[str, Any]) -> Dict[str, Any]:
     return lightened
 
 
-@app.get("/api/history")
+@app.get("/api/history", tags=["History"])
 def get_history(
     session_id: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 20,
@@ -2516,6 +2548,7 @@ def get_history(
 
 @app.delete(
     "/api/history/{run_id}",
+    tags=["History"],
     responses={
         400: {"description": "Invalid run_id"},
         403: {"description": "Run belongs to a different session"},
@@ -2558,6 +2591,7 @@ class RunNotesUpdate(BaseModel):
 
 @app.put(
     "/api/history/{run_id}/notes",
+    tags=["History"],
     responses={
         400: {"description": "Invalid run_id"},
         403: {"description": "Run belongs to a different session"},
@@ -2593,7 +2627,7 @@ def update_run_notes(
     return {"run_id": run_id, "notes": body.notes, "tags": body.tags}
 
 
-@app.delete("/api/history")
+@app.delete("/api/history", tags=["History"])
 def clear_history(session_id: Annotated[Optional[str], Query()] = None):
     """
     Clear run history. When session_id is given, scopes the wipe to that
@@ -2617,6 +2651,7 @@ def clear_history(session_id: Annotated[Optional[str], Query()] = None):
 
 @app.get(
     "/api/runs/{run_id}",
+    tags=["History"],
     responses={
         400: {"description": "Invalid run_id"},
         404: {"description": "Run not found in the history database"},
@@ -2641,7 +2676,11 @@ def get_run_by_id(run_id: str):
     return sanitize_for_json(run)
 
 
-@app.get("/api/stats", responses={400: {"description": "Invalid session_id"}})
+@app.get(
+    "/api/stats",
+    tags=["History"],
+    responses={400: {"description": "Invalid session_id"}},
+)
 def get_aggregate_stats(session_id: Annotated[Optional[str], Query()] = None):
     """
     Dashboard-level aggregate totals across all runs (total run count,
@@ -2653,6 +2692,7 @@ def get_aggregate_stats(session_id: Annotated[Optional[str], Query()] = None):
 
 @app.get(
     "/api/sequence",
+    tags=["Sequence"],
     responses={
         400: {"description": "Invalid run_id or session_id"},
         404: {"description": "Alignment FASTA not found for this run"},
@@ -2721,6 +2761,7 @@ def get_sequence(
 
 @app.get(
     "/api/report",
+    tags=["Reports"],
     responses={
         400: {"description": "Invalid run_id or session_id"},
         404: {"description": "Run not found in the history database"},
@@ -2825,6 +2866,7 @@ def get_pdf_report(
 
 @app.get(
     "/api/notebook",
+    tags=["Reports"],
     responses={
         400: {"description": "Invalid run_id or session_id"},
         404: {"description": "Run not found in the history database"},
@@ -2897,6 +2939,7 @@ def get_lab_notebook(
 
 @app.get(
     "/api/notebook/ipynb",
+    tags=["Reports"],
     responses={
         400: {"description": "Invalid run_id or session_id"},
         404: {"description": "Run not found in the history database"},
@@ -3005,6 +3048,7 @@ def _reconstruct_rmsd_df(run: Dict[str, Any]) -> Optional[pd.DataFrame]:
 
 @app.get(
     "/api/report/rmsd-csv",
+    tags=["Reports"],
     responses={
         400: {"description": "Invalid run_id or session_id"},
         404: {"description": "Run not found, or has no stored RMSD matrix"},
@@ -3093,6 +3137,7 @@ def _build_chimerax_script(run_id: str, pdb_ids: List[str]) -> str:
 
 @app.get(
     "/api/report/pymol-script",
+    tags=["Reports"],
     responses={
         400: {"description": "Invalid run_id or session_id"},
         404: {"description": "Run not found, or has no aligned structures"},
@@ -3125,6 +3170,7 @@ def get_pymol_script(
 
 @app.get(
     "/api/report/chimerax-script",
+    tags=["Reports"],
     responses={
         400: {"description": "Invalid run_id or session_id"},
         404: {"description": "Run not found, or has no aligned structures"},
@@ -3157,6 +3203,7 @@ def get_chimerax_script(
 
 @app.get(
     "/api/report/heatmap-png",
+    tags=["Reports"],
     responses={
         400: {"description": "Invalid run_id or session_id"},
         404: {"description": "Run not found, or its heatmap image is missing on disk"},
@@ -3190,6 +3237,7 @@ def get_heatmap_png(
 
 @app.get(
     "/api/report/newick",
+    tags=["Reports"],
     responses={
         400: {"description": "Invalid run_id or session_id"},
         404: {
@@ -3225,6 +3273,7 @@ def get_newick_tree(
 
 @app.get(
     "/api/report/zip",
+    tags=["Reports"],
     responses={400: {"description": "Invalid run_id or session_id"}},
 )
 def get_report_zip(
@@ -3296,6 +3345,7 @@ def get_report_zip(
 
 @app.get(
     "/api/report/citations",
+    tags=["Reports"],
     responses={
         400: {"description": "Invalid run_id or session_id"},
         404: {"description": "Run not found in the history database"},
@@ -3370,6 +3420,7 @@ def _get_discover_run_results(run_id: str) -> Dict[str, Any]:
 
 @app.get(
     "/api/discover/report",
+    tags=["Discovery"],
     responses={
         400: {"description": "Invalid run_id, or the run isn't a Discover run"},
         404: {"description": "Run not found, or has no stored Discover results"},
@@ -3409,6 +3460,7 @@ def get_discovery_report(run_id: Annotated[str, Query(...)]):
 
 @app.get(
     "/api/discover/export",
+    tags=["Discovery"],
     responses={
         400: {"description": "Invalid run_id, or the run isn't a Discover run"},
         404: {"description": "Run not found, or has no stored Discover results"},
@@ -3430,6 +3482,7 @@ def export_discovery_json(run_id: Annotated[str, Query(...)]):
 
 @app.get(
     "/api/discover/citations",
+    tags=["Discovery"],
     responses={
         400: {"description": "Invalid run_id, or the run isn't a Discover run"},
         404: {"description": "Run not found, or has no stored Discover results"},
