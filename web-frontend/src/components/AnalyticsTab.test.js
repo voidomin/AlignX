@@ -733,6 +733,48 @@ describe('AnalyticsTab', () => {
             expect(result.textContent).toContain('Pathogenic');
         });
 
+        it('shows the AlphaMissense pathogenicity score when one is available', async () => {
+            fetchMutationImpact.mockResolvedValue({
+                accession: 'P68871', uniprot_position: 7, wildtype_residue: 'V', mutant_residue: 'V',
+                gene: 'HBB',
+                clinvar: { clinical_significance: 'Pathogenic', review_status: 'reviewed by expert panel' },
+                alphamissense: { pathogenicity: 0.4231, class: 'Amb' },
+                known_uniprot_variant: null,
+                highlight_chains: { A: [6] },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-map-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const result = tab.element.querySelector('#mutation-impact-result');
+            expect(result.textContent).toContain('AlphaMissense: 0.423 (Amb)');
+        });
+
+        it('shows a fallback message when no AlphaMissense score is available', async () => {
+            fetchMutationImpact.mockResolvedValue({
+                accession: 'P68871', uniprot_position: 7, wildtype_residue: 'V', mutant_residue: 'V',
+                gene: 'HBB', clinvar: null, alphamissense: null,
+                known_uniprot_variant: null,
+                highlight_chains: { A: [6] },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-map-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const result = tab.element.querySelector('#mutation-impact-result');
+            expect(result.textContent).toContain('No AlphaMissense score available for this substitution.');
+        });
+
         it('shows a known UniProt variant when ClinVar has no match', async () => {
             fetchMutationImpact.mockResolvedValue({
                 accession: 'P68871', uniprot_position: 7, wildtype_residue: 'V', mutant_residue: 'V',
