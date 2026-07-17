@@ -52,6 +52,15 @@ const PDB_ID_PATTERN = /^\d[A-Z0-9]{3}$/;
 const ALPHAFOLD_ID_PATTERN = /^AF-[A-Z0-9]+-F\d+(-V\d+)?$/;
 const SWISSMODEL_ID_PATTERN = /^SM-[A-Z0-9]+$/;
 const ESMFOLD_ID_PATTERN = /^ESM-MGYP\d+$/;
+// Synthetic IDs this app mints itself server-side (POST /api/upload,
+// POST /api/fold-sequence - see structure_id = f"UPLOAD-{secrets.token_hex(4)...}"/
+// f"PRED-{secrets.token_hex(4)...}"), never typed by a user into the search
+// box but passed right back into every other per-structure API call (the
+// 3D viewer's single-structure preview, badges, etc.) once added to the
+// workspace - isValidPdbId has to recognize these too, or every one of
+// those calls throws "Invalid pdbId" for an upload/prediction.
+const UPLOAD_ID_PATTERN = /^UPLOAD-[A-F0-9]{8}$/;
+const PREDICTED_ID_PATTERN = /^PRED-[A-F0-9]{8}$/;
 
 export function isValidPdbId(id) {
     const normalized = (id || "").trim().toUpperCase();
@@ -59,7 +68,9 @@ export function isValidPdbId(id) {
         PDB_ID_PATTERN.test(normalized) ||
         ALPHAFOLD_ID_PATTERN.test(normalized) ||
         SWISSMODEL_ID_PATTERN.test(normalized) ||
-        ESMFOLD_ID_PATTERN.test(normalized)
+        ESMFOLD_ID_PATTERN.test(normalized) ||
+        UPLOAD_ID_PATTERN.test(normalized) ||
+        PREDICTED_ID_PATTERN.test(normalized)
     );
 }
 
