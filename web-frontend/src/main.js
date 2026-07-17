@@ -64,7 +64,8 @@ class App {
                 this.chainSelections[pdbId] = chainId;
             },
             onRunAlignment: () => this.executeAlignment(),
-            onQuickStart: (pdbIds) => this.loadQuickStart(pdbIds)
+            onQuickStart: (pdbIds) => this.loadQuickStart(pdbIds),
+            isSharedView: this.isSharedView
         });
 
         this.ligandTab = new LigandTab({
