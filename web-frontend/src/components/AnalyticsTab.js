@@ -74,6 +74,7 @@ export class AnalyticsTab {
 
     constructor(props = {}) {
         this.onHighlightResidues = props.onHighlightResidues || (() => {});
+        this.onGoToWorkspace = props.onGoToWorkspace || (() => {});
     }
 
     render() {
@@ -460,7 +461,19 @@ export class AnalyticsTab {
         const sharedContent = this.element.querySelector('#annotations-shared-content');
 
         if (this.structures.length === 0) {
-            content.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Add a structure in the Workspace tab to display functional annotation.</div>`;
+            content.innerHTML = "";
+            const empty = document.createElement('div');
+            empty.className = "flex flex-col items-center justify-center gap-2 h-full text-secondary font-body-sm";
+            const text = document.createElement('span');
+            text.textContent = "Add a structure in the Workspace tab to display functional annotation.";
+            empty.appendChild(text);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = "font-label-sm text-label-sm text-accent hover:underline";
+            btn.textContent = 'Go to Workspace';
+            btn.addEventListener('click', () => this.onGoToWorkspace());
+            empty.appendChild(btn);
+            content.appendChild(empty);
             sharedSection.classList.add('hidden');
             sharedSection.classList.remove('flex');
             return;

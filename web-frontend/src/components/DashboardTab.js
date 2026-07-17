@@ -7,6 +7,7 @@ export class DashboardTab {
     constructor(props) {
         this.onReloadRun = props.onReloadRun;
         this.onQuickStart = props.onQuickStart;
+        this.onGoToWorkspace = props.onGoToWorkspace || (() => {});
         this.element = null;
     }
 
@@ -91,11 +92,19 @@ export class DashboardTab {
             const runs = data.runs || [];
 
             if (runs.length === 0) {
-                recentContainer.innerHTML = `
-                    <div class="text-center py-8 text-secondary font-body-sm">
-                        No past alignment sessions yet - head to the Workspace tab to add structures and run one.
-                    </div>
-                `;
+                recentContainer.innerHTML = "";
+                const empty = document.createElement('div');
+                empty.className = "flex flex-col items-center gap-2 py-8 text-center text-secondary font-body-sm";
+                const text = document.createElement('span');
+                text.textContent = "No past alignment sessions yet - head to the Workspace tab to add structures and run one.";
+                empty.appendChild(text);
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = "font-label-sm text-label-sm text-accent hover:underline";
+                btn.textContent = 'Go to Workspace';
+                btn.addEventListener('click', () => this.onGoToWorkspace());
+                empty.appendChild(btn);
+                recentContainer.appendChild(empty);
                 return;
             }
 

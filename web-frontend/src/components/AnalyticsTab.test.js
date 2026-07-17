@@ -322,6 +322,18 @@ describe('AnalyticsTab', () => {
             expect(tab.element.querySelector('#annotations-content').textContent).toContain('No UniProt accession could be resolved');
         });
 
+        it('shows a "Go to Workspace" button when there are no structures at all, and it calls onGoToWorkspace', () => {
+            const onGoToWorkspace = vi.fn();
+            const tab = makeTab({ onGoToWorkspace });
+            tab.render();
+
+            const content = tab.element.querySelector('#annotations-content');
+            expect(content.textContent).toContain('Add a structure in the Workspace tab');
+
+            content.querySelector('button').click();
+            expect(onGoToWorkspace).toHaveBeenCalled();
+        });
+
         it('computes a shared-domains summary across structures that share one', async () => {
             fetchAnnotations.mockImplementation(async (pdbId) => ({
                 annotation: {
