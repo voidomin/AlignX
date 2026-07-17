@@ -805,6 +805,24 @@ describe('WorkspaceTab', () => {
                 .toContain('Skipped 1 — workspace limit is 20 structures.');
         });
 
+        it('disables the Add All button for the duration of the request, to prevent a double-submit', async () => {
+            let resolveAdd;
+            const onAddManyPDBs = vi.fn(() => new Promise(resolve => { resolveAdd = resolve; }));
+            const tab = makeTab({ onAddManyPDBs });
+            tab.render();
+
+            const batchAddBtn = tab.element.querySelector('#workspace-batch-add-btn');
+            tab.element.querySelector('#workspace-batch-pdb-input').value = '4RLT, 3UG9';
+            batchAddBtn.click();
+
+            expect(batchAddBtn.disabled).toBe(true);
+            resolveAdd({ added: ['4RLT', '3UG9'], overCap: 0 });
+            await onAddManyPDBs.mock.results[0].value;
+            await Promise.resolve();
+
+            expect(batchAddBtn.disabled).toBe(false);
+        });
+
         it('clears the textarea only when something was actually added', async () => {
             const onAddManyPDBs = vi.fn();
             const tab = makeTab({ selectedPDBs: [], onAddManyPDBs });

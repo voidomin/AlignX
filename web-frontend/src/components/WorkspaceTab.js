@@ -233,44 +233,49 @@ export class WorkspaceTab {
         });
 
         batchAddBtn.addEventListener('click', async () => {
-            const raw = batchInput.value;
-            const tokens = raw.split(/[\s,]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
+            batchAddBtn.disabled = true;
+            try {
+                const raw = batchInput.value;
+                const tokens = raw.split(/[\s,]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
 
-            const toAdd = [];
-            const invalid = [];
-            let duplicates = 0;
-            const seen = new Set(this.selectedPDBs);
+                const toAdd = [];
+                const invalid = [];
+                let duplicates = 0;
+                const seen = new Set(this.selectedPDBs);
 
-            tokens.forEach(token => {
-                if (!isValidPdbId(token)) {
-                    invalid.push(token);
-                    return;
+                tokens.forEach(token => {
+                    if (!isValidPdbId(token)) {
+                        invalid.push(token);
+                        return;
+                    }
+                    if (seen.has(token)) {
+                        duplicates += 1;
+                        return;
+                    }
+                    seen.add(token);
+                    toAdd.push(token);
+                });
+
+                let overCap = 0;
+                let addedCount = 0;
+                if (toAdd.length > 0) {
+                    const result = await this.onAddManyPDBs(toAdd);
+                    addedCount = result?.added ? result.added.length : toAdd.length;
+                    overCap = result?.overCap || 0;
                 }
-                if (seen.has(token)) {
-                    duplicates += 1;
-                    return;
-                }
-                seen.add(token);
-                toAdd.push(token);
-            });
 
-            let overCap = 0;
-            let addedCount = 0;
-            if (toAdd.length > 0) {
-                const result = await this.onAddManyPDBs(toAdd);
-                addedCount = result?.added ? result.added.length : toAdd.length;
-                overCap = result?.overCap || 0;
+                const parts = [];
+                if (addedCount > 0) parts.push(`Added ${addedCount}.`);
+                if (duplicates > 0) parts.push(`Skipped ${duplicates} already in the workspace.`);
+                if (invalid.length > 0) parts.push(`Couldn't recognize: ${invalid.join(', ')}.`);
+                if (overCap > 0) parts.push(`Skipped ${overCap} — workspace limit is 20 structures.`);
+                if (parts.length === 0) parts.push('Nothing to add — paste at least one ID.');
+                batchFeedback.innerText = parts.join(' ');
+
+                if (addedCount > 0) batchInput.value = "";
+            } finally {
+                batchAddBtn.disabled = false;
             }
-
-            const parts = [];
-            if (addedCount > 0) parts.push(`Added ${addedCount}.`);
-            if (duplicates > 0) parts.push(`Skipped ${duplicates} already in the workspace.`);
-            if (invalid.length > 0) parts.push(`Couldn't recognize: ${invalid.join(', ')}.`);
-            if (overCap > 0) parts.push(`Skipped ${overCap} — workspace limit is 20 structures.`);
-            if (parts.length === 0) parts.push('Nothing to add — paste at least one ID.');
-            batchFeedback.innerText = parts.join(' ');
-
-            if (addedCount > 0) batchInput.value = "";
         });
 
         const uploadBtn = this.element.querySelector('#workspace-upload-structure-btn');

@@ -66,7 +66,7 @@ export class TopBar {
                     <div class="h-5 w-px bg-border"></div>
                     <span id="topbar-health-status" class="text-secondary truncate max-w-[200px]">Alignment engine: Checking...</span>
                     <span id="topbar-ram-text" class="text-muted">--</span>
-                    <button id="topbar-free-ram-btn" class="text-accent hover:text-primary transition-colors" title="Runs garbage collection on the shared server process - affects all users, not just your session">Free up memory</button>
+                    <button id="topbar-free-ram-btn" class="text-accent hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-accent" title="Runs garbage collection on the shared server process - affects all users, not just your session">Free up memory</button>
                 </div>
             </div>
         `;

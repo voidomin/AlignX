@@ -60,6 +60,11 @@ body {
     background: theme(colors.surface-raised);
 }
 
+.btn-secondary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .table-header {
     background-color: theme(colors.surface-raised);
 }
