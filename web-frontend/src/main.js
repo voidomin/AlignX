@@ -64,7 +64,8 @@ class App {
                 this.chainSelections[pdbId] = chainId;
             },
             onRunAlignment: () => this.executeAlignment(),
-            onQuickStart: (pdbIds) => this.loadQuickStart(pdbIds)
+            onQuickStart: (pdbIds) => this.loadQuickStart(pdbIds),
+            isSharedView: this.isSharedView
         });
 
         this.ligandTab = new LigandTab({
@@ -86,7 +87,8 @@ class App {
             onHighlightResidues: (chainMapping) => this.viewer3D.highlightResidues(chainMapping)
         });
         this.analyticsTab = new AnalyticsTab({
-            onHighlightResidues: (chainMapping) => this.viewer3D.highlightResidues(chainMapping)
+            onHighlightResidues: (chainMapping) => this.viewer3D.highlightResidues(chainMapping),
+            onGoToWorkspace: () => this.switchTab('workspace')
         });
         this.clustersTab = new ClustersTab();
         this.comparisonTab = new ComparisonTab();
@@ -97,7 +99,8 @@ class App {
 
         this.dashboardTab = new DashboardTab({
             onReloadRun: (run) => this.reloadPastRun(run),
-            onQuickStart: (pdbIds) => this.loadQuickStart(pdbIds)
+            onQuickStart: (pdbIds) => this.loadQuickStart(pdbIds),
+            onGoToWorkspace: () => this.switchTab('workspace')
         });
 
         this.settingsTab = new SettingsTab();

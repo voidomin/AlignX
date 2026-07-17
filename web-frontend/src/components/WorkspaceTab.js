@@ -11,6 +11,14 @@ const SOURCE_LABELS = {
     upload: 'Uploaded',
 };
 
+// The one localStorage key this app uses (there is no persistence layer
+// otherwise) - gates a first-run hint explaining the three ways to add a
+// structure. Keyed on "has the user ever dismissed it," not "is this the
+// first render," since this same empty state legitimately re-renders
+// after a workspace reset - re-showing a dismissed hint on every reset
+// would be wrong.
+const ONBOARDING_DISMISSED_KEY = 'structscope:onboarding-dismissed';
+
 // The single merged "add structures, then see what you can do with them"
 // tab - replaces the old Overview (2+, Mustang alignment) and Discover
 // (exactly 1, Foldseek function inference) split. Add any number of
@@ -31,6 +39,7 @@ export class WorkspaceTab {
         this.onChainSelection = props.onChainSelection;
         this.onRunAlignment = props.onRunAlignment;
         this.onQuickStart = props.onQuickStart;
+        this.isSharedView = Boolean(props.isSharedView);
         this.element = null;
         this.isLoadingChains = false;
         this.isUploading = false;
@@ -224,44 +233,49 @@ export class WorkspaceTab {
         });
 
         batchAddBtn.addEventListener('click', async () => {
-            const raw = batchInput.value;
-            const tokens = raw.split(/[\s,]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
+            batchAddBtn.disabled = true;
+            try {
+                const raw = batchInput.value;
+                const tokens = raw.split(/[\s,]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
 
-            const toAdd = [];
-            const invalid = [];
-            let duplicates = 0;
-            const seen = new Set(this.selectedPDBs);
+                const toAdd = [];
+                const invalid = [];
+                let duplicates = 0;
+                const seen = new Set(this.selectedPDBs);
 
-            tokens.forEach(token => {
-                if (!isValidPdbId(token)) {
-                    invalid.push(token);
-                    return;
+                tokens.forEach(token => {
+                    if (!isValidPdbId(token)) {
+                        invalid.push(token);
+                        return;
+                    }
+                    if (seen.has(token)) {
+                        duplicates += 1;
+                        return;
+                    }
+                    seen.add(token);
+                    toAdd.push(token);
+                });
+
+                let overCap = 0;
+                let addedCount = 0;
+                if (toAdd.length > 0) {
+                    const result = await this.onAddManyPDBs(toAdd);
+                    addedCount = result?.added ? result.added.length : toAdd.length;
+                    overCap = result?.overCap || 0;
                 }
-                if (seen.has(token)) {
-                    duplicates += 1;
-                    return;
-                }
-                seen.add(token);
-                toAdd.push(token);
-            });
 
-            let overCap = 0;
-            let addedCount = 0;
-            if (toAdd.length > 0) {
-                const result = await this.onAddManyPDBs(toAdd);
-                addedCount = result?.added ? result.added.length : toAdd.length;
-                overCap = result?.overCap || 0;
+                const parts = [];
+                if (addedCount > 0) parts.push(`Added ${addedCount}.`);
+                if (duplicates > 0) parts.push(`Skipped ${duplicates} already in the workspace.`);
+                if (invalid.length > 0) parts.push(`Couldn't recognize: ${invalid.join(', ')}.`);
+                if (overCap > 0) parts.push(`Skipped ${overCap} — workspace limit is 20 structures.`);
+                if (parts.length === 0) parts.push('Nothing to add — paste at least one ID.');
+                batchFeedback.innerText = parts.join(' ');
+
+                if (addedCount > 0) batchInput.value = "";
+            } finally {
+                batchAddBtn.disabled = false;
             }
-
-            const parts = [];
-            if (addedCount > 0) parts.push(`Added ${addedCount}.`);
-            if (duplicates > 0) parts.push(`Skipped ${duplicates} already in the workspace.`);
-            if (invalid.length > 0) parts.push(`Couldn't recognize: ${invalid.join(', ')}.`);
-            if (overCap > 0) parts.push(`Skipped ${overCap} — workspace limit is 20 structures.`);
-            if (parts.length === 0) parts.push('Nothing to add — paste at least one ID.');
-            batchFeedback.innerText = parts.join(' ');
-
-            if (addedCount > 0) batchInput.value = "";
         });
 
         const uploadBtn = this.element.querySelector('#workspace-upload-structure-btn');
@@ -404,6 +418,27 @@ export class WorkspaceTab {
                     <div id="workspace-quick-start" class="flex flex-wrap justify-center gap-2"></div>
                 </div>
             `;
+            if (!this.isSharedView && localStorage.getItem(ONBOARDING_DISMISSED_KEY) !== 'true') {
+                const hint = document.createElement('div');
+                hint.id = 'workspace-onboarding-hint';
+                hint.className = "flex items-start justify-between gap-3 bg-surface-raised border border-border-subtle rounded-md px-4 py-3 mt-1 max-w-md mx-auto text-left";
+                const hintText = document.createElement('span');
+                hintText.className = "font-body-sm text-body-sm text-secondary";
+                hintText.textContent = "Three ways to add a structure: type a PDB ID or accession above, upload a file, or paste a batch of IDs - pick whichever fits what you already have.";
+                const dismissBtn = document.createElement('button');
+                dismissBtn.id = 'workspace-onboarding-dismiss-btn';
+                dismissBtn.type = 'button';
+                dismissBtn.className = "text-secondary hover:text-primary shrink-0";
+                dismissBtn.setAttribute('aria-label', 'Dismiss');
+                dismissBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">close</span>';
+                dismissBtn.addEventListener('click', () => {
+                    localStorage.setItem(ONBOARDING_DISMISSED_KEY, 'true');
+                    hint.remove();
+                });
+                hint.appendChild(hintText);
+                hint.appendChild(dismissBtn);
+                container.insertBefore(hint, container.firstChild);
+            }
             const quickStartContainer = container.querySelector('#workspace-quick-start');
             if (quickStartContainer && this.onQuickStart) {
                 QUICK_START_EXAMPLES.forEach(ex => {

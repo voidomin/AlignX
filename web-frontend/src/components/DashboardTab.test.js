@@ -66,6 +66,19 @@ describe('DashboardTab', () => {
             .toContain('head to the Workspace tab');
     });
 
+    it('clicking "Go to Workspace" in the empty state calls onGoToWorkspace', async () => {
+        fetchStats.mockResolvedValue({ total_runs: 0, total_proteins_analyzed: 0, cache_size_mb: 0 });
+        fetchHistory.mockResolvedValue({ runs: [] });
+        const onGoToWorkspace = vi.fn();
+
+        const tab = new DashboardTab({ onReloadRun: vi.fn(), onQuickStart: vi.fn(), onGoToWorkspace });
+        tab.render();
+        await tab.loadDashboardData();
+
+        tab.element.querySelector('#dashboard-recent-runs button').click();
+        expect(onGoToWorkspace).toHaveBeenCalled();
+    });
+
     it('lists recent runs and calls onReloadRun when a row is clicked', async () => {
         fetchStats.mockResolvedValue({ total_runs: 1, total_proteins_analyzed: 2, cache_size_mb: 0.1 });
         fetchHistory.mockResolvedValue({ runs: [makeRun('run_1')] });

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WorkspaceTab } from './WorkspaceTab.js';
 
 vi.mock('../api.js', () => ({
@@ -35,6 +35,10 @@ function makeTab(overrides = {}) {
 }
 
 describe('WorkspaceTab', () => {
+    beforeEach(() => {
+        localStorage.clear();
+    });
+
     it('shows the empty-state message and a "0 Proteins" badge with no structures selected', () => {
         const tab = makeTab();
         tab.render();
@@ -42,6 +46,41 @@ describe('WorkspaceTab', () => {
         expect(tab.element.querySelector('#workspace-pdb-count-badge').innerText).toBe('0 Proteins');
         expect(tab.element.querySelector('#workspace-pdb-list-container').textContent)
             .toContain('Add a structure to analyze it on its own, or 2+ to align them');
+    });
+
+    describe('first-run onboarding hint', () => {
+        it('shows the hint on a fresh visit and dismisses it permanently on click', () => {
+            const tab = makeTab();
+            tab.render();
+
+            const hint = tab.element.querySelector('#workspace-onboarding-hint');
+            expect(hint).not.toBeNull();
+
+            hint.querySelector('#workspace-onboarding-dismiss-btn').click();
+
+            expect(tab.element.querySelector('#workspace-onboarding-hint')).toBeNull();
+            expect(localStorage.getItem('structscope:onboarding-dismissed')).toBe('true');
+        });
+
+        it('does not show the hint again after a previous dismissal, even across a workspace reset', () => {
+            localStorage.setItem('structscope:onboarding-dismissed', 'true');
+            const tab = makeTab();
+            tab.render();
+
+            expect(tab.element.querySelector('#workspace-onboarding-hint')).toBeNull();
+
+            // Simulate the empty state re-rendering after a "New Workspace" reset.
+            tab.selectedPDBs = [];
+            tab.refreshPDBList();
+            expect(tab.element.querySelector('#workspace-onboarding-hint')).toBeNull();
+        });
+
+        it('never shows the hint in a shared/read-only view', () => {
+            const tab = makeTab({ isSharedView: true });
+            tab.render();
+
+            expect(tab.element.querySelector('#workspace-onboarding-hint')).toBeNull();
+        });
     });
 
     it('shows quick-start example buttons in the empty state', () => {
@@ -764,6 +803,24 @@ describe('WorkspaceTab', () => {
 
             expect(tab.element.querySelector('#workspace-batch-add-feedback').innerText)
                 .toContain('Skipped 1 — workspace limit is 20 structures.');
+        });
+
+        it('disables the Add All button for the duration of the request, to prevent a double-submit', async () => {
+            let resolveAdd;
+            const onAddManyPDBs = vi.fn(() => new Promise(resolve => { resolveAdd = resolve; }));
+            const tab = makeTab({ onAddManyPDBs });
+            tab.render();
+
+            const batchAddBtn = tab.element.querySelector('#workspace-batch-add-btn');
+            tab.element.querySelector('#workspace-batch-pdb-input').value = '4RLT, 3UG9';
+            batchAddBtn.click();
+
+            expect(batchAddBtn.disabled).toBe(true);
+            resolveAdd({ added: ['4RLT', '3UG9'], overCap: 0 });
+            await onAddManyPDBs.mock.results[0].value;
+            await Promise.resolve();
+
+            expect(batchAddBtn.disabled).toBe(false);
         });
 
         it('clears the textarea only when something was actually added', async () => {

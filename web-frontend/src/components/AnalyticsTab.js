@@ -1,6 +1,7 @@
 import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae } from '../api';
 import { renderDomainList, renderGoTermList, renderFeatureList } from '../utils/annotationRenderers';
 import { createInsightIconSvg } from '../utils/insightIcons';
+import { wireArrowKeyNavigation } from '../utils/tabKeyboardNav';
 
 // Renders one insight string's markdown-lite **bold** segments as real
 // <strong> DOM nodes, built via createElement/createTextNode rather than
@@ -74,6 +75,7 @@ export class AnalyticsTab {
 
     constructor(props = {}) {
         this.onHighlightResidues = props.onHighlightResidues || (() => {});
+        this.onGoToWorkspace = props.onGoToWorkspace || (() => {});
     }
 
     render() {
@@ -91,9 +93,9 @@ export class AnalyticsTab {
 
             <div class="section-body flex flex-col gap-6">
                 <!-- Sub-tab strip -->
-                <div id="analytics-subtab-strip" class="flex gap-1 border border-border rounded-md p-1 shrink-0">
+                <div id="analytics-subtab-strip" role="tablist" class="flex gap-1 border border-border rounded-md p-1 shrink-0">
                     ${SUB_TABS.map(t => `
-                        <button data-subtab="${t.key}" class="analytics-subtab-btn flex-1 py-1.5 rounded-md font-label-md text-label-md transition-colors" aria-selected="${t.key === 'quality'}">${t.label}</button>
+                        <button data-subtab="${t.key}" id="analytics-subtab-tab-${t.key}" role="tab" aria-controls="analytics-subtab-panel-${t.key}" class="analytics-subtab-btn flex-1 py-1.5 rounded-md font-label-md text-label-md transition-colors" aria-selected="${t.key === 'quality'}" tabindex="${t.key === 'quality' ? '0' : '-1'}">${t.label}</button>
                     `).join('')}
                 </div>
 
@@ -324,6 +326,19 @@ export class AnalyticsTab {
         this.element.querySelectorAll('.analytics-subtab-btn').forEach(btn => {
             btn.addEventListener('click', () => this.switchSubTab(btn.dataset.subtab));
         });
+        // Panels are co-located with their tabs in this component (unlike
+        // TopBar's tabs, which swap in entirely different components
+        // elsewhere in the DOM), so a real role="tabpanel"/aria-labelledby
+        // pairing is possible here.
+        SUB_TABS.forEach(t => {
+            const panel = this.element.querySelector(`[data-panel="${t.key}"]`);
+            if (panel) {
+                panel.id = `analytics-subtab-panel-${t.key}`;
+                panel.setAttribute('role', 'tabpanel');
+                panel.setAttribute('aria-labelledby', `analytics-subtab-tab-${t.key}`);
+            }
+        });
+        wireArrowKeyNavigation(this.element.querySelector('#analytics-subtab-strip'), '.analytics-subtab-btn', (btn) => this.switchSubTab(btn.dataset.subtab));
         this.updateSubTabView();
     }
 
@@ -364,6 +379,7 @@ export class AnalyticsTab {
             const isActive = btn.dataset.subtab === this.activeSubTab;
             btn.className = `analytics-subtab-btn flex-1 py-1.5 rounded-md font-label-md text-label-md transition-colors ${isActive ? 'bg-accent-muted text-accent' : 'text-secondary hover:text-primary'}`;
             btn.setAttribute('aria-selected', String(isActive));
+            btn.tabIndex = isActive ? 0 : -1;
         });
         this.element.querySelectorAll('[data-panel]').forEach(panel => {
             panel.classList.toggle('hidden', panel.dataset.panel !== this.activeSubTab);
@@ -460,7 +476,19 @@ export class AnalyticsTab {
         const sharedContent = this.element.querySelector('#annotations-shared-content');
 
         if (this.structures.length === 0) {
-            content.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Add a structure in the Workspace tab to display functional annotation.</div>`;
+            content.innerHTML = "";
+            const empty = document.createElement('div');
+            empty.className = "flex flex-col items-center justify-center gap-2 h-full text-secondary font-body-sm";
+            const text = document.createElement('span');
+            text.textContent = "Add a structure in the Workspace tab to display functional annotation.";
+            empty.appendChild(text);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = "font-label-sm text-label-sm text-accent hover:underline";
+            btn.textContent = 'Go to Workspace';
+            btn.addEventListener('click', () => this.onGoToWorkspace());
+            empty.appendChild(btn);
+            content.appendChild(empty);
             sharedSection.classList.add('hidden');
             sharedSection.classList.remove('flex');
             return;

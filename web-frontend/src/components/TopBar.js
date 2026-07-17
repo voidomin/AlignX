@@ -1,4 +1,5 @@
 import { fetchMemoryStats, triggerClearMemory, fetchHealth } from '../api';
+import { wireArrowKeyNavigation } from '../utils/tabKeyboardNav';
 
 // Grouped into two sections so the nav communicates structure instead of
 // 9 flat, equal-weight peers: Workspace (the one merged add-structures/
@@ -48,10 +49,10 @@ export class TopBar {
                     <button id="topbar-scroll-left" class="hidden shrink-0 w-8 h-8 items-center justify-center rounded-md bg-surface border border-border-subtle text-secondary hover:text-primary transition-colors mr-1" title="Scroll tabs left" aria-label="Scroll tabs left">
                         <span class="material-symbols-outlined text-[16px]">chevron_left</span>
                     </button>
-                    <nav id="topbar-tabs" class="flex items-center gap-1 min-w-0 overflow-x-auto scroll-smooth">
+                    <nav id="topbar-tabs" role="tablist" class="flex items-center gap-1 min-w-0 overflow-x-auto scroll-smooth">
                         ${TABS.map((t, i) => `
                             ${i > 0 && t.group !== TABS[i - 1].group ? '<div class="w-px h-5 bg-border-subtle mx-1.5 shrink-0" aria-hidden="true"></div>' : ''}
-                            <button data-tab="${t.key}" class="tab-trigger px-3 py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors" aria-selected="${t.key === 'workspace'}">${t.label}</button>
+                            <button data-tab="${t.key}" role="tab" class="tab-trigger px-3 py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors" aria-selected="${t.key === 'workspace'}" tabindex="${t.key === 'workspace' ? '0' : '-1'}">${t.label}</button>
                         `).join('')}
                     </nav>
                     <button id="topbar-scroll-right" class="hidden shrink-0 w-8 h-8 items-center justify-center rounded-md bg-surface border border-border-subtle text-secondary hover:text-primary transition-colors ml-1" title="Scroll tabs right" aria-label="Scroll tabs right">
@@ -65,7 +66,7 @@ export class TopBar {
                     <div class="h-5 w-px bg-border"></div>
                     <span id="topbar-health-status" class="text-secondary truncate max-w-[200px]">Alignment engine: Checking...</span>
                     <span id="topbar-ram-text" class="text-muted">--</span>
-                    <button id="topbar-free-ram-btn" class="text-accent hover:text-primary transition-colors" title="Runs garbage collection on the shared server process - affects all users, not just your session">Free up memory</button>
+                    <button id="topbar-free-ram-btn" class="text-accent hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-accent" title="Runs garbage collection on the shared server process - affects all users, not just your session">Free up memory</button>
                 </div>
             </div>
         `;
@@ -118,6 +119,12 @@ export class TopBar {
             });
         });
 
+        wireArrowKeyNavigation(this.element.querySelector('#topbar-tabs'), '.tab-trigger', (btn) => {
+            const tab = btn.dataset.tab;
+            this.switchTab(tab);
+            this.onTabChange(tab);
+        });
+
         this.element.querySelector('#topbar-export-btn').addEventListener('click', () => this.onExportData());
         this.element.querySelector('#topbar-new-ws-btn').addEventListener('click', () => this.onNewWorkspace());
 
@@ -147,6 +154,7 @@ export class TopBar {
             const isActive = btn.dataset.tab === this.activeTab;
             btn.className = `tab-trigger px-3 py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors ${isActive ? 'bg-accent-muted text-accent' : 'text-secondary hover:text-primary'}`;
             btn.setAttribute('aria-selected', String(isActive));
+            btn.tabIndex = isActive ? 0 : -1;
             if (isActive) {
                 btn.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
             }
