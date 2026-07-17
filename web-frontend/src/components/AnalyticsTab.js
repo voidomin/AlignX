@@ -848,6 +848,33 @@ export class AnalyticsTab {
     // repopulated on every renderVisuals() call, preserving the previously
     // selected structure(s) where they're still valid, same pattern as
     // populateAnnotationsPicker().
+    // Shared option-population logic for the app's several "pick a
+    // workspace structure" selects: preserves the previously selected
+    // value when it's still valid, and falls back to an explicit
+    // "Select a structure" placeholder only when the given candidate
+    // list is genuinely empty - otherwise behaves exactly like the old
+    // per-caller duplicated version (auto-defaults to the first real
+    // option via normal <select> behavior).
+    _populateStructureOptions(select, structures) {
+        const previousValue = select.value;
+        select.innerHTML = "";
+        if (structures.length === 0) {
+            const placeholder = document.createElement('option');
+            placeholder.value = "";
+            placeholder.textContent = "Select a structure";
+            select.appendChild(placeholder);
+        }
+        structures.forEach(({ pdbId }) => {
+            const opt = document.createElement('option');
+            opt.value = pdbId;
+            opt.textContent = pdbId;
+            select.appendChild(opt);
+        });
+        if (structures.some(s => s.pdbId === previousValue)) {
+            select.value = previousValue;
+        }
+    }
+
     populateContactMapSelectors() {
         const singleSelects = [this.element.querySelector('#contact-map-pdb-select')];
         const pairSelects = [
@@ -855,29 +882,7 @@ export class AnalyticsTab {
             this.element.querySelector('#diff-distance-pdb-b-select'),
         ];
 
-        [...singleSelects, ...pairSelects].forEach(select => {
-            const previousValue = select.value;
-            select.innerHTML = "";
-            // The placeholder only ever ends up selected when there's
-            // nothing real to default to (this.structures is empty) -
-            // otherwise it exists solely so an explicit "no selection"
-            // state is representable, matching LigandTab's ligand picker.
-            if (this.structures.length === 0) {
-                const placeholder = document.createElement('option');
-                placeholder.value = "";
-                placeholder.textContent = "Select a structure";
-                select.appendChild(placeholder);
-            }
-            this.structures.forEach(({ pdbId }) => {
-                const opt = document.createElement('option');
-                opt.value = pdbId;
-                opt.textContent = pdbId;
-                select.appendChild(opt);
-            });
-            if (this.structures.some(s => s.pdbId === previousValue)) {
-                select.value = previousValue;
-            }
-        });
+        [...singleSelects, ...pairSelects].forEach(select => this._populateStructureOptions(select, this.structures));
         if (pairSelects[1] && this.structures.length > 1 && pairSelects[0].value === pairSelects[1].value) {
             pairSelects[1].value = this.structures[1].pdbId;
         }
@@ -904,24 +909,8 @@ export class AnalyticsTab {
     // needing each structure's source database passed down separately.
     populatePaeSelector() {
         const select = this.element.querySelector('#pae-pdb-select');
-        const previousValue = select.value;
-        select.innerHTML = "";
         const afStructures = this.structures.filter(({ pdbId }) => pdbId.toUpperCase().startsWith('AF-'));
-        if (afStructures.length === 0) {
-            const placeholder = document.createElement('option');
-            placeholder.value = "";
-            placeholder.textContent = "Select a structure";
-            select.appendChild(placeholder);
-        }
-        afStructures.forEach(({ pdbId }) => {
-            const opt = document.createElement('option');
-            opt.value = pdbId;
-            opt.textContent = pdbId;
-            select.appendChild(opt);
-        });
-        if ([...select.options].some(opt => opt.value === previousValue)) {
-            select.value = previousValue;
-        }
+        this._populateStructureOptions(select, afStructures);
         const btn = this.element.querySelector('#pae-load-btn');
         if (btn) btn.disabled = !select.value;
     }
@@ -975,25 +964,7 @@ export class AnalyticsTab {
             this.element.querySelector('#diff-narrative-pdb-a-select'),
             this.element.querySelector('#diff-narrative-pdb-b-select'),
         ];
-        selects.forEach(select => {
-            const previousValue = select.value;
-            select.innerHTML = "";
-            if (this.structures.length === 0) {
-                const placeholder = document.createElement('option');
-                placeholder.value = "";
-                placeholder.textContent = "Select a structure";
-                select.appendChild(placeholder);
-            }
-            this.structures.forEach(({ pdbId }) => {
-                const opt = document.createElement('option');
-                opt.value = pdbId;
-                opt.textContent = pdbId;
-                select.appendChild(opt);
-            });
-            if (this.structures.some(s => s.pdbId === previousValue)) {
-                select.value = previousValue;
-            }
-        });
+        selects.forEach(select => this._populateStructureOptions(select, this.structures));
         if (this.structures.length > 1 && selects[0].value === selects[1].value) {
             selects[1].value = this.structures[1].pdbId;
         }
