@@ -140,12 +140,12 @@ Copy `.env.example` to `.env` and customize. Notable production-relevant ones:
 
 ## 🧪 Testing
 
-Backend (pytest, 1228 tests):
+Backend (pytest, 1233 tests):
 ```powershell
 powershell -File scripts\run_tests.ps1
 ```
 
-Frontend (Vitest, 430 tests):
+Frontend (Vitest, 458 tests):
 ```powershell
 cd web-frontend
 npm test
