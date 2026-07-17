@@ -55,6 +55,44 @@ describe('AnalyticsTab', () => {
         expect(tab.element.querySelector('#analytics-insights-empty').classList.contains('hidden')).toBe(true);
     });
 
+    it('renders a real inline SVG icon from a leading [[icon_name]] marker, stripped from the text', () => {
+        const tab = makeTab();
+        tab.render();
+
+        tab.updateResults('run_1', null, null, [], [
+            '[[check_circle]] **High Homogeneity**: very similar (0.42 Å).',
+        ]);
+
+        const item = tab.element.querySelector('#analytics-insights-list li');
+        const icon = item.querySelector('svg');
+        expect(icon).not.toBeNull();
+        expect(icon.children.length).toBeGreaterThan(0);
+        expect(item.textContent).not.toContain('[[check_circle]]');
+        expect(item.querySelector('strong').textContent).toBe('High Homogeneity');
+    });
+
+    it('renders a plain insight with no icon svg when there is no [[icon_name]] marker', () => {
+        const tab = makeTab();
+        tab.render();
+
+        tab.updateResults('run_1', null, null, [], ['Plain insight with no markdown.']);
+
+        const item = tab.element.querySelector('#analytics-insights-list li');
+        expect(item.querySelector('svg')).toBeNull();
+        expect(item.textContent).toBe('Plain insight with no markdown.');
+    });
+
+    it('renders no icon svg for an unrecognized icon name, but still shows the text', () => {
+        const tab = makeTab();
+        tab.render();
+
+        tab.updateResults('run_1', null, null, [], ['[[not_a_real_icon]] Some insight text.']);
+
+        const item = tab.element.querySelector('#analytics-insights-list li');
+        expect(item.querySelector('svg')).toBeNull();
+        expect(item.textContent).toBe('Some insight text.');
+    });
+
     it('escapes HTML in insight text before applying markdown formatting', () => {
         const tab = makeTab();
         tab.render();

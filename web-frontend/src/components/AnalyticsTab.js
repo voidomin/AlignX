@@ -1,5 +1,6 @@
 import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae } from '../api';
 import { renderDomainList, renderGoTermList, renderFeatureList } from '../utils/annotationRenderers';
+import { createInsightIconSvg } from '../utils/insightIcons';
 
 // Renders one insight string's markdown-lite **bold** segments as real
 // <strong> DOM nodes, built via createElement/createTextNode rather than
@@ -19,6 +20,20 @@ function appendMarkdownLiteBold(parent, text) {
             parent.appendChild(document.createTextNode(part));
         }
     });
+}
+
+// insights.py leads each insight with a "[[icon_name]] " marker (a real
+// Material Symbols icon name, matching the icon font already used
+// everywhere else in this app's UI) instead of an emoji character -
+// this pulls that marker off and returns the icon name plus the
+// remaining display text, or null for the icon if a string has no
+// marker at all (so a malformed/legacy string still renders as plain
+// text rather than breaking).
+const INSIGHT_ICON_PATTERN = /^\[\[([a-z0-9_]+)\]\]\s*/;
+function splitInsightIcon(text) {
+    const match = INSIGHT_ICON_PATTERN.exec(String(text ?? ''));
+    if (!match) return { icon: null, text: text ?? '' };
+    return { icon: match[1], text: text.slice(match[0].length) };
 }
 
 const SUB_TABS = [
@@ -1107,10 +1122,18 @@ export class AnalyticsTab {
 
         if (this.insights?.length > 0) {
             insightsEmpty.classList.add('hidden');
-            this.insights.forEach(text => {
+            this.insights.forEach(rawText => {
+                const { icon, text } = splitInsightIcon(rawText);
                 const li = document.createElement('li');
-                li.className = "font-body-sm text-primary border border-border-subtle rounded-md p-2";
-                appendMarkdownLiteBold(li, text);
+                li.className = "font-body-sm text-primary border border-border-subtle rounded-md p-2 flex items-start gap-2";
+                const iconSvg = icon ? createInsightIconSvg(icon) : null;
+                if (iconSvg) {
+                    iconSvg.classList.add('text-accent', 'shrink-0', 'mt-0.5');
+                    li.appendChild(iconSvg);
+                }
+                const textSpan = document.createElement('span');
+                appendMarkdownLiteBold(textSpan, text);
+                li.appendChild(textSpan);
                 insightsList.appendChild(li);
             });
         } else if (this.currentRunId) {

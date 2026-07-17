@@ -128,8 +128,17 @@ class NotebookExporter:
 
     @staticmethod
     def _processed_insights(insights):
-        # Convert markdown bold to HTML bold (simple cleanup)
-        return [i.replace("**", "") for i in insights] if insights else []
+        # Strip the "[[icon_name]] " marker (this HTML export has no
+        # Material Symbols icon font loaded to render it as a real icon,
+        # see InsightsGenerator.strip_icon_marker) and convert markdown
+        # bold to plain text (simple cleanup).
+        from src.backend.insights import InsightsGenerator
+
+        if not insights:
+            return []
+        return [
+            InsightsGenerator.strip_icon_marker(i).replace("**", "") for i in insights
+        ]
 
     def export(self, results, insights=None):
         """
@@ -213,7 +222,11 @@ class NotebookExporter:
 
     @staticmethod
     def _ipynb_insights_markdown(insights):
-        bullets = "\n".join(f"- {i}" for i in insights)
+        from src.backend.insights import InsightsGenerator
+
+        bullets = "\n".join(
+            f"- {InsightsGenerator.strip_icon_marker(i)}" for i in insights
+        )
         return f"## Automated insights\n\n{bullets}"
 
     @staticmethod
