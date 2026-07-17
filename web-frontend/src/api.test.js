@@ -183,6 +183,16 @@ describe('api.js (no API key configured)', () => {
         expect(isValidPdbId('esm-mgyp002537940442')).toBe(true);
     });
 
+    it('isValidPdbId accepts the synthetic UPLOAD-/PRED- IDs this app mints itself', async () => {
+        const { isValidPdbId } = await import('./api.js');
+        expect(isValidPdbId('UPLOAD-A1B2C3D4')).toBe(true);
+        expect(isValidPdbId('upload-a1b2c3d4')).toBe(true);
+        expect(isValidPdbId('PRED-E174785C')).toBe(true);
+        expect(isValidPdbId('pred-e174785c')).toBe(true);
+        expect(isValidPdbId('UPLOAD-XYZ')).toBe(false);
+        expect(isValidPdbId('PRED-TOOLONGVALUE')).toBe(false);
+    });
+
     it('isValidPdbId rejects malformed or unrecognized IDs', async () => {
         const { isValidPdbId } = await import('./api.js');
         expect(isValidPdbId('SM-')).toBe(false);
