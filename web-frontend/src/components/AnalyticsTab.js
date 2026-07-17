@@ -109,13 +109,13 @@ export class AnalyticsTab {
                             <span id="ramachandran-outliers" class="stat-value">--</span>
                         </div>
                     </div>
-                    <div id="ramachandran-outliers-list-card" class="flex flex-col gap-2 hidden">
+                    <div id="ramachandran-outliers-list-card" class="flex flex-col gap-2 hidden border-t border-border-subtle pt-4">
                         <span class="font-label-sm text-label-sm text-secondary uppercase">Top outliers</span>
                         <div id="ramachandran-outliers-list" class="flex flex-wrap gap-1.5">
                             <!-- Outlier chips -->
                         </div>
                     </div>
-                    <div id="quality-metrics-table-card" class="flex flex-col gap-2 hidden">
+                    <div id="quality-metrics-table-card" class="flex flex-col gap-2 hidden border-t border-border-subtle pt-4">
                         <span class="font-label-sm text-label-sm text-secondary uppercase">Alignment quality (TM-score / GDT-TS)</span>
                         <table class="w-full font-body-sm text-body-sm">
                             <thead>
@@ -128,7 +128,7 @@ export class AnalyticsTab {
                             <tbody id="quality-metrics-table-body"></tbody>
                         </table>
                     </div>
-                    <div id="secondary-structure-card" class="flex flex-col gap-2 hidden">
+                    <div id="secondary-structure-card" class="flex flex-col gap-2 hidden border-t border-border-subtle pt-4">
                         <span class="font-label-sm text-label-sm text-secondary uppercase">Secondary structure (backbone-torsion approximation, not DSSP)</span>
                         <div class="grid grid-cols-3 gap-4">
                             <div class="stat-row"><span class="stat-key">Helix</span><span id="ss-helix-percent" class="stat-value">--</span></div>
@@ -136,7 +136,7 @@ export class AnalyticsTab {
                             <div class="stat-row"><span class="stat-key">Coil</span><span id="ss-coil-percent" class="stat-value">--</span></div>
                         </div>
                     </div>
-                    <div id="pairwise-tm-score-card" class="flex flex-col gap-2 hidden">
+                    <div id="pairwise-tm-score-card" class="flex flex-col gap-2 hidden border-t border-border-subtle pt-4">
                         <span class="font-label-sm text-label-sm text-secondary uppercase">Pairwise TM-score (independent optimal superposition)</span>
                         <table class="w-full font-body-sm text-body-sm">
                             <thead>
@@ -708,7 +708,7 @@ export class AnalyticsTab {
         }
         body.innerHTML = rows.map(r => `
             <tr>
-                <td class="py-1 font-mono">${r.a} &harr; ${r.b}</td>
+                <td class="py-1 font-mono"><span class="block max-w-[220px] truncate" title="${r.a} &harr; ${r.b}">${r.a} &harr; ${r.b}</span></td>
                 <td class="py-1 font-mono">${r.value.toFixed(3)}</td>
             </tr>
         `).join('');
@@ -732,7 +732,11 @@ export class AnalyticsTab {
 
             const idCell = document.createElement('td');
             idCell.className = "py-1 font-mono text-primary";
-            idCell.textContent = pdbId;
+            const idSpan = document.createElement('span');
+            idSpan.className = "block max-w-[180px] truncate";
+            idSpan.title = pdbId;
+            idSpan.textContent = pdbId;
+            idCell.appendChild(idSpan);
 
             const tmCell = document.createElement('td');
             tmCell.className = "py-1 text-primary";

@@ -68,7 +68,7 @@ export class LigandTab {
                     </tbody>
                 </table>
 
-                <div id="pocket-similarity-section" class="hidden flex-col gap-2 mt-2 pt-4 border-t border-border">
+                <div id="pocket-similarity-section" class="hidden flex-col gap-2 mt-6 pt-4 border-t border-border">
                     <div class="flex items-baseline justify-between">
                         <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Binding pocket similarity</span>
                         <span class="font-body-sm text-body-sm text-secondary">Jaccard index of pocket residue composition</span>
@@ -76,7 +76,7 @@ export class LigandTab {
                     <div id="pocket-similarity-heatmap" class="w-full h-[320px]"></div>
                 </div>
 
-                <div id="candidate-pockets-section" class="hidden flex-col gap-2 mt-2 pt-4 border-t border-border">
+                <div id="candidate-pockets-section" class="hidden flex-col gap-2 mt-6 pt-4 border-t border-border">
                     <div class="flex items-baseline justify-between">
                         <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Candidate binding pockets</span>
                         <span class="font-body-sm text-body-sm text-secondary">Heuristic - no bound ligand to analyze directly</span>
@@ -94,7 +94,7 @@ export class LigandTab {
                     </table>
                 </div>
 
-                <div id="interface-section" class="hidden flex-col gap-3 mt-2 pt-4 border-t border-border">
+                <div id="interface-section" class="hidden flex-col gap-3 mt-6 pt-4 border-t border-border">
                     <div class="flex items-baseline justify-between">
                         <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Protein-protein interfaces</span>
                         <span class="font-body-sm text-body-sm text-secondary">Contact residues between two chains</span>
@@ -255,11 +255,16 @@ export class LigandTab {
             rankCell.textContent = pocket.rank;
             tr.appendChild(rankCell);
 
-            const residuesCell = document.createElement('td');
-            residuesCell.className = "px-3 py-1.5";
-            residuesCell.textContent = (pocket.residues || [])
+            const residuesText = (pocket.residues || [])
                 .map(r => `${r.resn} ${r.chain}${r.resi}`)
                 .join(', ');
+            const residuesCell = document.createElement('td');
+            residuesCell.className = "px-3 py-1.5";
+            const residuesSpan = document.createElement('span');
+            residuesSpan.className = "block max-w-[280px] truncate";
+            residuesSpan.title = residuesText;
+            residuesSpan.textContent = residuesText;
+            residuesCell.appendChild(residuesSpan);
             tr.appendChild(residuesCell);
 
             const scoreCell = document.createElement('td');
