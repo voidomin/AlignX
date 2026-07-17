@@ -161,4 +161,41 @@ describe('TopBar', () => {
             expect(activeBtn.scrollIntoView).toHaveBeenCalled();
         });
     });
+
+    describe('tab strip keyboard navigation', () => {
+        it('only the active tab is in the natural Tab order (roving tabindex)', () => {
+            const bar = makeBar();
+            bar.render();
+
+            const tabs = bar.element.querySelectorAll('.tab-trigger');
+            const activeTabs = Array.from(tabs).filter(t => t.tabIndex === 0);
+            expect(activeTabs).toHaveLength(1);
+            expect(activeTabs[0].dataset.tab).toBe('workspace');
+        });
+
+        it('ArrowRight moves focus and calls onTabChange for the next tab', () => {
+            const onTabChange = vi.fn();
+            const bar = makeBar({ onTabChange });
+            document.body.appendChild(bar.render());
+
+            const tabs = bar.element.querySelectorAll('.tab-trigger');
+            tabs[0].focus();
+            tabs[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+
+            expect(document.activeElement).toBe(tabs[1]);
+            expect(onTabChange).toHaveBeenCalledWith(tabs[1].dataset.tab);
+            expect(tabs[1].tabIndex).toBe(0);
+            expect(tabs[0].tabIndex).toBe(-1);
+
+            bar.element.remove();
+        });
+
+        it('exposes role="tablist"/role="tab" for the tab strip', () => {
+            const bar = makeBar();
+            bar.render();
+
+            expect(bar.element.querySelector('#topbar-tabs').getAttribute('role')).toBe('tablist');
+            expect(bar.element.querySelector('.tab-trigger').getAttribute('role')).toBe('tab');
+        });
+    });
 });

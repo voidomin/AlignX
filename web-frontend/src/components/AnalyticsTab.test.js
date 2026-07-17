@@ -857,4 +857,40 @@ describe('AnalyticsTab', () => {
                 .toContain('Failed to map this mutation.');
         });
     });
+
+    describe('sub-tab strip ARIA/keyboard semantics', () => {
+        it('exposes role="tablist"/role="tab", roving tabindex, and real tabpanel pairing', () => {
+            const tab = makeTab();
+            tab.render();
+
+            expect(tab.element.querySelector('#analytics-subtab-strip').getAttribute('role')).toBe('tablist');
+            const qualityTab = tab.element.querySelector('.analytics-subtab-btn[data-subtab="quality"]');
+            expect(qualityTab.getAttribute('role')).toBe('tab');
+            expect(qualityTab.tabIndex).toBe(0);
+            expect(qualityTab.getAttribute('aria-controls')).toBe('analytics-subtab-panel-quality');
+
+            const otherTab = tab.element.querySelector('.analytics-subtab-btn[data-subtab="rmsf"]');
+            expect(otherTab.tabIndex).toBe(-1);
+
+            const qualityPanel = tab.element.querySelector('[data-panel="quality"]');
+            expect(qualityPanel.getAttribute('role')).toBe('tabpanel');
+            expect(qualityPanel.id).toBe('analytics-subtab-panel-quality');
+            expect(qualityPanel.getAttribute('aria-labelledby')).toBe('analytics-subtab-tab-quality');
+        });
+
+        it('ArrowRight moves focus and switches to the next sub-tab', () => {
+            const tab = makeTab();
+            document.body.appendChild(tab.render());
+
+            const buttons = tab.element.querySelectorAll('.analytics-subtab-btn');
+            buttons[0].focus();
+            buttons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+
+            expect(document.activeElement).toBe(buttons[1]);
+            expect(tab.activeSubTab).toBe(buttons[1].dataset.subtab);
+            expect(buttons[1].getAttribute('aria-selected')).toBe('true');
+
+            tab.element.remove();
+        });
+    });
 });
