@@ -460,7 +460,7 @@ export class AnalyticsTab {
         const sharedContent = this.element.querySelector('#annotations-shared-content');
 
         if (this.structures.length === 0) {
-            content.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Add a structure to display functional annotation.</div>`;
+            content.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Add a structure in the Workspace tab to display functional annotation.</div>`;
             sharedSection.classList.add('hidden');
             sharedSection.classList.remove('flex');
             return;

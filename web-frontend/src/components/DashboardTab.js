@@ -93,7 +93,7 @@ export class DashboardTab {
             if (runs.length === 0) {
                 recentContainer.innerHTML = `
                     <div class="text-center py-8 text-secondary font-body-sm">
-                        No past alignment sessions found.
+                        No past alignment sessions yet - head to the Workspace tab to add structures and run one.
                     </div>
                 `;
                 return;
