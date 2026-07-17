@@ -63,6 +63,29 @@ _UNIPROT_FEATURE_TYPES = {
     "Modified residue",
     "Disulfide bond",
     "Natural variant",
+    # Added for real PTM-site coverage: these are UniProt's own type names
+    # for glycosylation, lipid attachment (e.g. palmitoylation,
+    # prenylation), and cross-linked residues (e.g. ubiquitination,
+    # SUMOylation) - the same rest.uniprot.org host/endpoint this app
+    # already calls above, just three more real PTM feature types it
+    # wasn't asking for yet. Verified live against real accessions known
+    # to carry each (P69905 for Glycosylation, P04637/P0DTD1 for
+    # Cross-link, P01112 for Lipidation).
+    "Glycosylation",
+    "Lipidation",
+    "Cross-link",
+}
+# The subset of _UNIPROT_FEATURE_TYPES that specifically means "a residue
+# was chemically modified after translation" - used to split the single
+# fetch_uniprot_features() result into a distinct "PTM sites" list in the
+# UI, separate from active/binding sites and natural variants, without a
+# second fetch against a second UniProt host for data this app already has.
+PTM_FEATURE_TYPES = {
+    "Modified residue",
+    "Disulfide bond",
+    "Glycosylation",
+    "Lipidation",
+    "Cross-link",
 }
 STRING_CALLER_IDENTITY = "structscope"
 _JSON_ACCEPT_HEADERS = {"Accept": "application/json"}

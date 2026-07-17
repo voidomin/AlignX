@@ -36,7 +36,12 @@ export function renderDomainList(domains, heading = 'Domains / families') {
 // fetch_uniprot_features()/aggregate_for_structure(). Same AlphaFold-only
 // highlight_chains precedent as renderDomainList() above - only ever
 // present when the caller's feature objects actually carry it.
-export function renderFeatureList(features, heading = 'UniProt features') {
+// buttonClass defaults to the original single-list class name for back-
+// compat; AnalyticsTab.js now calls this twice (once for PTM-type
+// features, once for everything else) with a distinct class per call so
+// each call's own data-feature-index can be looked up against the right
+// filtered array, instead of colliding on a shared index space.
+export function renderFeatureList(features, heading = 'UniProt features', buttonClass = 'feature-highlight-btn') {
     if (!features?.length) return '';
     return `
         <div class="flex flex-col gap-2">
@@ -44,7 +49,7 @@ export function renderFeatureList(features, heading = 'UniProt features') {
             ${features.map((f, i) => `
                 <div class="flex justify-between items-center py-1.5 border-b border-border-subtle">
                     <span class="font-body-sm">${f.type}${f.description ? ` <span class="text-secondary text-[11px]">(${f.description})</span>` : ''} <span class="font-mono text-[11px] text-secondary">${f.start === f.end ? f.start : `${f.start}-${f.end}`}</span></span>
-                    ${f.highlight_chains ? `<button type="button" class="feature-highlight-btn font-label-sm text-label-sm text-accent hover:underline" data-feature-index="${i}">Highlight in 3D</button>` : ''}
+                    ${f.highlight_chains ? `<button type="button" class="${buttonClass} font-label-sm text-label-sm text-accent hover:underline" data-feature-index="${i}">Highlight in 3D</button>` : ''}
                 </div>
             `).join('')}
         </div>

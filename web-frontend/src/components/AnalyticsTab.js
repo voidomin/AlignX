@@ -46,6 +46,12 @@ const SUB_TABS = [
     { key: 'annotations', label: 'Annotations' },
 ];
 
+// Mirrors annotation_aggregator.py's PTM_FEATURE_TYPES exactly - which of
+// the UniProt feature types this app already fetches specifically mean
+// "a residue was chemically modified after translation," used to split
+// one combined feature list into a distinct "PTM sites" section.
+const PTM_FEATURE_TYPES = new Set(['Modified residue', 'Disulfide bond', 'Glycosylation', 'Lipidation', 'Cross-link']);
+
 export class AnalyticsTab {
     element = null;
     currentRunId = null;
@@ -511,11 +517,23 @@ export class AnalyticsTab {
         } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.uniprot_features?.length) {
             content.innerHTML = `<div class="font-body-sm text-secondary py-4">Resolved to UniProt ${annotation.accession}, but no curated domains, GO terms, pathways, or sequence features were found.</div>`;
         } else {
+            // Split the single fetch_uniprot_features() result into a
+            // distinct "PTM sites" list (chemical modifications after
+            // translation - phosphorylation, glycosylation, lipidation,
+            // disulfides, cross-links) and everything else (active/binding
+            // sites, natural variants) - real data this app already
+            // fetches, just surfaced as two clearly-labeled groups instead
+            // of one mixed list.
+            const allFeatures = annotation.uniprot_features || [];
+            const ptmFeatures = allFeatures.filter(f => PTM_FEATURE_TYPES.has(f.type));
+            const otherFeatures = allFeatures.filter(f => !PTM_FEATURE_TYPES.has(f.type));
+
             content.innerHTML = `
                 <div class="font-body-sm text-secondary">Resolved to UniProt <span class="font-mono text-primary">${annotation.accession}</span></div>
                 ${renderDomainList(annotation.domains)}
                 ${renderGoTermList(annotation.go_terms)}
-                ${renderFeatureList(annotation.uniprot_features)}
+                ${renderFeatureList(ptmFeatures, 'PTM sites', 'ptm-highlight-btn')}
+                ${renderFeatureList(otherFeatures, 'UniProt features', 'feature-highlight-btn')}
                 ${this.renderReactomePathways(annotation.reactome_pathways)}
             `;
             content.querySelectorAll('.domain-highlight-btn').forEach(btn => {
@@ -524,8 +542,14 @@ export class AnalyticsTab {
                     btn.addEventListener('click', () => this.onHighlightResidues(domain.highlight_chains));
                 }
             });
+            content.querySelectorAll('.ptm-highlight-btn').forEach(btn => {
+                const feature = ptmFeatures[Number(btn.dataset.featureIndex)];
+                if (feature?.highlight_chains) {
+                    btn.addEventListener('click', () => this.onHighlightResidues(feature.highlight_chains));
+                }
+            });
             content.querySelectorAll('.feature-highlight-btn').forEach(btn => {
-                const feature = annotation.uniprot_features[Number(btn.dataset.featureIndex)];
+                const feature = otherFeatures[Number(btn.dataset.featureIndex)];
                 if (feature?.highlight_chains) {
                     btn.addEventListener('click', () => this.onHighlightResidues(feature.highlight_chains));
                 }

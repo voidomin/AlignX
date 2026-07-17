@@ -412,6 +412,38 @@ describe('AnalyticsTab', () => {
             expect(onHighlightResidues).toHaveBeenCalledWith({ A: [88] });
         });
 
+        it('splits UniProt features into a distinct "PTM sites" section, separate from other features', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: 'AF-P69905-F1', chain: 'A', accession: 'P69905',
+                    domains: [], go_terms: [], reactome_pathways: [],
+                    uniprot_features: [
+                        { type: 'Binding site', description: '', start: 88, end: 88, highlight_chains: { A: [88] } },
+                        { type: 'Glycosylation', description: 'N-linked', start: 4, end: 4, highlight_chains: { A: [4] } },
+                        { type: 'Lipidation', description: 'S-palmitoyl cysteine', start: 181, end: 181, highlight_chains: { A: [181] } },
+                    ],
+                },
+            });
+            const onHighlightResidues = vi.fn();
+            const tab = makeTab({ onHighlightResidues });
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['AF-P69905-F1'], { 'AF-P69905-F1': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            expect(tab.element.textContent).toContain('PTM sites');
+            const ptmButtons = tab.element.querySelectorAll('.ptm-highlight-btn');
+            expect(ptmButtons).toHaveLength(2);
+
+            ptmButtons[0].click();
+            expect(onHighlightResidues).toHaveBeenCalledWith({ A: [4] });
+
+            const otherButtons = tab.element.querySelectorAll('.feature-highlight-btn');
+            expect(otherButtons).toHaveLength(1);
+            otherButtons[0].click();
+            expect(onHighlightResidues).toHaveBeenCalledWith({ A: [88] });
+        });
+
         it('omits the "Highlight in 3D" button for a domain with no highlight_chains (e.g. a plain PDB structure)', async () => {
             fetchAnnotations.mockResolvedValue({
                 annotation: {

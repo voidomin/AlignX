@@ -107,5 +107,15 @@ describe('annotationRenderers', () => {
             const html = renderFeatureList([{ type: 'Binding site', description: '', start: 88, end: 88 }]);
             expect(html).not.toContain('Highlight in 3D');
         });
+
+        it('accepts a custom button class, for callers rendering more than one list from the same feature type', () => {
+            const html = renderFeatureList(
+                [{ type: 'Glycosylation', description: '', start: 4, end: 4, highlight_chains: { A: [4] } }],
+                'PTM sites',
+                'ptm-highlight-btn',
+            );
+            expect(html).toContain('ptm-highlight-btn');
+            expect(html).not.toContain('feature-highlight-btn');
+        });
     });
 });

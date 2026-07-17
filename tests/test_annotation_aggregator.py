@@ -735,6 +735,37 @@ class TestFetchUniprotFeatures:
 
     @pytest.mark.asyncio
     @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_includes_real_ptm_feature_types(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "features": [
+                    {
+                        "type": "Glycosylation",
+                        "description": "N-linked (GlcNAc...)",
+                        "location": {"start": {"value": 4}, "end": {"value": 4}},
+                    },
+                    {
+                        "type": "Lipidation",
+                        "description": "S-palmitoyl cysteine",
+                        "location": {"start": {"value": 181}, "end": {"value": 181}},
+                    },
+                    {
+                        "type": "Cross-link",
+                        "description": "Glycyl lysine isopeptide (Lys-Gly)",
+                        "location": {"start": {"value": 48}, "end": {"value": 48}},
+                    },
+                ]
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            features = await aggregator.fetch_uniprot_features("P01112", client)
+
+        types = {f["type"] for f in features}
+        assert types == {"Glycosylation", "Lipidation", "Cross-link"}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
     async def test_skips_a_feature_with_no_resolvable_location(self, mock_get):
         mock_get.return_value = _mock_response(
             json_data={
