@@ -24,7 +24,7 @@ export class DashboardTab {
             </header>
 
             <div class="section-body flex flex-col gap-8">
-                <div id="dashboard-stats" class="grid grid-cols-3 gap-6">
+                <div id="dashboard-stats" class="grid grid-cols-1 sm:grid-cols-3 gap-6">
                     <div class="stat-row stat-primary">
                         <span class="stat-key">Total runs</span>
                         <span id="stat-total-runs" class="stat-value">--</span>
@@ -40,7 +40,7 @@ export class DashboardTab {
                 </div>
 
                 <div class="flex flex-col gap-3 border-t border-border pt-6">
-                    <span class="eyebrow">Recent activity</span>
+                    <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Recent activity</span>
                     <div id="dashboard-recent-runs" class="flex flex-col">
                         <div class="text-center py-8 text-secondary font-body-sm">
                             <span class="animate-spin material-symbols-outlined text-[18px]">sync</span>
@@ -50,7 +50,7 @@ export class DashboardTab {
                 </div>
 
                 <div class="flex flex-col gap-3 border-t border-border pt-6">
-                    <span class="eyebrow">Quick start</span>
+                    <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Quick start</span>
                     <div id="dashboard-quick-start" class="flex flex-wrap gap-2"></div>
                 </div>
             </div>
@@ -93,7 +93,7 @@ export class DashboardTab {
             if (runs.length === 0) {
                 recentContainer.innerHTML = `
                     <div class="text-center py-8 text-secondary font-body-sm">
-                        No past alignment sessions found.
+                        No past alignment sessions yet - head to the Workspace tab to add structures and run one.
                     </div>
                 `;
                 return;

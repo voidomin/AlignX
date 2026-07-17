@@ -80,8 +80,8 @@ describe('LigandTab', () => {
             { resn: 'TYR', chain: 'A', resi: 191, distance: 3.2, type: 'Hydrogen Bond' },
         ]);
         expect(tab.element.querySelector('#interaction-count').innerText).toBe('1 Found');
-        expect(tab.element.querySelector('#ligand-sasa-badge').classList.contains('hidden')).toBe(false);
-        expect(tab.element.querySelector('#ligand-sasa-badge').innerText).toBe('SASA: 56.7 Å²');
+        expect(tab.element.querySelector('#ligand-sasa-row').classList.contains('hidden')).toBe(false);
+        expect(tab.element.querySelector('#ligand-sasa-badge').innerText).toBe('56.7 Å²');
         const rows = tab.element.querySelectorAll('#interactions-table-body tr');
         expect(rows).toHaveLength(1);
         expect(rows[0].textContent).toContain('TYR');

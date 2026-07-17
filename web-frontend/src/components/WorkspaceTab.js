@@ -76,7 +76,7 @@ export class WorkspaceTab {
             <div class="section-body flex flex-col gap-8">
                 <div class="flex flex-col gap-3">
                     <div class="flex gap-2 relative">
-                        <input id="workspace-add-pdb-input" type="text" placeholder="PDB ID, or AF- / SM- / ESM- accession" class="flex-grow bg-surface-raised border border-border rounded-md px-3 py-1.5 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase" autocomplete="off"/>
+                        <input id="workspace-add-pdb-input" type="text" placeholder="PDB ID, or AF- / SM- / ESM- accession" aria-label="PDB ID, or AF- / SM- / ESM- accession" class="flex-grow bg-surface-raised border border-border rounded-md px-3 py-1.5 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase" autocomplete="off"/>
                         <button id="workspace-add-pdb-btn" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Add</button>
                     </div>
                     <div id="workspace-add-pdb-suggestions" class="flex gap-2"></div>
@@ -84,13 +84,13 @@ export class WorkspaceTab {
                     <div class="flex items-center gap-4">
                         <button id="workspace-toggle-batch-add-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Paste multiple IDs</button>
                         <button id="workspace-upload-structure-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Upload a structure file</button>
-                        <input id="workspace-upload-structure-input" type="file" accept=".pdb,.ent,.cif" class="hidden"/>
+                        <input id="workspace-upload-structure-input" type="file" accept=".pdb,.ent,.cif" aria-label="Upload a structure file" class="hidden"/>
                         <button id="workspace-toggle-predict-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Predict from sequence</button>
                     </div>
                     <span id="workspace-upload-structure-feedback" class="font-body-sm text-[11px] text-secondary"></span>
 
                     <div id="workspace-batch-add-container" class="flex flex-col gap-2 ${this.batchInputVisible ? '' : 'hidden'}">
-                        <textarea id="workspace-batch-pdb-input" rows="3" placeholder="Paste PDB IDs or accessions, separated by commas, spaces, or new lines (e.g. 4RLT, 3UG9, AF-P69905-F1)" class="w-full bg-surface-raised border border-border rounded-md px-3 py-2 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase"></textarea>
+                        <textarea id="workspace-batch-pdb-input" rows="3" placeholder="Paste PDB IDs or accessions, separated by commas, spaces, or new lines (e.g. 4RLT, 3UG9, AF-P69905-F1)" aria-label="Paste multiple PDB IDs or accessions" class="w-full bg-surface-raised border border-border rounded-md px-3 py-2 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase"></textarea>
                         <div class="flex items-center gap-3">
                             <button id="workspace-batch-add-btn" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Add All</button>
                             <span id="workspace-batch-add-feedback" class="font-body-sm text-[11px] text-secondary"></span>
@@ -98,7 +98,7 @@ export class WorkspaceTab {
                     </div>
 
                     <div id="workspace-predict-container" class="flex flex-col gap-2 ${this.predictInputVisible ? '' : 'hidden'}">
-                        <textarea id="workspace-predict-sequence-input" rows="3" placeholder="Paste a raw amino-acid sequence (10-300 residues) to predict its structure via ESMFold - no existing accession needed" class="w-full bg-surface-raised border border-border rounded-md px-3 py-2 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase"></textarea>
+                        <textarea id="workspace-predict-sequence-input" rows="3" placeholder="Paste a raw amino-acid sequence (10-300 residues) to predict its structure via ESMFold - no existing accession needed" aria-label="Amino-acid sequence to predict a structure for" class="w-full bg-surface-raised border border-border rounded-md px-3 py-2 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase"></textarea>
                         <div class="flex items-center gap-3">
                             <button id="workspace-predict-btn" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Predict Structure</button>
                             <span id="workspace-predict-feedback" class="font-body-sm text-[11px] text-secondary"></span>
@@ -118,13 +118,13 @@ export class WorkspaceTab {
                 </div>
 
                 <div class="flex flex-col gap-3 border-t border-border pt-6">
-                    <span class="eyebrow">Parameters</span>
+                    <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Parameters</span>
                     <label class="flex items-center gap-3 cursor-pointer group" title="Removes crystallographic water molecules (HOH records) before alignment and analysis, since they carry no structural signal">
-                        <input id="param-remove-water" type="checkbox" checked class="rounded border-border bg-surface-raised text-accent focus:ring-0 focus:ring-offset-0"/>
+                        <input id="param-remove-water" type="checkbox" checked class="rounded border-border bg-surface-raised text-accent focus:ring-2 focus:ring-accent focus:ring-offset-1"/>
                         <span class="font-body-sm text-body-sm text-secondary group-hover:text-primary transition-colors">Filter water molecules (HOH)</span>
                     </label>
                     <label class="flex items-center gap-3 cursor-pointer group" title="Drops ions and buffer molecules used in crystallization, but keeps real bound ligands intact for the Ligand tab">
-                        <input id="param-remove-heteroatoms" type="checkbox" checked class="rounded border-border bg-surface-raised text-accent focus:ring-0 focus:ring-offset-0"/>
+                        <input id="param-remove-heteroatoms" type="checkbox" checked class="rounded border-border bg-surface-raised text-accent focus:ring-2 focus:ring-accent focus:ring-offset-1"/>
                         <span class="font-body-sm text-body-sm text-secondary group-hover:text-primary transition-colors">Exclude non-ligand heteroatoms</span>
                     </label>
                 </div>
@@ -484,7 +484,7 @@ export class WorkspaceTab {
                 </div>
                 <div class="flex items-center gap-1">
                     <button class="discover-structure-btn font-label-sm text-label-sm text-secondary hover:text-accent px-2 py-1 rounded-md hover:bg-surface transition-colors whitespace-nowrap" data-pdb="${pid}">What is this?</button>
-                    <button class="text-error hover:text-red-400 p-1 rounded-md hover:bg-surface transition-colors remove-pdb-btn" data-pdb="${pid}">
+                    <button class="text-error hover:text-red-400 p-1 rounded-md hover:bg-surface transition-colors remove-pdb-btn" data-pdb="${pid}" aria-label="Remove structure ${pid}">
                         <span class="material-symbols-outlined text-[18px]">delete</span>
                     </button>
                 </div>

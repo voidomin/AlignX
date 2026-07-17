@@ -30,7 +30,7 @@ export class HistoryPanel {
                     <span class="font-body-sm text-body-sm text-secondary">Pick 2 or more past runs (Ctrl/Cmd-click for multiple) to see how their structural similarity has shifted over time.</span>
                     <div class="flex gap-2 items-center">
                         <select id="trend-run-select" multiple size="4" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm"></select>
-                        <button id="trend-load-btn" class="px-3 py-1.5 rounded-md bg-accent-muted text-accent font-label-md text-label-md hover:bg-accent hover:text-white transition-colors self-start">Show trend</button>
+                        <button id="trend-load-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md self-start">Show trend</button>
                     </div>
                     <div id="trend-plotly" class="w-full h-[220px]">
                         <div class="flex items-center justify-center h-full text-secondary font-body-sm">
@@ -144,7 +144,7 @@ export class HistoryPanel {
                         <div class="flex gap-1" data-field="pids"></div>
                     </div>
                     <div class="flex items-center gap-4">
-                        <span class="text-[10px] font-medium capitalize text-success" data-field="status"></span>
+                        <span class="text-[10px] font-medium capitalize" data-field="status"></span>
                         <span class="font-label-sm text-[10px] text-secondary" data-field="time"></span>
                         <button class="notes-toggle-btn font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Notes &amp; tags</button>
                         <button class="share-run-btn font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Share</button>
@@ -153,10 +153,10 @@ export class HistoryPanel {
                 </div>
                 <div class="flex flex-wrap items-center gap-1.5" data-field="tags-display"></div>
                 <div class="hidden flex-col gap-2 pt-1" data-field="notes-editor">
-                    <textarea class="notes-input w-full bg-surface border border-border rounded-md px-2 py-1.5 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent" rows="2" placeholder="Add a note about this run..."></textarea>
-                    <input type="text" class="tags-input w-full bg-surface border border-border rounded-md px-2 py-1.5 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" placeholder="Comma-separated tags, e.g. kinase, review" />
+                    <textarea class="notes-input w-full bg-surface border border-border rounded-md px-2 py-1.5 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent" rows="2" placeholder="Add a note about this run..." aria-label="Note about this run"></textarea>
+                    <input type="text" class="tags-input w-full bg-surface border border-border rounded-md px-2 py-1.5 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" placeholder="Comma-separated tags, e.g. kinase, review" aria-label="Tags for this run" />
                     <div class="flex gap-2">
-                        <button class="notes-save-btn px-3 py-1 rounded-md bg-accent-muted text-accent font-label-sm text-label-sm">Save</button>
+                        <button class="notes-save-btn btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm">Save</button>
                         <button class="notes-cancel-btn px-3 py-1 rounded-md font-label-sm text-label-sm text-secondary hover:text-primary">Cancel</button>
                     </div>
                 </div>
@@ -164,7 +164,10 @@ export class HistoryPanel {
 
             div.querySelector('[data-field="type"]').textContent = runTypeLabel;
             div.querySelector('[data-field="id"]').textContent = run.id;
-            div.querySelector('[data-field="status"]').textContent = run.status || "success";
+            const statusEl = div.querySelector('[data-field="status"]');
+            const status = run.status || "success";
+            statusEl.textContent = status;
+            statusEl.classList.add(status === "success" ? "text-success" : "text-error");
             div.querySelector('[data-field="time"]').textContent = displayTime;
 
             const pidsContainer = div.querySelector('[data-field="pids"]');
@@ -263,7 +266,7 @@ export class HistoryPanel {
         const tags = run.metadata?.tags || [];
         tags.forEach(tag => {
             const badge = document.createElement('span');
-            badge.className = "px-1.5 py-0.5 rounded-md bg-accent-muted text-accent font-mono text-[10px]";
+            badge.className = "px-1.5 py-0.5 rounded-md bg-surface-raised border border-border-subtle text-secondary font-mono text-[10px]";
             badge.textContent = tag;
             container.appendChild(badge);
         });

@@ -93,13 +93,13 @@ export class AnalyticsTab {
                 <!-- Sub-tab strip -->
                 <div id="analytics-subtab-strip" class="flex gap-1 border border-border rounded-md p-1 shrink-0">
                     ${SUB_TABS.map(t => `
-                        <button data-subtab="${t.key}" class="analytics-subtab-btn flex-1 py-1.5 rounded-md font-label-md text-label-md transition-colors">${t.label}</button>
+                        <button data-subtab="${t.key}" class="analytics-subtab-btn flex-1 py-1.5 rounded-md font-label-md text-label-md transition-colors" aria-selected="${t.key === 'quality'}">${t.label}</button>
                     `).join('')}
                 </div>
 
                 <!-- Ramachandran / Quality Report -->
                 <div data-panel="quality" class="flex flex-col gap-4 shrink-0">
-                    <div class="grid grid-cols-2 gap-6">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
                         <div class="stat-row stat-primary">
                             <span class="stat-key">Ramachandran score</span>
                             <span id="ramachandran-score" class="stat-value">--</span>
@@ -109,13 +109,13 @@ export class AnalyticsTab {
                             <span id="ramachandran-outliers" class="stat-value">--</span>
                         </div>
                     </div>
-                    <div id="ramachandran-outliers-list-card" class="flex flex-col gap-2 hidden">
+                    <div id="ramachandran-outliers-list-card" class="flex flex-col gap-2 hidden border-t border-border-subtle pt-4">
                         <span class="font-label-sm text-label-sm text-secondary uppercase">Top outliers</span>
                         <div id="ramachandran-outliers-list" class="flex flex-wrap gap-1.5">
                             <!-- Outlier chips -->
                         </div>
                     </div>
-                    <div id="quality-metrics-table-card" class="flex flex-col gap-2 hidden">
+                    <div id="quality-metrics-table-card" class="flex flex-col gap-2 hidden border-t border-border-subtle pt-4">
                         <span class="font-label-sm text-label-sm text-secondary uppercase">Alignment quality (TM-score / GDT-TS - fold-similarity scores from 0 to 1, higher is more similar)</span>
                         <table class="w-full font-body-sm text-body-sm">
                             <thead>
@@ -128,15 +128,15 @@ export class AnalyticsTab {
                             <tbody id="quality-metrics-table-body"></tbody>
                         </table>
                     </div>
-                    <div id="secondary-structure-card" class="flex flex-col gap-2 hidden">
+                    <div id="secondary-structure-card" class="flex flex-col gap-2 hidden border-t border-border-subtle pt-4">
                         <span class="font-label-sm text-label-sm text-secondary uppercase">Secondary structure (backbone-torsion approximation, not DSSP)</span>
-                        <div class="grid grid-cols-3 gap-4">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div class="stat-row"><span class="stat-key">Helix</span><span id="ss-helix-percent" class="stat-value">--</span></div>
                             <div class="stat-row"><span class="stat-key">Sheet</span><span id="ss-sheet-percent" class="stat-value">--</span></div>
                             <div class="stat-row"><span class="stat-key">Coil</span><span id="ss-coil-percent" class="stat-value">--</span></div>
                         </div>
                     </div>
-                    <div id="pairwise-tm-score-card" class="flex flex-col gap-2 hidden">
+                    <div id="pairwise-tm-score-card" class="flex flex-col gap-2 hidden border-t border-border-subtle pt-4">
                         <span class="font-label-sm text-label-sm text-secondary uppercase">Pairwise TM-score (independent optimal superposition)</span>
                         <table class="w-full font-body-sm text-body-sm">
                             <thead>
@@ -151,8 +151,10 @@ export class AnalyticsTab {
                     <div class="flex flex-col gap-2 border-t border-border-subtle pt-4">
                         <span class="font-label-sm text-label-sm text-secondary uppercase">Predicted aligned error (AlphaFold structures only - AlphaFold's own confidence in each residue pair's relative position, lower is better)</span>
                         <div class="flex gap-2 items-center">
-                            <select id="pae-pdb-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm"></select>
-                            <button id="pae-load-btn" class="px-3 py-1 rounded-md bg-accent-muted text-accent font-label-sm text-label-sm">Load</button>
+                            <select id="pae-pdb-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
+                                <option value="">Select a structure</option>
+                            </select>
+                            <button id="pae-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
                         </div>
                         <div id="pae-plotly" class="w-full h-[240px]">
                             <div class="flex items-center justify-center h-full text-secondary font-body-sm">
@@ -182,8 +184,10 @@ export class AnalyticsTab {
                     <div class="flex flex-col gap-2 border-t border-border-subtle pt-4">
                         <span class="font-label-sm text-label-sm text-secondary uppercase">Contact map (CA-CA, 8&Aring; default)</span>
                         <div class="flex gap-2 items-center">
-                            <select id="contact-map-pdb-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm"></select>
-                            <button id="contact-map-load-btn" class="px-3 py-1 rounded-md bg-accent-muted text-accent font-label-sm text-label-sm">Load</button>
+                            <select id="contact-map-pdb-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
+                                <option value="">Select a structure</option>
+                            </select>
+                            <button id="contact-map-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
                         </div>
                         <div id="contact-map-plotly" class="w-full h-[240px]">
                             <div class="flex items-center justify-center h-full text-secondary font-body-sm">
@@ -195,9 +199,13 @@ export class AnalyticsTab {
                     <div class="flex flex-col gap-2 border-t border-border-subtle pt-4">
                         <span class="font-label-sm text-label-sm text-secondary uppercase">Difference-distance matrix</span>
                         <div class="flex gap-2 items-center">
-                            <select id="diff-distance-pdb-a-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm"></select>
-                            <select id="diff-distance-pdb-b-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm"></select>
-                            <button id="diff-distance-load-btn" class="px-3 py-1 rounded-md bg-accent-muted text-accent font-label-sm text-label-sm">Load</button>
+                            <select id="diff-distance-pdb-a-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
+                                <option value="">Select a structure</option>
+                            </select>
+                            <select id="diff-distance-pdb-b-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
+                                <option value="">Select a structure</option>
+                            </select>
+                            <button id="diff-distance-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
                         </div>
                         <div id="diff-distance-plotly" class="w-full h-[240px]">
                             <div class="flex items-center justify-center h-full text-secondary font-body-sm">
@@ -226,9 +234,13 @@ export class AnalyticsTab {
                     <div class="flex flex-col gap-2 border-t border-border-subtle pt-4">
                         <span class="font-label-sm text-label-sm text-secondary uppercase">Describe the difference between two structures</span>
                         <div class="flex gap-2 items-center">
-                            <select id="diff-narrative-pdb-a-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm"></select>
-                            <select id="diff-narrative-pdb-b-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm"></select>
-                            <button id="diff-narrative-load-btn" class="px-3 py-1 rounded-md bg-accent-muted text-accent font-label-sm text-label-sm">Describe</button>
+                            <select id="diff-narrative-pdb-a-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
+                                <option value="">Select a structure</option>
+                            </select>
+                            <select id="diff-narrative-pdb-b-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
+                                <option value="">Select a structure</option>
+                            </select>
+                            <button id="diff-narrative-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Describe</button>
                         </div>
                         <p id="diff-narrative-text" class="font-body-sm text-body-sm text-secondary">
                             Select two structures above to get a plain-English summary of how they differ.
@@ -240,7 +252,7 @@ export class AnalyticsTab {
                 <div data-panel="annotations" class="border border-border rounded-lg p-4 shrink-0 min-h-[320px] flex flex-col gap-4">
                     <div class="flex items-center justify-between">
                         <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Functional annotation</span>
-                        <select id="annotations-structure-select" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[160px]"></select>
+                        <select id="annotations-structure-select" aria-label="Structure to show functional annotation for" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[160px]"></select>
                     </div>
                     <div id="annotations-content" class="flex flex-col gap-3">
                         <div class="flex items-center justify-center h-full text-secondary font-body-sm">
@@ -264,7 +276,7 @@ export class AnalyticsTab {
                                 <span class="font-label-sm text-label-sm text-secondary">Mutant residue</span>
                                 <input id="mutation-mutant-input" type="text" maxlength="1" class="w-16 bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono uppercase" />
                             </label>
-                            <button id="mutation-map-btn" class="px-3 py-1.5 rounded-md bg-accent-muted text-accent font-label-md text-label-md hover:bg-accent hover:text-white transition-colors">Map</button>
+                            <button id="mutation-map-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Map</button>
                         </div>
                         <div id="mutation-impact-result" class="font-body-sm text-body-sm text-secondary flex flex-col gap-1"></div>
                     </div>
@@ -284,15 +296,28 @@ export class AnalyticsTab {
 
     setupDiffNarrativeControls() {
         this.element.querySelector('#diff-narrative-load-btn').addEventListener('click', () => this.describeStructureDiff());
+        ['#diff-narrative-pdb-a-select', '#diff-narrative-pdb-b-select'].forEach(sel => {
+            this.element.querySelector(sel).addEventListener('change', () => {
+                const a = this.element.querySelector('#diff-narrative-pdb-a-select').value;
+                const b = this.element.querySelector('#diff-narrative-pdb-b-select').value;
+                this.element.querySelector('#diff-narrative-load-btn').disabled = !a || !b;
+            });
+        });
     }
 
     setupContactMapControls() {
         this.element.querySelector('#contact-map-load-btn').addEventListener('click', () => this.loadContactMap());
         this.element.querySelector('#diff-distance-load-btn').addEventListener('click', () => this.loadDifferenceDistance());
+        ['#contact-map-pdb-select', '#diff-distance-pdb-a-select', '#diff-distance-pdb-b-select'].forEach(sel => {
+            this.element.querySelector(sel).addEventListener('change', () => this.updateContactMapButtonStates());
+        });
     }
 
     setupPaeControls() {
         this.element.querySelector('#pae-load-btn').addEventListener('click', () => this.loadPae());
+        this.element.querySelector('#pae-pdb-select').addEventListener('change', (e) => {
+            this.element.querySelector('#pae-load-btn').disabled = !e.target.value;
+        });
     }
 
     setupSubTabs() {
@@ -338,6 +363,7 @@ export class AnalyticsTab {
         this.element.querySelectorAll('.analytics-subtab-btn').forEach(btn => {
             const isActive = btn.dataset.subtab === this.activeSubTab;
             btn.className = `analytics-subtab-btn flex-1 py-1.5 rounded-md font-label-md text-label-md transition-colors ${isActive ? 'bg-accent-muted text-accent' : 'text-secondary hover:text-primary'}`;
+            btn.setAttribute('aria-selected', String(isActive));
         });
         this.element.querySelectorAll('[data-panel]').forEach(panel => {
             panel.classList.toggle('hidden', panel.dataset.panel !== this.activeSubTab);
@@ -434,7 +460,7 @@ export class AnalyticsTab {
         const sharedContent = this.element.querySelector('#annotations-shared-content');
 
         if (this.structures.length === 0) {
-            content.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Add a structure to display functional annotation.</div>`;
+            content.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Add a structure in the Workspace tab to display functional annotation.</div>`;
             sharedSection.classList.add('hidden');
             sharedSection.classList.remove('flex');
             return;
@@ -558,7 +584,7 @@ export class AnalyticsTab {
         if (!pathways?.length) return '';
         return `
             <div class="flex flex-col gap-2">
-                <span class="eyebrow">Reactome pathways</span>
+                <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Reactome pathways</span>
                 ${pathways.map(p => `
                     <div class="flex items-center py-1.5 border-b border-border-subtle">
                         <span class="font-body-sm">${p.name}</span>
@@ -691,7 +717,7 @@ export class AnalyticsTab {
         }
         body.innerHTML = rows.map(r => `
             <tr>
-                <td class="py-1 font-mono">${r.a} &harr; ${r.b}</td>
+                <td class="py-1 font-mono"><span class="block max-w-[220px] truncate" title="${r.a} &harr; ${r.b}">${r.a} &harr; ${r.b}</span></td>
                 <td class="py-1 font-mono">${r.value.toFixed(3)}</td>
             </tr>
         `).join('');
@@ -715,7 +741,11 @@ export class AnalyticsTab {
 
             const idCell = document.createElement('td');
             idCell.className = "py-1 font-mono text-primary";
-            idCell.textContent = pdbId;
+            const idSpan = document.createElement('span');
+            idSpan.className = "block max-w-[180px] truncate";
+            idSpan.title = pdbId;
+            idSpan.textContent = pdbId;
+            idCell.appendChild(idSpan);
 
             const tmCell = document.createElement('td');
             tmCell.className = "py-1 text-primary";
@@ -818,6 +848,33 @@ export class AnalyticsTab {
     // repopulated on every renderVisuals() call, preserving the previously
     // selected structure(s) where they're still valid, same pattern as
     // populateAnnotationsPicker().
+    // Shared option-population logic for the app's several "pick a
+    // workspace structure" selects: preserves the previously selected
+    // value when it's still valid, and falls back to an explicit
+    // "Select a structure" placeholder only when the given candidate
+    // list is genuinely empty - otherwise behaves exactly like the old
+    // per-caller duplicated version (auto-defaults to the first real
+    // option via normal <select> behavior).
+    _populateStructureOptions(select, structures) {
+        const previousValue = select.value;
+        select.innerHTML = "";
+        if (structures.length === 0) {
+            const placeholder = document.createElement('option');
+            placeholder.value = "";
+            placeholder.textContent = "Select a structure";
+            select.appendChild(placeholder);
+        }
+        structures.forEach(({ pdbId }) => {
+            const opt = document.createElement('option');
+            opt.value = pdbId;
+            opt.textContent = pdbId;
+            select.appendChild(opt);
+        });
+        if (structures.some(s => s.pdbId === previousValue)) {
+            select.value = previousValue;
+        }
+    }
+
     populateContactMapSelectors() {
         const singleSelects = [this.element.querySelector('#contact-map-pdb-select')];
         const pairSelects = [
@@ -825,22 +882,25 @@ export class AnalyticsTab {
             this.element.querySelector('#diff-distance-pdb-b-select'),
         ];
 
-        [...singleSelects, ...pairSelects].forEach(select => {
-            const previousValue = select.value;
-            select.innerHTML = "";
-            this.structures.forEach(({ pdbId }) => {
-                const opt = document.createElement('option');
-                opt.value = pdbId;
-                opt.textContent = pdbId;
-                select.appendChild(opt);
-            });
-            if (this.structures.some(s => s.pdbId === previousValue)) {
-                select.value = previousValue;
-            }
-        });
+        [...singleSelects, ...pairSelects].forEach(select => this._populateStructureOptions(select, this.structures));
         if (pairSelects[1] && this.structures.length > 1 && pairSelects[0].value === pairSelects[1].value) {
             pairSelects[1].value = this.structures[1].pdbId;
         }
+        this.updateContactMapButtonStates();
+    }
+
+    // Keeps the Load/Compare buttons disabled while their paired select(s)
+    // are still on the "Select a structure" placeholder, rather than
+    // letting a click silently no-op against an empty pdbId.
+    updateContactMapButtonStates() {
+        const contactSelect = this.element.querySelector('#contact-map-pdb-select');
+        const contactBtn = this.element.querySelector('#contact-map-load-btn');
+        if (contactBtn) contactBtn.disabled = !contactSelect.value;
+
+        const diffA = this.element.querySelector('#diff-distance-pdb-a-select').value;
+        const diffB = this.element.querySelector('#diff-distance-pdb-b-select').value;
+        const diffBtn = this.element.querySelector('#diff-distance-load-btn');
+        if (diffBtn) diffBtn.disabled = !diffA || !diffB;
     }
 
     // PAE only exists for AlphaFold-sourced structures (see
@@ -849,19 +909,10 @@ export class AnalyticsTab {
     // needing each structure's source database passed down separately.
     populatePaeSelector() {
         const select = this.element.querySelector('#pae-pdb-select');
-        const previousValue = select.value;
-        select.innerHTML = "";
-        this.structures
-            .filter(({ pdbId }) => pdbId.toUpperCase().startsWith('AF-'))
-            .forEach(({ pdbId }) => {
-                const opt = document.createElement('option');
-                opt.value = pdbId;
-                opt.textContent = pdbId;
-                select.appendChild(opt);
-            });
-        if ([...select.options].some(opt => opt.value === previousValue)) {
-            select.value = previousValue;
-        }
+        const afStructures = this.structures.filter(({ pdbId }) => pdbId.toUpperCase().startsWith('AF-'));
+        this._populateStructureOptions(select, afStructures);
+        const btn = this.element.querySelector('#pae-load-btn');
+        if (btn) btn.disabled = !select.value;
     }
 
     async loadPae() {
@@ -913,22 +964,12 @@ export class AnalyticsTab {
             this.element.querySelector('#diff-narrative-pdb-a-select'),
             this.element.querySelector('#diff-narrative-pdb-b-select'),
         ];
-        selects.forEach(select => {
-            const previousValue = select.value;
-            select.innerHTML = "";
-            this.structures.forEach(({ pdbId }) => {
-                const opt = document.createElement('option');
-                opt.value = pdbId;
-                opt.textContent = pdbId;
-                select.appendChild(opt);
-            });
-            if (this.structures.some(s => s.pdbId === previousValue)) {
-                select.value = previousValue;
-            }
-        });
+        selects.forEach(select => this._populateStructureOptions(select, this.structures));
         if (this.structures.length > 1 && selects[0].value === selects[1].value) {
             selects[1].value = this.structures[1].pdbId;
         }
+        const btn = this.element.querySelector('#diff-narrative-load-btn');
+        if (btn) btn.disabled = !selects[0].value || !selects[1].value;
     }
 
     // Looks up the real RMSD value for a structure pair out of the same

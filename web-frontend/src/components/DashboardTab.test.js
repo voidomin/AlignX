@@ -63,7 +63,7 @@ describe('DashboardTab', () => {
         await tab.loadDashboardData();
 
         expect(tab.element.querySelector('#dashboard-recent-runs').textContent)
-            .toContain('No past alignment sessions found.');
+            .toContain('head to the Workspace tab');
     });
 
     it('lists recent runs and calls onReloadRun when a row is clicked', async () => {

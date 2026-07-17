@@ -27,7 +27,7 @@ export class ClustersTab {
                         <span class="font-label-sm text-label-sm text-secondary">RMSD threshold</span>
                         <span id="cluster-threshold-value" class="font-mono text-body-sm text-primary">3.00 Å</span>
                     </div>
-                    <input id="cluster-threshold-slider" type="range" min="0.1" max="10.0" step="0.1" value="3.0"
+                    <input id="cluster-threshold-slider" type="range" min="0.1" max="10.0" step="0.1" value="3.0" aria-label="RMSD threshold"
                         class="w-full h-1.5 rounded-md appearance-none bg-surface-raised accent-accent cursor-pointer" />
                 </div>
 

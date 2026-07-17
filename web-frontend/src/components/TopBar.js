@@ -45,16 +45,16 @@ export class TopBar {
                 </div>
 
                 <div id="topbar-tabs-wrapper" class="flex items-center flex-1 min-w-0">
-                    <button id="topbar-scroll-left" class="hidden shrink-0 w-5 h-7 items-center justify-center rounded-md bg-surface border border-border-subtle text-secondary hover:text-primary transition-colors mr-1" title="Scroll tabs left">
+                    <button id="topbar-scroll-left" class="hidden shrink-0 w-8 h-8 items-center justify-center rounded-md bg-surface border border-border-subtle text-secondary hover:text-primary transition-colors mr-1" title="Scroll tabs left" aria-label="Scroll tabs left">
                         <span class="material-symbols-outlined text-[16px]">chevron_left</span>
                     </button>
                     <nav id="topbar-tabs" class="flex items-center gap-1 min-w-0 overflow-x-auto scroll-smooth">
                         ${TABS.map((t, i) => `
                             ${i > 0 && t.group !== TABS[i - 1].group ? '<div class="w-px h-5 bg-border-subtle mx-1.5 shrink-0" aria-hidden="true"></div>' : ''}
-                            <button data-tab="${t.key}" class="tab-trigger px-3 py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors">${t.label}</button>
+                            <button data-tab="${t.key}" class="tab-trigger px-3 py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors" aria-selected="${t.key === 'workspace'}">${t.label}</button>
                         `).join('')}
                     </nav>
-                    <button id="topbar-scroll-right" class="hidden shrink-0 w-5 h-7 items-center justify-center rounded-md bg-surface border border-border-subtle text-secondary hover:text-primary transition-colors ml-1" title="Scroll tabs right">
+                    <button id="topbar-scroll-right" class="hidden shrink-0 w-8 h-8 items-center justify-center rounded-md bg-surface border border-border-subtle text-secondary hover:text-primary transition-colors ml-1" title="Scroll tabs right" aria-label="Scroll tabs right">
                         <span class="material-symbols-outlined text-[16px]">chevron_right</span>
                     </button>
                 </div>
@@ -146,6 +146,7 @@ export class TopBar {
         this.element.querySelectorAll('.tab-trigger').forEach(btn => {
             const isActive = btn.dataset.tab === this.activeTab;
             btn.className = `tab-trigger px-3 py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors ${isActive ? 'bg-accent-muted text-accent' : 'text-secondary hover:text-primary'}`;
+            btn.setAttribute('aria-selected', String(isActive));
             if (isActive) {
                 btn.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
             }

@@ -450,7 +450,7 @@ export class DiscoveryPanel {
         if (!rows.length) return '';
         return `
             <div class="flex flex-col gap-2">
-                <span class="eyebrow">Interactions &amp; pathways (per neighbor)</span>
+                <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Interactions &amp; pathways (per neighbor)</span>
                 ${rows.map(n => `
                     <div class="flex flex-col gap-1 py-1.5 border-b border-border-subtle">
                         <span class="font-mono text-[11px] text-secondary">${(n.target || '').slice(0, 60)}</span>
@@ -468,7 +468,7 @@ export class DiscoveryPanel {
             .slice(0, 20);
         return `
             <div class="flex flex-col gap-2">
-                <span class="eyebrow">Top structural matches</span>
+                <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Top structural matches</span>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left font-body-sm text-[12px]">
                         <thead>

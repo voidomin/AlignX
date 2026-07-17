@@ -40,9 +40,9 @@ export class SettingsTab {
                     Loading settings...
                 </div>
                 <div id="settings-form" class="hidden flex-col gap-8">
-                    <div class="grid grid-cols-2 gap-8">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-8">
                         <div class="flex flex-col gap-4">
-                            <span class="eyebrow">Mustang execution</span>
+                            <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Mustang execution</span>
                             <label class="flex flex-col gap-1">
                                 <span class="font-label-sm text-label-sm text-secondary uppercase">Execution backend</span>
                                 <select id="setting-mustang-backend" class="bg-surface-raised border border-border rounded-md px-3 py-2 font-body-sm text-primary">
@@ -56,7 +56,7 @@ export class SettingsTab {
                         </div>
 
                         <div class="flex flex-col gap-4">
-                            <span class="eyebrow">Limits &amp; performance</span>
+                            <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Limits &amp; performance</span>
                             <label class="flex flex-col gap-1">
                                 <span class="font-label-sm text-label-sm text-secondary uppercase">Max proteins per run</span>
                                 <input id="setting-max-proteins" type="number" min="2" max="100" class="bg-surface-raised border border-border rounded-md px-3 py-2 font-body-sm font-mono text-primary" />
@@ -69,8 +69,8 @@ export class SettingsTab {
                     </div>
 
                     <div class="flex flex-col gap-4 border-t border-border pt-6">
-                        <span class="eyebrow">Visualization</span>
-                        <div class="grid grid-cols-2 gap-8">
+                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Visualization</span>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-8">
                             <label class="flex flex-col gap-1">
                                 <span class="font-label-sm text-label-sm text-secondary uppercase">Heatmap colormap</span>
                                 <select id="setting-heatmap-colormap" class="bg-surface-raised border border-border rounded-md px-3 py-2 font-body-sm text-primary">

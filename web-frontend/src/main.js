@@ -133,7 +133,7 @@ class App {
 
         const viewerColumn = document.createElement('div');
         viewerColumn.id = "viewer-column";
-        viewerColumn.className = "w-full md:w-[480px] shrink-0 flex flex-col h-full p-6 pl-0";
+        viewerColumn.className = "w-full md:w-[480px] shrink-0 flex flex-col max-h-[50vh] md:max-h-none md:h-full p-6 pl-0";
         viewerColumn.appendChild(this.viewer3D.render());
 
         gridShell.appendChild(tabContentPane);
