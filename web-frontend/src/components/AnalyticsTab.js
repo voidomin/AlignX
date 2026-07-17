@@ -1,4 +1,4 @@
-import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae } from '../api';
+import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae, submitDdgStabilityJob, pollJobUntilDone } from '../api';
 import { renderDomainList, renderGoTermList, renderFeatureList, renderCatalyticSiteList } from '../utils/annotationRenderers';
 import { createInsightIconSvg } from '../utils/insightIcons';
 import { wireArrowKeyNavigation } from '../utils/tabKeyboardNav';
@@ -285,8 +285,10 @@ export class AnalyticsTab {
                                 <input id="mutation-mutant-input" type="text" maxlength="1" class="w-16 bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono uppercase" />
                             </label>
                             <button id="mutation-map-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Map</button>
+                            <button id="mutation-ddg-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Predict stability impact</button>
                         </div>
                         <div id="mutation-impact-result" class="font-body-sm text-body-sm text-secondary flex flex-col gap-1"></div>
+                        <div id="mutation-ddg-result" class="font-body-sm text-body-sm text-secondary flex flex-col gap-1"></div>
                     </div>
                 </div>
             </div>
@@ -352,6 +354,7 @@ export class AnalyticsTab {
         const select = this.element.querySelector('#annotations-structure-select');
         select.addEventListener('change', () => this.renderAnnotationsPanel());
         this.element.querySelector('#mutation-map-btn').addEventListener('click', () => this.loadMutationImpact());
+        this.element.querySelector('#mutation-ddg-btn').addEventListener('click', () => this.loadDdgStability());
     }
 
     switchSubTab(key) {
@@ -631,6 +634,56 @@ export class AnalyticsTab {
             btn.addEventListener('click', () => this.onHighlightResidues(data.highlight_chains));
             resultDiv.appendChild(btn);
         }
+    }
+
+    // Separate from loadMutationImpact() above - DDMut's own submit-then-
+    // poll workflow against an external server is itself slow (a real job,
+    // not an instant lookup), so this goes through the same job-submit +
+    // pollJobUntilDone pattern already used for Clustal Omega/BLAST rather
+    // than a synchronous fetch. Resolves pdbId/chain/resi/mutant the same
+    // way loadMutationImpact() does, for the same selected structure.
+    async loadDdgStability() {
+        const resultDiv = this.element.querySelector('#mutation-ddg-result');
+        const select = this.element.querySelector('#annotations-structure-select');
+        const pdbId = select.value || this.structures[0]?.pdbId;
+        const structure = this.structures.find(s => s.pdbId === pdbId);
+        const chain = structure?.chain;
+        const resi = Number.parseInt(this.element.querySelector('#mutation-resi-input').value, 10);
+        const mutant = this.element.querySelector('#mutation-mutant-input').value.trim();
+
+        if (!pdbId || !chain) {
+            resultDiv.textContent = 'Select a structure with a resolved chain first.';
+            return;
+        }
+        if (!Number.isInteger(resi) || !mutant) {
+            resultDiv.textContent = 'Enter a residue number and a mutant residue.';
+            return;
+        }
+
+        resultDiv.textContent = 'Predicting stability impact (this can take a minute)…';
+        try {
+            const submitted = await submitDdgStabilityJob(pdbId, chain, resi, mutant);
+            const job = await pollJobUntilDone(submitted.job_id, { intervalMs: 10000 });
+            if (job.status === 'failed') {
+                resultDiv.textContent = job.error || 'Failed to predict stability impact.';
+                return;
+            }
+            this.renderDdgStability(job.prediction);
+        } catch (err) {
+            console.error("Failed to predict stability impact:", err);
+            resultDiv.textContent = 'Failed to predict stability impact.';
+        }
+    }
+
+    renderDdgStability(prediction) {
+        const resultDiv = this.element.querySelector('#mutation-ddg-result');
+        const ddg = prediction?.prediction;
+        if (typeof ddg !== 'number') {
+            resultDiv.textContent = 'DDMut did not return a usable prediction.';
+            return;
+        }
+        const direction = ddg >= 0 ? 'stabilizing' : 'destabilizing';
+        resultDiv.textContent = `Predicted stability change (DDMut): ${ddg >= 0 ? '+' : ''}${ddg.toFixed(2)} kcal/mol (${direction})`;
     }
 
     renderReactomePathways(pathways) {

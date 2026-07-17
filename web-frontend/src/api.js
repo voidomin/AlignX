@@ -246,6 +246,31 @@ export async function submitConservationJob(sequence, webhookUrl) {
     return res.json();
 }
 
+// Real mutation-stability (ddG) prediction via DDMut - see ddmut_client.py.
+// resi/chain are the structure's own author numbering (matching
+// fetchMutationImpact's convention); the wildtype residue is read
+// server-side directly from the structure's file, not resolved via
+// UniProt, so this works for any structure source. Poll the returned
+// job_id with pollJobUntilDone(); the completed job's `prediction.prediction`
+// field is the real predicted ddG in kcal/mol (DDMut's own convention:
+// positive = stabilizing, negative = destabilizing).
+export async function submitDdgStabilityJob(pdbId, chain, resi, mutant, webhookUrl) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    chain = assertSafeSegment(chain, 'chain');
+    const body = { pdb_id: pdbId, chain, resi, mutant };
+    if (webhookUrl) body.webhook_url = webhookUrl;
+    const res = await fetch(buildUrl('/api/jobs/ddg-stability'), {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Stability prediction submission failed");
+    }
+    return res.json();
+}
+
 export async function submitDiscoveryJob(pdbId, databases, webhookUrl) {
     const body = { pdb_id: pdbId };
     if (databases && databases.length > 0) body.databases = databases;

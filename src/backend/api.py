@@ -39,6 +39,7 @@ from src.backend.validation_service import fetch_pdbe_validation
 from src.backend.foldseek_client import FoldseekClient, FoldseekError
 from src.backend.clustalo_client import ClustalOmegaClient
 from src.backend.blast_client import BlastClient
+from src.backend.ddmut_client import DDMutClient
 from src.backend.esmfold_client import fold_sequence, ESMFoldError, MAX_SEQUENCE_LENGTH
 from src.backend.database import HistoryDatabase
 from src.backend.ligand_analyzer import LigandAnalyzer
@@ -77,11 +78,13 @@ async def lifespan(app: FastAPI):
     discovery_sweep_task = asyncio.create_task(_sweep_discovery_jobs())
     clustalo_sweep_task = asyncio.create_task(_sweep_clustalo_jobs())
     blast_sweep_task = asyncio.create_task(_sweep_blast_jobs())
+    ddmut_sweep_task = asyncio.create_task(_sweep_ddmut_jobs())
     yield
     sweep_task.cancel()
     discovery_sweep_task.cancel()
     clustalo_sweep_task.cancel()
     blast_sweep_task.cancel()
+    ddmut_sweep_task.cancel()
 
 
 # Initialize FastAPI App
@@ -931,14 +934,16 @@ async def submit_alignment_job(
 def get_alignment_job(job_id: str):
     """
     Poll the status/result of a submitted job (alignment, discovery,
-    Clustal Omega, or BLAST conservation - job IDs are unique uuid4 hex
-    strings, so one polling endpoint covers all of them).
+    Clustal Omega, BLAST conservation, or DDMut ddG stability - job IDs
+    are unique uuid4 hex strings, so one polling endpoint covers all of
+    them).
     """
     job = (
         alignment_jobs.get(job_id)
         or discovery_jobs.get(job_id)
         or clustalo_jobs.get(job_id)
         or blast_jobs.get(job_id)
+        or ddmut_jobs.get(job_id)
     )
     if job is None:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found.")
@@ -1271,6 +1276,167 @@ async def submit_conservation_job(
     _spawn_background_task(_execute_blast_job(job_id, sequence, webhook_url))
 
     return {"job_id": job_id, "status": "queued"}
+
+
+# In-memory job registry for the async DDMut ddG-stability-prediction
+# pipeline (see ddmut_client.py) - the fifth job type, mirroring
+# clustalo_jobs/blast_jobs above (pure async network I/O, no
+# asyncio.to_thread needed). Kept separate from /api/mutation-impact's
+# fast, synchronous ClinVar/AlphaMissense lookups since DDMut's own
+# submit-then-poll workflow against an external server is itself slow.
+ddmut_jobs: Dict[str, Dict[str, Any]] = {}
+
+
+async def _sweep_ddmut_jobs():
+    """Periodically drop finished DDMut jobs older than _JOB_TTL_SECONDS."""
+    while True:
+        await asyncio.sleep(_JOB_SWEEP_INTERVAL_SECONDS)
+        now = time.time()
+        stale_ids = [
+            jid
+            for jid, job in ddmut_jobs.items()
+            if job.get("status") in ("completed", "failed")
+            and now - job.get("finished_at", now) > _JOB_TTL_SECONDS
+        ]
+        for jid in stale_ids:
+            ddmut_jobs.pop(jid, None)
+
+
+def _get_wildtype_residue_letter(
+    pdb_path: Path, chain: str, resi: int
+) -> Optional[str]:
+    """Reads the real residue at (chain, resi) directly from the
+    structure's own file (first model only) - unlike /api/mutation-
+    impact's wildtype_residue (resolved via a UniProt sequence lookup),
+    this works for any structure regardless of whether a UniProt
+    accession resolves, since DDMut operates on the structure's own
+    author numbering, not a UniProt position."""
+    from Bio.PDB import PDBParser
+    from Bio.PDB.Polypeptide import protein_letters_3to1
+
+    parser = PDBParser(QUIET=True)
+    structure = parser.get_structure("structure", str(pdb_path))
+    try:
+        model = next(iter(structure))
+    except StopIteration:
+        return None
+    for c in model:
+        if c.id != chain:
+            continue
+        for residue in c:
+            if residue.id[1] == resi:
+                return protein_letters_3to1.get(residue.resname)
+    return None
+
+
+async def _run_ddmut_pipeline(
+    pdb_file_content: str, chain: str, mutation: str
+) -> Dict[str, Any]:
+    client = DDMutClient()
+    prediction = await client.predict_stability(pdb_file_content, chain, mutation)
+    return {"prediction": prediction}
+
+
+async def _execute_ddmut_job(
+    job_id: str,
+    pdb_file_content: str,
+    chain: str,
+    mutation: str,
+    webhook_url: Optional[str] = None,
+):
+    ddmut_jobs[job_id]["status"] = "running"
+    created_at = ddmut_jobs[job_id].get("created_at", time.time())
+    try:
+        outcome = await _run_ddmut_pipeline(pdb_file_content, chain, mutation)
+        ddmut_jobs[job_id] = {
+            "status": "completed",
+            "created_at": created_at,
+            "finished_at": time.time(),
+            **outcome,
+        }
+    except Exception as e:
+        ddmut_jobs[job_id] = {
+            "status": "failed",
+            "created_at": created_at,
+            "finished_at": time.time(),
+            "error": str(e),
+        }
+    if webhook_url:
+        await _notify_webhook(
+            webhook_url,
+            {"job_id": job_id, "status": ddmut_jobs[job_id]["status"], "run_id": None},
+        )
+
+
+@app.post(
+    "/api/jobs/ddg-stability",
+    status_code=202,
+    responses={
+        400: {"description": "Invalid pdb_id/chain/resi/mutant"},
+        404: {
+            "description": "Structure PDB not found, or the given residue doesn't exist on that chain"
+        },
+    },
+)
+async def submit_ddmut_job(
+    pdb_id: Annotated[str, Body(..., embed=True)],
+    chain: Annotated[str, Body(..., embed=True)],
+    resi: Annotated[int, Body(..., embed=True)],
+    mutant: Annotated[str, Body(..., embed=True)],
+    run_id: Annotated[Optional[str], Body(embed=True)] = None,
+    session_id: Annotated[Optional[str], Body(embed=True)] = None,
+    webhook_url: Annotated[Optional[str], Body(embed=True)] = None,
+):
+    """
+    Submit a real mutation-stability (ddG) prediction as a background job
+    via DDMut (see ddmut_client.py) - a separate job type from the
+    existing four, since DDMut's own submit-then-poll workflow against an
+    external server is itself slow, unlike /api/mutation-impact's fast,
+    synchronous ClinVar/AlphaMissense lookups. `resi`/`chain` are the
+    structure's own author numbering (matching /api/mutation-impact's
+    convention); the wildtype residue is read directly from the
+    structure's file, not resolved via UniProt, so this works for any
+    structure source. Returns immediately with a job_id; poll
+    GET /api/jobs/{job_id} for status - or, if webhook_url is given,
+    receive a POST there instead ({job_id, status, run_id: null}) once
+    the job finishes.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(chain, "chain")
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+    if not _SAFE_AMINO_ACID.match(mutant or ""):
+        raise HTTPException(
+            status_code=400, detail=f"Invalid mutant residue code: {mutant!r}"
+        )
+
+    pdb_path = _find_structure_pdb_path(pdb_id, run_id, session_id)
+    if not pdb_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Structure PDB for {pdb_id} not found in active workspace.",
+        )
+
+    wildtype = _get_wildtype_residue_letter(pdb_path, chain, resi)
+    if not wildtype:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Could not resolve residue {resi} on chain {chain} of {pdb_id}.",
+        )
+
+    mutation_code = f"{wildtype}{resi}{mutant.upper()}"
+    webhook_url = await _validate_webhook_url(webhook_url)
+
+    job_id = uuid.uuid4().hex
+    ddmut_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    _spawn_background_task(
+        _execute_ddmut_job(
+            job_id, pdb_path.read_text(), chain, mutation_code, webhook_url
+        )
+    )
+
+    return {"job_id": job_id, "status": "queued", "mutation": mutation_code}
 
 
 @app.post(

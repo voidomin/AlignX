@@ -7,9 +7,11 @@ vi.mock('../api.js', () => ({
     fetchDifferenceDistance: vi.fn(),
     fetchMutationImpact: vi.fn(),
     fetchPae: vi.fn(),
+    submitDdgStabilityJob: vi.fn(),
+    pollJobUntilDone: vi.fn(),
 }));
 
-import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae } from '../api.js';
+import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae, submitDdgStabilityJob, pollJobUntilDone } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new AnalyticsTab(overrides);
@@ -910,6 +912,106 @@ describe('AnalyticsTab', () => {
 
             expect(tab.element.querySelector('#mutation-impact-result').textContent)
                 .toContain('Failed to map this mutation.');
+        });
+    });
+
+    describe('predict stability impact (DDMut)', () => {
+        function setUpForMutation(tab) {
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+            tab.element.querySelector('#mutation-resi-input').value = '6';
+            tab.element.querySelector('#mutation-mutant-input').value = 'V';
+        }
+
+        it('submits a job, polls it, and renders the real predicted ddG', async () => {
+            submitDdgStabilityJob.mockResolvedValue({ job_id: 'ddmut-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({
+                status: 'completed',
+                prediction: { prediction: 0.22, chain: 'A', position: '6', 'wild-type': 'LYS', mutant: 'ALA' },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-ddg-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(submitDdgStabilityJob).toHaveBeenCalledWith('4HHB', 'A', 6, 'V');
+            expect(pollJobUntilDone).toHaveBeenCalledWith('ddmut-1', expect.objectContaining({ intervalMs: 10000 }));
+            expect(tab.element.querySelector('#mutation-ddg-result').textContent)
+                .toContain('+0.22 kcal/mol (stabilizing)');
+        });
+
+        it('shows a destabilizing prediction with a minus sign', async () => {
+            submitDdgStabilityJob.mockResolvedValue({ job_id: 'ddmut-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({
+                status: 'completed',
+                prediction: { prediction: -1.67 },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-ddg-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#mutation-ddg-result').textContent)
+                .toContain('-1.67 kcal/mol (destabilizing)');
+        });
+
+        it('shows the real failure reason when the job fails', async () => {
+            submitDdgStabilityJob.mockResolvedValue({ job_id: 'ddmut-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({
+                status: 'failed',
+                error: 'DDMut job ddmut-1 did not complete within 600s',
+            });
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-ddg-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#mutation-ddg-result').textContent)
+                .toContain('did not complete within 600s');
+        });
+
+        it('validates inputs before submitting a job', async () => {
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+            tab.element.querySelector('#mutation-resi-input').value = '';
+            tab.element.querySelector('#mutation-mutant-input').value = 'V';
+
+            tab.element.querySelector('#mutation-ddg-btn').click();
+            await Promise.resolve();
+
+            expect(submitDdgStabilityJob).not.toHaveBeenCalled();
+            expect(tab.element.querySelector('#mutation-ddg-result').textContent)
+                .toContain('Enter a residue number and a mutant residue.');
+        });
+
+        it('shows a graceful message when submission fails', async () => {
+            submitDdgStabilityJob.mockRejectedValue(new Error('boom'));
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-ddg-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#mutation-ddg-result').textContent)
+                .toContain('Failed to predict stability impact.');
         });
     });
 

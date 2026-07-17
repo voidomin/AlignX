@@ -3055,6 +3055,160 @@ async def test_blast_job_sweep_drops_old_finished_jobs_but_keeps_recent_and_runn
     api_module.blast_jobs.clear()
 
 
+def _write_test_pdb(tmp_path, chain="A", resi=6, resname="LYS"):
+    pdb_file = tmp_path / "structure.pdb"
+    pdb_file.write_text(
+        f"ATOM      1  CA  {resname} {chain}{resi:>4}      27.340  24.430   2.614  1.00  0.00           C\n"
+    )
+    return pdb_file
+
+
+class TestGetWildtypeResidueLetter:
+    def test_returns_the_real_residue_letter(self, tmp_path):
+        pdb_file = _write_test_pdb(tmp_path, chain="A", resi=6, resname="LYS")
+        result = api_module._get_wildtype_residue_letter(pdb_file, "A", 6)
+        assert result == "K"
+
+    def test_returns_none_for_a_chain_that_does_not_exist(self, tmp_path):
+        pdb_file = _write_test_pdb(tmp_path, chain="A", resi=6, resname="LYS")
+        result = api_module._get_wildtype_residue_letter(pdb_file, "B", 6)
+        assert result is None
+
+    def test_returns_none_for_a_residue_number_that_does_not_exist(self, tmp_path):
+        pdb_file = _write_test_pdb(tmp_path, chain="A", resi=6, resname="LYS")
+        result = api_module._get_wildtype_residue_letter(pdb_file, "A", 999)
+        assert result is None
+
+
+def test_ddmut_job_submission_returns_queued_and_the_real_mutation_code(tmp_path):
+    """Submitting a valid ddG job returns a job_id immediately with status
+    "queued" - it must not block on the slow DDMut submit/poll pipeline -
+    and reports the real wildtype+resi+mutant code it derived from the
+    structure's own file."""
+    api_module.ddmut_jobs.clear()
+    pdb_file = _write_test_pdb(tmp_path, chain="A", resi=6, resname="LYS")
+
+    with patch("src.backend.api._find_structure_pdb_path", return_value=pdb_file):
+        response = client.post(
+            "/api/jobs/ddg-stability",
+            json={"pdb_id": "1UBQ", "chain": "A", "resi": 6, "mutant": "A"},
+        )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "queued"
+    assert body["mutation"] == "K6A"
+    assert body["job_id"] in api_module.ddmut_jobs
+    api_module.ddmut_jobs.clear()
+
+
+def test_ddmut_job_submission_404s_when_structure_not_found():
+    with patch("src.backend.api._find_structure_pdb_path", return_value=None):
+        response = client.post(
+            "/api/jobs/ddg-stability",
+            json={"pdb_id": "1UBQ", "chain": "A", "resi": 6, "mutant": "A"},
+        )
+    assert response.status_code == 404
+
+
+def test_ddmut_job_submission_404s_when_residue_does_not_exist(tmp_path):
+    pdb_file = _write_test_pdb(tmp_path, chain="A", resi=6, resname="LYS")
+    with patch("src.backend.api._find_structure_pdb_path", return_value=pdb_file):
+        response = client.post(
+            "/api/jobs/ddg-stability",
+            json={"pdb_id": "1UBQ", "chain": "A", "resi": 999, "mutant": "A"},
+        )
+    assert response.status_code == 404
+
+
+def test_ddmut_job_submission_rejects_an_invalid_mutant_code(tmp_path):
+    pdb_file = _write_test_pdb(tmp_path)
+    with patch("src.backend.api._find_structure_pdb_path", return_value=pdb_file):
+        response = client.post(
+            "/api/jobs/ddg-stability",
+            json={"pdb_id": "1UBQ", "chain": "A", "resi": 6, "mutant": "42"},
+        )
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_ddmut_job_execution_completes_and_is_pollable():
+    """Directly exercises _execute_ddmut_job (the background task the
+    endpoint schedules) end-to-end, then confirms GET /api/jobs/{job_id} -
+    the same polling endpoint used for every other job type - surfaces the
+    real ddG prediction result."""
+    api_module.ddmut_jobs.clear()
+    job_id = "test-ddmut-job"
+    api_module.ddmut_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    with patch(
+        "src.backend.api.DDMutClient.predict_stability", new_callable=AsyncMock
+    ) as mock_predict:
+        mock_predict.return_value = {
+            "job_id": "ddmut-1",
+            "status": "DONE",
+            "prediction": 0.22,
+            "chain": "A",
+            "position": "6",
+            "wild-type": "LYS",
+            "mutant": "ALA",
+        }
+        await api_module._execute_ddmut_job(job_id, "PDB TEXT", "A", "K6A")
+
+    poll = client.get(f"/api/jobs/{job_id}")
+    assert poll.json()["status"] == "completed"
+    assert poll.json()["prediction"]["prediction"] == 0.22
+
+    api_module.ddmut_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_ddmut_job_execution_surfaces_pipeline_failure():
+    api_module.ddmut_jobs.clear()
+    job_id = "test-ddmut-job-fail"
+    api_module.ddmut_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    with patch(
+        "src.backend.api.DDMutClient.predict_stability", new_callable=AsyncMock
+    ) as mock_predict:
+        from src.backend.ddmut_client import DDMutError
+
+        mock_predict.side_effect = DDMutError(
+            "DDMut job ddmut-1 did not complete within 600s"
+        )
+        await api_module._execute_ddmut_job(job_id, "PDB TEXT", "A", "K6A")
+
+    poll = client.get(f"/api/jobs/{job_id}")
+    assert poll.json()["status"] == "failed"
+    assert "did not complete within 600s" in poll.json()["error"]
+
+    api_module.ddmut_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_ddmut_job_sweep_drops_old_finished_jobs_but_keeps_recent_and_running():
+    now = time.time()
+    api_module.ddmut_jobs.clear()
+    api_module.ddmut_jobs.update(
+        {
+            "old_completed": {"status": "completed", "finished_at": now - 10_000},
+            "recent_completed": {"status": "completed", "finished_at": now},
+            "still_running": {"status": "running", "created_at": now - 10_000},
+        }
+    )
+
+    with patch.object(api_module, "_JOB_TTL_SECONDS", 60), patch(
+        "asyncio.sleep", new_callable=AsyncMock
+    ) as mock_sleep:
+        mock_sleep.side_effect = [None, asyncio.CancelledError()]
+        with pytest.raises(asyncio.CancelledError):
+            await api_module._sweep_ddmut_jobs()
+
+    remaining = set(api_module.ddmut_jobs.keys())
+    assert remaining == {"recent_completed", "still_running"}
+    api_module.ddmut_jobs.clear()
+
+
 @pytest.mark.asyncio
 async def test_execute_alignment_job_marks_completed_on_success():
     """Mirrors test_execute_alignment_job_marks_failed_on_pipeline_error but
@@ -3359,6 +3513,22 @@ def test_submit_conservation_job_rejects_an_invalid_webhook_url():
         "/api/jobs/conservation",
         json={"sequence": "AAAAAAAAAAAAAAAAAAAA", "webhook_url": "not-a-url"},
     )
+    assert response.status_code == 400
+
+
+def test_submit_ddmut_job_rejects_an_invalid_webhook_url(tmp_path):
+    pdb_file = _write_test_pdb(tmp_path)
+    with patch("src.backend.api._find_structure_pdb_path", return_value=pdb_file):
+        response = client.post(
+            "/api/jobs/ddg-stability",
+            json={
+                "pdb_id": "1UBQ",
+                "chain": "A",
+                "resi": 6,
+                "mutant": "A",
+                "webhook_url": "not-a-url",
+            },
+        )
     assert response.status_code == 400
 
 
