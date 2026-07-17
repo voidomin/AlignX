@@ -116,7 +116,7 @@ export class AnalyticsTab {
                         </div>
                     </div>
                     <div id="quality-metrics-table-card" class="flex flex-col gap-2 hidden border-t border-border-subtle pt-4">
-                        <span class="font-label-sm text-label-sm text-secondary uppercase">Alignment quality (TM-score / GDT-TS)</span>
+                        <span class="font-label-sm text-label-sm text-secondary uppercase">Alignment quality (TM-score / GDT-TS - fold-similarity scores from 0 to 1, higher is more similar)</span>
                         <table class="w-full font-body-sm text-body-sm">
                             <thead>
                                 <tr class="text-secondary text-left border-b border-border-subtle">
@@ -149,7 +149,7 @@ export class AnalyticsTab {
                         </table>
                     </div>
                     <div class="flex flex-col gap-2 border-t border-border-subtle pt-4">
-                        <span class="font-label-sm text-label-sm text-secondary uppercase">Predicted aligned error (AlphaFold structures only)</span>
+                        <span class="font-label-sm text-label-sm text-secondary uppercase">Predicted aligned error (AlphaFold structures only - AlphaFold's own confidence in each residue pair's relative position, lower is better)</span>
                         <div class="flex gap-2 items-center">
                             <select id="pae-pdb-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
                                 <option value="">Select a structure</option>
@@ -266,7 +266,7 @@ export class AnalyticsTab {
 
                     <div class="flex flex-col gap-2 pt-3 border-t border-border-subtle">
                         <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Map a mutation</span>
-                        <span class="font-body-sm text-body-sm text-secondary">Maps the selected structure's residue to UniProt, then checks ClinVar for a matching clinical record</span>
+                        <span class="font-body-sm text-body-sm text-secondary">Maps the selected structure's residue to UniProt, then checks ClinVar for a known clinical record and AlphaMissense for a predicted pathogenicity score</span>
                         <div class="flex items-end gap-2">
                             <label class="flex flex-col gap-1">
                                 <span class="font-label-sm text-label-sm text-secondary">Residue #</span>
@@ -555,6 +555,14 @@ export class AnalyticsTab {
             clinvarLine.textContent = 'No matching ClinVar record found.';
         }
         resultDiv.appendChild(clinvarLine);
+
+        const alphamissenseLine = document.createElement('div');
+        if (data.alphamissense) {
+            alphamissenseLine.textContent = `AlphaMissense: ${data.alphamissense.pathogenicity.toFixed(3)} (${data.alphamissense.class})`;
+        } else {
+            alphamissenseLine.textContent = 'No AlphaMissense score available for this substitution.';
+        }
+        resultDiv.appendChild(alphamissenseLine);
 
         if (data.known_uniprot_variant) {
             const variantLine = document.createElement('div');

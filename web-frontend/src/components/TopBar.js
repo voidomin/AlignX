@@ -63,9 +63,9 @@ export class TopBar {
                     <button id="topbar-new-ws-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">New Workspace</button>
                     <button id="topbar-export-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Export</button>
                     <div class="h-5 w-px bg-border"></div>
-                    <span id="topbar-health-status" class="text-secondary truncate max-w-[200px]">Engine: checking...</span>
+                    <span id="topbar-health-status" class="text-secondary truncate max-w-[200px]">Alignment engine: Checking...</span>
                     <span id="topbar-ram-text" class="text-muted">--</span>
-                    <button id="topbar-free-ram-btn" class="text-accent hover:text-primary transition-colors">Free RAM</button>
+                    <button id="topbar-free-ram-btn" class="text-accent hover:text-primary transition-colors" title="Runs garbage collection on the shared server process - affects all users, not just your session">Free up memory</button>
                 </div>
             </div>
         `;
@@ -131,7 +131,7 @@ export class TopBar {
             } catch (err) {
                 console.error("Free memory failed:", err);
             } finally {
-                freeBtn.innerText = "Free RAM";
+                freeBtn.innerText = "Free up memory";
                 freeBtn.disabled = false;
             }
         });
@@ -173,10 +173,12 @@ export class TopBar {
                 if (healthEl && health) {
                     if (health.mustang_installed) {
                         const mode = health.mustang_message?.toLowerCase().includes("wsl") ? "WSL" : "Native";
-                        healthEl.innerText = `Mustang: Ready (${mode})`;
+                        healthEl.innerText = "Alignment engine: Ready";
+                        healthEl.title = `Runs via Mustang, in ${mode} mode`;
                         healthEl.className = "text-success truncate max-w-[200px]";
                     } else {
-                        healthEl.innerText = "Mustang: Offline";
+                        healthEl.innerText = "Alignment engine: Offline";
+                        healthEl.title = "Mustang could not be found on the server";
                         healthEl.className = "text-error truncate max-w-[200px]";
                     }
                 }
@@ -184,7 +186,8 @@ export class TopBar {
                 console.warn("Top bar health update failed:", err);
                 const healthEl = this.element.querySelector('#topbar-health-status');
                 if (healthEl) {
-                    healthEl.innerText = "Engine: Disconnected";
+                    healthEl.innerText = "Alignment engine: Disconnected";
+                    healthEl.title = "Could not reach the backend server";
                     healthEl.className = "text-error truncate max-w-[200px]";
                 }
             }

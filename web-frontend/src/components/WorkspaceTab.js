@@ -119,11 +119,11 @@ export class WorkspaceTab {
 
                 <div class="flex flex-col gap-3 border-t border-border pt-6">
                     <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Parameters</span>
-                    <label class="flex items-center gap-3 cursor-pointer group">
+                    <label class="flex items-center gap-3 cursor-pointer group" title="Removes crystallographic water molecules (HOH records) before alignment and analysis, since they carry no structural signal">
                         <input id="param-remove-water" type="checkbox" checked class="rounded border-border bg-surface-raised text-accent focus:ring-2 focus:ring-accent focus:ring-offset-1"/>
                         <span class="font-body-sm text-body-sm text-secondary group-hover:text-primary transition-colors">Filter water molecules (HOH)</span>
                     </label>
-                    <label class="flex items-center gap-3 cursor-pointer group">
+                    <label class="flex items-center gap-3 cursor-pointer group" title="Drops ions and buffer molecules used in crystallization, but keeps real bound ligands intact for the Ligand tab">
                         <input id="param-remove-heteroatoms" type="checkbox" checked class="rounded border-border bg-surface-raised text-accent focus:ring-2 focus:ring-accent focus:ring-offset-1"/>
                         <span class="font-body-sm text-body-sm text-secondary group-hover:text-primary transition-colors">Exclude non-ligand heteroatoms</span>
                     </label>

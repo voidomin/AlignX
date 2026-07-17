@@ -7,7 +7,7 @@ vi.mock('../api.js', () => ({
     triggerClearMemory: vi.fn(),
 }));
 
-import { fetchMemoryStats, fetchHealth } from '../api.js';
+import { fetchMemoryStats, fetchHealth, triggerClearMemory } from '../api.js';
 
 function makeBar(overrides = {}) {
     return new TopBar({
@@ -62,6 +62,73 @@ describe('TopBar', () => {
 
         await vi.advanceTimersByTimeAsync(30000);
         expect(fetchMemoryStats).not.toHaveBeenCalled();
+    });
+
+    describe('alignment engine status', () => {
+        it('shows Offline with a title explaining why when Mustang is not installed', async () => {
+            fetchHealth.mockResolvedValue({ mustang_installed: false, mustang_message: null });
+            const bar = makeBar();
+            bar.render();
+
+            await vi.advanceTimersByTimeAsync(3000);
+
+            const healthEl = bar.element.querySelector('#topbar-health-status');
+            expect(healthEl.innerText).toBe('Alignment engine: Offline');
+            expect(healthEl.title).toBe('Mustang could not be found on the server');
+            expect(healthEl.className).toContain('text-error');
+
+            bar.destroy();
+        });
+
+        it('shows Disconnected with a title when the health check itself fails', async () => {
+            fetchHealth.mockRejectedValue(new Error('network down'));
+            const bar = makeBar();
+            bar.render();
+
+            await vi.advanceTimersByTimeAsync(3000);
+
+            const healthEl = bar.element.querySelector('#topbar-health-status');
+            expect(healthEl.innerText).toBe('Alignment engine: Disconnected');
+            expect(healthEl.title).toBe('Could not reach the backend server');
+            expect(healthEl.className).toContain('text-error');
+
+            bar.destroy();
+        });
+
+        it('shows Ready with the Native/WSL mode in a title, mirroring the visible label', async () => {
+            fetchHealth.mockResolvedValue({ mustang_installed: true, mustang_message: 'Compiled Mustang found, native binary' });
+            const bar = makeBar();
+            bar.render();
+
+            await vi.advanceTimersByTimeAsync(3000);
+
+            const healthEl = bar.element.querySelector('#topbar-health-status');
+            expect(healthEl.innerText).toBe('Alignment engine: Ready');
+            expect(healthEl.title).toBe('Runs via Mustang, in Native mode');
+
+            bar.destroy();
+        });
+    });
+
+    describe('free up memory button', () => {
+        it('shows a transient "Clearing..." state, then restores its label once the request settles', async () => {
+            triggerClearMemory.mockResolvedValue({ ram_mb: 42 });
+            const bar = makeBar();
+            bar.render();
+
+            const freeBtn = bar.element.querySelector('#topbar-free-ram-btn');
+            expect(freeBtn.textContent).toBe('Free up memory');
+
+            freeBtn.click();
+            expect(freeBtn.innerText).toBe('Clearing...');
+            expect(freeBtn.disabled).toBe(true);
+
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(freeBtn.innerText).toBe('Free up memory');
+            expect(freeBtn.disabled).toBe(false);
+        });
     });
 
     describe('tab strip scroll affordance', () => {
