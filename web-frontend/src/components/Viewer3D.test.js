@@ -107,6 +107,22 @@ describe('Viewer3D', () => {
             expect(v.structures).toEqual([expect.objectContaining({ pdbId: '4RLT', mustangChain: null })]);
             expect(mockViewer.setStyle).toHaveBeenCalledWith({}, expect.objectContaining({ cartoon: expect.any(Object) }));
         });
+
+        it('loadSingleStructure adds the model as "pdb" format for real PDB text', async () => {
+            global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => 'HEADER\nATOM      1  N   MET A   1\n' });
+            const v = makeViewer();
+            await v.loadSingleStructure('4RLT');
+
+            expect(mockViewer.addModel).toHaveBeenCalledWith(expect.stringContaining('ATOM'), 'pdb');
+        });
+
+        it('loadSingleStructure adds the model as "cif" format for a real mmCIF file (AlphaFold-sourced structures)', async () => {
+            global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => 'data_AF-P69905-F1\n#\n_entry.id AF-P69905-F1\n' });
+            const v = makeViewer();
+            await v.loadSingleStructure('AF-P69905-F1');
+
+            expect(mockViewer.addModel).toHaveBeenCalledWith(expect.stringContaining('data_'), 'cif');
+        });
     });
 
     describe('style switcher', () => {
