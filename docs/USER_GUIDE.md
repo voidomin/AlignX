@@ -15,6 +15,34 @@ every capability below actually lives.
 
 **Live app:** https://align-x-xi.vercel.app/
 
+### Where to find things: the tab map
+
+Every section below names the real tab it lives in. If you're looking at the
+running app right now, this is the quickest orientation:
+
+| Tab (SPA nav) | What it's for | Guide section |
+|---|---|---|
+| **Workspace** | Add/upload/predict structures, run alignment, bulk QC | §2, §4.8 |
+| **Ligands** | Binding sites, pockets, chemistry lookup | §6 |
+| **Sequence** | Identity view, motif search, true MSA, true conservation | §5 |
+| **Analytics** | Quality metrics, PAE, contact maps, annotation, mutations, insights | §4, §8.1, §9 |
+| **Clusters** | RMSD-threshold structural families | §3 |
+| **Diff Runs** (Compare) | Diff the current run against a past one | §3.6 |
+| **History** | Past runs, sharing, notes/tags, cross-run trend | §10 |
+| **Dashboard** | At-a-glance stats, recent activity, quick-start examples | §1 |
+| **Settings** | Deployment-wide configuration (self-hosting) | §12 |
+
+**A note on the two interfaces**: sections below apply to the **SPA**
+(everything) unless marked `(SPA only)`. The **Streamlit app** — the one
+currently deployed publicly for the basic workflow — covers only §3.1–§3.5,
+§4.1–§4.2, §6 (minus druggability/chemistry lookup), §7, and §11's PDF/HTML
+exports. Streamlit also only accepts **plain RCSB PDB IDs** — none of the
+other three structure sources (AlphaFold, SWISS-MODEL, ESM Atlas), upload, or
+sequence prediction from §2 are available there. Everything else in this
+guide (Discover mode, mutation mapping, PAE/AlphaMissense, true MSA/
+conservation, sharing, Dashboard, webhooks, and prediction from a sequence)
+is SPA-only.
+
 ---
 
 ## Table of Contents
@@ -26,11 +54,11 @@ every capability below actually lives.
 5. [Sequence-Level Analysis](#5-sequence-level-analysis)
 6. [Ligand & Binding Site Analysis](#6-ligand--binding-site-analysis)
 7. [Protein-Protein Interfaces](#7-protein-protein-interfaces)
-8. [Functional Annotation & "What Does This Do?"](#8-functional-annotation--what-does-this-do)
-9. [Mutations: ClinVar & AlphaMissense](#9-mutations-clinvar--alphamissense)
+8. [Functional Annotation & "What Does This Do?"](#8-functional-annotation--what-does-this-do) `(SPA only)`
+9. [Mutations: ClinVar & AlphaMissense](#9-mutations-clinvar--alphamissense) `(SPA only)`
 10. [History, Sharing, Notes & Sessions](#10-history-sharing-notes--sessions)
 11. [Exporting & Sharing Results](#11-exporting--sharing-results)
-12. [Settings & Access Control](#12-settings--access-control)
+12. [Settings & Access Control](#12-settings--access-control) `(SPA only)`
 13. [Interpreting the Numbers — Quick Reference](#13-interpreting-the-numbers--quick-reference)
 14. [Glossary](#14-glossary)
 15. [FAQ & Troubleshooting](#15-faq--troubleshooting)
@@ -67,6 +95,14 @@ gets a 3D preview, functional annotation (§8), ligand/pocket analysis (§6),
 mutation mapping (§9), and bulk QC (§4) — alignment-specific results (RMSD,
 clustering, phylogeny) are the only things that genuinely need a second
 structure.
+
+### 1.1 The Dashboard: your at-a-glance home base
+
+*(SPA only)* Once you've run a few things, the **Dashboard** tab gives you
+aggregate stats across everything you've done — total runs, total proteins
+analyzed, cache size — plus a feed of recent activity and the same one-click
+quick-start examples available from an empty Workspace, for getting oriented
+fast without retyping IDs you use often.
 
 ---
 
@@ -159,7 +195,10 @@ added.
 Every aligned structure renders overlaid, each in a distinct color with a
 legend identifying which is which. Drag to rotate, scroll to zoom. The
 initial auto-rotate stops itself after a few seconds or the moment you
-interact with it.
+interact with it. Click any residue in the **Sequence** tab's alignment grid
+to highlight that exact position in the 3D viewer — the fastest way to go
+from "this residue looks conserved" to "here's exactly where it sits in
+space."
 
 Color-scheme options beyond plain chain identity:
 
@@ -446,7 +485,17 @@ submission time. A notification POST arrives there the moment the job
 finishes, so you don't need to keep the tab open polling for a multi-minute
 search.
 
-### 8.6 3D viewer and ligand inspector in Discover mode
+### 8.6 Self-hosted search backend
+
+*(Relevant if you're administering a deployment.)* Discover mode defaults to
+the public Foldseek API, shared and rate-limited across all users. For
+heavier use, set `foldseek.backend: local` in `config.yaml` to switch to a
+local Foldseek binary and search database you provision yourself — no code
+changes needed, just configuration. Discover runs are cached (annotation
+lookups default to a 30-day TTL) and appear in Dashboard/History alongside
+Compare runs with a distinct `DISCOVER` badge.
+
+### 8.7 3D viewer and ligand inspector in Discover mode
 
 As soon as a Discover search resolves your structure, it renders directly in
 the 3D viewer as-is (no re-alignment). If it has a bound ligand, the same
