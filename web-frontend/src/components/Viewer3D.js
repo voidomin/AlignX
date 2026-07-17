@@ -584,7 +584,16 @@ export class Viewer3D {
             const pdbData = await response.text();
 
             this.viewer.clear();
-            this.viewer.addModel(pdbData, "pdb");
+            // /api/structure-file serves whatever raw format the structure
+            // was actually downloaded in - AlphaFold DB (and SWISS-MODEL)
+            // structures are real mmCIF ("data_..." header), not PDB, unlike
+            // loadSuperposition's alignment.pdb (always Mustang's own PDB
+            // output, hardcoded "pdb" below is correct there). Sniffing the
+            // content here avoids silently feeding mmCIF into 3Dmol's PDB
+            // parser, which adds zero atoms with no error - a blank viewer,
+            // not a crash.
+            const format = pdbData.trimStart().startsWith('data_') ? 'cif' : 'pdb';
+            this.viewer.addModel(pdbData, format);
             this.viewer.setStyle({}, this._styleFor(this.structures[0]));
 
             this._wireClickHandler();
