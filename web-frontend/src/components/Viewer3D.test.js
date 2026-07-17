@@ -5,9 +5,10 @@ vi.mock('../api.js', () => ({
     getAlignmentPdbUrl: vi.fn((runId) => `http://mock/results/${runId}/alignment.pdb`),
     getStructureFileUrl: vi.fn((pdbId) => `http://mock/api/structure-file?pdb_id=${pdbId}`),
     fetchMutationTolerance: vi.fn(),
+    fetchAnnotations: vi.fn(),
 }));
 
-import { fetchMutationTolerance } from '../api.js';
+import { fetchMutationTolerance, fetchAnnotations } from '../api.js';
 
 function makeMockViewer() {
     return {
@@ -38,6 +39,7 @@ let mockViewer;
 beforeEach(() => {
     global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => 'MOCK PDB DATA' });
     fetchMutationTolerance.mockResolvedValue({ tolerance: { accession: null, per_residue_average: {} } });
+    fetchAnnotations.mockResolvedValue({ annotation: { domains: [] } });
     window.$3Dmol = {
         createViewer: vi.fn(() => {
             mockViewer = makeMockViewer();
@@ -546,6 +548,77 @@ describe('Viewer3D', () => {
             await loadTwoStructures(v);
 
             await v.setColorScheme('missense');
+
+            expect(mockViewer.setStyle).toHaveBeenCalledWith({ chain: 'A' }, { cartoon: expect.objectContaining({ color: expect.any(String) }) });
+        });
+    });
+
+    describe('InterPro domain color scheme', () => {
+        it('fetches annotation for every structure and applies a colorfunc once loaded', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: { domains: [{ highlight_chains: { A: [10, 11, 12] } }] },
+            });
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            await v.setColorScheme('domain');
+
+            expect(fetchAnnotations).toHaveBeenCalledWith('4RLT', 'A');
+            expect(fetchAnnotations).toHaveBeenCalledWith('3UG9', 'B');
+            expect(mockViewer.setStyle).toHaveBeenCalledWith(
+                { chain: 'A' },
+                { cartoon: expect.objectContaining({ colorfunc: expect.any(Function) }) }
+            );
+        });
+
+        it('gives each domain a distinct color and falls back to a neutral color outside any domain', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    domains: [
+                        { highlight_chains: { A: [10] } },
+                        { highlight_chains: { A: [20] } },
+                    ],
+                },
+            });
+            const v = makeViewer();
+            await loadTwoStructures(v);
+            await v.setColorScheme('domain');
+
+            const [, styleArg] = mockViewer.setStyle.mock.calls[mockViewer.setStyle.mock.calls.length - 1];
+            const colorfunc = styleArg.cartoon.colorfunc;
+            const colorForDomain0 = colorfunc({ resi: 10 });
+            const colorForDomain1 = colorfunc({ resi: 20 });
+            expect(colorForDomain0).not.toBe(colorForDomain1);
+            expect(colorfunc({ resi: 999 })).toBe('#4B5563');
+        });
+
+        it('falls back to identity color when no domain data resolves for any structure', async () => {
+            fetchAnnotations.mockResolvedValue({ annotation: { domains: [] } });
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            await v.setColorScheme('domain');
+
+            expect(mockViewer.setStyle).toHaveBeenCalledWith({ chain: 'A' }, { cartoon: expect.objectContaining({ color: expect.any(String) }) });
+        });
+
+        it('does not re-fetch annotation already cached for a structure', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            await v.setColorScheme('domain');
+            fetchAnnotations.mockClear();
+            await v.setColorScheme('domain');
+
+            expect(fetchAnnotations).not.toHaveBeenCalled();
+        });
+
+        it('handles a fetch failure gracefully by falling back to identity color', async () => {
+            fetchAnnotations.mockRejectedValue(new Error('boom'));
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            await v.setColorScheme('domain');
 
             expect(mockViewer.setStyle).toHaveBeenCalledWith({ chain: 'A' }, { cartoon: expect.objectContaining({ color: expect.any(String) }) });
         });

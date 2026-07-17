@@ -1,4 +1,4 @@
-import { getAlignmentPdbUrl, getStructureFileUrl, fetchMutationTolerance } from '../api';
+import { getAlignmentPdbUrl, getStructureFileUrl, fetchMutationTolerance, fetchAnnotations } from '../api';
 
 // Qualitative palette for N-structure identity coloring. Deliberately avoids
 // amber/#F59E0B (reserved for the residue-selection highlight) and the
@@ -23,7 +23,21 @@ const COLOR_SCHEME_OPTIONS = [
     { key: 'spectrum', label: 'Spectrum (N→C)' },
     { key: 'confidence', label: 'pLDDT Confidence' },
     { key: 'missense', label: 'Mutation tolerance (AlphaMissense)' },
+    { key: 'domain', label: 'InterPro domains' },
 ];
+
+// A distinct qualitative palette for domain coloring, deliberately
+// different from CHAIN_COLORS above (a structure's own chain-identity
+// color must stay visually distinguishable from "which domain a residue
+// falls in," since a domain-colored view still shows per-structure
+// context via the HUD, not via this palette) - and avoiding amber
+// (#F59E0B, reserved for the residue-selection highlight) for the same
+// reason CHAIN_COLORS does.
+const DOMAIN_COLORS = ['#38BDF8', '#F472B6', '#84CC16', '#A78BFA', '#FB7185', '#2DD4BF', '#FBBF24', '#60A5FA'];
+
+function colorForDomainIndex(i) {
+    return DOMAIN_COLORS[i % DOMAIN_COLORS.length];
+}
 
 // Shared "highlighted/selected" amber semantic (matches .row-selected) -
 // used for both residue-selection highlighting and the measurement tool's
@@ -53,6 +67,13 @@ export class Viewer3D {
     // atoms already in the loaded model, so it's a separate lazy fetch
     // rather than something _missenseColorPartFor can compute on its own.
     missenseScoresByPdbId = {};
+    // Keyed by pdbId -> { [authorResi]: colorHex }, one color per InterPro
+    // domain, flattened from that structure's own annotation fetch (see
+    // loadDomainColors) - unlike the existing "Highlight in 3D" button
+    // (one domain at a time, everything else ghosted), this colors every
+    // domain simultaneously and persistently, the same way pLDDT/missense
+    // color the whole structure by a per-residue value.
+    domainColorsByPdbId = {};
 
     // Click behavior branches on this - 'inspect' (default, informational
     // residue lookup) vs 'measure' (2-click atom-to-atom distance). Mutually
@@ -284,6 +305,10 @@ export class Viewer3D {
             // flight (a quick double-click) - don't clobber a newer choice.
             if (this.currentColorScheme !== 'missense') return;
         }
+        if (scheme === 'domain') {
+            await this.loadDomainColors();
+            if (this.currentColorScheme !== 'domain') return;
+        }
         this.resetCartoonStyles();
     }
 
@@ -306,6 +331,51 @@ export class Viewer3D {
                 this.missenseScoresByPdbId[structure.pdbId] = {};
             }
         }));
+    }
+
+    // Fetches this structure's own InterPro domain annotation (the same
+    // /api/annotations call AnalyticsTab's Annotations panel already uses)
+    // for every loaded structure that doesn't have a domain-color map
+    // cached yet, and flattens each domain's highlight_chains into one
+    // {[resi]: colorHex} lookup per structure. A structure with no
+    // resolvable UniProt accession or no InterPro coverage correctly gets
+    // an empty map back, not an error.
+    async loadDomainColors() {
+        const missing = this.structures.filter(s => !(s.pdbId in this.domainColorsByPdbId));
+        if (missing.length === 0) return;
+
+        await Promise.all(missing.map(async (structure) => {
+            try {
+                const chain = structure.sourceChain !== '?' ? structure.sourceChain : undefined;
+                const data = await fetchAnnotations(structure.pdbId, chain);
+                const domains = data.annotation?.domains || [];
+                const colorMap = {};
+                domains.forEach((domain, i) => {
+                    const residues = domain.highlight_chains?.[chain] || Object.values(domain.highlight_chains || {})[0];
+                    (residues || []).forEach(resi => {
+                        colorMap[resi] = colorForDomainIndex(i);
+                    });
+                });
+                this.domainColorsByPdbId[structure.pdbId] = colorMap;
+            } catch (err) {
+                console.error(`Failed to load domain annotation for ${structure.pdbId}:`, err);
+                this.domainColorsByPdbId[structure.pdbId] = {};
+            }
+        }));
+    }
+
+    // Same colorfunc shape as _missenseColorPartFor, keyed by domain
+    // membership instead of a numeric score - residues outside any known
+    // domain fall back to the same neutral gray missense uses for
+    // "no data at this residue."
+    _domainColorPartFor(structure) {
+        const colors = this.domainColorsByPdbId[structure.pdbId];
+        if (!colors || Object.keys(colors).length === 0) {
+            return { color: structure.color };
+        }
+        return {
+            colorfunc: (atom) => colors[atom.resi] ?? '#4B5563',
+        };
     }
 
     // 3Dmol's own internal rAF-driven rotation - not a custom setInterval or
@@ -425,6 +495,8 @@ export class Viewer3D {
                 return this._plddtColorPartFor(structure);
             case 'missense':
                 return this._missenseColorPartFor(structure);
+            case 'domain':
+                return this._domainColorPartFor(structure);
             case 'chain':
             default:
                 return { color: structure.color };
@@ -892,6 +964,7 @@ export class Viewer3D {
         this.currentStyle = 'cartoon';
         this.currentColorScheme = 'chain';
         this.missenseScoresByPdbId = {};
+        this.domainColorsByPdbId = {};
         this.interactionMode = 'inspect';
         this.measurePoints = [];
         this.measureHandles = [];
