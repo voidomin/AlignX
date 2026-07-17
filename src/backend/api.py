@@ -52,6 +52,7 @@ from src.backend.rmsd_calculator import (
     get_structure_contact_map,
     get_difference_distance_matrix,
 )
+from src.backend.tm_score_calculator import calculate_pairwise_tm_score
 
 logger = get_logger()
 
@@ -1607,6 +1608,106 @@ def compare_runs(
         "target_mean_rmsd": round(target_mean, 3),
         "mean_rmsd_shift": round(current_mean - target_mean, 3),
     }
+
+
+# A "reference vs many" batch screen is a genuinely different
+# computational shape than raising the N-way Mustang-alignment cap
+# (core.max_proteins) - it's embarrassingly parallel pairwise
+# comparisons, not one N-way superposition, so it gets its own,
+# separate, more generous limit rather than reusing that config value.
+#
+# Rate-limiter decision (this route deliberately does NOT go through
+# rate_limit_job_submissions/_job_rate_limit_max above): a screen is one
+# synchronous POST, not N separate job submissions - no per-target job_id
+# is ever created, so it can't be counted as N against that per-path
+# submission limiter without changing what that limiter measures for
+# every other route. _MAX_SCREEN_TARGETS is this route's own abuse guard
+# instead, capping the pairwise-comparison and download fan-out a single
+# request can trigger. Same reasoning applies to any future CLI-submitted
+# batch: one CLI invocation of this route is still one request here.
+_MAX_SCREEN_TARGETS = 50
+
+
+@app.post(
+    "/api/screen",
+    responses={
+        400: {
+            "description": "Invalid reference_pdb_id/target_pdb_ids, or too many targets"
+        },
+        404: {"description": "One or more structures could not be downloaded"},
+    },
+)
+async def screen_structures(
+    reference_pdb_id: Annotated[str, Body(..., embed=True)],
+    target_pdb_ids: Annotated[List[str], Body(..., embed=True)],
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    A "reference vs many" pairwise structural screen: the reference
+    structure diffed independently against every structure in
+    target_pdb_ids, using the same Mustang-independent standalone
+    TM-align primitive the RMSD Matrix sub-tab's own pairwise TM-score
+    already uses (see tm_score_calculator.calculate_pairwise_tm_score) -
+    not a full N-way Mustang alignment, which doesn't scale the same way
+    (that's why this is a distinct mode, not a raised max_proteins cap).
+    Returns a ranked table, highest TM-score first; a target that fails
+    to score (e.g. no resolvable residues) is listed last with null
+    values rather than dropped silently.
+    """
+    _safe_segment(reference_pdb_id, "reference_pdb_id")
+    _safe_segment(session_id, "session_id")
+    if not target_pdb_ids:
+        raise HTTPException(status_code=400, detail="target_pdb_ids cannot be empty")
+    if len(target_pdb_ids) > _MAX_SCREEN_TARGETS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"At most {_MAX_SCREEN_TARGETS} target structures are allowed per screen.",
+        )
+    for pid in target_pdb_ids:
+        _safe_segment(pid, "target_pdb_id")
+
+    coordinator = AnalysisCoordinator(config, session_id=session_id)
+    all_ids = [reference_pdb_id] + [
+        tid for tid in target_pdb_ids if tid != reference_pdb_id
+    ]
+    download_results = await coordinator.pdb_manager.batch_download(all_ids)
+
+    failed = [
+        pid for pid, (success, msg, path) in download_results.items() if not success
+    ]
+    if failed:
+        raise HTTPException(
+            status_code=404, detail=f"Failed to fetch: {', '.join(failed)}"
+        )
+
+    reference_path = download_results[reference_pdb_id][2]
+
+    async def _score_target(target_id: str):
+        target_path = download_results[target_id][2]
+        # calculate_pairwise_tm_score does synchronous Bio.PDB parsing +
+        # tmtools' C-extension work (CPU-bound) - offloaded the same way
+        # analyze_structure() is elsewhere in this file, so N concurrent
+        # scores don't stall the event loop for every other request.
+        result = await asyncio.to_thread(
+            calculate_pairwise_tm_score, reference_path, target_path
+        )
+        return target_id, result
+
+    scored = await asyncio.gather(
+        *[_score_target(tid) for tid in target_pdb_ids if tid != reference_pdb_id]
+    )
+
+    results = [
+        {
+            "pdb_id": target_id,
+            "tm_score": result["tm_score"] if result else None,
+            "rmsd": result["rmsd"] if result else None,
+        }
+        for target_id, result in scored
+    ]
+    results.sort(key=lambda r: (r["tm_score"] is None, -(r["tm_score"] or 0)))
+
+    return sanitize_for_json({"reference_pdb_id": reference_pdb_id, "results": results})
 
 
 @app.get(

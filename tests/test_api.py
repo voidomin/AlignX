@@ -492,6 +492,110 @@ def test_chains_endpoint():
         assert data["chains"]["4RLT"]["citation"]["pubmed_id"] == 12345
 
 
+class TestScreenStructures:
+    """A "reference vs many" pairwise batch screen - distinct from the
+    N-way Mustang alignment cap, built on the standalone (Mustang-
+    independent) pairwise TM-align primitive."""
+
+    def test_returns_a_real_looking_ranked_table(self):
+        with patch(
+            "src.backend.coordinator.PDBManager.batch_download",
+            new_callable=AsyncMock,
+        ) as mock_download, patch(
+            "src.backend.api.calculate_pairwise_tm_score"
+        ) as mock_score:
+            mock_download.return_value = {
+                "1UBQ": (True, "ok", Path("ref.pdb")),
+                "4RLT": (True, "ok", Path("a.pdb")),
+                "3UG9": (True, "ok", Path("b.pdb")),
+            }
+            mock_score.side_effect = [
+                {"tm_score": 0.42, "rmsd": 3.1},
+                {"tm_score": 0.91, "rmsd": 0.8},
+            ]
+
+            response = client.post(
+                "/api/screen",
+                json={
+                    "reference_pdb_id": "1UBQ",
+                    "target_pdb_ids": ["4RLT", "3UG9"],
+                },
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["reference_pdb_id"] == "1UBQ"
+        # Ranked highest TM-score first, regardless of input order.
+        assert [r["pdb_id"] for r in body["results"]] == ["3UG9", "4RLT"]
+        assert body["results"][0]["tm_score"] == pytest.approx(0.91)
+        assert body["results"][0]["rmsd"] == pytest.approx(0.8)
+
+    def test_a_target_that_fails_to_score_is_listed_last_with_nulls(self):
+        with patch(
+            "src.backend.coordinator.PDBManager.batch_download",
+            new_callable=AsyncMock,
+        ) as mock_download, patch(
+            "src.backend.api.calculate_pairwise_tm_score"
+        ) as mock_score:
+            mock_download.return_value = {
+                "1UBQ": (True, "ok", Path("ref.pdb")),
+                "4RLT": (True, "ok", Path("a.pdb")),
+                "3UG9": (True, "ok", Path("b.pdb")),
+            }
+            mock_score.side_effect = [{"tm_score": 0.42, "rmsd": 3.1}, None]
+
+            response = client.post(
+                "/api/screen",
+                json={
+                    "reference_pdb_id": "1UBQ",
+                    "target_pdb_ids": ["4RLT", "3UG9"],
+                },
+            )
+
+        body = response.json()
+        assert body["results"][-1]["pdb_id"] == "3UG9"
+        assert body["results"][-1]["tm_score"] is None
+        assert body["results"][-1]["rmsd"] is None
+
+    def test_rejects_an_empty_target_list(self):
+        response = client.post(
+            "/api/screen", json={"reference_pdb_id": "1UBQ", "target_pdb_ids": []}
+        )
+        assert response.status_code == 400
+
+    def test_rejects_more_than_the_max_target_count(self):
+        response = client.post(
+            "/api/screen",
+            json={
+                "reference_pdb_id": "1UBQ",
+                "target_pdb_ids": [f"{i:04d}" for i in range(51)],
+            },
+        )
+        assert response.status_code == 400
+
+    def test_404s_when_a_structure_fails_to_download(self):
+        with patch(
+            "src.backend.coordinator.PDBManager.batch_download",
+            new_callable=AsyncMock,
+        ) as mock_download:
+            mock_download.return_value = {
+                "1UBQ": (True, "ok", Path("ref.pdb")),
+                "9ZZZ": (False, "not found", None),
+            }
+            response = client.post(
+                "/api/screen",
+                json={"reference_pdb_id": "1UBQ", "target_pdb_ids": ["9ZZZ"]},
+            )
+        assert response.status_code == 404
+
+    def test_rejects_an_unsafe_reference_id(self):
+        response = client.post(
+            "/api/screen",
+            json={"reference_pdb_id": "../etc", "target_pdb_ids": ["4RLT"]},
+        )
+        assert response.status_code == 400
+
+
 def test_chains_endpoint_tags_source_for_alphafold_id():
     """/api/chains must tag each structure with which database it came from,
     computed directly from the ID prefix (no network call needed)."""

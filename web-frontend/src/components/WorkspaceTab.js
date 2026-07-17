@@ -1,4 +1,4 @@
-import { fetchSuggestions, isValidPdbId, fetchValidation, fetchQc, fetchCathClassification, fetchAssemblyInfo } from '../api';
+import { fetchSuggestions, isValidPdbId, fetchValidation, fetchQc, fetchCathClassification, fetchAssemblyInfo, screenStructures } from '../api';
 import { escapeHtml } from '../escapeHtml';
 import { QUICK_START_EXAMPLES } from '../quickStartExamples';
 import { DiscoveryPanel } from './DiscoveryPanel';
@@ -124,6 +124,21 @@ export class WorkspaceTab {
                     </div>
 
                     <div id="workspace-discovery-panel-slot" class="${this.discoveryPanelVisible ? '' : 'hidden'}"></div>
+                </div>
+
+                <div class="flex flex-col gap-3 border-t border-border pt-6">
+                    <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Batch screen (reference vs. many)</span>
+                    <span class="font-body-sm text-body-sm text-secondary">Rank a batch of structures by TM-score/RMSD against one reference - a fast pairwise screen, independent of the N-way alignment above.</span>
+                    <label class="flex flex-col gap-1">
+                        <span class="font-label-sm text-label-sm text-secondary">Reference structure</span>
+                        <select id="screen-reference-select" aria-label="Reference structure for batch screen" class="bg-surface-raised border border-border rounded-md px-3 py-1.5 text-body-sm text-primary focus:outline-none focus:border-accent font-mono"></select>
+                    </label>
+                    <textarea id="screen-targets-input" rows="2" placeholder="Paste target PDB IDs or accessions to screen against the reference (e.g. 4RLT, 3UG9, AF-P69905-F1)" aria-label="Target structures to screen against the reference" class="w-full bg-surface-raised border border-border rounded-md px-3 py-2 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase"></textarea>
+                    <div class="flex items-center gap-3">
+                        <button id="screen-run-btn" type="button" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Run Screen</button>
+                        <span id="screen-feedback" class="font-body-sm text-[11px] text-secondary"></span>
+                    </div>
+                    <div id="screen-results"></div>
                 </div>
 
                 <div class="flex flex-col gap-3 border-t border-border pt-6">
@@ -301,6 +316,9 @@ export class WorkspaceTab {
             }
         });
 
+        const screenRunBtn = this.element.querySelector('#screen-run-btn');
+        screenRunBtn.addEventListener('click', () => this.runScreen());
+
         const togglePredictBtn = this.element.querySelector('#workspace-toggle-predict-btn');
         const predictContainer = this.element.querySelector('#workspace-predict-container');
         const predictInput = this.element.querySelector('#workspace-predict-sequence-input');
@@ -399,6 +417,15 @@ export class WorkspaceTab {
         const runBtn = this.element.querySelector('#workspace-run-btn');
         if (runBtn) runBtn.classList.toggle('hidden', this.selectedPDBs.length < 2);
 
+        const referenceSelect = this.element.querySelector('#screen-reference-select');
+        if (referenceSelect) {
+            const previous = referenceSelect.value;
+            referenceSelect.innerHTML = this.selectedPDBs
+                .map(pid => `<option value="${escapeHtml(pid)}">${escapeHtml(pid)}</option>`)
+                .join('');
+            if (this.selectedPDBs.includes(previous)) referenceSelect.value = previous;
+        }
+
         const container = this.element.querySelector('#workspace-pdb-list-container');
         if (this.isLoadingChains) {
             container.innerHTML = `
@@ -454,6 +481,70 @@ export class WorkspaceTab {
         }
 
         this.selectedPDBs.forEach(pid => this._renderPDBCard(pid, container));
+    }
+
+    async runScreen() {
+        const referenceSelect = this.element.querySelector('#screen-reference-select');
+        const targetsInput = this.element.querySelector('#screen-targets-input');
+        const runBtn = this.element.querySelector('#screen-run-btn');
+        const feedback = this.element.querySelector('#screen-feedback');
+        const resultsContainer = this.element.querySelector('#screen-results');
+
+        const referenceId = referenceSelect.value;
+        const tokens = targetsInput.value.split(/[\s,]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
+        const targetIds = tokens.filter(t => isValidPdbId(t));
+        const invalid = tokens.filter(t => !isValidPdbId(t));
+
+        if (!referenceId) {
+            feedback.innerText = 'Add a structure to the workspace to use as a reference first.';
+            return;
+        }
+        if (targetIds.length === 0) {
+            feedback.innerText = invalid.length > 0
+                ? `Couldn't recognize: ${invalid.join(', ')}.`
+                : 'Paste at least one target PDB ID or accession.';
+            return;
+        }
+
+        runBtn.disabled = true;
+        resultsContainer.innerHTML = '';
+        feedback.innerText = `Screening ${targetIds.length} structure(s) against ${referenceId}...`;
+        try {
+            const data = await screenStructures(referenceId, targetIds);
+            feedback.innerText = invalid.length > 0 ? `Couldn't recognize: ${invalid.join(', ')}.` : '';
+            this.renderScreenResults(resultsContainer, data);
+        } catch (err) {
+            feedback.innerText = err.message || 'Structure screen failed.';
+        } finally {
+            runBtn.disabled = false;
+        }
+    }
+
+    renderScreenResults(container, data) {
+        const rows = (data.results || []).map(r => `
+            <tr>
+                <td class="py-1.5 font-mono">${escapeHtml(r.pdb_id)}</td>
+                <td class="py-1.5 text-right font-mono">${r.tm_score != null ? r.tm_score.toFixed(3) : '—'}</td>
+                <td class="py-1.5 text-right font-mono">${r.rmsd != null ? r.rmsd.toFixed(2) : '—'}</td>
+            </tr>
+        `).join('');
+
+        container.innerHTML = `
+            <div class="overflow-x-auto mt-1">
+                <table class="w-full text-left border-collapse">
+                    <thead class="font-label-sm text-label-sm text-secondary">
+                        <tr>
+                            <th class="py-2 border-b border-border font-medium">Structure</th>
+                            <th class="py-2 border-b border-border font-medium text-right">TM-score</th>
+                            <th class="py-2 border-b border-border font-medium text-right">RMSD (Å)</th>
+                        </tr>
+                    </thead>
+                    <tbody class="font-body-sm text-body-sm text-primary divide-y divide-border-subtle">
+                        ${rows}
+                    </tbody>
+                </table>
+            </div>
+        `;
     }
 
     _chainsOptionsHTML(pid, meta) {

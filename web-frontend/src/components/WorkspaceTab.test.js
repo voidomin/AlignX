@@ -13,9 +13,10 @@ vi.mock('../api.js', () => ({
     fetchQc: vi.fn(),
     fetchCathClassification: vi.fn(),
     fetchAssemblyInfo: vi.fn(),
+    screenStructures: vi.fn(),
 }));
 
-import { submitDiscoveryJob, pollJobUntilDone, fetchValidation, fetchQc, fetchCathClassification, fetchAssemblyInfo } from '../api.js';
+import { submitDiscoveryJob, pollJobUntilDone, fetchValidation, fetchQc, fetchCathClassification, fetchAssemblyInfo, screenStructures } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new WorkspaceTab({
@@ -834,6 +835,82 @@ describe('WorkspaceTab', () => {
 
             expect(onAddManyPDBs).not.toHaveBeenCalled();
             expect(input.value).toBe('notanid');
+        });
+    });
+
+    describe('batch screen (reference vs. many)', () => {
+        it('populates the reference select from the workspace structures', () => {
+            const tab = makeTab({ selectedPDBs: ['4RLT', '3UG9'] });
+            tab.render();
+
+            const options = Array.from(tab.element.querySelectorAll('#screen-reference-select option')).map(o => o.value);
+            expect(options).toEqual(['4RLT', '3UG9']);
+        });
+
+        it('runs a screen against the selected reference with valid, parsed target IDs', async () => {
+            screenStructures.mockResolvedValue({ reference_pdb_id: '4RLT', results: [{ pdb_id: '3UG9', tm_score: 0.91, rmsd: 1.2 }] });
+            const tab = makeTab({ selectedPDBs: ['4RLT'] });
+            tab.render();
+
+            tab.element.querySelector('#screen-reference-select').value = '4RLT';
+            tab.element.querySelector('#screen-targets-input').value = '3ug9, notanid';
+            tab.element.querySelector('#screen-run-btn').click();
+            await screenStructures.mock.results[0].value;
+
+            expect(screenStructures).toHaveBeenCalledWith('4RLT', ['3UG9']);
+            expect(tab.element.querySelector('#screen-feedback').innerText).toContain("Couldn't recognize: NOTANID");
+        });
+
+        it('renders a ranked results table with TM-score and RMSD', async () => {
+            screenStructures.mockResolvedValue({
+                reference_pdb_id: '4RLT',
+                results: [
+                    { pdb_id: '3UG9', tm_score: 0.91, rmsd: 1.2 },
+                    { pdb_id: '2ABC', tm_score: null, rmsd: null },
+                ],
+            });
+            const tab = makeTab({ selectedPDBs: ['4RLT'] });
+            tab.render();
+
+            tab.element.querySelector('#screen-reference-select').value = '4RLT';
+            tab.element.querySelector('#screen-targets-input').value = '3UG9, 2ABC';
+            tab.element.querySelector('#screen-run-btn').click();
+            await screenStructures.mock.results[0].value;
+
+            const resultsText = tab.element.querySelector('#screen-results').textContent;
+            expect(resultsText).toContain('3UG9');
+            expect(resultsText).toContain('0.910');
+            expect(resultsText).toContain('1.20');
+            expect(resultsText).toContain('2ABC');
+            expect(resultsText).toContain('—');
+        });
+
+        it('shows an error message and does not call the API when there are no valid target IDs', () => {
+            screenStructures.mockClear();
+            const tab = makeTab({ selectedPDBs: ['4RLT'] });
+            tab.render();
+
+            tab.element.querySelector('#screen-reference-select').value = '4RLT';
+            tab.element.querySelector('#screen-targets-input').value = 'notanid';
+            tab.element.querySelector('#screen-run-btn').click();
+
+            expect(screenStructures).not.toHaveBeenCalled();
+            expect(tab.element.querySelector('#screen-feedback').innerText).toContain("Couldn't recognize: NOTANID");
+        });
+
+        it('surfaces a failure message from a rejected screen request', async () => {
+            screenStructures.mockRejectedValue(new Error('At most 50 target structures are allowed per screen.'));
+            const tab = makeTab({ selectedPDBs: ['4RLT'] });
+            tab.render();
+
+            tab.element.querySelector('#screen-reference-select').value = '4RLT';
+            tab.element.querySelector('#screen-targets-input').value = '3UG9';
+            tab.element.querySelector('#screen-run-btn').click();
+            await screenStructures.mock.results[0].value.catch(() => {});
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#screen-feedback').innerText)
+                .toBe('At most 50 target structures are allowed per screen.');
         });
     });
 

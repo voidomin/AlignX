@@ -128,6 +128,25 @@ export async function fetchChains(pdbIds) {
     return res.json();
 }
 
+// A "reference vs many" pairwise batch screen - one reference structure
+// diffed independently against every target, ranked by TM-score. Distinct
+// from the N-way Mustang alignment/comparison workflow: no shared
+// superposition, no 3D view, just a ranked table - see
+// src.backend.api.screen_structures / tm_score_calculator.calculate_pairwise_tm_score.
+export async function screenStructures(referencePdbId, targetPdbIds) {
+    referencePdbId = assertValidPdbId(referencePdbId, 'referencePdbId');
+    const res = await fetch(buildUrl('/api/screen'), {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ reference_pdb_id: referencePdbId, target_pdb_ids: targetPdbIds })
+    });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Structure screen failed");
+    }
+    return res.json();
+}
+
 export async function uploadStructure(file) {
     const formData = new FormData();
     formData.append('file', file);

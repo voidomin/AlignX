@@ -87,3 +87,44 @@ def calculate_tm_score_matrix(
     except Exception:
         logger.exception(f"Failed to calculate TM-score matrix for {alignment_pdb}")
         return None
+
+
+def calculate_pairwise_tm_score(pdb_path_a: Path, pdb_path_b: Path):
+    """Real, Mustang-independent TM-score + RMSD between two INDEPENDENT
+    structure files (not two chains/models already inside one shared
+    Mustang alignment.pdb, unlike calculate_tm_score_matrix above) - the
+    primitive a "reference vs many" batch screen is built on, since it
+    needs no prior N-way superposition at all. Each file's own first
+    model's first chain is used. tm_align's own returned `.rmsd` is a
+    real RMSD over its own optimal superposition, not borrowed from any
+    other alignment. Returns None if tmtools isn't installed, either
+    file has no resolvable residues, or parsing fails."""
+    try:
+        from tmtools import tm_align
+        from tmtools.io import get_residue_data
+    except ImportError:
+        logger.warning(
+            "tmtools not installed - skipping standalone pairwise TM-score"
+        )
+        return None
+
+    try:
+        parser = PDBParser(QUIET=True)
+        structure_a = parser.get_structure("a", str(pdb_path_a))
+        structure_b = parser.get_structure("b", str(pdb_path_b))
+        chain_a = next(iter(next(iter(structure_a)).get_chains()))
+        chain_b = next(iter(next(iter(structure_b)).get_chains()))
+        coords_a, seq_a = get_residue_data(chain_a)
+        coords_b, seq_b = get_residue_data(chain_b)
+        if len(coords_a) == 0 or len(coords_b) == 0:
+            return None
+
+        result = tm_align(coords_a, coords_b, seq_a, seq_b)
+        tm_score = (result.tm_norm_chain1 + result.tm_norm_chain2) / 2
+        return {"tm_score": float(tm_score), "rmsd": float(result.rmsd)}
+    except Exception:
+        logger.exception(
+            f"Failed to calculate standalone pairwise TM-score for "
+            f"{pdb_path_a} vs {pdb_path_b}"
+        )
+        return None
