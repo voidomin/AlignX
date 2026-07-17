@@ -459,6 +459,54 @@ describe('SequenceTab', () => {
             expect(wrapper.querySelectorAll('td[title]')).toHaveLength(2);
         });
 
+        it('renders a sequence logo from the per-position residue distribution', async () => {
+            global.Plotly = { newPlot: vi.fn() };
+            submitConservationJob.mockResolvedValue({ job_id: 'blast-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({
+                status: 'completed',
+                num_hits: 10,
+                conservation_profile: [
+                    { position: 1, conservation: 1.0, num_homologs: 10, most_common: 'M', residue_counts: { M: 10 } },
+                    { position: 2, conservation: 0.5, num_homologs: 10, most_common: 'V', residue_counts: { V: 5, L: 5 } },
+                ],
+            });
+
+            const tab = new SequenceTab();
+            await setUpWithSequences(tab);
+
+            tab.element.querySelector('#conservation-run-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(global.Plotly.newPlot).toHaveBeenCalled();
+            const logoContainer = tab.element.querySelector('#conservation-logo-plotly');
+            expect(logoContainer.classList.contains('hidden')).toBe(false);
+
+            delete global.Plotly;
+        });
+
+        it('keeps the sequence logo hidden when no position has any residue distribution', async () => {
+            submitConservationJob.mockResolvedValue({ job_id: 'blast-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({
+                status: 'completed',
+                num_hits: 0,
+                conservation_profile: [
+                    { position: 1, conservation: null, num_homologs: 0, most_common: null, residue_counts: {} },
+                ],
+            });
+
+            const tab = new SequenceTab();
+            await setUpWithSequences(tab);
+
+            tab.element.querySelector('#conservation-run-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#conservation-logo-plotly').classList.contains('hidden')).toBe(true);
+        });
+
         it('passes the webhook URL through when one is entered', async () => {
             submitConservationJob.mockResolvedValue({ job_id: 'blast-1', status: 'queued' });
             pollJobUntilDone.mockResolvedValue({ status: 'completed', num_hits: 1, conservation_profile: [] });

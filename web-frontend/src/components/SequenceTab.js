@@ -9,6 +9,24 @@ const REPORT_SECTIONS = [
     { key: 'matrix', label: 'RMSD Matrix' },
 ];
 
+// A standard physicochemical grouping (the same broad categories WebLogo/
+// Clustal color by) used only to pick a stable, distinguishable color per
+// amino acid for the conservation sequence logo below - not a scientific
+// claim beyond "residues in the same group look similar."
+const AA_GROUP_COLOR = {
+    hydrophobic: '#f4a636', polar: '#2ecc71', basic: '#3498db', acidic: '#e74c3c', special: '#9b59b6',
+};
+const AA_TO_GROUP = {
+    A: 'hydrophobic', V: 'hydrophobic', L: 'hydrophobic', I: 'hydrophobic', M: 'hydrophobic', F: 'hydrophobic', W: 'hydrophobic', C: 'hydrophobic',
+    S: 'polar', T: 'polar', N: 'polar', Q: 'polar', Y: 'polar',
+    K: 'basic', R: 'basic', H: 'basic',
+    D: 'acidic', E: 'acidic',
+    G: 'special', P: 'special',
+};
+function colorForResidue(aa) {
+    return AA_GROUP_COLOR[AA_TO_GROUP[aa]] || '#7f8c8d';
+}
+
 export class SequenceTab {
     currentRunId = null;
     element = null;
@@ -96,6 +114,7 @@ export class SequenceTab {
                         <input id="conservation-webhook-url" type="url" placeholder="https://..." class="max-w-[320px] bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
                     </label>
                     <div id="conservation-result-wrapper" class="overflow-x-auto rounded-md max-h-[350px]"></div>
+                    <div id="conservation-logo-plotly" class="w-full h-[160px] hidden"></div>
                 </div>
 
                 <div class="flex flex-col gap-3 border-t border-border pt-6">
@@ -291,6 +310,8 @@ export class SequenceTab {
             this.element.querySelector('#clustalo-result-wrapper').innerHTML = "";
             this.element.querySelector('#conservation-result-wrapper').innerHTML = "";
             this.element.querySelector('#conservation-structure-select').innerHTML = "";
+            this.element.querySelector('#conservation-logo-plotly').innerHTML = "";
+            this.element.querySelector('#conservation-logo-plotly').classList.add('hidden');
         }
     }
 
@@ -698,5 +719,63 @@ export class SequenceTab {
                 </tbody>
             </table>
         `;
+        this.renderConservationLogo(profile);
+    }
+
+    // A sequence logo (per-position stacked, frequency-scaled amino-acid
+    // distribution) built from the same `residue_counts` the compact table
+    // above collapses to a single "most_common" glyph - shown alongside,
+    // not instead of, that compact view since some users just want the
+    // quick scan. Built as Plotly stacked bars (already a dependency) with
+    // in-segment letter labels, rather than hand-rolled SVG/canvas glyphs -
+    // there's no existing sequence-logo rendering utility in this codebase
+    // to reuse.
+    renderConservationLogo(profile) {
+        const container = this.element.querySelector('#conservation-logo-plotly');
+        if (!container || typeof Plotly === 'undefined') return;
+
+        const positions = profile.map(p => p.position);
+        const allResidues = new Set();
+        profile.forEach(p => Object.keys(p.residue_counts || {}).forEach(aa => allResidues.add(aa)));
+
+        if (allResidues.size === 0) {
+            container.classList.add('hidden');
+            container.innerHTML = "";
+            return;
+        }
+
+        const traces = Array.from(allResidues).sort().map(aa => {
+            const y = profile.map(p => {
+                const total = p.num_homologs || 0;
+                return total > 0 ? (p.residue_counts?.[aa] || 0) / total : 0;
+            });
+            const text = y.map(v => (v > 0.08 ? aa : ''));
+            return {
+                x: positions,
+                y,
+                name: aa,
+                type: 'bar',
+                marker: { color: colorForResidue(aa) },
+                text,
+                textposition: 'inside',
+                insidetextfont: { color: '#100E0B', size: 10 },
+                hovertemplate: `${aa}: %{y:.0%}<extra></extra>`,
+            };
+        });
+
+        const layout = {
+            barmode: 'stack',
+            height: 160,
+            margin: { l: 40, r: 10, t: 10, b: 30 },
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            font: { family: "Inter, sans-serif", size: 10, color: "#A79E8E" },
+            showlegend: false,
+            xaxis: { title: 'Position', tickmode: 'linear', dtick: Math.max(1, Math.round(positions.length / 30)) },
+            yaxis: { title: 'Frequency', range: [0, 1], tickformat: '.0%' },
+        };
+
+        container.classList.remove('hidden');
+        Plotly.newPlot(container, traces, layout, { responsive: true, displayModeBar: false });
     }
 }
