@@ -103,9 +103,7 @@ def calculate_pairwise_tm_score(pdb_path_a: Path, pdb_path_b: Path):
         from tmtools import tm_align
         from tmtools.io import get_residue_data
     except ImportError:
-        logger.warning(
-            "tmtools not installed - skipping standalone pairwise TM-score"
-        )
+        logger.warning("tmtools not installed - skipping standalone pairwise TM-score")
         return None
 
     try:

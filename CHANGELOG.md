@@ -2,6 +2,26 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.94.0]
+
+Phase 4: a 9-stage feature batch, ordered smallest/most-contained first, all on one branch. As with prior phases, every external dependency and existing-code assumption was verified live rather than assumed - and this phase's live-verification discipline caught a real bug before it shipped: the new CLI's job-poll parsing initially read a top-level `run_id` that doesn't exist in `GET /api/jobs/{job_id}`'s response (the real run id is nested under `results.id`; only the webhook payload gets a top-level `run_id`), found and fixed by running the CLI end-to-end against a live local server rather than trusting mocked tests alone.
+
+### Added
+- **Sequence conservation logo**: `blast_client.py`'s per-position residue-count data (previously computed, then discarded down to just the winning residue) is now exposed in full, rendered as a real stacked-bar sequence logo alongside the existing compact conservation view.
+- **"Color by domain" 3D viewer scheme**: colors every InterPro domain on a structure simultaneously and persistently, using domain/residue mappings already resolved server-side - distinct from the existing "Highlight in 3D" button, which ghosts everything except one domain at a time.
+- **PyMOL `.pml` / ChimeraX `.cxc` script export**: plain templated scripts (not the proprietary `.pse` binary) that load and color a run's aligned structures, downloadable from the Sequence tab's "Generated outputs" list.
+- **PTM site lookup**: extends the existing UniProt feature integration to modification-related feature types (glycosylation, lipidation, cross-links, disulfide bonds, modified residues), surfaced in the Annotations panel alongside other UniProt features.
+- **Catalytic/active-site detection (M-CSA)**: real curated catalytic-residue annotations from the Mechanism and Catalytic Site Atlas, with an honest "not available" fallback for the majority of structures M-CSA doesn't curate.
+- **Mutation stability (ddG) prediction**: a new async job type wrapping DDMut, predicting the stability impact (kcal/mol, stabilizing/destabilizing) of a point mutation - a second, independent action alongside the existing ClinVar/AlphaMissense mutation-impact lookup.
+- **"Reference vs. many" batch structural screen**: ranks a batch of up to 50 target structures against one reference by TM-score/RMSD, using a new Mustang-independent pairwise TM-align primitive - a fundamentally different computational shape than raising the N-way alignment cap, for when you have one structure of interest and want to screen it against many candidates at once.
+- **Structural superposition morph animation**: a synthetic multi-model PDB linearly interpolating two aligned structures' commonly-aligned coordinates, played back via 3Dmol's frame-player primitives - genuinely new capability on both backend (no prior multi-frame-generation code existed) and frontend (no prior frame-playback code existed).
+- **OpenAPI route tags + a minimal CLI**: every route now carries a `tags=[...]` grouping (System, Structures, Jobs, Comparison, Ligands & Interfaces, Annotations, History, Sequence, Reports, Discovery); a new guide documents generating a typed client via `openapi-python-client`; a new `scripts/structscope_cli.py` covers the common CI workflow (submit an alignment job, poll it, download the report) with no new dependency.
+
+### Verified
+- Full backend suite: 1297 tests (1296 passing + 1 pre-existing flaky timing test, confirmed to fail identically on unmodified main). `black`/`ruff` clean.
+- Frontend suite: 503 Vitest tests passing (up from 458). `npm run lint` clean, `npm run build` succeeds.
+- Every external API call verified live before implementation: a real BLAST conservation profile's full residue-count distribution, a real multi-domain InterPro-colored structure, a real `.pml`/`.cxc` script referencing real aligned structure files, real UniProt PTM features and M-CSA catalytic sites for accessions known to have coverage, a real DDMut ddG job completing end-to-end, a real batch screen producing plausible TM-scores for real structures, a real morph animation playing between two real aligned structures, and the new CLI actually submitting/polling/downloading a real report end-to-end against a live local server (the run above that surfaced and fixed the `results.id` parsing bug).
+
 ## [3.93.0]
 
 Phase 3: a fresh, non-overlapping feature batch scoped after Phase 1+2's original 21-item backlog shipped in full. Every external dependency was verified live before committing to a design (AlphaFold PAE/AlphaMissense files, PDBe CATH mappings, RCSB assembly API, ESM Atlas's ESMFold endpoint), and one planned item (a structure-diff narrative) was deliberately narrowed after discovering the existing insights engine already covered most of what it would have duplicated.
