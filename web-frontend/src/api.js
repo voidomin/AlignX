@@ -491,6 +491,19 @@ export function getAlignmentFastaUrl(runId) {
     return withApiKey(buildUrl(`/results/${runId}/alignment.fasta`));
 }
 
+// A synthetic multi-model PDB morphing pdbIdA into pdbIdB over their
+// commonly-aligned columns - see the backend's get_morph_frames(). Served
+// as plain text (not an attachment), fetched the same way as
+// getAlignmentPdbUrl above, then fed straight into 3Dmol's addModelsAsFrames.
+export function getMorphFramesUrl(runId, pdbIdA, pdbIdB, numFrames) {
+    runId = assertSafeSegment(runId, 'runId');
+    pdbIdA = assertValidPdbId(pdbIdA, 'pdbIdA');
+    pdbIdB = assertValidPdbId(pdbIdB, 'pdbIdB');
+    const params = { run_id: runId, pdb_id_a: pdbIdA, pdb_id_b: pdbIdB };
+    if (numFrames) params.num_frames = numFrames;
+    return withApiKey(buildUrl('/api/morph', params));
+}
+
 // Unlike getAlignmentPdbUrl (Mustang's alignment output, only exists for a
 // completed Compare-mode run), this resolves any downloaded structure by
 // id alone - e.g. a Discover-mode query structure that was never part of

@@ -2599,6 +2599,74 @@ def test_difference_distance_endpoint_400s_on_invalid_pdb_id():
     assert response.status_code == 400
 
 
+def test_morph_endpoint_returns_a_real_multi_model_pdb_from_a_to_b(tmp_path):
+    _write_two_structure_alignment(
+        tmp_path,
+        [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]],
+        [[10.0, 0.0, 0.0], [15.0, 0.0, 0.0]],
+    )
+
+    with patch(
+        "src.backend.api._lookup_run_and_result_dir",
+        return_value=({"id": "run_123", "pdb_ids": ["structA", "structB"]}, tmp_path),
+    ):
+        response = client.get(
+            "/api/morph?run_id=run_123&pdb_id_a=structA&pdb_id_b=structB&num_frames=5"
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    body = response.text
+    assert body.count("MODEL ") == 5
+    assert body.count("ENDMDL") == 5
+    frames = body.split("MODEL")[1:]
+    # Frame 1 == structure A's own coordinates; last frame == structure B's.
+    assert "0.000   0.000   0.000" in frames[0]
+    assert "10.000   0.000   0.000" in frames[-1]
+
+
+def test_morph_endpoint_404s_when_no_shared_columns(tmp_path):
+    _write_two_structure_alignment(
+        tmp_path, [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]], [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]]
+    )
+    (tmp_path / "alignment.fasta").write_text(">structA\nAA--\n>structB\n--AA\n")
+
+    with patch(
+        "src.backend.api._lookup_run_and_result_dir",
+        return_value=({"id": "run_123", "pdb_ids": ["structA", "structB"]}, tmp_path),
+    ):
+        response = client.get(
+            "/api/morph?run_id=run_123&pdb_id_a=structA&pdb_id_b=structB"
+        )
+
+    assert response.status_code == 404
+
+
+def test_morph_endpoint_404s_for_unknown_run():
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        response = client.get(
+            "/api/morph?run_id=nope&pdb_id_a=structA&pdb_id_b=structB"
+        )
+        assert response.status_code == 404
+
+
+def test_morph_endpoint_400s_on_invalid_pdb_id():
+    response = client.get("/api/morph?run_id=run_123&pdb_id_a=../etc&pdb_id_b=structB")
+    assert response.status_code == 400
+
+
+def test_morph_endpoint_400s_when_num_frames_out_of_range():
+    response = client.get(
+        "/api/morph?run_id=run_123&pdb_id_a=structA&pdb_id_b=structB&num_frames=1"
+    )
+    assert response.status_code == 400
+
+    response = client.get(
+        "/api/morph?run_id=run_123&pdb_id_a=structA&pdb_id_b=structB&num_frames=999"
+    )
+    assert response.status_code == 400
+
+
 def test_report_zip_endpoint_bundles_every_available_artifact(tmp_path):
     import zipfile
     import io

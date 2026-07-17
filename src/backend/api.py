@@ -51,6 +51,7 @@ from src.backend.result_manager import ResultManager
 from src.backend.rmsd_calculator import (
     get_structure_contact_map,
     get_difference_distance_matrix,
+    get_morph_frames,
 )
 from src.backend.tm_score_calculator import calculate_pairwise_tm_score
 
@@ -1790,6 +1791,71 @@ def get_difference_distance(
             detail=f"No shared aligned columns between {pdb_id_a} and {pdb_id_b} in run {run_id}.",
         )
     return sanitize_for_json(result)
+
+
+# Capped well above what a smooth morph needs (20-40 typically looks
+# fluid) - mainly a guard against a client requesting an absurd frame
+# count and generating a huge synthetic PDB text blob server-side.
+_MAX_MORPH_FRAMES = 200
+
+
+@app.get(
+    "/api/morph",
+    responses={
+        400: {
+            "description": "Invalid run_id/pdb_id_a/pdb_id_b/session_id, or num_frames out of range"
+        },
+        404: {
+            "description": "Run not found, or no shared aligned columns between these two structures"
+        },
+    },
+)
+def get_morph(
+    run_id: Annotated[str, Query(...)],
+    pdb_id_a: Annotated[str, Query(...)],
+    pdb_id_b: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
+    num_frames: Annotated[int, Query()] = 20,
+):
+    """A synthetic multi-model PDB morphing structure A into structure B
+    over their commonly-aligned columns - see
+    rmsd_calculator.get_morph_frames(). Returned as plain PDB text (not an
+    attachment download) so the frontend can feed it straight into
+    3Dmol's addModelsAsFrames, the same way it already fetches
+    alignment.pdb."""
+    _safe_segment(run_id, "run_id")
+    _safe_segment(pdb_id_a, "pdb_id_a")
+    _safe_segment(pdb_id_b, "pdb_id_b")
+    _safe_segment(session_id, "session_id")
+    if num_frames < 2 or num_frames > _MAX_MORPH_FRAMES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"num_frames must be between 2 and {_MAX_MORPH_FRAMES}.",
+        )
+
+    run, res_dir = _lookup_run_and_result_dir(run_id, session_id)
+    alignment_pdb = res_dir / _ALIGNMENT_PDB_FILENAME
+    alignment_fasta = res_dir / "alignment.fasta"
+    if (
+        not alignment_pdb.exists()
+        or not alignment_fasta.exists()
+        or not run.get("pdb_ids")
+    ):
+        raise HTTPException(
+            status_code=404, detail=f"No alignment output found for run {run_id}."
+        )
+
+    from fastapi.responses import PlainTextResponse
+
+    result = get_morph_frames(
+        alignment_pdb, alignment_fasta, run["pdb_ids"], pdb_id_a, pdb_id_b, num_frames
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No shared aligned columns between {pdb_id_a} and {pdb_id_b} in run {run_id}.",
+        )
+    return PlainTextResponse(content=result, media_type=_TEXT_PLAIN)
 
 
 @app.get(

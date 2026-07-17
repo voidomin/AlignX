@@ -681,3 +681,88 @@ def calculate_alignment_quality_metrics(
     except Exception:
         logger.exception("Failed to calculate quality metrics")
         return None
+
+
+def _interpolate_frame_pdb(coords: np.ndarray, model_num: int) -> str:
+    """One synthetic MODEL block, one CA-only ATOM record per interpolated
+    residue. Deliberately CA-only, not a full N-CA-C-O backbone - matching
+    every other structural metric in this codebase (RMSD, contact maps,
+    TM-score) which are all CA-only too, and residue identity is not
+    meaningful for an interpolated frame anyway (only its position is).
+    A placeholder ALA residue name keeps this parseable by any standard
+    PDB reader without implying a real residue type."""
+    lines = [f"MODEL     {model_num}"]
+    for i, (x, y, z) in enumerate(coords, start=1):
+        lines.append(
+            f"ATOM  {i:5d}  CA  ALA A{i:4d}    {x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00           C"
+        )
+    lines.append("ENDMDL")
+    return "\n".join(lines)
+
+
+def get_morph_frames(
+    alignment_pdb: Path,
+    alignment_fasta: Path,
+    pdb_ids: List[str],
+    pdb_id_a: str,
+    pdb_id_b: str,
+    num_frames: int = 20,
+) -> Optional[str]:
+    """
+    Synthetic multi-model PDB text morphing structure A into structure B,
+    over their commonly-aligned CA columns (same basis as
+    get_difference_distance_matrix - _build_structure_data/
+    _common_aligned_coords) - a genuinely new capability, not the
+    Mustang-derived quality_metrics reused everywhere else here, since no
+    existing primitive in this codebase produces a multi-frame trajectory.
+
+    Frame 0 is exactly structure A's aligned coordinates, frame
+    num_frames-1 is exactly structure B's, and every frame in between is
+    a linear (not physically simulated) interpolation - shaped like a
+    real NMR-ensemble multi-model PDB so the frontend's existing 3Dmol
+    frame-player primitives (addModelsAsFrames/animate) can play it with
+    no new parsing convention.
+
+    `pdb_ids` must be the run's original, order-matched structure id list
+    (see get_structure_contact_map's docstring for why). Returns None if
+    either id isn't in `pdb_ids`, they share no aligned columns, or
+    num_frames < 2.
+    """
+    try:
+        if num_frames < 2:
+            return None
+        if pdb_id_a not in pdb_ids or pdb_id_b not in pdb_ids:
+            return None
+        idx_a, idx_b = pdb_ids.index(pdb_id_a), pdb_ids.index(pdb_id_b)
+
+        from Bio import SeqIO
+
+        alignment = list(SeqIO.parse(alignment_fasta, "fasta"))
+        if len(alignment) < 2 or idx_a >= len(alignment) or idx_b >= len(alignment):
+            return None
+        seq_len = len(alignment[0].seq)
+
+        parser = PDBParser(QUIET=True)
+        structure = parser.get_structure("aln", str(alignment_pdb))
+        entities = _select_structures(structure, len(alignment))
+
+        structure_data = _build_structure_data(alignment, entities, seq_len)
+        c1, c2 = _common_aligned_coords(
+            structure_data[idx_a], structure_data[idx_b], seq_len
+        )
+        if not c1:
+            return None
+
+        c1, c2 = np.array(c1), np.array(c2)
+        frames = []
+        for model_num, t in enumerate(np.linspace(0.0, 1.0, num_frames), start=1):
+            coords = c1 * (1 - t) + c2 * t
+            frames.append(_interpolate_frame_pdb(coords, model_num))
+
+        return "\n".join(frames) + "\nEND\n"
+    except Exception:
+        logger.exception(
+            f"Failed to build morph frames for "
+            f"{sanitize_for_log(pdb_id_a)}/{sanitize_for_log(pdb_id_b)}"
+        )
+        return None

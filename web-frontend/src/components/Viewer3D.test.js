@@ -4,11 +4,12 @@ import { Viewer3D } from './Viewer3D.js';
 vi.mock('../api.js', () => ({
     getAlignmentPdbUrl: vi.fn((runId) => `http://mock/results/${runId}/alignment.pdb`),
     getStructureFileUrl: vi.fn((pdbId) => `http://mock/api/structure-file?pdb_id=${pdbId}`),
+    getMorphFramesUrl: vi.fn((runId, a, b, n) => `http://mock/api/morph?run_id=${runId}&pdb_id_a=${a}&pdb_id_b=${b}&num_frames=${n}`),
     fetchMutationTolerance: vi.fn(),
     fetchAnnotations: vi.fn(),
 }));
 
-import { fetchMutationTolerance, fetchAnnotations } from '../api.js';
+import { fetchMutationTolerance, fetchAnnotations, getMorphFramesUrl } from '../api.js';
 
 function makeMockViewer() {
     return {
@@ -31,6 +32,9 @@ function makeMockViewer() {
         addSurface: vi.fn(),
         removeAllSurfaces: vi.fn(),
         getModel: vi.fn(() => ({ selectedAtoms: vi.fn(() => []) })),
+        addModelsAsFrames: vi.fn(),
+        animate: vi.fn(),
+        stopAnimate: vi.fn(),
     };
 }
 
@@ -74,7 +78,7 @@ describe('Viewer3D', () => {
         const v = makeViewer();
         [
             '#viewer-style-picker', '#viewer-colorscheme-picker', '#btn-toggle-surface', '#btn-reset-view',
-            '#btn-toggle-spin', '#btn-toggle-fullscreen', '#btn-toggle-measure', '#btn-screenshot',
+            '#btn-toggle-spin', '#btn-toggle-morph', '#btn-toggle-fullscreen', '#btn-toggle-measure', '#btn-screenshot',
             '#viewer-canvas-3dmol', '#ambient-placeholder', '#hud-structure-legend', '#hud-rmsd-container',
         ].forEach(sel => {
             expect(v.element.querySelector(sel), `missing ${sel}`).toBeTruthy();
@@ -207,6 +211,74 @@ describe('Viewer3D', () => {
             expect(mockViewer.spin).toHaveBeenCalledWith(false);
             expect(v.isSpinning).toBe(false);
             expect(btn.classList.contains('bg-surface-raised')).toBe(false);
+        });
+    });
+
+    describe('morph animation', () => {
+        it('is disabled until exactly 2 structures are loaded in a real run', async () => {
+            const v = makeViewer();
+            const btn = v.element.querySelector('#btn-toggle-morph');
+            expect(btn.disabled).toBe(true);
+
+            await loadTwoStructures(v);
+            expect(btn.disabled).toBe(false);
+        });
+
+        it('stays disabled for a single (Discover-mode) structure', async () => {
+            const v = makeViewer();
+            await v.loadSingleStructure('4RLT');
+
+            expect(v.element.querySelector('#btn-toggle-morph').disabled).toBe(true);
+        });
+
+        it('clicking plays the morph: fetches frames, addModelsAsFrames + animate, marks isMorphing', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+            global.fetch.mockResolvedValue({ ok: true, text: async () => 'MORPH FRAMES PDB' });
+
+            v.element.querySelector('#btn-toggle-morph').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(getMorphFramesUrl).toHaveBeenCalledWith('run_1', '4RLT', '3UG9', 20);
+            expect(mockViewer.addModelsAsFrames).toHaveBeenCalledWith('MORPH FRAMES PDB', 'pdb');
+            expect(mockViewer.animate).toHaveBeenCalledWith(expect.objectContaining({ loop: 'forward' }));
+            expect(v.isMorphing).toBe(true);
+            expect(v.element.querySelector('#btn-toggle-morph').classList.contains('bg-surface-raised')).toBe(true);
+        });
+
+        it('clicking again stops the animation and restores the superposition view', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+            global.fetch.mockResolvedValue({ ok: true, text: async () => 'MORPH FRAMES PDB' });
+            const btn = v.element.querySelector('#btn-toggle-morph');
+
+            btn.click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            global.fetch.mockResolvedValue({ ok: true, text: async () => 'MOCK PDB DATA' });
+            btn.click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(mockViewer.stopAnimate).toHaveBeenCalled();
+            expect(v.isMorphing).toBe(false);
+            expect(mockViewer.addModel).toHaveBeenCalledWith('MOCK PDB DATA', 'pdb');
+        });
+
+        it('logs an error and leaves isMorphing false when the frame fetch fails', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+            const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+            global.fetch.mockResolvedValue({ ok: false, statusText: 'Not Found' });
+
+            v.element.querySelector('#btn-toggle-morph').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(v.isMorphing).toBe(false);
+            expect(consoleSpy).toHaveBeenCalled();
         });
     });
 

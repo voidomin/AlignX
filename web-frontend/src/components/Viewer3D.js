@@ -1,4 +1,4 @@
-import { getAlignmentPdbUrl, getStructureFileUrl, fetchMutationTolerance, fetchAnnotations } from '../api';
+import { getAlignmentPdbUrl, getStructureFileUrl, getMorphFramesUrl, fetchMutationTolerance, fetchAnnotations } from '../api';
 
 // Qualitative palette for N-structure identity coloring. Deliberately avoids
 // amber/#F59E0B (reserved for the residue-selection highlight) and the
@@ -86,6 +86,10 @@ export class Viewer3D {
 
     isSpinning = false;
 
+    // Morph animation only makes sense for exactly 2 aligned structures in
+    // a real (non-Discover-mode single-structure) run - see loadMorph.
+    isMorphing = false;
+
     render() {
         const div = document.createElement('div');
         // v4: the persistent viewer is the one "raised" surface in the shell
@@ -132,6 +136,9 @@ export class Viewer3D {
                 <div class="flex justify-end gap-2 items-center">
                     <button id="btn-toggle-spin" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Auto-Spin" aria-label="Toggle Auto-Spin">
                         <span class="material-symbols-outlined text-[18px]">autorenew</span>
+                    </button>
+                    <button id="btn-toggle-morph" disabled class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-secondary" title="Play Morph Animation (2-structure alignments only)" aria-label="Play Morph Animation">
+                        <span class="material-symbols-outlined text-[18px]">movie</span>
                     </button>
                     <button id="btn-toggle-fullscreen" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Fullscreen" aria-label="Toggle Fullscreen">
                         <span class="material-symbols-outlined text-[18px]">fullscreen</span>
@@ -235,6 +242,14 @@ export class Viewer3D {
 
         this.element.querySelector('#btn-toggle-spin').addEventListener('click', () => {
             this.toggleSpin();
+        });
+
+        this.element.querySelector('#btn-toggle-morph').addEventListener('click', () => {
+            if (this.isMorphing) {
+                this.stopMorph();
+            } else if (this.structures.length === 2 && this.currentRunId) {
+                this.loadMorph(this.structures[0].pdbId, this.structures[1].pdbId);
+            }
         });
 
         this.element.querySelector('#btn-toggle-fullscreen').addEventListener('click', () => {
@@ -390,6 +405,76 @@ export class Viewer3D {
         btn.classList.toggle('text-primary', this.isSpinning);
     }
 
+    // Only meaningful for a real 2-structure alignment (a currentRunId
+    // exists), not Discover-mode's single-structure view - see
+    // setupEventListeners' click handler above and _renderHUD, which calls
+    // this after every load so the button's enabled state stays in sync.
+    _updateMorphButtonUI() {
+        const btn = this.element?.querySelector('#btn-toggle-morph');
+        if (!btn) return;
+        btn.disabled = !(this.structures.length === 2 && this.currentRunId);
+        btn.classList.toggle('bg-surface-raised', this.isMorphing);
+        btn.classList.toggle('text-primary', this.isMorphing);
+    }
+
+    // A genuinely new capability for this viewer: 3Dmol has no morph
+    // primitive between two independently-numbered structures, only
+    // multi-model frame playback (addModelsAsFrames/animate) - the backend
+    // does the actual interpolation (see rmsd_calculator.get_morph_frames),
+    // this just plays the resulting synthetic multi-model PDB. Replaces
+    // the current superposition view for the duration of the animation;
+    // stopMorph() restores it.
+    async loadMorph(pdbIdA, pdbIdB, numFrames = 20) {
+        if (!this.viewer || !this.currentRunId) return;
+        try {
+            const response = await fetch(getMorphFramesUrl(this.currentRunId, pdbIdA, pdbIdB, numFrames));
+            if (!response.ok) {
+                throw new Error(`Failed to fetch morph frames: ${response.statusText}`);
+            }
+            const pdbData = await response.text();
+
+            this.viewer.clear();
+            this.viewer.addModelsAsFrames(pdbData, "pdb");
+            // Frames are a CA-only trace (no bonding info a real backbone
+            // would have), so cartoon/stick styling can't apply here -
+            // sphere makes the frame-to-frame motion legible without it.
+            this.viewer.setStyle({}, { sphere: { scale: 0.4, colorscheme: 'whiteCarbon' } });
+            this.viewer.zoomTo();
+            this.viewer.animate({ loop: "forward", interval: 80, reps: 0 });
+            this.isMorphing = true;
+            this._updateMorphButtonUI();
+        } catch (err) {
+            console.error("Error loading morph animation:", err);
+        }
+    }
+
+    stopMorph() {
+        if (!this.viewer) return;
+        this.viewer.stopAnimate();
+        this.isMorphing = false;
+        this._updateMorphButtonUI();
+        this._reloadSuperpositionView();
+    }
+
+    async _reloadSuperpositionView() {
+        if (!this.viewer || !this.currentRunId) return;
+        try {
+            const response = await fetch(getAlignmentPdbUrl(this.currentRunId));
+            if (!response.ok) return;
+            const pdbData = await response.text();
+
+            this.viewer.clear();
+            this.viewer.addModel(pdbData, "pdb");
+            this.structures.forEach(s => {
+                this.viewer.setStyle(this._selectorFor(s), this._styleFor(s));
+            });
+            this.viewer.zoomTo();
+            this.viewer.render();
+        } catch (err) {
+            console.error("Error restoring superposition view after morph:", err);
+        }
+    }
+
     downloadScreenshot() {
         if (!this.viewer) return;
         this.viewer.render();
@@ -541,6 +626,7 @@ export class Viewer3D {
     _renderHUD() {
         const legend = this.element.querySelector('#hud-structure-legend');
         const rmsdBox = this.element.querySelector('#hud-rmsd-container');
+        this._updateMorphButtonUI();
 
         legend.innerHTML = this.structures.map(s => `
             <div class="flex items-center gap-2">
@@ -705,6 +791,7 @@ export class Viewer3D {
         if (rmsdBox) rmsdBox.innerHTML = `
             <span class="font-label-sm text-label-sm text-secondary uppercase">Single Structure</span>
         `;
+        this._updateMorphButtonUI();
     }
 
     // AlphaFold ("AF-") and ESM Atlas ("ESM-") structures encode per-residue
@@ -973,6 +1060,10 @@ export class Viewer3D {
             this.viewer.spin(false);
         }
         this.isSpinning = false;
+        if (this.isMorphing && this.viewer) {
+            this.viewer.stopAnimate();
+        }
+        this.isMorphing = false;
         if (this.viewer) {
             this.viewer.clear();
             this.viewer.render();
@@ -982,6 +1073,7 @@ export class Viewer3D {
             this._renderEmptyHUD();
             this._updateStylePickerUI();
             this._updateColorSchemePopoverUI();
+            this._updateMorphButtonUI();
             const spinBtn = this.element.querySelector('#btn-toggle-spin');
             spinBtn.classList.remove('bg-surface-raised', 'text-primary');
             const measureBtn = this.element.querySelector('#btn-toggle-measure');
