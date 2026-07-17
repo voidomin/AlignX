@@ -2703,6 +2703,125 @@ def get_rmsd_csv(
     )
 
 
+# Mirrors Viewer3D.js's own CHAIN_COLORS palette (chain-identity coloring),
+# so a reopened PyMOL/ChimeraX session looks like what the user already saw
+# in the app, not an arbitrary new color choice.
+_SCRIPT_EXPORT_CHAIN_COLORS = [
+    "8B5CF6",
+    "06B6D4",
+    "EC4899",
+    "A3E635",
+    "FB923C",
+    "2DD4BF",
+]
+
+
+def _build_pymol_script(run_id: str, pdb_ids: List[str]) -> str:
+    """Plain templated text, not the proprietary .pse binary (that would
+    require bundling an actual PyMOL install server-side just to write a
+    format only PyMOL can open). Assumes the user downloads this script
+    into the same folder as the run's alignment.pdb download, then uses
+    PyMOL's File > Run Script - the realistic desktop workflow, rather
+    than trying to have the script itself fetch a URL (which would need
+    to carry the app's own API-key auth, something a PyMOL `load url`
+    command can't do)."""
+    lines = [
+        f"# StructScope PyMOL session script for run {run_id}",
+        "# Save this file next to the downloaded alignment.pdb, then in PyMOL: File > Run Script.",
+        "load alignment.pdb, aligned",
+        "hide everything",
+        "show cartoon, aligned",
+        "bg_color white",
+    ]
+    for i, pdb_id in enumerate(pdb_ids):
+        chain = chr(65 + i)
+        color = _SCRIPT_EXPORT_CHAIN_COLORS[i % len(_SCRIPT_EXPORT_CHAIN_COLORS)]
+        lines.append(f"color 0x{color}, aligned and chain {chain}  # {pdb_id}")
+    lines.append("zoom aligned")
+    return "\n".join(lines) + "\n"
+
+
+def _build_chimerax_script(run_id: str, pdb_ids: List[str]) -> str:
+    """Same rationale as _build_pymol_script above."""
+    lines = [
+        f"# StructScope ChimeraX session script for run {run_id}",
+        "# Save this file next to the downloaded alignment.pdb, then in ChimeraX: File > Open.",
+        "open alignment.pdb",
+        "hide atoms",
+        "show cartoons",
+    ]
+    for i, pdb_id in enumerate(pdb_ids):
+        chain = chr(65 + i)
+        color = _SCRIPT_EXPORT_CHAIN_COLORS[i % len(_SCRIPT_EXPORT_CHAIN_COLORS)]
+        lines.append(f"color /{chain} #{color}  # {pdb_id}")
+    lines.append("view")
+    return "\n".join(lines) + "\n"
+
+
+@app.get(
+    "/api/report/pymol-script",
+    responses={
+        400: {"description": "Invalid run_id or session_id"},
+        404: {"description": "Run not found, or has no aligned structures"},
+    },
+)
+def get_pymol_script(
+    run_id: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """Download a PyMOL .pml command script reopening this run's alignment
+    with the same per-structure coloring StructScope's own viewer uses."""
+    from fastapi.responses import PlainTextResponse
+
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    run, _ = _lookup_run_and_result_dir(run_id, session_id)
+    pdb_ids = run.get("pdb_ids") or []
+    if not pdb_ids:
+        raise HTTPException(
+            status_code=404, detail=f"No aligned structures found for run {run_id}."
+        )
+
+    return PlainTextResponse(
+        content=_build_pymol_script(run_id, pdb_ids),
+        media_type="text/plain",
+        headers={"Content-Disposition": f'attachment; filename="session_{run_id}.pml"'},
+    )
+
+
+@app.get(
+    "/api/report/chimerax-script",
+    responses={
+        400: {"description": "Invalid run_id or session_id"},
+        404: {"description": "Run not found, or has no aligned structures"},
+    },
+)
+def get_chimerax_script(
+    run_id: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """Download a ChimeraX .cxc command script - same rationale as
+    get_pymol_script above."""
+    from fastapi.responses import PlainTextResponse
+
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    run, _ = _lookup_run_and_result_dir(run_id, session_id)
+    pdb_ids = run.get("pdb_ids") or []
+    if not pdb_ids:
+        raise HTTPException(
+            status_code=404, detail=f"No aligned structures found for run {run_id}."
+        )
+
+    return PlainTextResponse(
+        content=_build_chimerax_script(run_id, pdb_ids),
+        media_type="text/plain",
+        headers={"Content-Disposition": f'attachment; filename="session_{run_id}.cxc"'},
+    )
+
+
 @app.get(
     "/api/report/heatmap-png",
     responses={

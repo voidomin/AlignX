@@ -2244,6 +2244,63 @@ def test_rmsd_csv_endpoint_404s_when_no_rmsd_matrix_stored():
         assert "No stored RMSD matrix" in response.json()["detail"]
 
 
+def test_pymol_script_endpoint_returns_a_real_script():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run:
+        mock_get_run.return_value = {"id": "run_123", "pdb_ids": ["4RLT", "3UG9"]}
+
+        response = client.get("/api/report/pymol-script?run_id=run_123")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/plain")
+        assert "attachment" in response.headers["content-disposition"]
+        assert "session_run_123.pml" in response.headers["content-disposition"]
+        assert "load alignment.pdb" in response.text
+        assert "chain A" in response.text
+        assert "chain B" in response.text
+        assert "4RLT" in response.text
+        assert "3UG9" in response.text
+
+
+def test_pymol_script_endpoint_404s_for_unknown_run():
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        response = client.get("/api/report/pymol-script?run_id=nope")
+        assert response.status_code == 404
+
+
+def test_pymol_script_endpoint_404s_when_run_has_no_structures():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run:
+        mock_get_run.return_value = {"id": "run_123", "pdb_ids": []}
+        response = client.get("/api/report/pymol-script?run_id=run_123")
+        assert response.status_code == 404
+        assert "No aligned structures" in response.json()["detail"]
+
+
+def test_pymol_script_endpoint_400s_on_invalid_run_id():
+    response = client.get("/api/report/pymol-script?run_id=../etc")
+    assert response.status_code == 400
+
+
+def test_chimerax_script_endpoint_returns_a_real_script():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run:
+        mock_get_run.return_value = {"id": "run_123", "pdb_ids": ["4RLT", "3UG9"]}
+
+        response = client.get("/api/report/chimerax-script?run_id=run_123")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/plain")
+        assert "attachment" in response.headers["content-disposition"]
+        assert "session_run_123.cxc" in response.headers["content-disposition"]
+        assert "open alignment.pdb" in response.text
+        assert "/A" in response.text
+        assert "/B" in response.text
+
+
+def test_chimerax_script_endpoint_404s_for_unknown_run():
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        response = client.get("/api/report/chimerax-script?run_id=nope")
+        assert response.status_code == 404
+
+
 def test_heatmap_png_endpoint_returns_the_saved_file(tmp_path):
     heatmap = tmp_path / "rmsd_heatmap.png"
     heatmap.write_bytes(b"\x89PNG\r\n\x1a\ndummy png bytes")

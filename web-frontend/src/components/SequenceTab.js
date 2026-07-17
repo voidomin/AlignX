@@ -1,4 +1,4 @@
-import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl, getAlignmentReportUrl, getLabNotebookUrl, getLabNotebookIpynbUrl, getCitationsUrl, getRmsdCsvUrl, getHeatmapPngUrl, getReportZipUrl, getNewickUrl, submitClustalOmegaJob, submitConservationJob, pollJobUntilDone } from '../api';
+import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl, getAlignmentReportUrl, getLabNotebookUrl, getLabNotebookIpynbUrl, getCitationsUrl, getRmsdCsvUrl, getHeatmapPngUrl, getReportZipUrl, getNewickUrl, getPymolScriptUrl, getChimeraxScriptUrl, submitClustalOmegaJob, submitConservationJob, pollJobUntilDone } from '../api';
 import { escapeHtml } from '../escapeHtml';
 
 const REPORT_SECTIONS = [
@@ -166,6 +166,14 @@ export class SequenceTab {
                     <div class="flex items-center justify-between py-2 border-b border-border-subtle">
                         <span class="font-body-sm text-body-sm text-primary font-mono">tree.newick</span>
                         <a id="download-newick-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download Tree</a>
+                    </div>
+                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
+                        <span class="font-body-sm text-body-sm text-primary font-mono">session_&lt;run_id&gt;.pml</span>
+                        <a id="download-pymol-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download PyMOL Script</a>
+                    </div>
+                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
+                        <span class="font-body-sm text-body-sm text-primary font-mono">session_&lt;run_id&gt;.cxc</span>
+                        <a id="download-chimerax-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download ChimeraX Script</a>
                     </div>
                     <div class="flex items-center justify-between py-2">
                         <span class="font-body-sm text-body-sm text-primary font-mono">everything.zip</span>
@@ -337,6 +345,8 @@ export class SequenceTab {
         const rmsdCsvLink = this.element.querySelector('#download-rmsd-csv-link');
         const heatmapPngLink = this.element.querySelector('#download-heatmap-png-link');
         const newickLink = this.element.querySelector('#download-newick-link');
+        const pymolLink = this.element.querySelector('#download-pymol-link');
+        const chimeraxLink = this.element.querySelector('#download-chimerax-link');
         const zipLink = this.element.querySelector('#download-zip-link');
         const motifBtn = this.element.querySelector('#motif-search-btn');
         motifBtn.disabled = !this.currentRunId;
@@ -372,6 +382,12 @@ export class SequenceTab {
             newickLink.href = getNewickUrl(this.currentRunId);
             newickLink.classList.remove('opacity-55', 'pointer-events-none');
 
+            pymolLink.href = getPymolScriptUrl(this.currentRunId);
+            pymolLink.classList.remove('opacity-55', 'pointer-events-none');
+
+            chimeraxLink.href = getChimeraxScriptUrl(this.currentRunId);
+            chimeraxLink.classList.remove('opacity-55', 'pointer-events-none');
+
             zipLink.href = getReportZipUrl(this.currentRunId);
             zipLink.classList.remove('opacity-55', 'pointer-events-none');
 
@@ -401,6 +417,12 @@ export class SequenceTab {
 
             newickLink.href = "#";
             newickLink.classList.add('opacity-55', 'pointer-events-none');
+
+            pymolLink.href = "#";
+            pymolLink.classList.add('opacity-55', 'pointer-events-none');
+
+            chimeraxLink.href = "#";
+            chimeraxLink.classList.add('opacity-55', 'pointer-events-none');
 
             zipLink.href = "#";
             zipLink.classList.add('opacity-55', 'pointer-events-none');

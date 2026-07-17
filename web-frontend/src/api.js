@@ -516,6 +516,16 @@ export function getNewickUrl(runId) {
     return withApiKey(buildUrl('/api/report/newick', { run_id: runId }));
 }
 
+export function getPymolScriptUrl(runId) {
+    runId = assertSafeSegment(runId, 'runId');
+    return withApiKey(buildUrl('/api/report/pymol-script', { run_id: runId }));
+}
+
+export function getChimeraxScriptUrl(runId) {
+    runId = assertSafeSegment(runId, 'runId');
+    return withApiKey(buildUrl('/api/report/chimerax-script', { run_id: runId }));
+}
+
 export async function fetchAnnotations(pdbId, chain) {
     pdbId = assertValidPdbId(pdbId, 'pdbId');
     const params = { pdb_id: pdbId };

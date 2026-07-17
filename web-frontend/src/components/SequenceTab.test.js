@@ -13,6 +13,8 @@ vi.mock('../api.js', () => ({
     getHeatmapPngUrl: vi.fn((runId) => `http://api/api/report/heatmap-png?run_id=${runId}`),
     getReportZipUrl: vi.fn((runId) => `http://api/api/report/zip?run_id=${runId}`),
     getNewickUrl: vi.fn((runId) => `http://api/api/report/newick?run_id=${runId}`),
+    getPymolScriptUrl: vi.fn((runId) => `http://api/api/report/pymol-script?run_id=${runId}`),
+    getChimeraxScriptUrl: vi.fn((runId) => `http://api/api/report/chimerax-script?run_id=${runId}`),
     submitClustalOmegaJob: vi.fn(),
     submitConservationJob: vi.fn(),
     pollJobUntilDone: vi.fn(),
@@ -67,6 +69,14 @@ describe('SequenceTab', () => {
         const newickLink = tab.element.querySelector('#download-newick-link');
         expect(newickLink.classList.contains('pointer-events-none')).toBe(false);
         expect(newickLink.href).toContain('run_123');
+
+        const pymolLink = tab.element.querySelector('#download-pymol-link');
+        expect(pymolLink.classList.contains('pointer-events-none')).toBe(false);
+        expect(pymolLink.href).toContain('run_123');
+
+        const chimeraxLink = tab.element.querySelector('#download-chimerax-link');
+        expect(chimeraxLink.classList.contains('pointer-events-none')).toBe(false);
+        expect(chimeraxLink.href).toContain('run_123');
     });
 
     it('renders the sequence alignment grid with conservation-based coloring', async () => {
