@@ -98,7 +98,7 @@ export class SequenceTab {
                         Search for a residue motif (e.g. <code>RYY</code>, <code>G.G</code>, <code>G-X-P</code> — <code>X</code>/<code>.</code>/<code>-</code> act as single-residue wildcards) and highlight every match in the 3D viewer.
                     </div>
                     <div class="flex gap-2">
-                        <input id="motif-search-input" type="text" placeholder="e.g. RYY or G.G" class="flex-1 bg-surface-raised border border-border rounded-md px-3 py-2 font-body-sm font-mono text-primary uppercase" />
+                        <input id="motif-search-input" type="text" placeholder="e.g. RYY or G.G" aria-label="Residue motif to search for" class="flex-1 bg-surface-raised border border-border rounded-md px-3 py-2 font-body-sm font-mono text-primary uppercase" />
                         <button id="motif-search-btn" class="btn-primary py-2 px-4 rounded-md font-label-md text-label-md" disabled>Search</button>
                     </div>
                     <div id="motif-results-container"></div>
@@ -149,7 +149,7 @@ export class SequenceTab {
                     <div id="report-section-checklist" class="flex flex-wrap gap-x-4 gap-y-1.5 pt-2">
                         ${REPORT_SECTIONS.map(s => `
                             <label class="flex items-center gap-1.5 font-label-sm text-label-sm text-secondary cursor-pointer">
-                                <input type="checkbox" class="report-section-checkbox rounded border-border bg-surface-raised text-accent focus:ring-0 focus:ring-offset-0" value="${s.key}" checked/>
+                                <input type="checkbox" class="report-section-checkbox rounded border-border bg-surface-raised text-accent focus:ring-2 focus:ring-accent focus:ring-offset-1" value="${s.key}" checked/>
                                 ${s.label}
                             </label>
                         `).join('')}

@@ -144,7 +144,7 @@ export class HistoryPanel {
                         <div class="flex gap-1" data-field="pids"></div>
                     </div>
                     <div class="flex items-center gap-4">
-                        <span class="text-[10px] font-medium capitalize text-success" data-field="status"></span>
+                        <span class="text-[10px] font-medium capitalize" data-field="status"></span>
                         <span class="font-label-sm text-[10px] text-secondary" data-field="time"></span>
                         <button class="notes-toggle-btn font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Notes &amp; tags</button>
                         <button class="share-run-btn font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Share</button>
@@ -153,8 +153,8 @@ export class HistoryPanel {
                 </div>
                 <div class="flex flex-wrap items-center gap-1.5" data-field="tags-display"></div>
                 <div class="hidden flex-col gap-2 pt-1" data-field="notes-editor">
-                    <textarea class="notes-input w-full bg-surface border border-border rounded-md px-2 py-1.5 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent" rows="2" placeholder="Add a note about this run..."></textarea>
-                    <input type="text" class="tags-input w-full bg-surface border border-border rounded-md px-2 py-1.5 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" placeholder="Comma-separated tags, e.g. kinase, review" />
+                    <textarea class="notes-input w-full bg-surface border border-border rounded-md px-2 py-1.5 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent" rows="2" placeholder="Add a note about this run..." aria-label="Note about this run"></textarea>
+                    <input type="text" class="tags-input w-full bg-surface border border-border rounded-md px-2 py-1.5 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" placeholder="Comma-separated tags, e.g. kinase, review" aria-label="Tags for this run" />
                     <div class="flex gap-2">
                         <button class="notes-save-btn btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm">Save</button>
                         <button class="notes-cancel-btn px-3 py-1 rounded-md font-label-sm text-label-sm text-secondary hover:text-primary">Cancel</button>
@@ -164,7 +164,10 @@ export class HistoryPanel {
 
             div.querySelector('[data-field="type"]').textContent = runTypeLabel;
             div.querySelector('[data-field="id"]').textContent = run.id;
-            div.querySelector('[data-field="status"]').textContent = run.status || "success";
+            const statusEl = div.querySelector('[data-field="status"]');
+            const status = run.status || "success";
+            statusEl.textContent = status;
+            statusEl.classList.add(status === "success" ? "text-success" : "text-error");
             div.querySelector('[data-field="time"]').textContent = displayTime;
 
             const pidsContainer = div.querySelector('[data-field="pids"]');

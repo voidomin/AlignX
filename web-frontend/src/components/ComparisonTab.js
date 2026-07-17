@@ -133,7 +133,7 @@ export class ComparisonTab {
             <div class="grid grid-cols-3 gap-6">
                 <div class="stat-row stat-primary">
                     <span class="stat-key">Mean RMSD shift</span>
-                    <span class="stat-value ${data.mean_rmsd_shift >= 0 ? 'text-error' : 'text-success'}">${data.mean_rmsd_shift.toFixed(3)} Å</span>
+                    <span class="stat-value ${data.mean_rmsd_shift >= 0 ? 'text-error' : 'text-success'}">${data.mean_rmsd_shift >= 0 ? '+' : ''}${data.mean_rmsd_shift.toFixed(3)} Å</span>
                 </div>
                 <div class="stat-row">
                     <span class="stat-key">Current mean</span>

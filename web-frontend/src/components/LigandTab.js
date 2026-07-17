@@ -27,9 +27,9 @@ export class LigandTab {
                     <h2 class="section-title">Ligand inspector</h2>
                 </div>
                 <div class="flex gap-2">
-                    <select id="ligand-structure-select" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[140px]">
+                    <select id="ligand-structure-select" aria-label="Structure to inspect ligands for" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[140px]">
                     </select>
-                    <select id="ligand-select" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[220px]">
+                    <select id="ligand-select" aria-label="Ligand to inspect" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[220px]">
                         <option value="">No Ligands Loaded</option>
                     </select>
                 </div>

@@ -93,7 +93,7 @@ export class AnalyticsTab {
                 <!-- Sub-tab strip -->
                 <div id="analytics-subtab-strip" class="flex gap-1 border border-border rounded-md p-1 shrink-0">
                     ${SUB_TABS.map(t => `
-                        <button data-subtab="${t.key}" class="analytics-subtab-btn flex-1 py-1.5 rounded-md font-label-md text-label-md transition-colors">${t.label}</button>
+                        <button data-subtab="${t.key}" class="analytics-subtab-btn flex-1 py-1.5 rounded-md font-label-md text-label-md transition-colors" aria-selected="${t.key === 'quality'}">${t.label}</button>
                     `).join('')}
                 </div>
 
@@ -252,7 +252,7 @@ export class AnalyticsTab {
                 <div data-panel="annotations" class="border border-border rounded-lg p-4 shrink-0 min-h-[320px] flex flex-col gap-4">
                     <div class="flex items-center justify-between">
                         <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Functional annotation</span>
-                        <select id="annotations-structure-select" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[160px]"></select>
+                        <select id="annotations-structure-select" aria-label="Structure to show functional annotation for" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[160px]"></select>
                     </div>
                     <div id="annotations-content" class="flex flex-col gap-3">
                         <div class="flex items-center justify-center h-full text-secondary font-body-sm">
@@ -363,6 +363,7 @@ export class AnalyticsTab {
         this.element.querySelectorAll('.analytics-subtab-btn').forEach(btn => {
             const isActive = btn.dataset.subtab === this.activeSubTab;
             btn.className = `analytics-subtab-btn flex-1 py-1.5 rounded-md font-label-md text-label-md transition-colors ${isActive ? 'bg-accent-muted text-accent' : 'text-secondary hover:text-primary'}`;
+            btn.setAttribute('aria-selected', String(isActive));
         });
         this.element.querySelectorAll('[data-panel]').forEach(panel => {
             panel.classList.toggle('hidden', panel.dataset.panel !== this.activeSubTab);

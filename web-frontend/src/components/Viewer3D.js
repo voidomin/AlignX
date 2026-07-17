@@ -79,7 +79,7 @@ export class Viewer3D {
                     <h3 class="font-body-md text-body-md font-semibold text-primary">Superposition Viewer</h3>
                     <div class="flex gap-2 items-center">
                         <details id="viewer-style-picker" class="group relative">
-                            <summary class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors cursor-pointer select-none flex items-center gap-0.5 list-none [&::-webkit-details-marker]:hidden" title="Representation Style">
+                            <summary class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors cursor-pointer select-none flex items-center gap-0.5 list-none [&::-webkit-details-marker]:hidden" title="Representation Style" aria-label="Representation Style">
                                 <span class="material-symbols-outlined text-[18px]">view_in_ar</span>
                                 <span class="material-symbols-outlined text-[14px] group-open:rotate-180 transition-transform">expand_more</span>
                             </summary>
@@ -90,7 +90,7 @@ export class Viewer3D {
                             </div>
                         </details>
                         <details id="viewer-colorscheme-picker" class="group relative">
-                            <summary class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors cursor-pointer select-none flex items-center gap-0.5 list-none [&::-webkit-details-marker]:hidden" title="Color Scheme">
+                            <summary class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors cursor-pointer select-none flex items-center gap-0.5 list-none [&::-webkit-details-marker]:hidden" title="Color Scheme" aria-label="Color Scheme">
                                 <span class="material-symbols-outlined text-[18px]">palette</span>
                                 <span class="material-symbols-outlined text-[14px] group-open:rotate-180 transition-transform">expand_more</span>
                             </summary>
@@ -100,25 +100,25 @@ export class Viewer3D {
                                 `).join('')}
                             </div>
                         </details>
-                        <button id="btn-toggle-surface" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Surface">
+                        <button id="btn-toggle-surface" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Surface" aria-label="Toggle Surface">
                             <span class="material-symbols-outlined text-[18px]">blur_on</span>
                         </button>
-                        <button id="btn-reset-view" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Reset View">
+                        <button id="btn-reset-view" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Reset View" aria-label="Reset View">
                             <span class="material-symbols-outlined text-[18px]">center_focus_strong</span>
                         </button>
                     </div>
                 </div>
                 <div class="flex justify-end gap-2 items-center">
-                    <button id="btn-toggle-spin" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Auto-Spin">
+                    <button id="btn-toggle-spin" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Auto-Spin" aria-label="Toggle Auto-Spin">
                         <span class="material-symbols-outlined text-[18px]">autorenew</span>
                     </button>
-                    <button id="btn-toggle-fullscreen" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Fullscreen">
+                    <button id="btn-toggle-fullscreen" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Fullscreen" aria-label="Toggle Fullscreen">
                         <span class="material-symbols-outlined text-[18px]">fullscreen</span>
                     </button>
-                    <button id="btn-toggle-measure" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Measurement Mode">
+                    <button id="btn-toggle-measure" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Measurement Mode" aria-label="Toggle Measurement Mode">
                         <span class="material-symbols-outlined text-[18px]">straighten</span>
                     </button>
-                    <button id="btn-screenshot" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Download Screenshot (PNG)">
+                    <button id="btn-screenshot" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Download Screenshot (PNG)" aria-label="Download Screenshot (PNG)">
                         <span class="material-symbols-outlined text-[18px]">photo_camera</span>
                     </button>
                 </div>
