@@ -39,8 +39,9 @@ export class LigandTab {
                 <div id="ligand-pocket-desc" class="font-body-sm text-body-sm text-secondary leading-relaxed">
                     Perform an alignment and select a ligand from the list to analyze atomic interactions in the binding pocket.
                 </div>
-                <div class="flex gap-4">
-                    <span id="ligand-sasa-badge" class="font-label-sm text-label-sm text-secondary hidden">SASA: -- Å²</span>
+                <div id="ligand-sasa-row" class="stat-row hidden max-w-[180px]">
+                    <span class="stat-key">SASA</span>
+                    <span id="ligand-sasa-badge" class="stat-value">-- Å²</span>
                 </div>
                 <div id="ligand-chemistry-info" class="font-body-sm text-[11px] text-secondary hidden"></div>
 
@@ -107,7 +108,7 @@ export class LigandTab {
                             <span class="font-label-sm text-label-sm text-secondary">Chain B</span>
                             <select id="interface-chain-b" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono"></select>
                         </label>
-                        <button id="interface-analyze-btn" class="px-3 py-1.5 rounded-md bg-accent-muted text-accent font-label-md text-label-md hover:bg-accent hover:text-white transition-colors">Analyze Interface</button>
+                        <button id="interface-analyze-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Analyze Interface</button>
                     </div>
                     <div id="interface-results" class="flex flex-col gap-3"></div>
                 </div>
@@ -463,7 +464,7 @@ export class LigandTab {
         const desc = this.element.querySelector('#ligand-pocket-desc');
         desc.innerText = "Perform an alignment and select a ligand from the list to analyze atomic interactions in the binding pocket.";
 
-        this.element.querySelector('#ligand-sasa-badge').classList.add('hidden');
+        this.element.querySelector('#ligand-sasa-row').classList.add('hidden');
         this.element.querySelector('#ligand-chemistry-info').classList.add('hidden');
         this.element.querySelector('#interaction-count').innerText = "0 Found";
         
@@ -483,6 +484,7 @@ export class LigandTab {
         const desc = this.element.querySelector('#ligand-pocket-desc');
         const countBadge = this.element.querySelector('#interaction-count');
         const sasaBadge = this.element.querySelector('#ligand-sasa-badge');
+        const sasaRow = this.element.querySelector('#ligand-sasa-row');
 
         if (!ligandId) {
             this.clearTable();
@@ -516,10 +518,10 @@ export class LigandTab {
             this.loadLigandChemistry(ligandId);
 
             if (metadata.pocket_sasa) {
-                sasaBadge.innerText = `SASA: ${metadata.pocket_sasa.toFixed(1)} Å²`;
-                sasaBadge.classList.remove('hidden');
+                sasaBadge.innerText = `${metadata.pocket_sasa.toFixed(1)} Å²`;
+                sasaRow.classList.remove('hidden');
             } else {
-                sasaBadge.classList.add('hidden');
+                sasaRow.classList.add('hidden');
             }
 
             countBadge.innerText = `${contacts.length} Found`;

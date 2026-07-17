@@ -30,7 +30,7 @@ export class HistoryPanel {
                     <span class="font-body-sm text-body-sm text-secondary">Pick 2 or more past runs (Ctrl/Cmd-click for multiple) to see how their structural similarity has shifted over time.</span>
                     <div class="flex gap-2 items-center">
                         <select id="trend-run-select" multiple size="4" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm"></select>
-                        <button id="trend-load-btn" class="px-3 py-1.5 rounded-md bg-accent-muted text-accent font-label-md text-label-md hover:bg-accent hover:text-white transition-colors self-start">Show trend</button>
+                        <button id="trend-load-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md self-start">Show trend</button>
                     </div>
                     <div id="trend-plotly" class="w-full h-[220px]">
                         <div class="flex items-center justify-center h-full text-secondary font-body-sm">
@@ -156,7 +156,7 @@ export class HistoryPanel {
                     <textarea class="notes-input w-full bg-surface border border-border rounded-md px-2 py-1.5 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent" rows="2" placeholder="Add a note about this run..."></textarea>
                     <input type="text" class="tags-input w-full bg-surface border border-border rounded-md px-2 py-1.5 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" placeholder="Comma-separated tags, e.g. kinase, review" />
                     <div class="flex gap-2">
-                        <button class="notes-save-btn px-3 py-1 rounded-md bg-accent-muted text-accent font-label-sm text-label-sm">Save</button>
+                        <button class="notes-save-btn btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm">Save</button>
                         <button class="notes-cancel-btn px-3 py-1 rounded-md font-label-sm text-label-sm text-secondary hover:text-primary">Cancel</button>
                     </div>
                 </div>
@@ -263,7 +263,7 @@ export class HistoryPanel {
         const tags = run.metadata?.tags || [];
         tags.forEach(tag => {
             const badge = document.createElement('span');
-            badge.className = "px-1.5 py-0.5 rounded-md bg-accent-muted text-accent font-mono text-[10px]";
+            badge.className = "px-1.5 py-0.5 rounded-md bg-surface-raised border border-border-subtle text-secondary font-mono text-[10px]";
             badge.textContent = tag;
             container.appendChild(badge);
         });

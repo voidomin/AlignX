@@ -40,7 +40,7 @@ export class DashboardTab {
                 </div>
 
                 <div class="flex flex-col gap-3 border-t border-border pt-6">
-                    <span class="eyebrow">Recent activity</span>
+                    <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Recent activity</span>
                     <div id="dashboard-recent-runs" class="flex flex-col">
                         <div class="text-center py-8 text-secondary font-body-sm">
                             <span class="animate-spin material-symbols-outlined text-[18px]">sync</span>
@@ -50,7 +50,7 @@ export class DashboardTab {
                 </div>
 
                 <div class="flex flex-col gap-3 border-t border-border pt-6">
-                    <span class="eyebrow">Quick start</span>
+                    <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Quick start</span>
                     <div id="dashboard-quick-start" class="flex flex-wrap gap-2"></div>
                 </div>
             </div>

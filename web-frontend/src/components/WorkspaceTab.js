@@ -118,7 +118,7 @@ export class WorkspaceTab {
                 </div>
 
                 <div class="flex flex-col gap-3 border-t border-border pt-6">
-                    <span class="eyebrow">Parameters</span>
+                    <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Parameters</span>
                     <label class="flex items-center gap-3 cursor-pointer group">
                         <input id="param-remove-water" type="checkbox" checked class="rounded border-border bg-surface-raised text-accent focus:ring-0 focus:ring-offset-0"/>
                         <span class="font-body-sm text-body-sm text-secondary group-hover:text-primary transition-colors">Filter water molecules (HOH)</span>

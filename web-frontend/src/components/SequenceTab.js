@@ -67,7 +67,7 @@ export class SequenceTab {
 
                 <div class="flex flex-col gap-3 border-t border-border pt-6">
                     <div class="flex items-center justify-between">
-                        <span class="eyebrow">True sequence-only MSA (Clustal Omega)</span>
+                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">True sequence-only MSA (Clustal Omega)</span>
                         <button id="clustalo-run-btn" class="btn-secondary py-1.5 px-3 rounded-md font-label-md text-label-md" disabled>Run true sequence alignment</button>
                     </div>
                     <div class="section-caption">
@@ -79,7 +79,7 @@ export class SequenceTab {
 
                 <div class="flex flex-col gap-3 border-t border-border pt-6">
                     <div class="flex items-center justify-between">
-                        <span class="eyebrow">Real evolutionary conservation (NCBI BLAST)</span>
+                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Real evolutionary conservation (NCBI BLAST)</span>
                         <div class="flex items-center gap-2">
                             <select id="conservation-structure-select" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[160px]"></select>
                             <button id="conservation-run-btn" class="btn-secondary py-1.5 px-3 rounded-md font-label-md text-label-md" disabled>Find real homologs</button>
@@ -93,7 +93,7 @@ export class SequenceTab {
                 </div>
 
                 <div class="flex flex-col gap-3 border-t border-border pt-6">
-                    <span class="eyebrow">Sequence motif search</span>
+                    <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Sequence motif search</span>
                     <div class="section-caption">
                         Search for a residue motif (e.g. <code>RYY</code>, <code>G.G</code>, <code>G-X-P</code> — <code>X</code>/<code>.</code>/<code>-</code> act as single-residue wildcards) and highlight every match in the 3D viewer.
                     </div>
@@ -105,7 +105,7 @@ export class SequenceTab {
                 </div>
 
                 <div class="flex flex-col gap-2 border-t border-border pt-6">
-                    <span class="eyebrow mb-2">Generated outputs</span>
+                    <span class="font-label-md text-label-md text-secondary uppercase tracking-wider mb-2">Generated outputs</span>
                     <div class="flex items-center justify-between py-2 border-b border-border-subtle">
                         <span class="font-body-sm text-body-sm text-primary font-mono">alignment.pdb</span>
                         <a id="download-pdb-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">View PDB</a>
