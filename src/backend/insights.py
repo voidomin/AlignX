@@ -1,17 +1,38 @@
+import re
 import numpy as np
 import pandas as pd
 from collections import Counter
 from typing import List, Dict, Any
 
+_ICON_MARKER = re.compile(r"^\[\[[a-z0-9_]+\]\]\s*")
+
 
 class InsightsGenerator:
     """
     Generates automated insights and "smart captions" for structural analysis results.
+
+    Each insight string leads with a "[[icon_name]] " marker instead of an
+    emoji character - icon_name is a real Material Symbols (outlined) icon
+    name, matching the icon font already used everywhere else in the SPA's
+    UI, rather than mixing in a second, inconsistent icon language. The
+    frontend (AnalyticsTab.renderInsightsList) parses this marker and
+    renders a real <span class="material-symbols-outlined"> from it,
+    stripping the marker from the displayed text.
     """
 
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self._analyzer = None
+
+    @staticmethod
+    def strip_icon_marker(text: str) -> str:
+        """Strips a leading "[[icon_name]] " marker (see this class's own
+        docstring) for renderers that can't display the SPA's Material
+        Symbols icon font - the PDF report and the HTML/Jupyter notebook
+        exports both call this before writing an insight out as plain
+        text, so the raw marker never leaks into those as literal
+        bracket-wrapped text."""
+        return _ICON_MARKER.sub("", text or "")
 
     @property
     def analyzer(self):
@@ -56,15 +77,15 @@ class InsightsGenerator:
 
             if avg_rmsd < 2.0:
                 insights.append(
-                    f"✅ **High Homogeneity**: The dataset is structurally very similar (Avg RMSD: {avg_rmsd:.2f} Å)."
+                    f"[[check_circle]] **High Homogeneity**: The dataset is structurally very similar (Avg RMSD: {avg_rmsd:.2f} Å)."
                 )
             elif avg_rmsd > 5.0:
                 insights.append(
-                    f"⚠️ **High Diversity**: Significant structural variation observed (Avg: {avg_rmsd:.2f} Å)."
+                    f"[[warning]] **High Diversity**: Significant structural variation observed (Avg: {avg_rmsd:.2f} Å)."
                 )
             else:
                 insights.append(
-                    f"ℹ️ **Moderate Diversity**: Structures show expected variation (Avg: {avg_rmsd:.2f} Å)."
+                    f"[[info]] **Moderate Diversity**: Structures show expected variation (Avg: {avg_rmsd:.2f} Å)."
                 )
 
             # Best Match — mask diagonal with inf using a writable copy
@@ -76,7 +97,7 @@ class InsightsGenerator:
             min_val = min_mask_df.min().min()
             min_pair = min_mask_df.stack().idxmin()
             insights.append(
-                f"🏆 **Best Match**: `{min_pair[0]}` and `{min_pair[1]}` are nearly identical ({min_val:.2f} Å)."
+                f"[[military_tech]] **Best Match**: `{min_pair[0]}` and `{min_pair[1]}` are nearly identical ({min_val:.2f} Å)."
             )
 
             # Worst Match — mask diagonal with -1 using a writable copy
@@ -89,7 +110,7 @@ class InsightsGenerator:
             max_pair = max_mask_df.stack().idxmax()
             if max_val > 5.0:
                 insights.append(
-                    f"↔️ **Most Divergent**: `{max_pair[0]}` and `{max_pair[1]}` differ significantly ({max_val:.2f} Å)."
+                    f"[[compare_arrows]] **Most Divergent**: `{max_pair[0]}` and `{max_pair[1]}` differ significantly ({max_val:.2f} Å)."
                 )
 
         return insights
@@ -106,7 +127,7 @@ class InsightsGenerator:
 
         for pid, val in outliers.items():
             insights.append(
-                f"🚩 **Outlier Detected**: **{pid}** is a structural outlier with average RMSD **{val:.2f} Å** (> {threshold:.2f} Å threshold)."
+                f"[[flag]] **Outlier Detected**: **{pid}** is a structural outlier with average RMSD **{val:.2f} Å** (> {threshold:.2f} Å threshold)."
             )
         return insights
 
@@ -122,7 +143,7 @@ class InsightsGenerator:
                 ]
                 common = Counter(all_names).most_common(1)
                 insights.append(
-                    f"💊 **Ligand Analysis**: Found {total_ligands} total ligands. Most common: **{common[0][0]}** ({common[0][1]} occurrences)."
+                    f"[[medication]] **Ligand Analysis**: Found {total_ligands} total ligands. Most common: **{common[0][0]}** ({common[0][1]} occurrences)."
                 )
         return insights
 
@@ -146,7 +167,7 @@ class InsightsGenerator:
         if pd.notna(max_val) and max_val >= 0.6:
             max_pair = masked.stack().idxmax()
             insights.append(
-                f"🧲 **Similar Binding Pockets**: `{max_pair[0]}` and `{max_pair[1]}` "
+                f"[[biotech]] **Similar Binding Pockets**: `{max_pair[0]}` and `{max_pair[1]}` "
                 f"share a very similar set of pocket residues (Jaccard {max_val:.2f})."
             )
             flagged = True
@@ -155,14 +176,14 @@ class InsightsGenerator:
         if pd.notna(min_val) and min_val <= 0.2:
             min_pair = masked.stack().idxmin()
             insights.append(
-                f"🧪 **Divergent Binding Pockets**: `{min_pair[0]}` and `{min_pair[1]}` "
+                f"[[science]] **Divergent Binding Pockets**: `{min_pair[0]}` and `{min_pair[1]}` "
                 f"share almost no pocket residues (Jaccard {min_val:.2f})."
             )
             flagged = True
 
         if flagged:
             insights.append(
-                "ℹ️ Pocket comparison is based on residue *names* found near each "
+                "[[info]] Pocket comparison is based on residue *names* found near each "
                 "ligand, not aligned positions - most meaningful between "
                 "similar/homologous structures, less so across unrelated folds."
             )
@@ -174,7 +195,7 @@ class InsightsGenerator:
         clusters = self.analyzer.identify_clusters(rmsd_df, threshold=2.0)
         if len(clusters) > 1:
             insights.append(
-                f"🔍 **Structural Families**: At 2.0 Å threshold, structures fall into **{len(clusters)} distinct clusters**."
+                f"[[group_work]] **Structural Families**: At 2.0 Å threshold, structures fall into **{len(clusters)} distinct clusters**."
             )
         return insights
 
@@ -188,11 +209,11 @@ class InsightsGenerator:
 
             if avg_tm > 0.7:
                 insights.append(
-                    f"🛡️ **High Confidence**: Average TM-score of {avg_tm:.3f} indicates a reliable structural consensus."
+                    f"[[verified]] **High Confidence**: Average TM-score of {avg_tm:.3f} indicates a reliable structural consensus."
                 )
             elif avg_tm < 0.5:
                 insights.append(
-                    f"⚠️ **Low Confidence**: Average TM-score of {avg_tm:.3f} suggests possible structural divergence."
+                    f"[[warning]] **Low Confidence**: Average TM-score of {avg_tm:.3f} suggests possible structural divergence."
                 )
 
             # Best/Worst models
@@ -204,11 +225,11 @@ class InsightsGenerator:
 
             if best_m["tm_score"] > 0.9:
                 insights.append(
-                    f"🌟 **Top Fit**: A highly representative model was identified (TM-score: {best_m['tm_score']:.3f})."
+                    f"[[star]] **Top Fit**: A highly representative model was identified (TM-score: {best_m['tm_score']:.3f})."
                 )
             if worst_m["tm_score"] < 0.4:
                 insights.append(
-                    f"📉 **Weak Fit**: `{worst_id}` shows significant divergence (TM-score: {worst_m['tm_score']:.3f})."
+                    f"[[trending_down]] **Weak Fit**: `{worst_id}` shows significant divergence (TM-score: {worst_m['tm_score']:.3f})."
                 )
         return insights
 
@@ -222,15 +243,15 @@ class InsightsGenerator:
 
             if favored > 95:
                 insights.append(
-                    f"💎 **Exceptional Quality**: {favored:.1f}% of residues are in favored regions."
+                    f"[[diamond]] **Exceptional Quality**: {favored:.1f}% of residues are in favored regions."
                 )
             elif favored < 80:
                 insights.append(
-                    f"⚠️ **Geometry Alert**: Low favored region percentage ({favored:.1f}%)."
+                    f"[[warning]] **Geometry Alert**: Low favored region percentage ({favored:.1f}%)."
                 )
 
             if outliers > 10:
                 insights.append(
-                    f"🚩 **Local Geometry**: Found {outliers} Ramachandran outliers across structures."
+                    f"[[flag]] **Local Geometry**: Found {outliers} Ramachandran outliers across structures."
                 )
         return insights

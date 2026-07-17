@@ -21,6 +21,20 @@ function appendMarkdownLiteBold(parent, text) {
     });
 }
 
+// insights.py leads each insight with a "[[icon_name]] " marker (a real
+// Material Symbols icon name, matching the icon font already used
+// everywhere else in this app's UI) instead of an emoji character -
+// this pulls that marker off and returns the icon name plus the
+// remaining display text, or null for the icon if a string has no
+// marker at all (so a malformed/legacy string still renders as plain
+// text rather than breaking).
+const INSIGHT_ICON_PATTERN = /^\[\[([a-z0-9_]+)\]\]\s*/;
+function splitInsightIcon(text) {
+    const match = INSIGHT_ICON_PATTERN.exec(String(text ?? ''));
+    if (!match) return { icon: null, text: text ?? '' };
+    return { icon: match[1], text: text.slice(match[0].length) };
+}
+
 const SUB_TABS = [
     { key: 'quality', label: 'Quality' },
     { key: 'rmsf', label: 'RMSF' },
@@ -1107,10 +1121,19 @@ export class AnalyticsTab {
 
         if (this.insights?.length > 0) {
             insightsEmpty.classList.add('hidden');
-            this.insights.forEach(text => {
+            this.insights.forEach(rawText => {
+                const { icon, text } = splitInsightIcon(rawText);
                 const li = document.createElement('li');
-                li.className = "font-body-sm text-primary border border-border-subtle rounded-md p-2";
-                appendMarkdownLiteBold(li, text);
+                li.className = "font-body-sm text-primary border border-border-subtle rounded-md p-2 flex items-start gap-2";
+                if (icon) {
+                    const iconSpan = document.createElement('span');
+                    iconSpan.className = "material-symbols-outlined text-[16px] text-accent shrink-0 leading-none mt-0.5";
+                    iconSpan.textContent = icon;
+                    li.appendChild(iconSpan);
+                }
+                const textSpan = document.createElement('span');
+                appendMarkdownLiteBold(textSpan, text);
+                li.appendChild(textSpan);
                 insightsList.appendChild(li);
             });
         } else if (this.currentRunId) {

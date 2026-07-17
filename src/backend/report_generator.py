@@ -109,9 +109,15 @@ class ReportGenerator:
         pdf.set_font("Arial", "B", 14)
         pdf.cell(0, 10, _clean_text("Key Findings"), 0, 1)
         pdf.set_font("Arial", "", 11)
+        from src.backend.insights import InsightsGenerator
+
         for item in insights:
-            # Remove markdown bold/code and clean encoding
-            clean_item = item.replace("**", "").replace("`", "")
+            # Remove the icon marker, markdown bold/code, and clean encoding
+            clean_item = (
+                InsightsGenerator.strip_icon_marker(item)
+                .replace("**", "")
+                .replace("`", "")
+            )
             pdf.multi_cell(0, 6, _clean_text(f"- {clean_item}"))
         pdf.ln(5)
 
