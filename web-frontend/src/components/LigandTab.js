@@ -40,7 +40,7 @@ export class LigandTab {
                     Perform an alignment and select a ligand from the list to analyze atomic interactions in the binding pocket.
                 </div>
                 <div class="flex gap-4">
-                    <span id="ligand-sasa-badge" class="font-label-sm text-label-sm text-secondary hidden">SASA: -- Å²</span>
+                    <span id="ligand-sasa-badge" class="font-label-sm text-label-sm text-secondary hidden" title="Solvent-accessible surface area of the binding pocket, in square Angstroms - a rough measure of pocket size">SASA: -- Å²</span>
                 </div>
                 <div id="ligand-chemistry-info" class="font-body-sm text-[11px] text-secondary hidden"></div>
 
@@ -96,7 +96,7 @@ export class LigandTab {
                 <div id="interface-section" class="hidden flex-col gap-3 mt-2 pt-4 border-t border-border">
                     <div class="flex items-baseline justify-between">
                         <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Protein-protein interfaces</span>
-                        <span class="font-body-sm text-body-sm text-secondary">Contact residues between two chains</span>
+                        <span class="font-body-sm text-body-sm text-secondary">Residues from two chains close enough to touch where the proteins bind each other</span>
                     </div>
                     <div class="flex items-end gap-3">
                         <label class="flex flex-col gap-1">
@@ -346,6 +346,7 @@ export class LigandTab {
 
         const buriedBadge = document.createElement('span');
         buriedBadge.className = "font-label-sm text-label-sm text-secondary";
+        buriedBadge.title = "Surface area that becomes solvent-inaccessible once these two chains bind - a larger value means a bigger, typically tighter-binding interface";
         buriedBadge.textContent = `Buried interface area: ${interfaceData.buried_area?.toFixed(1) ?? '--'} Å²`;
         results.appendChild(buriedBadge);
 

@@ -1,6 +1,10 @@
 import { fetchSettings, saveSettings, resetSettings } from '../api';
 
-const MUSTANG_BACKENDS = ['auto', 'native', 'wsl'];
+const MUSTANG_BACKENDS = [
+    { value: 'auto', label: 'Auto-detect (Recommended)' },
+    { value: 'native', label: 'Native' },
+    { value: 'wsl', label: 'WSL (Windows Subsystem for Linux)' },
+];
 const VIEWER_STYLES = ['cartoon', 'stick', 'sphere', 'line'];
 const COLORMAPS = [
     { value: 'viridis', label: 'Viridis (Default)' },
@@ -27,7 +31,7 @@ export class SettingsTab {
                     <span class="eyebrow">Fig. — System Configuration</span>
                     <h2 class="section-title">Settings</h2>
                 </div>
-                <div class="section-caption">Changes affect every user of this deployment, and take effect on the next alignment/download - not any run already in progress.</div>
+                <div class="section-caption border-l-2 border-tertiary text-tertiary pl-3">Changes affect every user of this deployment, and take effect on the next alignment/download - not any run already in progress.</div>
             </header>
 
             <div class="section-body flex flex-col gap-8">
@@ -42,7 +46,7 @@ export class SettingsTab {
                             <label class="flex flex-col gap-1">
                                 <span class="font-label-sm text-label-sm text-secondary uppercase">Execution backend</span>
                                 <select id="setting-mustang-backend" class="bg-surface-raised border border-border rounded-md px-3 py-2 font-body-sm text-primary">
-                                    ${MUSTANG_BACKENDS.map(b => `<option value="${b}">${b}</option>`).join('')}
+                                    ${MUSTANG_BACKENDS.map(b => `<option value="${b.value}">${b.label}</option>`).join('')}
                                 </select>
                             </label>
                             <label class="flex flex-col gap-1">

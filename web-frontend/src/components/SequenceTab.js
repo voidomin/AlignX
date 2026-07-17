@@ -73,7 +73,10 @@ export class SequenceTab {
                     <div class="section-caption">
                         Independent of Mustang's structural alignment above - a real multiple sequence alignment computed purely from each structure's own sequence, via EBI's public Clustal Omega service. Can disagree with the structural alignment for divergent sequences with similar folds.
                     </div>
-                    <input id="clustalo-webhook-url" type="url" placeholder="Notify me when done (optional webhook URL)" class="max-w-[320px] bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
+                    <label class="flex flex-col gap-1">
+                        <span class="font-label-sm text-label-sm text-secondary">Notify me when done - we'll POST to this URL when the job finishes (optional)</span>
+                        <input id="clustalo-webhook-url" type="url" placeholder="https://..." class="max-w-[320px] bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
+                    </label>
                     <div id="clustalo-result-wrapper" class="overflow-x-auto rounded-md max-h-[350px]"></div>
                 </div>
 
@@ -88,7 +91,10 @@ export class SequenceTab {
                     <div class="section-caption">
                         Searches NCBI BLAST for real homologs of the selected structure's sequence, then scores real per-position conservation from their alignments (Shannon entropy) - genuinely different from the identity-based coloring above. Real BLAST searches commonly take several minutes.
                     </div>
-                    <input id="conservation-webhook-url" type="url" placeholder="Notify me when done (optional webhook URL)" class="max-w-[320px] bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
+                    <label class="flex flex-col gap-1">
+                        <span class="font-label-sm text-label-sm text-secondary">Notify me when done - we'll POST to this URL when the job finishes (optional)</span>
+                        <input id="conservation-webhook-url" type="url" placeholder="https://..." class="max-w-[320px] bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
+                    </label>
                     <div id="conservation-result-wrapper" class="overflow-x-auto rounded-md max-h-[350px]"></div>
                 </div>
 
