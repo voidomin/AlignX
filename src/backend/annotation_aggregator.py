@@ -43,6 +43,14 @@ RCSB_ASSEMBLY_BASE_URL = "https://data.rcsb.org/rest/v1/core/assembly"
 GMGC_BASE_URL = "https://gmgc.embl.de/api/v1.0"
 UNIPROT_BASE_URL = "https://rest.uniprot.org/uniprotkb"
 ALPHAFOLD_FILES_BASE_URL = "https://alphafold.ebi.ac.uk/files"
+# M-CSA (Mechanism and Catalytic Site Atlas, EBI) - a curated database of
+# real enzyme catalytic-site residues, ~1000 entries. Verified live: its
+# /entries/ endpoint has no server-side filter by accession at all
+# (reference_uniprot_id= and search= query params are both silently
+# ignored) - it's a fixed, paginated (100/page) bulk dump, so the whole
+# thing is fetched and cached once (see _fetch_mcsa_entries) rather than
+# re-fetched per accession.
+MCSA_ENTRIES_URL = "https://www.ebi.ac.uk/thornton-srv/m-csa/api/entries/"
 # NCBI's E-utilities work keyless at 3 req/s - fast enough for one
 # interactive mutation lookup (a single esearch+esummary pair), no
 # dedicated rate limiter needed the way the batch STRING/Foldseek fetches
@@ -841,6 +849,78 @@ class AnnotationAggregator:
             f"uniprot_features:{accession}", "uniprot_features", _fetch
         )
 
+    async def _fetch_mcsa_entries(
+        self, client: httpx.AsyncClient
+    ) -> List[Dict[str, Any]]:
+        """The full M-CSA curated catalytic-site database, fetched page by
+        page and cached once under one fixed key - see MCSA_ENTRIES_URL's
+        docstring for why (no server-side accession filter exists)."""
+
+        async def _fetch() -> List[Dict[str, Any]]:
+            entries: List[Dict[str, Any]] = []
+            url = f"{MCSA_ENTRIES_URL}?format=json"
+            try:
+                while url:
+                    response = await client.get(url, headers=_JSON_ACCEPT_HEADERS)
+                    if response.status_code != 200:
+                        break
+                    data = response.json()
+                    entries.extend(data.get("results") or [])
+                    url = data.get("next")
+            except httpx.HTTPError as e:
+                logger.warning(f"M-CSA entries fetch failed: {e}")
+            return entries
+
+        return await self._get_or_fetch("mcsa:_all_entries", "mcsa", _fetch)
+
+    async def fetch_catalytic_site_residues(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> List[Dict[str, Any]]:
+        """Real curated catalytic/active-site residues for this protein
+        from M-CSA (Mechanism and Catalytic Site Atlas) - coverage is
+        curated and partial (~1000 entries total), so most accessions
+        correctly get an empty list back, not an error. Each M-CSA entry
+        documents its catalytic residues against one specific reference
+        PDB structure (not a UniProt position directly), so this reports
+        the reference PDB id/chain/residue M-CSA itself curated rather
+        than attempting a further residue-number remapping onto whichever
+        structure the user has loaded."""
+        entries = await self._fetch_mcsa_entries(client)
+        matches = [e for e in entries if e.get("reference_uniprot_id") == accession]
+
+        results = []
+        for entry in matches:
+            residues = []
+            for r in entry.get("residues") or []:
+                ref_chain = next(
+                    (
+                        rc
+                        for rc in r.get("residue_chains") or []
+                        if rc.get("is_reference")
+                    ),
+                    None,
+                )
+                if not ref_chain:
+                    continue
+                residues.append(
+                    {
+                        "roles_summary": r.get("roles_summary") or "",
+                        "reference_pdb_id": ref_chain.get("pdb_id"),
+                        "chain": ref_chain.get("chain_name"),
+                        "resi": ref_chain.get("auth_resid"),
+                        "code": ref_chain.get("code"),
+                    }
+                )
+            results.append(
+                {
+                    "mcsa_id": entry.get("mcsa_id"),
+                    "enzyme_name": entry.get("enzyme_name") or "",
+                    "ec_numbers": entry.get("all_ecs") or [],
+                    "residues": residues,
+                }
+            )
+        return results
+
     @staticmethod
     def _parse_alphafold_id(pdb_id: str) -> Optional[Tuple[str, str]]:
         """Pulls (uniprot_id, fragment) out of a Compare-mode AlphaFold
@@ -1228,18 +1308,25 @@ class AnnotationAggregator:
             "go_terms": [],
             "reactome_pathways": [],
             "uniprot_features": [],
+            "catalytic_sites": [],
         }
         if not accession:
             return result
 
-        domains, quickgo_terms, reactome_pathways, uniprot_features = (
-            await asyncio.gather(
-                self.fetch_interpro_entries(accession, client),
-                self.fetch_quickgo_annotations(accession, client),
-                self.fetch_reactome_pathways(accession, client),
-                self.fetch_uniprot_features(accession, client),
-            )
+        (
+            domains,
+            quickgo_terms,
+            reactome_pathways,
+            uniprot_features,
+            catalytic_sites,
+        ) = await asyncio.gather(
+            self.fetch_interpro_entries(accession, client),
+            self.fetch_quickgo_annotations(accession, client),
+            self.fetch_reactome_pathways(accession, client),
+            self.fetch_uniprot_features(accession, client),
+            self.fetch_catalytic_site_residues(accession, client),
         )
+        result["catalytic_sites"] = catalytic_sites
 
         go_ids = [g["id"] for g in quickgo_terms if g.get("id")]
         names = await self.resolve_go_term_names(go_ids, client)

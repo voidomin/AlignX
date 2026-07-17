@@ -1,5 +1,5 @@
 import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae } from '../api';
-import { renderDomainList, renderGoTermList, renderFeatureList } from '../utils/annotationRenderers';
+import { renderDomainList, renderGoTermList, renderFeatureList, renderCatalyticSiteList } from '../utils/annotationRenderers';
 import { createInsightIconSvg } from '../utils/insightIcons';
 import { wireArrowKeyNavigation } from '../utils/tabKeyboardNav';
 
@@ -514,7 +514,7 @@ export class AnalyticsTab {
             content.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Switch to this tab to load functional annotation.</div>`;
         } else if (!annotation.accession) {
             content.innerHTML = `<div class="font-body-sm text-secondary py-4">No UniProt accession could be resolved for ${selectedPdbId} - no functional annotation available.</div>`;
-        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.uniprot_features?.length) {
+        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length) {
             content.innerHTML = `<div class="font-body-sm text-secondary py-4">Resolved to UniProt ${annotation.accession}, but no curated domains, GO terms, pathways, or sequence features were found.</div>`;
         } else {
             // Split the single fetch_uniprot_features() result into a
@@ -534,6 +534,7 @@ export class AnalyticsTab {
                 ${renderGoTermList(annotation.go_terms)}
                 ${renderFeatureList(ptmFeatures, 'PTM sites', 'ptm-highlight-btn')}
                 ${renderFeatureList(otherFeatures, 'UniProt features', 'feature-highlight-btn')}
+                ${renderCatalyticSiteList(annotation.catalytic_sites)}
                 ${this.renderReactomePathways(annotation.reactome_pathways)}
             `;
             content.querySelectorAll('.domain-highlight-btn').forEach(btn => {

@@ -444,6 +444,29 @@ describe('AnalyticsTab', () => {
             expect(onHighlightResidues).toHaveBeenCalledWith({ A: [88] });
         });
 
+        it('renders real M-CSA catalytic-site annotation when present', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: 'AF-P56868-F1', chain: 'A', accession: 'P56868',
+                    domains: [], go_terms: [], reactome_pathways: [], uniprot_features: [],
+                    catalytic_sites: [
+                        {
+                            mcsa_id: 1, enzyme_name: 'glutamate racemase', ec_numbers: ['5.1.1.3'],
+                            residues: [{ roles_summary: 'proton acceptor', reference_pdb_id: '1b73', chain: 'A', resi: 7, code: 'Asp' }],
+                        },
+                    ],
+                },
+            });
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['AF-P56868-F1'], { 'AF-P56868-F1': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            expect(tab.element.textContent).toContain('Catalytic sites (M-CSA)');
+            expect(tab.element.textContent).toContain('glutamate racemase');
+        });
+
         it('omits the "Highlight in 3D" button for a domain with no highlight_chains (e.g. a plain PDB structure)', async () => {
             fetchAnnotations.mockResolvedValue({
                 annotation: {

@@ -56,6 +56,31 @@ export function renderFeatureList(features, heading = 'UniProt features', button
     `;
 }
 
+// Real curated catalytic/active-site residues from M-CSA (see
+// annotation_aggregator.py's fetch_catalytic_site_residues) - unlike
+// domains/features above, each residue is reported against M-CSA's own
+// curated reference PDB entry rather than this app's structure numbering
+// (M-CSA documents catalytic sites per specific solved structure, not as
+// a UniProt position), so there's no "Highlight in 3D" button here - this
+// is read-only descriptive annotation, the same honest-fallback pattern
+// the CATH/oligomeric-assembly badges already use elsewhere in this app.
+export function renderCatalyticSiteList(catalyticSites, heading = 'Catalytic sites (M-CSA)') {
+    if (!catalyticSites?.length) return '';
+    return `
+        <div class="flex flex-col gap-2">
+            <span class="eyebrow">${heading}</span>
+            ${catalyticSites.map(site => `
+                <div class="flex flex-col gap-1 py-1.5 border-b border-border-subtle">
+                    <span class="font-body-sm">${site.enzyme_name}${site.ec_numbers?.length ? ` <span class="font-mono text-secondary text-[11px]">(EC ${site.ec_numbers.join(', ')})</span>` : ''}</span>
+                    <span class="font-body-sm text-[11px] text-secondary">
+                        ${site.residues.map(r => `${r.code || '?'}${r.resi ?? '?'} (${r.reference_pdb_id || '?'} chain ${r.chain || '?'})${r.roles_summary ? ` - ${r.roles_summary}` : ''}`).join('; ')}
+                    </span>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
 export function renderGoTermList(goTerms, heading = 'GO terms') {
     if (!goTerms?.length) return '';
     return `
