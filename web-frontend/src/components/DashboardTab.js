@@ -24,7 +24,7 @@ export class DashboardTab {
             </header>
 
             <div class="section-body flex flex-col gap-8">
-                <div id="dashboard-stats" class="grid grid-cols-3 gap-6">
+                <div id="dashboard-stats" class="grid grid-cols-1 sm:grid-cols-3 gap-6">
                     <div class="stat-row stat-primary">
                         <span class="stat-key">Total runs</span>
                         <span id="stat-total-runs" class="stat-value">--</span>

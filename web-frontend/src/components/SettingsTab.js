@@ -36,7 +36,7 @@ export class SettingsTab {
                     Loading settings...
                 </div>
                 <div id="settings-form" class="hidden flex-col gap-8">
-                    <div class="grid grid-cols-2 gap-8">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-8">
                         <div class="flex flex-col gap-4">
                             <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Mustang execution</span>
                             <label class="flex flex-col gap-1">
@@ -66,7 +66,7 @@ export class SettingsTab {
 
                     <div class="flex flex-col gap-4 border-t border-border pt-6">
                         <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Visualization</span>
-                        <div class="grid grid-cols-2 gap-8">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-8">
                             <label class="flex flex-col gap-1">
                                 <span class="font-label-sm text-label-sm text-secondary uppercase">Heatmap colormap</span>
                                 <select id="setting-heatmap-colormap" class="bg-surface-raised border border-border rounded-md px-3 py-2 font-body-sm text-primary">

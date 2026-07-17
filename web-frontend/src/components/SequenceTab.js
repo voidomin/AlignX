@@ -34,7 +34,7 @@ export class SequenceTab {
             </header>
 
             <div class="section-body flex flex-col gap-10">
-                <div id="alignment-stats-container" class="grid grid-cols-4 gap-6">
+                <div id="alignment-stats-container" class="grid grid-cols-2 sm:grid-cols-4 gap-6">
                     <div class="stat-row stat-primary">
                         <span class="stat-key">RMSD</span>
                         <span id="stat-rmsd" class="stat-value">--</span>

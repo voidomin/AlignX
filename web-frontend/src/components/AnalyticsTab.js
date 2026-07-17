@@ -99,7 +99,7 @@ export class AnalyticsTab {
 
                 <!-- Ramachandran / Quality Report -->
                 <div data-panel="quality" class="flex flex-col gap-4 shrink-0">
-                    <div class="grid grid-cols-2 gap-6">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
                         <div class="stat-row stat-primary">
                             <span class="stat-key">Ramachandran score</span>
                             <span id="ramachandran-score" class="stat-value">--</span>
@@ -130,7 +130,7 @@ export class AnalyticsTab {
                     </div>
                     <div id="secondary-structure-card" class="flex flex-col gap-2 hidden border-t border-border-subtle pt-4">
                         <span class="font-label-sm text-label-sm text-secondary uppercase">Secondary structure (backbone-torsion approximation, not DSSP)</span>
-                        <div class="grid grid-cols-3 gap-4">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div class="stat-row"><span class="stat-key">Helix</span><span id="ss-helix-percent" class="stat-value">--</span></div>
                             <div class="stat-row"><span class="stat-key">Sheet</span><span id="ss-sheet-percent" class="stat-value">--</span></div>
                             <div class="stat-row"><span class="stat-key">Coil</span><span id="ss-coil-percent" class="stat-value">--</span></div>

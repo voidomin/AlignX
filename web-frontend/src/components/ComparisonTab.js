@@ -130,7 +130,7 @@ export class ComparisonTab {
                 </div>
                 <div id="comparison-diff-heatmap" class="w-full h-[280px]"></div>
             </div>
-            <div class="grid grid-cols-3 gap-6">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
                 <div class="stat-row stat-primary">
                     <span class="stat-key">Mean RMSD shift</span>
                     <span class="stat-value ${data.mean_rmsd_shift >= 0 ? 'text-error' : 'text-success'}">${data.mean_rmsd_shift >= 0 ? '+' : ''}${data.mean_rmsd_shift.toFixed(3)} Å</span>
