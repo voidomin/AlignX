@@ -128,6 +128,20 @@ class TestBuildConservationProfile:
         profile = BlastClient.build_conservation_profile(3, [])
         assert all(p["conservation"] is None for p in profile)
 
+    def test_residue_counts_preserves_full_distribution_not_just_the_winner(self):
+        hits = [
+            {"qseq": "M", "hseq": "M", "query_from": 1},
+            {"qseq": "M", "hseq": "M", "query_from": 1},
+            {"qseq": "M", "hseq": "L", "query_from": 1},
+        ]
+        profile = BlastClient.build_conservation_profile(1, hits)
+        assert profile[0]["most_common"] == "M"
+        assert profile[0]["residue_counts"] == {"M": 2, "L": 1}
+
+    def test_residue_counts_is_empty_dict_when_no_hit_covers_the_position(self):
+        profile = BlastClient.build_conservation_profile(3, [])
+        assert all(p["residue_counts"] == {} for p in profile)
+
 
 class TestSubmitSearch:
     @pytest.mark.asyncio

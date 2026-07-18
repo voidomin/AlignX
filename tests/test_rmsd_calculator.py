@@ -18,6 +18,7 @@ from src.backend.rmsd_calculator import (
     calculate_difference_distance_matrix,
     get_structure_contact_map,
     get_difference_distance_matrix,
+    get_morph_frames,
     _try_parse_rmsd_row,
     _parse_matrix_value,
     _select_structures,
@@ -773,5 +774,104 @@ class TestGetDifferenceDistanceMatrix:
         fasta_file.write_text(">structA\nAAA\n>structB\nAAA\n")
 
         result = calculate_alignment_quality_metrics(tmp_path, fasta_file)
+
+        assert result is None
+
+
+class TestGetMorphFrames:
+    def test_frame_one_is_structure_a_and_last_frame_is_structure_b(self, tmp_path):
+        pdb_file = tmp_path / "alignment.pdb"
+        fasta_file = tmp_path / "alignment.afasta"
+        coords_a = [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]]
+        coords_b = [[10.0, 0.0, 0.0], [15.0, 0.0, 0.0]]
+        _write_multi_model_pdb(pdb_file, [coords_a, coords_b])
+        fasta_file.write_text(">structA\nAA\n>structB\nAA\n")
+
+        result = get_morph_frames(
+            pdb_file, fasta_file, ["structA", "structB"], "structA", "structB", 5
+        )
+
+        assert result is not None
+        assert result.count("MODEL ") == 5
+        assert result.count("ENDMDL") == 5
+        frames = result.split("MODEL")[1:]
+        assert "0.000   0.000   0.000" in frames[0]
+        assert "10.000   0.000   0.000" in frames[-1]
+
+    def test_middle_frame_is_the_linear_midpoint(self, tmp_path):
+        pdb_file = tmp_path / "alignment.pdb"
+        fasta_file = tmp_path / "alignment.afasta"
+        coords_a = [[0.0, 0.0, 0.0]]
+        coords_b = [[10.0, 0.0, 0.0]]
+        _write_multi_model_pdb(pdb_file, [coords_a, coords_b])
+        fasta_file.write_text(">structA\nA\n>structB\nA\n")
+
+        result = get_morph_frames(
+            pdb_file, fasta_file, ["structA", "structB"], "structA", "structB", 3
+        )
+
+        assert result is not None
+        middle_frame = result.split("MODEL")[2]
+        assert "5.000   0.000   0.000" in middle_frame
+
+    def test_resolves_by_position_not_by_fasta_record_text(self, tmp_path):
+        pdb_file = tmp_path / "alignment.pdb"
+        fasta_file = tmp_path / "alignment.afasta"
+        coords = [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]]
+        _write_multi_model_pdb(pdb_file, [coords, coords])
+        fasta_file.write_text(">4hhb.pdb\nAA\n>2hhb.pdb\nAA\n")
+
+        result = get_morph_frames(
+            pdb_file, fasta_file, ["4HHB", "2HHB"], "4HHB", "2HHB", 4
+        )
+
+        assert result is not None
+
+    def test_unknown_pdb_id_returns_none(self, tmp_path):
+        pdb_file = tmp_path / "alignment.pdb"
+        fasta_file = tmp_path / "alignment.afasta"
+        coords = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]
+        _write_multi_model_pdb(pdb_file, [coords, coords])
+        fasta_file.write_text(">structA\nAA\n>structB\nAA\n")
+
+        result = get_morph_frames(
+            pdb_file, fasta_file, ["structA", "structB"], "structA", "nope"
+        )
+
+        assert result is None
+
+    def test_no_common_columns_returns_none(self, tmp_path):
+        pdb_file = tmp_path / "alignment.pdb"
+        fasta_file = tmp_path / "alignment.afasta"
+        coords = [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]]
+        _write_multi_model_pdb(pdb_file, [coords, coords])
+        fasta_file.write_text(">structA\nAA--\n>structB\n--AA\n")
+
+        result = get_morph_frames(
+            pdb_file, fasta_file, ["structA", "structB"], "structA", "structB"
+        )
+
+        assert result is None
+
+    def test_too_few_frames_returns_none(self, tmp_path):
+        pdb_file = tmp_path / "alignment.pdb"
+        fasta_file = tmp_path / "alignment.afasta"
+        coords = [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]]
+        _write_multi_model_pdb(pdb_file, [coords, coords])
+        fasta_file.write_text(">structA\nAA\n>structB\nAA\n")
+
+        result = get_morph_frames(
+            pdb_file, fasta_file, ["structA", "structB"], "structA", "structB", 1
+        )
+
+        assert result is None
+
+    def test_returns_none_on_parse_failure(self, tmp_path):
+        fasta_file = tmp_path / "alignment.afasta"
+        fasta_file.write_text(">structA\nAA\n>structB\nAA\n")
+
+        result = get_morph_frames(
+            tmp_path, fasta_file, ["structA", "structB"], "structA", "structB"
+        )
 
         assert result is None

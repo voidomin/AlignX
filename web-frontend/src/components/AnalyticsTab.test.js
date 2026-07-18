@@ -7,9 +7,11 @@ vi.mock('../api.js', () => ({
     fetchDifferenceDistance: vi.fn(),
     fetchMutationImpact: vi.fn(),
     fetchPae: vi.fn(),
+    submitDdgStabilityJob: vi.fn(),
+    pollJobUntilDone: vi.fn(),
 }));
 
-import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae } from '../api.js';
+import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae, submitDdgStabilityJob, pollJobUntilDone } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new AnalyticsTab(overrides);
@@ -410,6 +412,61 @@ describe('AnalyticsTab', () => {
             expect(btn.textContent).toContain('Highlight in 3D');
             btn.click();
             expect(onHighlightResidues).toHaveBeenCalledWith({ A: [88] });
+        });
+
+        it('splits UniProt features into a distinct "PTM sites" section, separate from other features', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: 'AF-P69905-F1', chain: 'A', accession: 'P69905',
+                    domains: [], go_terms: [], reactome_pathways: [],
+                    uniprot_features: [
+                        { type: 'Binding site', description: '', start: 88, end: 88, highlight_chains: { A: [88] } },
+                        { type: 'Glycosylation', description: 'N-linked', start: 4, end: 4, highlight_chains: { A: [4] } },
+                        { type: 'Lipidation', description: 'S-palmitoyl cysteine', start: 181, end: 181, highlight_chains: { A: [181] } },
+                    ],
+                },
+            });
+            const onHighlightResidues = vi.fn();
+            const tab = makeTab({ onHighlightResidues });
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['AF-P69905-F1'], { 'AF-P69905-F1': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            expect(tab.element.textContent).toContain('PTM sites');
+            const ptmButtons = tab.element.querySelectorAll('.ptm-highlight-btn');
+            expect(ptmButtons).toHaveLength(2);
+
+            ptmButtons[0].click();
+            expect(onHighlightResidues).toHaveBeenCalledWith({ A: [4] });
+
+            const otherButtons = tab.element.querySelectorAll('.feature-highlight-btn');
+            expect(otherButtons).toHaveLength(1);
+            otherButtons[0].click();
+            expect(onHighlightResidues).toHaveBeenCalledWith({ A: [88] });
+        });
+
+        it('renders real M-CSA catalytic-site annotation when present', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: 'AF-P56868-F1', chain: 'A', accession: 'P56868',
+                    domains: [], go_terms: [], reactome_pathways: [], uniprot_features: [],
+                    catalytic_sites: [
+                        {
+                            mcsa_id: 1, enzyme_name: 'glutamate racemase', ec_numbers: ['5.1.1.3'],
+                            residues: [{ roles_summary: 'proton acceptor', reference_pdb_id: '1b73', chain: 'A', resi: 7, code: 'Asp' }],
+                        },
+                    ],
+                },
+            });
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['AF-P56868-F1'], { 'AF-P56868-F1': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            expect(tab.element.textContent).toContain('Catalytic sites (M-CSA)');
+            expect(tab.element.textContent).toContain('glutamate racemase');
         });
 
         it('omits the "Highlight in 3D" button for a domain with no highlight_chains (e.g. a plain PDB structure)', async () => {
@@ -855,6 +912,106 @@ describe('AnalyticsTab', () => {
 
             expect(tab.element.querySelector('#mutation-impact-result').textContent)
                 .toContain('Failed to map this mutation.');
+        });
+    });
+
+    describe('predict stability impact (DDMut)', () => {
+        function setUpForMutation(tab) {
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+            tab.element.querySelector('#mutation-resi-input').value = '6';
+            tab.element.querySelector('#mutation-mutant-input').value = 'V';
+        }
+
+        it('submits a job, polls it, and renders the real predicted ddG', async () => {
+            submitDdgStabilityJob.mockResolvedValue({ job_id: 'ddmut-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({
+                status: 'completed',
+                prediction: { prediction: 0.22, chain: 'A', position: '6', 'wild-type': 'LYS', mutant: 'ALA' },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-ddg-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(submitDdgStabilityJob).toHaveBeenCalledWith('4HHB', 'A', 6, 'V');
+            expect(pollJobUntilDone).toHaveBeenCalledWith('ddmut-1', expect.objectContaining({ intervalMs: 10000 }));
+            expect(tab.element.querySelector('#mutation-ddg-result').textContent)
+                .toContain('+0.22 kcal/mol (stabilizing)');
+        });
+
+        it('shows a destabilizing prediction with a minus sign', async () => {
+            submitDdgStabilityJob.mockResolvedValue({ job_id: 'ddmut-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({
+                status: 'completed',
+                prediction: { prediction: -1.67 },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-ddg-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#mutation-ddg-result').textContent)
+                .toContain('-1.67 kcal/mol (destabilizing)');
+        });
+
+        it('shows the real failure reason when the job fails', async () => {
+            submitDdgStabilityJob.mockResolvedValue({ job_id: 'ddmut-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({
+                status: 'failed',
+                error: 'DDMut job ddmut-1 did not complete within 600s',
+            });
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-ddg-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#mutation-ddg-result').textContent)
+                .toContain('did not complete within 600s');
+        });
+
+        it('validates inputs before submitting a job', async () => {
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+            tab.element.querySelector('#mutation-resi-input').value = '';
+            tab.element.querySelector('#mutation-mutant-input').value = 'V';
+
+            tab.element.querySelector('#mutation-ddg-btn').click();
+            await Promise.resolve();
+
+            expect(submitDdgStabilityJob).not.toHaveBeenCalled();
+            expect(tab.element.querySelector('#mutation-ddg-result').textContent)
+                .toContain('Enter a residue number and a mutant residue.');
+        });
+
+        it('shows a graceful message when submission fails', async () => {
+            submitDdgStabilityJob.mockRejectedValue(new Error('boom'));
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-ddg-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#mutation-ddg-result').textContent)
+                .toContain('Failed to predict stability impact.');
         });
     });
 

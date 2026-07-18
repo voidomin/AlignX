@@ -735,6 +735,37 @@ class TestFetchUniprotFeatures:
 
     @pytest.mark.asyncio
     @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_includes_real_ptm_feature_types(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "features": [
+                    {
+                        "type": "Glycosylation",
+                        "description": "N-linked (GlcNAc...)",
+                        "location": {"start": {"value": 4}, "end": {"value": 4}},
+                    },
+                    {
+                        "type": "Lipidation",
+                        "description": "S-palmitoyl cysteine",
+                        "location": {"start": {"value": 181}, "end": {"value": 181}},
+                    },
+                    {
+                        "type": "Cross-link",
+                        "description": "Glycyl lysine isopeptide (Lys-Gly)",
+                        "location": {"start": {"value": 48}, "end": {"value": 48}},
+                    },
+                ]
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            features = await aggregator.fetch_uniprot_features("P01112", client)
+
+        types = {f["type"] for f in features}
+        assert types == {"Glycosylation", "Lipidation", "Cross-link"}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
     async def test_skips_a_feature_with_no_resolvable_location(self, mock_get):
         mock_get.return_value = _mock_response(
             json_data={
@@ -765,6 +796,132 @@ class TestFetchUniprotFeatures:
         async with httpx.AsyncClient() as client:
             features = await aggregator.fetch_uniprot_features("P69905", client)
         assert features == []
+
+
+class TestFetchCatalyticSiteResidues:
+    """M-CSA's real /entries/ API has no server-side filter by accession
+    (verified live) - it's a fixed, paginated bulk dump, so
+    fetch_catalytic_site_residues fetches every page and filters by
+    reference_uniprot_id itself."""
+
+    @staticmethod
+    def _mcsa_entry(uniprot_id="P56868"):
+        return {
+            "mcsa_id": 1,
+            "enzyme_name": "glutamate racemase",
+            "reference_uniprot_id": uniprot_id,
+            "all_ecs": ["5.1.1.3"],
+            "residues": [
+                {
+                    "roles_summary": "proton acceptor",
+                    "residue_chains": [
+                        {
+                            "chain_name": "A",
+                            "pdb_id": "1b73",
+                            "auth_resid": 7,
+                            "code": "Asp",
+                            "is_reference": True,
+                        },
+                        {
+                            "chain_name": "B",
+                            "pdb_id": "1b73",
+                            "auth_resid": 7,
+                            "code": "Asp",
+                            "is_reference": False,
+                        },
+                    ],
+                }
+            ],
+        }
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_follows_pagination_and_filters_by_accession(self, mock_get):
+        mock_get.side_effect = [
+            _mock_response(
+                json_data={
+                    "count": 2,
+                    "next": "https://www.ebi.ac.uk/thornton-srv/m-csa/api/entries/?format=json&page=2",
+                    "results": [self._mcsa_entry("P56868")],
+                }
+            ),
+            _mock_response(
+                json_data={
+                    "count": 2,
+                    "next": None,
+                    "results": [self._mcsa_entry("P00000")],
+                }
+            ),
+        ]
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_catalytic_site_residues("P56868", client)
+
+        assert mock_get.call_count == 2
+        assert len(result) == 1
+        assert result[0]["enzyme_name"] == "glutamate racemase"
+        assert result[0]["ec_numbers"] == ["5.1.1.3"]
+        assert result[0]["residues"] == [
+            {
+                "roles_summary": "proton acceptor",
+                "reference_pdb_id": "1b73",
+                "chain": "A",
+                "resi": 7,
+                "code": "Asp",
+            }
+        ]
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_list_for_an_accession_with_no_mcsa_coverage(
+        self, mock_get
+    ):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "count": 1,
+                "next": None,
+                "results": [self._mcsa_entry("P56868")],
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_catalytic_site_residues("Q99999", client)
+        assert result == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_does_not_refetch_the_full_dump_for_a_second_accession(
+        self, mock_get
+    ):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "count": 1,
+                "next": None,
+                "results": [self._mcsa_entry("P56868")],
+            }
+        )
+        cache_db = MagicMock()
+        stored = {}
+        cache_db.get_annotation_cache.side_effect = lambda key, *a, **k: stored.get(key)
+        cache_db.set_annotation_cache.side_effect = lambda key, service, payload: (
+            stored.update({key: payload})
+        )
+        aggregator = AnnotationAggregator(cache_db=cache_db)
+
+        async with httpx.AsyncClient() as client:
+            await aggregator.fetch_catalytic_site_residues("P56868", client)
+            await aggregator.fetch_catalytic_site_residues("Q99999", client)
+
+        assert mock_get.call_count == 1  # second accession's lookup hit the cached dump
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_catalytic_site_residues("P56868", client)
+        assert result == []
 
 
 class TestAttachFeatureHighlightChains:
@@ -1640,6 +1797,7 @@ class TestAggregateForStructure:
             "go_terms": [],
             "reactome_pathways": [],
             "uniprot_features": [],
+            "catalytic_sites": [],
         }
 
     @pytest.mark.asyncio
@@ -1698,6 +1856,19 @@ class TestAggregateForStructure:
             aggregator,
             "resolve_go_term_names",
             AsyncMock(return_value={"GO:0005344": "oxygen carrier activity"}),
+        ), patch.object(
+            aggregator,
+            "fetch_catalytic_site_residues",
+            AsyncMock(
+                return_value=[
+                    {
+                        "mcsa_id": 1,
+                        "enzyme_name": "test enzyme",
+                        "ec_numbers": ["1.1.1.1"],
+                        "residues": [],
+                    }
+                ]
+            ),
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
@@ -1709,6 +1880,7 @@ class TestAggregateForStructure:
         assert result["go_terms"][0]["name"] == "oxygen carrier activity"
         assert result["reactome_pathways"][0]["name"] == "Erythrocytes take up oxygen"
         assert result["uniprot_features"][0]["type"] == "Binding site"
+        assert result["catalytic_sites"][0]["enzyme_name"] == "test enzyme"
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -1768,6 +1940,8 @@ class TestAggregateForStructure:
             aggregator,
             "resolve_uniprot_residue_mapping",
             AsyncMock(return_value={n: n + 10 for n in range(1, 100)}),
+        ), patch.object(
+            aggregator, "fetch_catalytic_site_residues", AsyncMock(return_value=[])
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
@@ -1831,6 +2005,8 @@ class TestAggregateForStructure:
             aggregator, "fetch_reactome_pathways", AsyncMock(return_value=[])
         ), patch.object(
             aggregator, "fetch_uniprot_features", AsyncMock(return_value=[])
+        ), patch.object(
+            aggregator, "fetch_catalytic_site_residues", AsyncMock(return_value=[])
         ), patch.object(
             aggregator,
             "resolve_go_term_names",

@@ -251,6 +251,80 @@ describe('api.js (no API key configured)', () => {
         expect(getDiscoveryExportUrl('discover_1')).toContain('/api/discover/export?run_id=discover_1');
     });
 
+    it('getPymolScriptUrl points at the pymol-script endpoint for the given run', async () => {
+        const { getPymolScriptUrl } = await import('./api.js');
+        expect(getPymolScriptUrl('run_1')).toContain('/api/report/pymol-script?run_id=run_1');
+    });
+
+    it('getChimeraxScriptUrl points at the chimerax-script endpoint for the given run', async () => {
+        const { getChimeraxScriptUrl } = await import('./api.js');
+        expect(getChimeraxScriptUrl('run_1')).toContain('/api/report/chimerax-script?run_id=run_1');
+    });
+
+    it('getMorphFramesUrl points at the morph endpoint with both pdb ids and an optional num_frames', async () => {
+        const { getMorphFramesUrl } = await import('./api.js');
+        const url = getMorphFramesUrl('run_1', '4RLT', '3UG9', 20);
+        expect(url).toContain('/api/morph');
+        expect(url).toContain('run_id=run_1');
+        expect(url).toContain('pdb_id_a=4RLT');
+        expect(url).toContain('pdb_id_b=3UG9');
+        expect(url).toContain('num_frames=20');
+    });
+
+    it('getMorphFramesUrl omits num_frames when not given', async () => {
+        const { getMorphFramesUrl } = await import('./api.js');
+        expect(getMorphFramesUrl('run_1', '4RLT', '3UG9')).not.toContain('num_frames');
+    });
+
+    it('screenStructures posts the reference and target ids to the screen endpoint', async () => {
+        mockFetchOnce({ reference_pdb_id: '4RLT', results: [] });
+        const { screenStructures } = await import('./api.js');
+
+        const result = await screenStructures('4RLT', ['3UG9', '2ABC']);
+
+        expect(result.reference_pdb_id).toBe('4RLT');
+        const [url, options] = global.fetch.mock.calls[0];
+        expect(url).toContain('/api/screen');
+        expect(options.method).toBe('POST');
+        expect(JSON.parse(options.body)).toEqual({ reference_pdb_id: '4RLT', target_pdb_ids: ['3UG9', '2ABC'] });
+    });
+
+    it('screenStructures throws with the backend detail message on failure', async () => {
+        mockFetchOnce({ detail: 'At most 50 target structures are allowed per screen.' }, false, 400);
+        const { screenStructures } = await import('./api.js');
+        await expect(screenStructures('4RLT', ['3UG9'])).rejects.toThrow('At most 50 target structures are allowed per screen.');
+    });
+
+    it('submitDdgStabilityJob posts pdb_id/chain/resi/mutant to the ddg-stability job endpoint', async () => {
+        mockFetchOnce({ job_id: 'ddg123', status: 'queued', mutation: 'H461D' });
+        const { submitDdgStabilityJob } = await import('./api.js');
+
+        const result = await submitDdgStabilityJob('4RLT', 'A', 461, 'D');
+
+        expect(result.job_id).toBe('ddg123');
+        const [url, options] = global.fetch.mock.calls[0];
+        expect(url).toContain('/api/jobs/ddg-stability');
+        expect(JSON.parse(options.body)).toEqual({ pdb_id: '4RLT', chain: 'A', resi: 461, mutant: 'D' });
+    });
+
+    it('submitDdgStabilityJob includes webhook_url when given', async () => {
+        mockFetchOnce({ job_id: 'ddg456', status: 'queued' });
+        const { submitDdgStabilityJob } = await import('./api.js');
+
+        await submitDdgStabilityJob('4RLT', 'A', 461, 'D', 'https://example.com/hook');
+
+        const [, options] = global.fetch.mock.calls[0];
+        expect(JSON.parse(options.body)).toEqual({
+            pdb_id: '4RLT', chain: 'A', resi: 461, mutant: 'D', webhook_url: 'https://example.com/hook',
+        });
+    });
+
+    it('submitDdgStabilityJob throws with the backend detail message on failure', async () => {
+        mockFetchOnce({ detail: 'No wild-type residue found at chain A residue 999.' }, false, 400);
+        const { submitDdgStabilityJob } = await import('./api.js');
+        await expect(submitDdgStabilityJob('4RLT', 'A', 999, 'D')).rejects.toThrow('No wild-type residue found');
+    });
+
     it('fetchStats hits the aggregate stats endpoint', async () => {
         mockFetchOnce({ total_runs: 3, total_proteins_analyzed: 7, cache_size_mb: 1.2 });
         const { fetchStats } = await import('./api.js');

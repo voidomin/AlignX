@@ -128,6 +128,25 @@ export async function fetchChains(pdbIds) {
     return res.json();
 }
 
+// A "reference vs many" pairwise batch screen - one reference structure
+// diffed independently against every target, ranked by TM-score. Distinct
+// from the N-way Mustang alignment/comparison workflow: no shared
+// superposition, no 3D view, just a ranked table - see
+// src.backend.api.screen_structures / tm_score_calculator.calculate_pairwise_tm_score.
+export async function screenStructures(referencePdbId, targetPdbIds) {
+    referencePdbId = assertValidPdbId(referencePdbId, 'referencePdbId');
+    const res = await fetch(buildUrl('/api/screen'), {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ reference_pdb_id: referencePdbId, target_pdb_ids: targetPdbIds })
+    });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Structure screen failed");
+    }
+    return res.json();
+}
+
 export async function uploadStructure(file) {
     const formData = new FormData();
     formData.append('file', file);
@@ -242,6 +261,31 @@ export async function submitConservationJob(sequence, webhookUrl) {
     if (!res.ok) {
         const errData = await res.json();
         throw new Error(errData.detail || "Conservation search submission failed");
+    }
+    return res.json();
+}
+
+// Real mutation-stability (ddG) prediction via DDMut - see ddmut_client.py.
+// resi/chain are the structure's own author numbering (matching
+// fetchMutationImpact's convention); the wildtype residue is read
+// server-side directly from the structure's file, not resolved via
+// UniProt, so this works for any structure source. Poll the returned
+// job_id with pollJobUntilDone(); the completed job's `prediction.prediction`
+// field is the real predicted ddG in kcal/mol (DDMut's own convention:
+// positive = stabilizing, negative = destabilizing).
+export async function submitDdgStabilityJob(pdbId, chain, resi, mutant, webhookUrl) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    chain = assertSafeSegment(chain, 'chain');
+    const body = { pdb_id: pdbId, chain, resi, mutant };
+    if (webhookUrl) body.webhook_url = webhookUrl;
+    const res = await fetch(buildUrl('/api/jobs/ddg-stability'), {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Stability prediction submission failed");
     }
     return res.json();
 }
@@ -447,6 +491,19 @@ export function getAlignmentFastaUrl(runId) {
     return withApiKey(buildUrl(`/results/${runId}/alignment.fasta`));
 }
 
+// A synthetic multi-model PDB morphing pdbIdA into pdbIdB over their
+// commonly-aligned columns - see the backend's get_morph_frames(). Served
+// as plain text (not an attachment), fetched the same way as
+// getAlignmentPdbUrl above, then fed straight into 3Dmol's addModelsAsFrames.
+export function getMorphFramesUrl(runId, pdbIdA, pdbIdB, numFrames) {
+    runId = assertSafeSegment(runId, 'runId');
+    pdbIdA = assertValidPdbId(pdbIdA, 'pdbIdA');
+    pdbIdB = assertValidPdbId(pdbIdB, 'pdbIdB');
+    const params = { run_id: runId, pdb_id_a: pdbIdA, pdb_id_b: pdbIdB };
+    if (numFrames) params.num_frames = numFrames;
+    return withApiKey(buildUrl('/api/morph', params));
+}
+
 // Unlike getAlignmentPdbUrl (Mustang's alignment output, only exists for a
 // completed Compare-mode run), this resolves any downloaded structure by
 // id alone - e.g. a Discover-mode query structure that was never part of
@@ -514,6 +571,16 @@ export function getReportZipUrl(runId) {
 export function getNewickUrl(runId) {
     runId = assertSafeSegment(runId, 'runId');
     return withApiKey(buildUrl('/api/report/newick', { run_id: runId }));
+}
+
+export function getPymolScriptUrl(runId) {
+    runId = assertSafeSegment(runId, 'runId');
+    return withApiKey(buildUrl('/api/report/pymol-script', { run_id: runId }));
+}
+
+export function getChimeraxScriptUrl(runId) {
+    runId = assertSafeSegment(runId, 'runId');
+    return withApiKey(buildUrl('/api/report/chimerax-script', { run_id: runId }));
 }
 
 export async function fetchAnnotations(pdbId, chain) {

@@ -79,6 +79,15 @@ for how to actually use each one.
 | 46 | Async job completion webhooks | SPA | [§3](#3-discover-mode-structure-to-function) |
 | 47 | Plain-English structure-diff narrative | SPA | [§2.17](#217-structure-diff-narrative) |
 | 48 | Structure prediction from a raw sequence (ESMFold) | SPA | [§1](#1-structure-input) |
+| 49 | Sequence conservation logo | SPA | [§2.8](#28-sequence-view) |
+| 50 | "Color by domain" 3D viewer scheme | SPA | [§2.2](#22-3d-structure-viewer) |
+| 51 | PyMOL / ChimeraX script export | SPA | [§2.18](#218-pymol--chimerax-script-export) |
+| 52 | PTM site lookup | SPA | [§2.12](#212-functional-annotation) |
+| 53 | Catalytic/active-site detection (M-CSA) | SPA | [§2.12](#212-functional-annotation) |
+| 54 | Mutation stability (ddG) prediction (DDMut) | SPA | [§2.14](#214-mutation-impact-mapping) |
+| 55 | "Reference vs. many" batch structural screen | SPA | [§2.19](#219-reference-vs-many-batch-screen) |
+| 56 | Structural superposition morph animation | SPA | [§2.20](#220-structural-superposition-morph-animation) |
+| 57 | OpenAPI route tags + typed-client generation guide + CLI | Both | [§4.6](#46-rest-api) |
 
 ---
 
@@ -178,6 +187,16 @@ needing to know which one you're looking at). The toggle is disabled when no
 structure in the run is a predicted model, since experimentally-determined
 structures don't carry this kind of per-residue confidence score.
 
+An **"InterPro domains"** color scheme colors every domain on a structure
+simultaneously and persistently (one color per domain, from the same real
+domain/residue mapping §2.12's "Highlight in 3D" uses) — unlike that button,
+which ghosts everything except one domain at a time, this shows every domain
+at once as a standing view alongside the other color schemes.
+
+For a completed 2-structure alignment, a **morph** toggle plays a smooth
+animated transition between the two aligned structures instead of a static
+superposition — see [§2.20](#220-structural-superposition-morph-animation).
+
 ### 2.3 RMSD Heatmap
 
 A Plotly-powered heatmap of pairwise RMSD values across every structure in the
@@ -270,6 +289,11 @@ the real thing:
   the app (real BLAST searches commonly take minutes), genuinely different
   from the identity-across-loaded-structures default above.
 
+The BLAST conservation result also renders as a real **sequence logo** — a
+stacked-bar chart per position, each residue's share of the bar scaled to how
+often it appears across the homologs found — shown alongside the existing
+compact single-glyph conservation view rather than replacing it.
+
 ### 2.9 Dashboard
 
 *(SPA only)* Aggregate stats across everything you've run — total runs, proteins
@@ -328,6 +352,14 @@ offered for Discover mode's neighbor-aggregated domains (a domain's position
 in a structurally similar neighbor protein says nothing about where it'd fall
 in the query's own numbering).
 
+The same panel also lists real **PTM (post-translational modification) sites**
+— modified residues, glycosylation, lipidation, cross-links, and disulfide
+bonds — from UniProt's own feature annotations, and real **catalytic/active-site
+residues** from the curated Mechanism and Catalytic Site Atlas (M-CSA), with an
+honest "not available" message for the majority of structures M-CSA doesn't
+curate (its coverage is a few thousand well-characterized enzymes, not
+proteome-wide).
+
 ### 2.13 Contact Maps & Difference-Distance Matrices
 
 In the Analytics tab's RMSD Matrix sub-tab: a real CA-CA **contact map** for
@@ -355,6 +387,13 @@ colors every residue by its mean predicted pathogenicity across all 19
 possible substitutions at that position (green = tolerant, red = intolerant)
 — a proteome-wide view of mutation sensitivity, not just the one substitution
 entered above.
+
+A separate **"Predict stability impact"** action submits the same mutation to
+DDMut and reports a real predicted ddG (kcal/mol, stabilizing or
+destabilizing) — a background job like Clustal Omega/BLAST above, since DDMut
+itself is an external, queued service, not the synchronous ClinVar/AlphaMissense
+lookup. An independent signal from clinical significance/pathogenicity: a
+mutation can be clinically benign yet structurally destabilizing, or vice versa.
 
 ### 2.15 Bulk QC Sweep
 
@@ -384,6 +423,35 @@ available, the independent tmtools TM-score's fold-level interpretation
 all). A user-directed, exact-pair comparison — distinct from the automated
 Insights list above it, which only ever surfaces the single best/worst pair
 across the whole run.
+
+### 2.18 PyMOL / ChimeraX Script Export
+
+Alongside the existing CSV/Newick exports in the Sequence tab's "Generated
+outputs" list: a downloadable PyMOL `.pml` or ChimeraX `.cxc` script that
+loads the run's aligned structure files and applies the same per-structure
+coloring StructScope's own viewer uses. Plain, human-readable text — not the
+proprietary `.pse` binary, which would require bundling a real PyMOL
+installation server-side just to write a format only PyMOL can open.
+
+### 2.19 "Reference vs. Many" Batch Screen
+
+In the Workspace tab: pick one structure already in your workspace as a
+reference, paste a batch of up to 50 target PDB IDs/accessions, and get back
+a ranked table of TM-score and RMSD for each target against that reference.
+Uses a Mustang-independent pairwise TM-align primitive — each comparison does
+its own optimal superposition from the two structures' own coordinates, with
+no prior N-way alignment step — so it scales to many more structures than
+raising the N-way alignment cap would, at the cost of not sharing one common
+coordinate frame across the batch (no combined 3D view, unlike Compare mode).
+
+### 2.20 Structural Superposition Morph Animation
+
+For a completed 2-structure alignment, play a smooth animated transition
+between the two aligned structures instead of viewing a static superposition
+— a synthetic multi-model trajectory linearly interpolating their commonly
+aligned CA coordinates, played back frame-by-frame in the 3D viewer. Useful
+for seeing exactly which regions move (and how far) between two states of the
+same fold, rather than reading that off a static RMSD number or heatmap cell.
 
 ---
 
@@ -520,7 +588,16 @@ notebook HTML — into a single ZIP download.
 Every backend route is documented and explorable at `/docs` (FastAPI's own
 Swagger UI) and machine-readable at `/openapi.json` — useful if you want to
 script against StructScope directly instead of only using the UI, or want to
-understand exactly what data the Jupyter export (§4.2) is re-fetching.
+understand exactly what data the Jupyter export (§4.2) is re-fetching. Every
+route also carries a tag grouping it by area (System, Structures, Jobs,
+Comparison, Ligands & Interfaces, Annotations, History, Sequence, Reports,
+Discovery), so `/docs` and any generated client organize methods sensibly
+instead of one flat list.
+
+See [docs/guides/API_CLIENT.md](guides/API_CLIENT.md) for generating a typed
+Python client via `openapi-python-client`, and `scripts/structscope_cli.py`
+for a minimal, dependency-free CLI covering the common CI workflow: submit an
+alignment job, poll it, download the report.
 
 ---
 
@@ -577,6 +654,9 @@ unset by default so local development works with zero configuration.
 Job-submission endpoints (starting a new alignment or Discover search) are
 rate-limited per API key (or per IP if no key is set), so one client can't queue
 unlimited compute-heavy jobs and starve everyone else on a shared deployment.
+The batch structural screen (§2.19) is deliberately not part of this limiter —
+it's one synchronous request rather than N job submissions, so it's capped
+instead by its own per-request target-count limit (50 structures max).
 
 ### 6.3 Settings
 

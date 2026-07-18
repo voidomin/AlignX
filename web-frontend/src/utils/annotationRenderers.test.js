@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderDomainList, renderGoTermList, renderFeatureList } from './annotationRenderers';
+import { renderDomainList, renderGoTermList, renderFeatureList, renderCatalyticSiteList } from './annotationRenderers';
 
 describe('annotationRenderers', () => {
     describe('renderDomainList', () => {
@@ -105,6 +105,50 @@ describe('annotationRenderers', () => {
 
         it('omits the button when highlight_chains is absent (non-AlphaFold structures)', () => {
             const html = renderFeatureList([{ type: 'Binding site', description: '', start: 88, end: 88 }]);
+            expect(html).not.toContain('Highlight in 3D');
+        });
+
+        it('accepts a custom button class, for callers rendering more than one list from the same feature type', () => {
+            const html = renderFeatureList(
+                [{ type: 'Glycosylation', description: '', start: 4, end: 4, highlight_chains: { A: [4] } }],
+                'PTM sites',
+                'ptm-highlight-btn',
+            );
+            expect(html).toContain('ptm-highlight-btn');
+            expect(html).not.toContain('feature-highlight-btn');
+        });
+    });
+
+    describe('renderCatalyticSiteList', () => {
+        it('returns an empty string for an empty or missing list', () => {
+            expect(renderCatalyticSiteList([])).toBe('');
+            expect(renderCatalyticSiteList(null)).toBe('');
+            expect(renderCatalyticSiteList(undefined)).toBe('');
+        });
+
+        it('renders enzyme name, EC number, and per-residue reference-PDB/role info', () => {
+            const html = renderCatalyticSiteList([
+                {
+                    mcsa_id: 1,
+                    enzyme_name: 'glutamate racemase',
+                    ec_numbers: ['5.1.1.3'],
+                    residues: [
+                        { roles_summary: 'proton acceptor', reference_pdb_id: '1b73', chain: 'A', resi: 7, code: 'Asp' },
+                    ],
+                },
+            ]);
+            expect(html).toContain('Catalytic sites (M-CSA)');
+            expect(html).toContain('glutamate racemase');
+            expect(html).toContain('5.1.1.3');
+            expect(html).toContain('Asp7');
+            expect(html).toContain('1b73 chain A');
+            expect(html).toContain('proton acceptor');
+        });
+
+        it('has no "Highlight in 3D" button - M-CSA residues are reported against its own reference PDB, not this app\'s structure numbering', () => {
+            const html = renderCatalyticSiteList([
+                { mcsa_id: 1, enzyme_name: 'test enzyme', ec_numbers: [], residues: [] },
+            ]);
             expect(html).not.toContain('Highlight in 3D');
         });
     });

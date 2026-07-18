@@ -2,7 +2,10 @@ from pathlib import Path
 
 import pytest
 
-from src.backend.tm_score_calculator import calculate_tm_score_matrix
+from src.backend.tm_score_calculator import (
+    calculate_tm_score_matrix,
+    calculate_pairwise_tm_score,
+)
 
 
 def _write_multi_model_pdb(path: Path, model_coords):
@@ -108,5 +111,68 @@ class TestCalculateTmScoreMatrix:
         fasta_file.write_text(">structA\nAAAAAA\n>structB\nAAAAAA\n")
 
         result = calculate_tm_score_matrix(tmp_path, fasta_file)
+
+        assert result is None
+
+
+def _write_single_model_pdb(path: Path, coords, chain_id="A"):
+    """A minimal single-MODEL, single-chain PDB with one CA atom per
+    residue - the shape calculate_pairwise_tm_score expects (two
+    INDEPENDENT files, not two chains inside one shared alignment.pdb)."""
+    lines = []
+    for i, (x, y, z) in enumerate(coords, start=1):
+        lines.append(
+            f"ATOM  {i:5d}  CA  ALA {chain_id}{i:4d}    {x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00           C"
+        )
+    lines.append("END\n")
+    path.write_text("\n".join(lines))
+
+
+class TestCalculatePairwiseTmScore:
+    def test_identical_structures_score_close_to_one_with_near_zero_rmsd(
+        self, tmp_path
+    ):
+        pdb_a = tmp_path / "a.pdb"
+        pdb_b = tmp_path / "b.pdb"
+        _write_single_model_pdb(pdb_a, _CHAIN_A)
+        _write_single_model_pdb(pdb_b, _CHAIN_A)
+
+        result = calculate_pairwise_tm_score(pdb_a, pdb_b)
+
+        assert result is not None
+        assert result["tm_score"] == pytest.approx(1.0, abs=0.05)
+        assert result["rmsd"] == pytest.approx(0.0, abs=0.05)
+
+    def test_a_rigid_translation_alone_still_scores_close_to_one(self, tmp_path):
+        # tm_align does its own optimal superposition search, so a pure
+        # rigid-body translation shouldn't hurt the score at all - this is
+        # exactly what makes it independent of any prior alignment.
+        pdb_a = tmp_path / "a.pdb"
+        pdb_b = tmp_path / "b.pdb"
+        translated = [[c[0] + 50, c[1] + 50, c[2] + 50] for c in _CHAIN_A]
+        _write_single_model_pdb(pdb_a, _CHAIN_A)
+        _write_single_model_pdb(pdb_b, translated)
+
+        result = calculate_pairwise_tm_score(pdb_a, pdb_b)
+
+        assert result is not None
+        assert result["tm_score"] == pytest.approx(1.0, abs=0.05)
+
+    def test_returns_none_on_parse_failure(self, tmp_path):
+        pdb_a = tmp_path / "a.pdb"
+        pdb_b = tmp_path / "does_not_exist.pdb"
+        _write_single_model_pdb(pdb_a, _CHAIN_A)
+
+        result = calculate_pairwise_tm_score(pdb_a, pdb_b)
+
+        assert result is None
+
+    def test_returns_none_when_a_file_has_no_resolvable_residues(self, tmp_path):
+        pdb_a = tmp_path / "a.pdb"
+        pdb_b = tmp_path / "b.pdb"
+        _write_single_model_pdb(pdb_a, _CHAIN_A)
+        pdb_b.write_text("END\n")
+
+        result = calculate_pairwise_tm_score(pdb_a, pdb_b)
 
         assert result is None

@@ -1,5 +1,5 @@
-import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae } from '../api';
-import { renderDomainList, renderGoTermList, renderFeatureList } from '../utils/annotationRenderers';
+import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae, submitDdgStabilityJob, pollJobUntilDone } from '../api';
+import { renderDomainList, renderGoTermList, renderFeatureList, renderCatalyticSiteList } from '../utils/annotationRenderers';
 import { createInsightIconSvg } from '../utils/insightIcons';
 import { wireArrowKeyNavigation } from '../utils/tabKeyboardNav';
 
@@ -45,6 +45,12 @@ const SUB_TABS = [
     { key: 'insights', label: 'Insights' },
     { key: 'annotations', label: 'Annotations' },
 ];
+
+// Mirrors annotation_aggregator.py's PTM_FEATURE_TYPES exactly - which of
+// the UniProt feature types this app already fetches specifically mean
+// "a residue was chemically modified after translation," used to split
+// one combined feature list into a distinct "PTM sites" section.
+const PTM_FEATURE_TYPES = new Set(['Modified residue', 'Disulfide bond', 'Glycosylation', 'Lipidation', 'Cross-link']);
 
 export class AnalyticsTab {
     element = null;
@@ -279,8 +285,10 @@ export class AnalyticsTab {
                                 <input id="mutation-mutant-input" type="text" maxlength="1" class="w-16 bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono uppercase" />
                             </label>
                             <button id="mutation-map-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Map</button>
+                            <button id="mutation-ddg-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Predict stability impact</button>
                         </div>
                         <div id="mutation-impact-result" class="font-body-sm text-body-sm text-secondary flex flex-col gap-1"></div>
+                        <div id="mutation-ddg-result" class="font-body-sm text-body-sm text-secondary flex flex-col gap-1"></div>
                     </div>
                 </div>
             </div>
@@ -346,6 +354,7 @@ export class AnalyticsTab {
         const select = this.element.querySelector('#annotations-structure-select');
         select.addEventListener('change', () => this.renderAnnotationsPanel());
         this.element.querySelector('#mutation-map-btn').addEventListener('click', () => this.loadMutationImpact());
+        this.element.querySelector('#mutation-ddg-btn').addEventListener('click', () => this.loadDdgStability());
     }
 
     switchSubTab(key) {
@@ -508,14 +517,27 @@ export class AnalyticsTab {
             content.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Switch to this tab to load functional annotation.</div>`;
         } else if (!annotation.accession) {
             content.innerHTML = `<div class="font-body-sm text-secondary py-4">No UniProt accession could be resolved for ${selectedPdbId} - no functional annotation available.</div>`;
-        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.uniprot_features?.length) {
+        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length) {
             content.innerHTML = `<div class="font-body-sm text-secondary py-4">Resolved to UniProt ${annotation.accession}, but no curated domains, GO terms, pathways, or sequence features were found.</div>`;
         } else {
+            // Split the single fetch_uniprot_features() result into a
+            // distinct "PTM sites" list (chemical modifications after
+            // translation - phosphorylation, glycosylation, lipidation,
+            // disulfides, cross-links) and everything else (active/binding
+            // sites, natural variants) - real data this app already
+            // fetches, just surfaced as two clearly-labeled groups instead
+            // of one mixed list.
+            const allFeatures = annotation.uniprot_features || [];
+            const ptmFeatures = allFeatures.filter(f => PTM_FEATURE_TYPES.has(f.type));
+            const otherFeatures = allFeatures.filter(f => !PTM_FEATURE_TYPES.has(f.type));
+
             content.innerHTML = `
                 <div class="font-body-sm text-secondary">Resolved to UniProt <span class="font-mono text-primary">${annotation.accession}</span></div>
                 ${renderDomainList(annotation.domains)}
                 ${renderGoTermList(annotation.go_terms)}
-                ${renderFeatureList(annotation.uniprot_features)}
+                ${renderFeatureList(ptmFeatures, 'PTM sites', 'ptm-highlight-btn')}
+                ${renderFeatureList(otherFeatures, 'UniProt features', 'feature-highlight-btn')}
+                ${renderCatalyticSiteList(annotation.catalytic_sites)}
                 ${this.renderReactomePathways(annotation.reactome_pathways)}
             `;
             content.querySelectorAll('.domain-highlight-btn').forEach(btn => {
@@ -524,8 +546,14 @@ export class AnalyticsTab {
                     btn.addEventListener('click', () => this.onHighlightResidues(domain.highlight_chains));
                 }
             });
+            content.querySelectorAll('.ptm-highlight-btn').forEach(btn => {
+                const feature = ptmFeatures[Number(btn.dataset.featureIndex)];
+                if (feature?.highlight_chains) {
+                    btn.addEventListener('click', () => this.onHighlightResidues(feature.highlight_chains));
+                }
+            });
             content.querySelectorAll('.feature-highlight-btn').forEach(btn => {
-                const feature = annotation.uniprot_features[Number(btn.dataset.featureIndex)];
+                const feature = otherFeatures[Number(btn.dataset.featureIndex)];
                 if (feature?.highlight_chains) {
                     btn.addEventListener('click', () => this.onHighlightResidues(feature.highlight_chains));
                 }
@@ -606,6 +634,56 @@ export class AnalyticsTab {
             btn.addEventListener('click', () => this.onHighlightResidues(data.highlight_chains));
             resultDiv.appendChild(btn);
         }
+    }
+
+    // Separate from loadMutationImpact() above - DDMut's own submit-then-
+    // poll workflow against an external server is itself slow (a real job,
+    // not an instant lookup), so this goes through the same job-submit +
+    // pollJobUntilDone pattern already used for Clustal Omega/BLAST rather
+    // than a synchronous fetch. Resolves pdbId/chain/resi/mutant the same
+    // way loadMutationImpact() does, for the same selected structure.
+    async loadDdgStability() {
+        const resultDiv = this.element.querySelector('#mutation-ddg-result');
+        const select = this.element.querySelector('#annotations-structure-select');
+        const pdbId = select.value || this.structures[0]?.pdbId;
+        const structure = this.structures.find(s => s.pdbId === pdbId);
+        const chain = structure?.chain;
+        const resi = Number.parseInt(this.element.querySelector('#mutation-resi-input').value, 10);
+        const mutant = this.element.querySelector('#mutation-mutant-input').value.trim();
+
+        if (!pdbId || !chain) {
+            resultDiv.textContent = 'Select a structure with a resolved chain first.';
+            return;
+        }
+        if (!Number.isInteger(resi) || !mutant) {
+            resultDiv.textContent = 'Enter a residue number and a mutant residue.';
+            return;
+        }
+
+        resultDiv.textContent = 'Predicting stability impact (this can take a minute)…';
+        try {
+            const submitted = await submitDdgStabilityJob(pdbId, chain, resi, mutant);
+            const job = await pollJobUntilDone(submitted.job_id, { intervalMs: 10000 });
+            if (job.status === 'failed') {
+                resultDiv.textContent = job.error || 'Failed to predict stability impact.';
+                return;
+            }
+            this.renderDdgStability(job.prediction);
+        } catch (err) {
+            console.error("Failed to predict stability impact:", err);
+            resultDiv.textContent = 'Failed to predict stability impact.';
+        }
+    }
+
+    renderDdgStability(prediction) {
+        const resultDiv = this.element.querySelector('#mutation-ddg-result');
+        const ddg = prediction?.prediction;
+        if (typeof ddg !== 'number') {
+            resultDiv.textContent = 'DDMut did not return a usable prediction.';
+            return;
+        }
+        const direction = ddg >= 0 ? 'stabilizing' : 'destabilizing';
+        resultDiv.textContent = `Predicted stability change (DDMut): ${ddg >= 0 ? '+' : ''}${ddg.toFixed(2)} kcal/mol (${direction})`;
     }
 
     renderReactomePathways(pathways) {

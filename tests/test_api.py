@@ -492,6 +492,110 @@ def test_chains_endpoint():
         assert data["chains"]["4RLT"]["citation"]["pubmed_id"] == 12345
 
 
+class TestScreenStructures:
+    """A "reference vs many" pairwise batch screen - distinct from the
+    N-way Mustang alignment cap, built on the standalone (Mustang-
+    independent) pairwise TM-align primitive."""
+
+    def test_returns_a_real_looking_ranked_table(self):
+        with patch(
+            "src.backend.coordinator.PDBManager.batch_download",
+            new_callable=AsyncMock,
+        ) as mock_download, patch(
+            "src.backend.api.calculate_pairwise_tm_score"
+        ) as mock_score:
+            mock_download.return_value = {
+                "1UBQ": (True, "ok", Path("ref.pdb")),
+                "4RLT": (True, "ok", Path("a.pdb")),
+                "3UG9": (True, "ok", Path("b.pdb")),
+            }
+            mock_score.side_effect = [
+                {"tm_score": 0.42, "rmsd": 3.1},
+                {"tm_score": 0.91, "rmsd": 0.8},
+            ]
+
+            response = client.post(
+                "/api/screen",
+                json={
+                    "reference_pdb_id": "1UBQ",
+                    "target_pdb_ids": ["4RLT", "3UG9"],
+                },
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["reference_pdb_id"] == "1UBQ"
+        # Ranked highest TM-score first, regardless of input order.
+        assert [r["pdb_id"] for r in body["results"]] == ["3UG9", "4RLT"]
+        assert body["results"][0]["tm_score"] == pytest.approx(0.91)
+        assert body["results"][0]["rmsd"] == pytest.approx(0.8)
+
+    def test_a_target_that_fails_to_score_is_listed_last_with_nulls(self):
+        with patch(
+            "src.backend.coordinator.PDBManager.batch_download",
+            new_callable=AsyncMock,
+        ) as mock_download, patch(
+            "src.backend.api.calculate_pairwise_tm_score"
+        ) as mock_score:
+            mock_download.return_value = {
+                "1UBQ": (True, "ok", Path("ref.pdb")),
+                "4RLT": (True, "ok", Path("a.pdb")),
+                "3UG9": (True, "ok", Path("b.pdb")),
+            }
+            mock_score.side_effect = [{"tm_score": 0.42, "rmsd": 3.1}, None]
+
+            response = client.post(
+                "/api/screen",
+                json={
+                    "reference_pdb_id": "1UBQ",
+                    "target_pdb_ids": ["4RLT", "3UG9"],
+                },
+            )
+
+        body = response.json()
+        assert body["results"][-1]["pdb_id"] == "3UG9"
+        assert body["results"][-1]["tm_score"] is None
+        assert body["results"][-1]["rmsd"] is None
+
+    def test_rejects_an_empty_target_list(self):
+        response = client.post(
+            "/api/screen", json={"reference_pdb_id": "1UBQ", "target_pdb_ids": []}
+        )
+        assert response.status_code == 400
+
+    def test_rejects_more_than_the_max_target_count(self):
+        response = client.post(
+            "/api/screen",
+            json={
+                "reference_pdb_id": "1UBQ",
+                "target_pdb_ids": [f"{i:04d}" for i in range(51)],
+            },
+        )
+        assert response.status_code == 400
+
+    def test_404s_when_a_structure_fails_to_download(self):
+        with patch(
+            "src.backend.coordinator.PDBManager.batch_download",
+            new_callable=AsyncMock,
+        ) as mock_download:
+            mock_download.return_value = {
+                "1UBQ": (True, "ok", Path("ref.pdb")),
+                "9ZZZ": (False, "not found", None),
+            }
+            response = client.post(
+                "/api/screen",
+                json={"reference_pdb_id": "1UBQ", "target_pdb_ids": ["9ZZZ"]},
+            )
+        assert response.status_code == 404
+
+    def test_rejects_an_unsafe_reference_id(self):
+        response = client.post(
+            "/api/screen",
+            json={"reference_pdb_id": "../etc", "target_pdb_ids": ["4RLT"]},
+        )
+        assert response.status_code == 400
+
+
 def test_chains_endpoint_tags_source_for_alphafold_id():
     """/api/chains must tag each structure with which database it came from,
     computed directly from the ID prefix (no network call needed)."""
@@ -2244,6 +2348,63 @@ def test_rmsd_csv_endpoint_404s_when_no_rmsd_matrix_stored():
         assert "No stored RMSD matrix" in response.json()["detail"]
 
 
+def test_pymol_script_endpoint_returns_a_real_script():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run:
+        mock_get_run.return_value = {"id": "run_123", "pdb_ids": ["4RLT", "3UG9"]}
+
+        response = client.get("/api/report/pymol-script?run_id=run_123")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/plain")
+        assert "attachment" in response.headers["content-disposition"]
+        assert "session_run_123.pml" in response.headers["content-disposition"]
+        assert "load alignment.pdb" in response.text
+        assert "chain A" in response.text
+        assert "chain B" in response.text
+        assert "4RLT" in response.text
+        assert "3UG9" in response.text
+
+
+def test_pymol_script_endpoint_404s_for_unknown_run():
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        response = client.get("/api/report/pymol-script?run_id=nope")
+        assert response.status_code == 404
+
+
+def test_pymol_script_endpoint_404s_when_run_has_no_structures():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run:
+        mock_get_run.return_value = {"id": "run_123", "pdb_ids": []}
+        response = client.get("/api/report/pymol-script?run_id=run_123")
+        assert response.status_code == 404
+        assert "No aligned structures" in response.json()["detail"]
+
+
+def test_pymol_script_endpoint_400s_on_invalid_run_id():
+    response = client.get("/api/report/pymol-script?run_id=../etc")
+    assert response.status_code == 400
+
+
+def test_chimerax_script_endpoint_returns_a_real_script():
+    with patch("src.backend.api.history_db.get_run") as mock_get_run:
+        mock_get_run.return_value = {"id": "run_123", "pdb_ids": ["4RLT", "3UG9"]}
+
+        response = client.get("/api/report/chimerax-script?run_id=run_123")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/plain")
+        assert "attachment" in response.headers["content-disposition"]
+        assert "session_run_123.cxc" in response.headers["content-disposition"]
+        assert "open alignment.pdb" in response.text
+        assert "/A" in response.text
+        assert "/B" in response.text
+
+
+def test_chimerax_script_endpoint_404s_for_unknown_run():
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        response = client.get("/api/report/chimerax-script?run_id=nope")
+        assert response.status_code == 404
+
+
 def test_heatmap_png_endpoint_returns_the_saved_file(tmp_path):
     heatmap = tmp_path / "rmsd_heatmap.png"
     heatmap.write_bytes(b"\x89PNG\r\n\x1a\ndummy png bytes")
@@ -2434,6 +2595,74 @@ def test_difference_distance_endpoint_404s_for_unknown_run():
 def test_difference_distance_endpoint_400s_on_invalid_pdb_id():
     response = client.get(
         "/api/difference-distance?run_id=run_123&pdb_id_a=../etc&pdb_id_b=structB"
+    )
+    assert response.status_code == 400
+
+
+def test_morph_endpoint_returns_a_real_multi_model_pdb_from_a_to_b(tmp_path):
+    _write_two_structure_alignment(
+        tmp_path,
+        [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]],
+        [[10.0, 0.0, 0.0], [15.0, 0.0, 0.0]],
+    )
+
+    with patch(
+        "src.backend.api._lookup_run_and_result_dir",
+        return_value=({"id": "run_123", "pdb_ids": ["structA", "structB"]}, tmp_path),
+    ):
+        response = client.get(
+            "/api/morph?run_id=run_123&pdb_id_a=structA&pdb_id_b=structB&num_frames=5"
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    body = response.text
+    assert body.count("MODEL ") == 5
+    assert body.count("ENDMDL") == 5
+    frames = body.split("MODEL")[1:]
+    # Frame 1 == structure A's own coordinates; last frame == structure B's.
+    assert "0.000   0.000   0.000" in frames[0]
+    assert "10.000   0.000   0.000" in frames[-1]
+
+
+def test_morph_endpoint_404s_when_no_shared_columns(tmp_path):
+    _write_two_structure_alignment(
+        tmp_path, [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]], [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]]
+    )
+    (tmp_path / "alignment.fasta").write_text(">structA\nAA--\n>structB\n--AA\n")
+
+    with patch(
+        "src.backend.api._lookup_run_and_result_dir",
+        return_value=({"id": "run_123", "pdb_ids": ["structA", "structB"]}, tmp_path),
+    ):
+        response = client.get(
+            "/api/morph?run_id=run_123&pdb_id_a=structA&pdb_id_b=structB"
+        )
+
+    assert response.status_code == 404
+
+
+def test_morph_endpoint_404s_for_unknown_run():
+    with patch("src.backend.api.history_db.get_run", return_value=None):
+        response = client.get(
+            "/api/morph?run_id=nope&pdb_id_a=structA&pdb_id_b=structB"
+        )
+        assert response.status_code == 404
+
+
+def test_morph_endpoint_400s_on_invalid_pdb_id():
+    response = client.get("/api/morph?run_id=run_123&pdb_id_a=../etc&pdb_id_b=structB")
+    assert response.status_code == 400
+
+
+def test_morph_endpoint_400s_when_num_frames_out_of_range():
+    response = client.get(
+        "/api/morph?run_id=run_123&pdb_id_a=structA&pdb_id_b=structB&num_frames=1"
+    )
+    assert response.status_code == 400
+
+    response = client.get(
+        "/api/morph?run_id=run_123&pdb_id_a=structA&pdb_id_b=structB&num_frames=999"
     )
     assert response.status_code == 400
 
@@ -2998,6 +3227,160 @@ async def test_blast_job_sweep_drops_old_finished_jobs_but_keeps_recent_and_runn
     api_module.blast_jobs.clear()
 
 
+def _write_test_pdb(tmp_path, chain="A", resi=6, resname="LYS"):
+    pdb_file = tmp_path / "structure.pdb"
+    pdb_file.write_text(
+        f"ATOM      1  CA  {resname} {chain}{resi:>4}      27.340  24.430   2.614  1.00  0.00           C\n"
+    )
+    return pdb_file
+
+
+class TestGetWildtypeResidueLetter:
+    def test_returns_the_real_residue_letter(self, tmp_path):
+        pdb_file = _write_test_pdb(tmp_path, chain="A", resi=6, resname="LYS")
+        result = api_module._get_wildtype_residue_letter(pdb_file, "A", 6)
+        assert result == "K"
+
+    def test_returns_none_for_a_chain_that_does_not_exist(self, tmp_path):
+        pdb_file = _write_test_pdb(tmp_path, chain="A", resi=6, resname="LYS")
+        result = api_module._get_wildtype_residue_letter(pdb_file, "B", 6)
+        assert result is None
+
+    def test_returns_none_for_a_residue_number_that_does_not_exist(self, tmp_path):
+        pdb_file = _write_test_pdb(tmp_path, chain="A", resi=6, resname="LYS")
+        result = api_module._get_wildtype_residue_letter(pdb_file, "A", 999)
+        assert result is None
+
+
+def test_ddmut_job_submission_returns_queued_and_the_real_mutation_code(tmp_path):
+    """Submitting a valid ddG job returns a job_id immediately with status
+    "queued" - it must not block on the slow DDMut submit/poll pipeline -
+    and reports the real wildtype+resi+mutant code it derived from the
+    structure's own file."""
+    api_module.ddmut_jobs.clear()
+    pdb_file = _write_test_pdb(tmp_path, chain="A", resi=6, resname="LYS")
+
+    with patch("src.backend.api._find_structure_pdb_path", return_value=pdb_file):
+        response = client.post(
+            "/api/jobs/ddg-stability",
+            json={"pdb_id": "1UBQ", "chain": "A", "resi": 6, "mutant": "A"},
+        )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "queued"
+    assert body["mutation"] == "K6A"
+    assert body["job_id"] in api_module.ddmut_jobs
+    api_module.ddmut_jobs.clear()
+
+
+def test_ddmut_job_submission_404s_when_structure_not_found():
+    with patch("src.backend.api._find_structure_pdb_path", return_value=None):
+        response = client.post(
+            "/api/jobs/ddg-stability",
+            json={"pdb_id": "1UBQ", "chain": "A", "resi": 6, "mutant": "A"},
+        )
+    assert response.status_code == 404
+
+
+def test_ddmut_job_submission_404s_when_residue_does_not_exist(tmp_path):
+    pdb_file = _write_test_pdb(tmp_path, chain="A", resi=6, resname="LYS")
+    with patch("src.backend.api._find_structure_pdb_path", return_value=pdb_file):
+        response = client.post(
+            "/api/jobs/ddg-stability",
+            json={"pdb_id": "1UBQ", "chain": "A", "resi": 999, "mutant": "A"},
+        )
+    assert response.status_code == 404
+
+
+def test_ddmut_job_submission_rejects_an_invalid_mutant_code(tmp_path):
+    pdb_file = _write_test_pdb(tmp_path)
+    with patch("src.backend.api._find_structure_pdb_path", return_value=pdb_file):
+        response = client.post(
+            "/api/jobs/ddg-stability",
+            json={"pdb_id": "1UBQ", "chain": "A", "resi": 6, "mutant": "42"},
+        )
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_ddmut_job_execution_completes_and_is_pollable():
+    """Directly exercises _execute_ddmut_job (the background task the
+    endpoint schedules) end-to-end, then confirms GET /api/jobs/{job_id} -
+    the same polling endpoint used for every other job type - surfaces the
+    real ddG prediction result."""
+    api_module.ddmut_jobs.clear()
+    job_id = "test-ddmut-job"
+    api_module.ddmut_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    with patch(
+        "src.backend.api.DDMutClient.predict_stability", new_callable=AsyncMock
+    ) as mock_predict:
+        mock_predict.return_value = {
+            "job_id": "ddmut-1",
+            "status": "DONE",
+            "prediction": 0.22,
+            "chain": "A",
+            "position": "6",
+            "wild-type": "LYS",
+            "mutant": "ALA",
+        }
+        await api_module._execute_ddmut_job(job_id, "PDB TEXT", "A", "K6A")
+
+    poll = client.get(f"/api/jobs/{job_id}")
+    assert poll.json()["status"] == "completed"
+    assert poll.json()["prediction"]["prediction"] == 0.22
+
+    api_module.ddmut_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_ddmut_job_execution_surfaces_pipeline_failure():
+    api_module.ddmut_jobs.clear()
+    job_id = "test-ddmut-job-fail"
+    api_module.ddmut_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    with patch(
+        "src.backend.api.DDMutClient.predict_stability", new_callable=AsyncMock
+    ) as mock_predict:
+        from src.backend.ddmut_client import DDMutError
+
+        mock_predict.side_effect = DDMutError(
+            "DDMut job ddmut-1 did not complete within 600s"
+        )
+        await api_module._execute_ddmut_job(job_id, "PDB TEXT", "A", "K6A")
+
+    poll = client.get(f"/api/jobs/{job_id}")
+    assert poll.json()["status"] == "failed"
+    assert "did not complete within 600s" in poll.json()["error"]
+
+    api_module.ddmut_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_ddmut_job_sweep_drops_old_finished_jobs_but_keeps_recent_and_running():
+    now = time.time()
+    api_module.ddmut_jobs.clear()
+    api_module.ddmut_jobs.update(
+        {
+            "old_completed": {"status": "completed", "finished_at": now - 10_000},
+            "recent_completed": {"status": "completed", "finished_at": now},
+            "still_running": {"status": "running", "created_at": now - 10_000},
+        }
+    )
+
+    with patch.object(api_module, "_JOB_TTL_SECONDS", 60), patch(
+        "asyncio.sleep", new_callable=AsyncMock
+    ) as mock_sleep:
+        mock_sleep.side_effect = [None, asyncio.CancelledError()]
+        with pytest.raises(asyncio.CancelledError):
+            await api_module._sweep_ddmut_jobs()
+
+    remaining = set(api_module.ddmut_jobs.keys())
+    assert remaining == {"recent_completed", "still_running"}
+    api_module.ddmut_jobs.clear()
+
+
 @pytest.mark.asyncio
 async def test_execute_alignment_job_marks_completed_on_success():
     """Mirrors test_execute_alignment_job_marks_failed_on_pipeline_error but
@@ -3302,6 +3685,22 @@ def test_submit_conservation_job_rejects_an_invalid_webhook_url():
         "/api/jobs/conservation",
         json={"sequence": "AAAAAAAAAAAAAAAAAAAA", "webhook_url": "not-a-url"},
     )
+    assert response.status_code == 400
+
+
+def test_submit_ddmut_job_rejects_an_invalid_webhook_url(tmp_path):
+    pdb_file = _write_test_pdb(tmp_path)
+    with patch("src.backend.api._find_structure_pdb_path", return_value=pdb_file):
+        response = client.post(
+            "/api/jobs/ddg-stability",
+            json={
+                "pdb_id": "1UBQ",
+                "chain": "A",
+                "resi": 6,
+                "mutant": "A",
+                "webhook_url": "not-a-url",
+            },
+        )
     assert response.status_code == 400
 
 

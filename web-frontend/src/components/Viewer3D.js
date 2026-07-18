@@ -1,4 +1,4 @@
-import { getAlignmentPdbUrl, getStructureFileUrl, fetchMutationTolerance } from '../api';
+import { getAlignmentPdbUrl, getStructureFileUrl, getMorphFramesUrl, fetchMutationTolerance, fetchAnnotations } from '../api';
 
 // Qualitative palette for N-structure identity coloring. Deliberately avoids
 // amber/#F59E0B (reserved for the residue-selection highlight) and the
@@ -23,7 +23,21 @@ const COLOR_SCHEME_OPTIONS = [
     { key: 'spectrum', label: 'Spectrum (N→C)' },
     { key: 'confidence', label: 'pLDDT Confidence' },
     { key: 'missense', label: 'Mutation tolerance (AlphaMissense)' },
+    { key: 'domain', label: 'InterPro domains' },
 ];
+
+// A distinct qualitative palette for domain coloring, deliberately
+// different from CHAIN_COLORS above (a structure's own chain-identity
+// color must stay visually distinguishable from "which domain a residue
+// falls in," since a domain-colored view still shows per-structure
+// context via the HUD, not via this palette) - and avoiding amber
+// (#F59E0B, reserved for the residue-selection highlight) for the same
+// reason CHAIN_COLORS does.
+const DOMAIN_COLORS = ['#38BDF8', '#F472B6', '#84CC16', '#A78BFA', '#FB7185', '#2DD4BF', '#FBBF24', '#60A5FA'];
+
+function colorForDomainIndex(i) {
+    return DOMAIN_COLORS[i % DOMAIN_COLORS.length];
+}
 
 // Shared "highlighted/selected" amber semantic (matches .row-selected) -
 // used for both residue-selection highlighting and the measurement tool's
@@ -53,6 +67,13 @@ export class Viewer3D {
     // atoms already in the loaded model, so it's a separate lazy fetch
     // rather than something _missenseColorPartFor can compute on its own.
     missenseScoresByPdbId = {};
+    // Keyed by pdbId -> { [authorResi]: colorHex }, one color per InterPro
+    // domain, flattened from that structure's own annotation fetch (see
+    // loadDomainColors) - unlike the existing "Highlight in 3D" button
+    // (one domain at a time, everything else ghosted), this colors every
+    // domain simultaneously and persistently, the same way pLDDT/missense
+    // color the whole structure by a per-residue value.
+    domainColorsByPdbId = {};
 
     // Click behavior branches on this - 'inspect' (default, informational
     // residue lookup) vs 'measure' (2-click atom-to-atom distance). Mutually
@@ -64,6 +85,10 @@ export class Viewer3D {
     measureHandles = [];
 
     isSpinning = false;
+
+    // Morph animation only makes sense for exactly 2 aligned structures in
+    // a real (non-Discover-mode single-structure) run - see loadMorph.
+    isMorphing = false;
 
     render() {
         const div = document.createElement('div');
@@ -111,6 +136,9 @@ export class Viewer3D {
                 <div class="flex justify-end gap-2 items-center">
                     <button id="btn-toggle-spin" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Auto-Spin" aria-label="Toggle Auto-Spin">
                         <span class="material-symbols-outlined text-[18px]">autorenew</span>
+                    </button>
+                    <button id="btn-toggle-morph" disabled class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-secondary" title="Play Morph Animation (2-structure alignments only)" aria-label="Play Morph Animation">
+                        <span class="material-symbols-outlined text-[18px]">movie</span>
                     </button>
                     <button id="btn-toggle-fullscreen" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Fullscreen" aria-label="Toggle Fullscreen">
                         <span class="material-symbols-outlined text-[18px]">fullscreen</span>
@@ -216,6 +244,14 @@ export class Viewer3D {
             this.toggleSpin();
         });
 
+        this.element.querySelector('#btn-toggle-morph').addEventListener('click', () => {
+            if (this.isMorphing) {
+                this.stopMorph();
+            } else if (this.structures.length === 2 && this.currentRunId) {
+                this.loadMorph(this.structures[0].pdbId, this.structures[1].pdbId);
+            }
+        });
+
         this.element.querySelector('#btn-toggle-fullscreen').addEventListener('click', () => {
             if (!document.fullscreenElement) {
                 this.element.requestFullscreen();
@@ -284,6 +320,10 @@ export class Viewer3D {
             // flight (a quick double-click) - don't clobber a newer choice.
             if (this.currentColorScheme !== 'missense') return;
         }
+        if (scheme === 'domain') {
+            await this.loadDomainColors();
+            if (this.currentColorScheme !== 'domain') return;
+        }
         this.resetCartoonStyles();
     }
 
@@ -308,6 +348,51 @@ export class Viewer3D {
         }));
     }
 
+    // Fetches this structure's own InterPro domain annotation (the same
+    // /api/annotations call AnalyticsTab's Annotations panel already uses)
+    // for every loaded structure that doesn't have a domain-color map
+    // cached yet, and flattens each domain's highlight_chains into one
+    // {[resi]: colorHex} lookup per structure. A structure with no
+    // resolvable UniProt accession or no InterPro coverage correctly gets
+    // an empty map back, not an error.
+    async loadDomainColors() {
+        const missing = this.structures.filter(s => !(s.pdbId in this.domainColorsByPdbId));
+        if (missing.length === 0) return;
+
+        await Promise.all(missing.map(async (structure) => {
+            try {
+                const chain = structure.sourceChain !== '?' ? structure.sourceChain : undefined;
+                const data = await fetchAnnotations(structure.pdbId, chain);
+                const domains = data.annotation?.domains || [];
+                const colorMap = {};
+                domains.forEach((domain, i) => {
+                    const residues = domain.highlight_chains?.[chain] || Object.values(domain.highlight_chains || {})[0];
+                    (residues || []).forEach(resi => {
+                        colorMap[resi] = colorForDomainIndex(i);
+                    });
+                });
+                this.domainColorsByPdbId[structure.pdbId] = colorMap;
+            } catch (err) {
+                console.error(`Failed to load domain annotation for ${structure.pdbId}:`, err);
+                this.domainColorsByPdbId[structure.pdbId] = {};
+            }
+        }));
+    }
+
+    // Same colorfunc shape as _missenseColorPartFor, keyed by domain
+    // membership instead of a numeric score - residues outside any known
+    // domain fall back to the same neutral gray missense uses for
+    // "no data at this residue."
+    _domainColorPartFor(structure) {
+        const colors = this.domainColorsByPdbId[structure.pdbId];
+        if (!colors || Object.keys(colors).length === 0) {
+            return { color: structure.color };
+        }
+        return {
+            colorfunc: (atom) => colors[atom.resi] ?? '#4B5563',
+        };
+    }
+
     // 3Dmol's own internal rAF-driven rotation - not a custom setInterval or
     // animation loop, so this costs nothing beyond what 3Dmol already does
     // per rendered frame.
@@ -318,6 +403,76 @@ export class Viewer3D {
         const btn = this.element.querySelector('#btn-toggle-spin');
         btn.classList.toggle('bg-surface-raised', this.isSpinning);
         btn.classList.toggle('text-primary', this.isSpinning);
+    }
+
+    // Only meaningful for a real 2-structure alignment (a currentRunId
+    // exists), not Discover-mode's single-structure view - see
+    // setupEventListeners' click handler above and _renderHUD, which calls
+    // this after every load so the button's enabled state stays in sync.
+    _updateMorphButtonUI() {
+        const btn = this.element?.querySelector('#btn-toggle-morph');
+        if (!btn) return;
+        btn.disabled = !(this.structures.length === 2 && this.currentRunId);
+        btn.classList.toggle('bg-surface-raised', this.isMorphing);
+        btn.classList.toggle('text-primary', this.isMorphing);
+    }
+
+    // A genuinely new capability for this viewer: 3Dmol has no morph
+    // primitive between two independently-numbered structures, only
+    // multi-model frame playback (addModelsAsFrames/animate) - the backend
+    // does the actual interpolation (see rmsd_calculator.get_morph_frames),
+    // this just plays the resulting synthetic multi-model PDB. Replaces
+    // the current superposition view for the duration of the animation;
+    // stopMorph() restores it.
+    async loadMorph(pdbIdA, pdbIdB, numFrames = 20) {
+        if (!this.viewer || !this.currentRunId) return;
+        try {
+            const response = await fetch(getMorphFramesUrl(this.currentRunId, pdbIdA, pdbIdB, numFrames));
+            if (!response.ok) {
+                throw new Error(`Failed to fetch morph frames: ${response.statusText}`);
+            }
+            const pdbData = await response.text();
+
+            this.viewer.clear();
+            this.viewer.addModelsAsFrames(pdbData, "pdb");
+            // Frames are a CA-only trace (no bonding info a real backbone
+            // would have), so cartoon/stick styling can't apply here -
+            // sphere makes the frame-to-frame motion legible without it.
+            this.viewer.setStyle({}, { sphere: { scale: 0.4, colorscheme: 'whiteCarbon' } });
+            this.viewer.zoomTo();
+            this.viewer.animate({ loop: "forward", interval: 80, reps: 0 });
+            this.isMorphing = true;
+            this._updateMorphButtonUI();
+        } catch (err) {
+            console.error("Error loading morph animation:", err);
+        }
+    }
+
+    stopMorph() {
+        if (!this.viewer) return;
+        this.viewer.stopAnimate();
+        this.isMorphing = false;
+        this._updateMorphButtonUI();
+        this._reloadSuperpositionView();
+    }
+
+    async _reloadSuperpositionView() {
+        if (!this.viewer || !this.currentRunId) return;
+        try {
+            const response = await fetch(getAlignmentPdbUrl(this.currentRunId));
+            if (!response.ok) return;
+            const pdbData = await response.text();
+
+            this.viewer.clear();
+            this.viewer.addModel(pdbData, "pdb");
+            this.structures.forEach(s => {
+                this.viewer.setStyle(this._selectorFor(s), this._styleFor(s));
+            });
+            this.viewer.zoomTo();
+            this.viewer.render();
+        } catch (err) {
+            console.error("Error restoring superposition view after morph:", err);
+        }
     }
 
     downloadScreenshot() {
@@ -425,6 +580,8 @@ export class Viewer3D {
                 return this._plddtColorPartFor(structure);
             case 'missense':
                 return this._missenseColorPartFor(structure);
+            case 'domain':
+                return this._domainColorPartFor(structure);
             case 'chain':
             default:
                 return { color: structure.color };
@@ -469,6 +626,7 @@ export class Viewer3D {
     _renderHUD() {
         const legend = this.element.querySelector('#hud-structure-legend');
         const rmsdBox = this.element.querySelector('#hud-rmsd-container');
+        this._updateMorphButtonUI();
 
         legend.innerHTML = this.structures.map(s => `
             <div class="flex items-center gap-2">
@@ -633,6 +791,7 @@ export class Viewer3D {
         if (rmsdBox) rmsdBox.innerHTML = `
             <span class="font-label-sm text-label-sm text-secondary uppercase">Single Structure</span>
         `;
+        this._updateMorphButtonUI();
     }
 
     // AlphaFold ("AF-") and ESM Atlas ("ESM-") structures encode per-residue
@@ -892,6 +1051,7 @@ export class Viewer3D {
         this.currentStyle = 'cartoon';
         this.currentColorScheme = 'chain';
         this.missenseScoresByPdbId = {};
+        this.domainColorsByPdbId = {};
         this.interactionMode = 'inspect';
         this.measurePoints = [];
         this.measureHandles = [];
@@ -900,6 +1060,10 @@ export class Viewer3D {
             this.viewer.spin(false);
         }
         this.isSpinning = false;
+        if (this.isMorphing && this.viewer) {
+            this.viewer.stopAnimate();
+        }
+        this.isMorphing = false;
         if (this.viewer) {
             this.viewer.clear();
             this.viewer.render();
@@ -909,6 +1073,7 @@ export class Viewer3D {
             this._renderEmptyHUD();
             this._updateStylePickerUI();
             this._updateColorSchemePopoverUI();
+            this._updateMorphButtonUI();
             const spinBtn = this.element.querySelector('#btn-toggle-spin');
             spinBtn.classList.remove('bg-surface-raised', 'text-primary');
             const measureBtn = this.element.querySelector('#btn-toggle-measure');

@@ -278,6 +278,7 @@ class BlastClient:
                         "conservation": None,
                         "num_homologs": len(observed),
                         "most_common": None,
+                        "residue_counts": {},
                     }
                 )
                 continue
@@ -292,6 +293,12 @@ class BlastClient:
                     "conservation": conservation,
                     "num_homologs": len(observed),
                     "most_common": counts.most_common(1)[0][0],
+                    # Full per-position amino-acid distribution, kept
+                    # alongside the collapsed "most_common" value so a
+                    # sequence-logo view can render every observed residue
+                    # at a position (height-scaled by frequency), not just
+                    # the plurality winner.
+                    "residue_counts": dict(counts),
                 }
             )
         return profile

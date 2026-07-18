@@ -39,6 +39,7 @@ from src.backend.validation_service import fetch_pdbe_validation
 from src.backend.foldseek_client import FoldseekClient, FoldseekError
 from src.backend.clustalo_client import ClustalOmegaClient
 from src.backend.blast_client import BlastClient
+from src.backend.ddmut_client import DDMutClient
 from src.backend.esmfold_client import fold_sequence, ESMFoldError, MAX_SEQUENCE_LENGTH
 from src.backend.database import HistoryDatabase
 from src.backend.ligand_analyzer import LigandAnalyzer
@@ -50,7 +51,9 @@ from src.backend.result_manager import ResultManager
 from src.backend.rmsd_calculator import (
     get_structure_contact_map,
     get_difference_distance_matrix,
+    get_morph_frames,
 )
+from src.backend.tm_score_calculator import calculate_pairwise_tm_score
 
 logger = get_logger()
 
@@ -77,11 +80,13 @@ async def lifespan(app: FastAPI):
     discovery_sweep_task = asyncio.create_task(_sweep_discovery_jobs())
     clustalo_sweep_task = asyncio.create_task(_sweep_clustalo_jobs())
     blast_sweep_task = asyncio.create_task(_sweep_blast_jobs())
+    ddmut_sweep_task = asyncio.create_task(_sweep_ddmut_jobs())
     yield
     sweep_task.cancel()
     discovery_sweep_task.cancel()
     clustalo_sweep_task.cancel()
     blast_sweep_task.cancel()
+    ddmut_sweep_task.cancel()
 
 
 # Initialize FastAPI App
@@ -242,6 +247,7 @@ app.mount("/raw", StaticFiles(directory=str(raw_dir)), name="raw")
 _SAFE_PATH_SEGMENT = re.compile(r"^[A-Za-z0-9_-]+$")
 _TEXT_PLAIN = "text/plain"
 _ALIGNMENT_PDB_FILENAME = "alignment.pdb"
+_ALIGNMENT_FASTA_FILENAME = "alignment.fasta"
 
 
 def _safe_segment(value: Optional[str], field_name: str) -> Optional[str]:
@@ -267,7 +273,7 @@ rmsd_analyzer = RMSDAnalyzer(config)
 ramachandran_service = RamachandranService()
 
 
-@app.get("/health")
+@app.get("/health", tags=["System"])
 def health_check():
     """Health check endpoint to verify backend service is running."""
     coordinator = AnalysisCoordinator(config)
@@ -311,7 +317,7 @@ class SettingsUpdate(BaseModel):
     viewer_default_style: str = "cartoon"
 
 
-@app.get("/api/settings")
+@app.get("/api/settings", tags=["System"])
 def get_settings():
     """Read the runtime-editable subset of the pipeline config. There's no
     settings page anywhere in the SPA today (the Streamlit app's
@@ -322,6 +328,7 @@ def get_settings():
 
 @app.post(
     "/api/settings",
+    tags=["System"],
     responses={
         400: {"description": "Invalid settings"},
         500: {"description": "Failed to persist settings to config.yaml"},
@@ -362,7 +369,7 @@ def update_settings(update: SettingsUpdate):
     return _current_settings()
 
 
-@app.post("/api/settings/reset")
+@app.post("/api/settings/reset", tags=["System"])
 def reset_settings():
     """Restore the same hardcoded defaults Streamlit's "Restore Defaults"
     button uses (pages/3_Settings.py's DEFAULT_SETTINGS)."""
@@ -370,7 +377,7 @@ def reset_settings():
     return update_settings(defaults)
 
 
-@app.get("/api/suggest")
+@app.get("/api/suggest", tags=["Structures"])
 def get_rcsb_suggestions(q: Annotated[str, Query(..., min_length=1)]):
     """
     Fetch matching PDB IDs from RCSB Suggest API.
@@ -404,6 +411,7 @@ def get_rcsb_suggestions(q: Annotated[str, Query(..., min_length=1)]):
 
 @app.post(
     "/api/chains",
+    tags=["Structures"],
     responses={
         400: {
             "description": "Invalid pdb_id/session_id, an empty pdb_ids list, or a structure failed to download"
@@ -468,6 +476,7 @@ async def analyze_chains(
 
 @app.post(
     "/api/upload",
+    tags=["Structures"],
     responses={
         400: {
             "description": "Invalid session_id, an unsupported file extension, or the uploaded file failed to parse as a real structure"
@@ -520,6 +529,7 @@ async def upload_structure(
 
 @app.post(
     "/api/fold-sequence",
+    tags=["Structures"],
     responses={
         400: {
             "description": "Invalid session_id, or an invalid/too-long protein sequence"
@@ -876,6 +886,7 @@ async def _execute_alignment_job(
 
 @app.post(
     "/api/jobs/align",
+    tags=["Jobs"],
     status_code=202,
     responses={
         400: {"description": "Fewer than 2 PDB IDs, or an invalid pdb_id/session_id"}
@@ -924,6 +935,7 @@ async def submit_alignment_job(
 
 @app.get(
     "/api/jobs/{job_id}",
+    tags=["Jobs"],
     responses={
         404: {"description": "No alignment or discovery job exists with this job_id"}
     },
@@ -931,14 +943,16 @@ async def submit_alignment_job(
 def get_alignment_job(job_id: str):
     """
     Poll the status/result of a submitted job (alignment, discovery,
-    Clustal Omega, or BLAST conservation - job IDs are unique uuid4 hex
-    strings, so one polling endpoint covers all of them).
+    Clustal Omega, BLAST conservation, or DDMut ddG stability - job IDs
+    are unique uuid4 hex strings, so one polling endpoint covers all of
+    them).
     """
     job = (
         alignment_jobs.get(job_id)
         or discovery_jobs.get(job_id)
         or clustalo_jobs.get(job_id)
         or blast_jobs.get(job_id)
+        or ddmut_jobs.get(job_id)
     )
     if job is None:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found.")
@@ -1018,6 +1032,7 @@ async def _execute_discovery_job(
 
 @app.post(
     "/api/jobs/discover",
+    tags=["Jobs"],
     status_code=202,
     responses={
         400: {
@@ -1136,6 +1151,7 @@ async def _execute_clustalo_job(
 
 @app.post(
     "/api/jobs/clustalo",
+    tags=["Jobs"],
     status_code=202,
     responses={
         400: {"description": "Fewer than 2 sequences, or an invalid sequence id"}
@@ -1233,6 +1249,7 @@ async def _execute_blast_job(
 
 @app.post(
     "/api/jobs/conservation",
+    tags=["Jobs"],
     status_code=202,
     responses={
         400: {
@@ -1273,8 +1290,171 @@ async def submit_conservation_job(
     return {"job_id": job_id, "status": "queued"}
 
 
+# In-memory job registry for the async DDMut ddG-stability-prediction
+# pipeline (see ddmut_client.py) - the fifth job type, mirroring
+# clustalo_jobs/blast_jobs above (pure async network I/O, no
+# asyncio.to_thread needed). Kept separate from /api/mutation-impact's
+# fast, synchronous ClinVar/AlphaMissense lookups since DDMut's own
+# submit-then-poll workflow against an external server is itself slow.
+ddmut_jobs: Dict[str, Dict[str, Any]] = {}
+
+
+async def _sweep_ddmut_jobs():
+    """Periodically drop finished DDMut jobs older than _JOB_TTL_SECONDS."""
+    while True:
+        await asyncio.sleep(_JOB_SWEEP_INTERVAL_SECONDS)
+        now = time.time()
+        stale_ids = [
+            jid
+            for jid, job in ddmut_jobs.items()
+            if job.get("status") in ("completed", "failed")
+            and now - job.get("finished_at", now) > _JOB_TTL_SECONDS
+        ]
+        for jid in stale_ids:
+            ddmut_jobs.pop(jid, None)
+
+
+def _get_wildtype_residue_letter(
+    pdb_path: Path, chain: str, resi: int
+) -> Optional[str]:
+    """Reads the real residue at (chain, resi) directly from the
+    structure's own file (first model only) - unlike /api/mutation-
+    impact's wildtype_residue (resolved via a UniProt sequence lookup),
+    this works for any structure regardless of whether a UniProt
+    accession resolves, since DDMut operates on the structure's own
+    author numbering, not a UniProt position."""
+    from Bio.PDB import PDBParser
+    from Bio.PDB.Polypeptide import protein_letters_3to1
+
+    parser = PDBParser(QUIET=True)
+    structure = parser.get_structure("structure", str(pdb_path))
+    try:
+        model = next(iter(structure))
+    except StopIteration:
+        return None
+    for c in model:
+        if c.id != chain:
+            continue
+        for residue in c:
+            if residue.id[1] == resi:
+                return protein_letters_3to1.get(residue.resname)
+    return None
+
+
+async def _run_ddmut_pipeline(
+    pdb_file_content: str, chain: str, mutation: str
+) -> Dict[str, Any]:
+    client = DDMutClient()
+    prediction = await client.predict_stability(pdb_file_content, chain, mutation)
+    return {"prediction": prediction}
+
+
+async def _execute_ddmut_job(
+    job_id: str,
+    pdb_file_content: str,
+    chain: str,
+    mutation: str,
+    webhook_url: Optional[str] = None,
+):
+    ddmut_jobs[job_id]["status"] = "running"
+    created_at = ddmut_jobs[job_id].get("created_at", time.time())
+    try:
+        outcome = await _run_ddmut_pipeline(pdb_file_content, chain, mutation)
+        ddmut_jobs[job_id] = {
+            "status": "completed",
+            "created_at": created_at,
+            "finished_at": time.time(),
+            **outcome,
+        }
+    except Exception as e:
+        ddmut_jobs[job_id] = {
+            "status": "failed",
+            "created_at": created_at,
+            "finished_at": time.time(),
+            "error": str(e),
+        }
+    if webhook_url:
+        await _notify_webhook(
+            webhook_url,
+            {"job_id": job_id, "status": ddmut_jobs[job_id]["status"], "run_id": None},
+        )
+
+
+@app.post(
+    "/api/jobs/ddg-stability",
+    tags=["Jobs"],
+    status_code=202,
+    responses={
+        400: {"description": "Invalid pdb_id/chain/resi/mutant"},
+        404: {
+            "description": "Structure PDB not found, or the given residue doesn't exist on that chain"
+        },
+    },
+)
+async def submit_ddmut_job(
+    pdb_id: Annotated[str, Body(..., embed=True)],
+    chain: Annotated[str, Body(..., embed=True)],
+    resi: Annotated[int, Body(..., embed=True)],
+    mutant: Annotated[str, Body(..., embed=True)],
+    run_id: Annotated[Optional[str], Body(embed=True)] = None,
+    session_id: Annotated[Optional[str], Body(embed=True)] = None,
+    webhook_url: Annotated[Optional[str], Body(embed=True)] = None,
+):
+    """
+    Submit a real mutation-stability (ddG) prediction as a background job
+    via DDMut (see ddmut_client.py) - a separate job type from the
+    existing four, since DDMut's own submit-then-poll workflow against an
+    external server is itself slow, unlike /api/mutation-impact's fast,
+    synchronous ClinVar/AlphaMissense lookups. `resi`/`chain` are the
+    structure's own author numbering (matching /api/mutation-impact's
+    convention); the wildtype residue is read directly from the
+    structure's file, not resolved via UniProt, so this works for any
+    structure source. Returns immediately with a job_id; poll
+    GET /api/jobs/{job_id} for status - or, if webhook_url is given,
+    receive a POST there instead ({job_id, status, run_id: null}) once
+    the job finishes.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(chain, "chain")
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+    if not _SAFE_AMINO_ACID.match(mutant or ""):
+        raise HTTPException(
+            status_code=400, detail=f"Invalid mutant residue code: {mutant!r}"
+        )
+
+    pdb_path = _find_structure_pdb_path(pdb_id, run_id, session_id)
+    if not pdb_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Structure PDB for {pdb_id} not found in active workspace.",
+        )
+
+    wildtype = _get_wildtype_residue_letter(pdb_path, chain, resi)
+    if not wildtype:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Could not resolve residue {resi} on chain {chain} of {pdb_id}.",
+        )
+
+    mutation_code = f"{wildtype}{resi}{mutant.upper()}"
+    webhook_url = await _validate_webhook_url(webhook_url)
+
+    job_id = uuid.uuid4().hex
+    ddmut_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    _spawn_background_task(
+        _execute_ddmut_job(
+            job_id, pdb_path.read_text(), chain, mutation_code, webhook_url
+        )
+    )
+
+    return {"job_id": job_id, "status": "queued", "mutation": mutation_code}
+
+
 @app.post(
     "/api/clusters",
+    tags=["Comparison"],
     responses={
         400: {"description": "Malformed rmsd_df payload or fewer than 2 structures"}
     },
@@ -1326,6 +1506,7 @@ def get_clusters(
 
 @app.get(
     "/api/comparison/runs",
+    tags=["Comparison"],
     responses={400: {"description": "Invalid exclude_run_id or session_id"}},
 )
 def list_comparison_runs(
@@ -1358,6 +1539,7 @@ class RunTrendRequest(BaseModel):
 
 @app.post(
     "/api/runs/trend",
+    tags=["Comparison"],
     responses={
         400: {
             "description": "Invalid session_id, or no run_id resolved to a real RMSD matrix"
@@ -1391,6 +1573,7 @@ def get_runs_trend(
 
 @app.get(
     "/api/comparison",
+    tags=["Comparison"],
     responses={
         400: {
             "description": "Invalid run_id/session_id, or no overlapping proteins between the two runs"
@@ -1443,8 +1626,110 @@ def compare_runs(
     }
 
 
+# A "reference vs many" batch screen is a genuinely different
+# computational shape than raising the N-way Mustang-alignment cap
+# (core.max_proteins) - it's embarrassingly parallel pairwise
+# comparisons, not one N-way superposition, so it gets its own,
+# separate, more generous limit rather than reusing that config value.
+#
+# Rate-limiter decision (this route deliberately does NOT go through
+# rate_limit_job_submissions/_job_rate_limit_max above): a screen is one
+# synchronous POST, not N separate job submissions - no per-target job_id
+# is ever created, so it can't be counted as N against that per-path
+# submission limiter without changing what that limiter measures for
+# every other route. _MAX_SCREEN_TARGETS is this route's own abuse guard
+# instead, capping the pairwise-comparison and download fan-out a single
+# request can trigger. Same reasoning applies to any future CLI-submitted
+# batch: one CLI invocation of this route is still one request here.
+_MAX_SCREEN_TARGETS = 50
+
+
+@app.post(
+    "/api/screen",
+    tags=["Comparison"],
+    responses={
+        400: {
+            "description": "Invalid reference_pdb_id/target_pdb_ids, or too many targets"
+        },
+        404: {"description": "One or more structures could not be downloaded"},
+    },
+)
+async def screen_structures(
+    reference_pdb_id: Annotated[str, Body(..., embed=True)],
+    target_pdb_ids: Annotated[List[str], Body(..., embed=True)],
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    A "reference vs many" pairwise structural screen: the reference
+    structure diffed independently against every structure in
+    target_pdb_ids, using the same Mustang-independent standalone
+    TM-align primitive the RMSD Matrix sub-tab's own pairwise TM-score
+    already uses (see tm_score_calculator.calculate_pairwise_tm_score) -
+    not a full N-way Mustang alignment, which doesn't scale the same way
+    (that's why this is a distinct mode, not a raised max_proteins cap).
+    Returns a ranked table, highest TM-score first; a target that fails
+    to score (e.g. no resolvable residues) is listed last with null
+    values rather than dropped silently.
+    """
+    _safe_segment(reference_pdb_id, "reference_pdb_id")
+    _safe_segment(session_id, "session_id")
+    if not target_pdb_ids:
+        raise HTTPException(status_code=400, detail="target_pdb_ids cannot be empty")
+    if len(target_pdb_ids) > _MAX_SCREEN_TARGETS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"At most {_MAX_SCREEN_TARGETS} target structures are allowed per screen.",
+        )
+    for pid in target_pdb_ids:
+        _safe_segment(pid, "target_pdb_id")
+
+    coordinator = AnalysisCoordinator(config, session_id=session_id)
+    all_ids = [reference_pdb_id] + [
+        tid for tid in target_pdb_ids if tid != reference_pdb_id
+    ]
+    download_results = await coordinator.pdb_manager.batch_download(all_ids)
+
+    failed = [
+        pid for pid, (success, msg, path) in download_results.items() if not success
+    ]
+    if failed:
+        raise HTTPException(
+            status_code=404, detail=f"Failed to fetch: {', '.join(failed)}"
+        )
+
+    reference_path = download_results[reference_pdb_id][2]
+
+    async def _score_target(target_id: str):
+        target_path = download_results[target_id][2]
+        # calculate_pairwise_tm_score does synchronous Bio.PDB parsing +
+        # tmtools' C-extension work (CPU-bound) - offloaded the same way
+        # analyze_structure() is elsewhere in this file, so N concurrent
+        # scores don't stall the event loop for every other request.
+        result = await asyncio.to_thread(
+            calculate_pairwise_tm_score, reference_path, target_path
+        )
+        return target_id, result
+
+    scored = await asyncio.gather(
+        *[_score_target(tid) for tid in target_pdb_ids if tid != reference_pdb_id]
+    )
+
+    results = [
+        {
+            "pdb_id": target_id,
+            "tm_score": result["tm_score"] if result else None,
+            "rmsd": result["rmsd"] if result else None,
+        }
+        for target_id, result in scored
+    ]
+    results.sort(key=lambda r: (r["tm_score"] is None, -(r["tm_score"] or 0)))
+
+    return sanitize_for_json({"reference_pdb_id": reference_pdb_id, "results": results})
+
+
 @app.get(
     "/api/contact-map",
+    tags=["Comparison"],
     responses={
         400: {"description": "Invalid run_id/pdb_id/session_id"},
         404: {"description": "Run not found, or no contact map for this pdb_id"},
@@ -1482,6 +1767,7 @@ def get_contact_map(
 
 @app.get(
     "/api/difference-distance",
+    tags=["Comparison"],
     responses={
         400: {"description": "Invalid run_id/pdb_id_a/pdb_id_b/session_id"},
         404: {
@@ -1504,7 +1790,7 @@ def get_difference_distance(
 
     run, res_dir = _lookup_run_and_result_dir(run_id, session_id)
     alignment_pdb = res_dir / _ALIGNMENT_PDB_FILENAME
-    alignment_fasta = res_dir / "alignment.fasta"
+    alignment_fasta = res_dir / _ALIGNMENT_FASTA_FILENAME
     if (
         not alignment_pdb.exists()
         or not alignment_fasta.exists()
@@ -1525,8 +1811,75 @@ def get_difference_distance(
     return sanitize_for_json(result)
 
 
+# Capped well above what a smooth morph needs (20-40 typically looks
+# fluid) - mainly a guard against a client requesting an absurd frame
+# count and generating a huge synthetic PDB text blob server-side.
+_MAX_MORPH_FRAMES = 200
+
+
+@app.get(
+    "/api/morph",
+    tags=["Comparison"],
+    responses={
+        400: {
+            "description": "Invalid run_id/pdb_id_a/pdb_id_b/session_id, or num_frames out of range"
+        },
+        404: {
+            "description": "Run not found, or no shared aligned columns between these two structures"
+        },
+    },
+)
+def get_morph(
+    run_id: Annotated[str, Query(...)],
+    pdb_id_a: Annotated[str, Query(...)],
+    pdb_id_b: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
+    num_frames: Annotated[int, Query()] = 20,
+):
+    """A synthetic multi-model PDB morphing structure A into structure B
+    over their commonly-aligned columns - see
+    rmsd_calculator.get_morph_frames(). Returned as plain PDB text (not an
+    attachment download) so the frontend can feed it straight into
+    3Dmol's addModelsAsFrames, the same way it already fetches
+    alignment.pdb."""
+    _safe_segment(run_id, "run_id")
+    _safe_segment(pdb_id_a, "pdb_id_a")
+    _safe_segment(pdb_id_b, "pdb_id_b")
+    _safe_segment(session_id, "session_id")
+    if num_frames < 2 or num_frames > _MAX_MORPH_FRAMES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"num_frames must be between 2 and {_MAX_MORPH_FRAMES}.",
+        )
+
+    run, res_dir = _lookup_run_and_result_dir(run_id, session_id)
+    alignment_pdb = res_dir / _ALIGNMENT_PDB_FILENAME
+    alignment_fasta = res_dir / _ALIGNMENT_FASTA_FILENAME
+    if (
+        not alignment_pdb.exists()
+        or not alignment_fasta.exists()
+        or not run.get("pdb_ids")
+    ):
+        raise HTTPException(
+            status_code=404, detail=f"No alignment output found for run {run_id}."
+        )
+
+    from fastapi.responses import PlainTextResponse
+
+    result = get_morph_frames(
+        alignment_pdb, alignment_fasta, run["pdb_ids"], pdb_id_a, pdb_id_b, num_frames
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No shared aligned columns between {pdb_id_a} and {pdb_id_b} in run {run_id}.",
+        )
+    return PlainTextResponse(content=result, media_type=_TEXT_PLAIN)
+
+
 @app.get(
     "/api/ligands",
+    tags=["Ligands & Interfaces"],
     responses={
         400: {"description": "Invalid pdb_id, run_id, or session_id"},
         404: {"description": "Structure PDB not found in the active workspace"},
@@ -1557,6 +1910,7 @@ def get_ligands(
 
 @app.get(
     "/api/ligand-info",
+    tags=["Ligands & Interfaces"],
     responses={400: {"description": "Invalid ligand_code"}},
 )
 async def get_ligand_info(ligand_code: Annotated[str, Query(...)]):
@@ -1576,6 +1930,7 @@ async def get_ligand_info(ligand_code: Annotated[str, Query(...)]):
 
 @app.get(
     "/api/pockets",
+    tags=["Ligands & Interfaces"],
     responses={
         400: {"description": "Invalid pdb_id, run_id, or session_id"},
         404: {"description": "Structure PDB not found in the active workspace"},
@@ -1613,6 +1968,7 @@ def get_pockets(
 
 @app.get(
     "/api/structure-file",
+    tags=["Structures"],
     responses={
         400: {"description": "Invalid pdb_id, run_id, or session_id"},
         404: {"description": "Structure PDB not found in the active workspace"},
@@ -1687,6 +2043,7 @@ def _find_structure_pdb_path(
 
 @app.get(
     "/api/interactions",
+    tags=["Ligands & Interfaces"],
     responses={
         400: {"description": "Invalid pdb_id, ligand_id, run_id, or session_id"},
         404: {"description": "Structure PDB not found in the active workspace"},
@@ -1759,6 +2116,7 @@ def _add_aligned_resi(
 
 @app.get(
     "/api/interface",
+    tags=["Ligands & Interfaces"],
     responses={
         400: {"description": "Invalid pdb_id, chain_a, chain_b, run_id, or session_id"},
         404: {"description": "Structure PDB not found in the active workspace"},
@@ -1795,6 +2153,7 @@ def get_interface(
 
 @app.get(
     "/api/annotations",
+    tags=["Annotations"],
     responses={400: {"description": "Invalid pdb_id or chain"}},
 )
 async def get_annotations(
@@ -1824,6 +2183,7 @@ _SAFE_AMINO_ACID = re.compile(r"^[A-Za-z]$")
 
 @app.get(
     "/api/mutation-impact",
+    tags=["Annotations"],
     responses={
         400: {"description": "Invalid pdb_id/chain/mutant"},
         404: {"description": "Could not resolve this residue to a UniProt position"},
@@ -1924,6 +2284,7 @@ async def get_mutation_impact(
 
 @app.get(
     "/api/mutation-tolerance",
+    tags=["Annotations"],
     responses={400: {"description": "Invalid pdb_id or chain"}},
 )
 async def get_mutation_tolerance(
@@ -1955,6 +2316,7 @@ async def get_mutation_tolerance(
 
 @app.get(
     "/api/pae",
+    tags=["Annotations"],
     responses={
         400: {"description": "Invalid pdb_id"},
         404: {"description": "No PAE data available for this structure"},
@@ -1981,6 +2343,7 @@ async def get_pae(pdb_id: Annotated[str, Query(...)]):
 
 @app.get(
     "/api/cath",
+    tags=["Structures"],
     responses={400: {"description": "Invalid pdb_id"}},
 )
 async def get_cath_classification(pdb_id: Annotated[str, Query(...)]):
@@ -2001,6 +2364,7 @@ async def get_cath_classification(pdb_id: Annotated[str, Query(...)]):
 
 @app.get(
     "/api/assembly",
+    tags=["Structures"],
     responses={400: {"description": "Invalid pdb_id"}},
 )
 async def get_assembly_info(pdb_id: Annotated[str, Query(...)]):
@@ -2020,6 +2384,7 @@ async def get_assembly_info(pdb_id: Annotated[str, Query(...)]):
 
 @app.get(
     "/api/validation",
+    tags=["Structures"],
     responses={400: {"description": "Invalid pdb_id"}},
 )
 async def get_validation(pdb_id: Annotated[str, Query(...)]):
@@ -2044,6 +2409,7 @@ async def get_validation(pdb_id: Annotated[str, Query(...)]):
 
 @app.get(
     "/api/qc",
+    tags=["Structures"],
     responses={
         400: {"description": "Invalid pdb_id/run_id/session_id"},
         404: {"description": "Structure not found in the active workspace"},
@@ -2100,7 +2466,7 @@ async def get_qc(
     )
 
 
-@app.get("/api/memory")
+@app.get("/api/memory", tags=["System"])
 def get_memory_stats():
     """
     Get backend process memory footprint (RSS) in MB.
@@ -2116,7 +2482,7 @@ def get_memory_stats():
         return {"ram_mb": 150.0, "status": "error", "message": str(e)}
 
 
-@app.post("/api/memory/clear")
+@app.post("/api/memory/clear", tags=["System"])
 def clear_memory():
     """
     Trigger garbage collection to release unused memory.
@@ -2152,7 +2518,7 @@ def _lighten_run_for_list(run: Dict[str, Any]) -> Dict[str, Any]:
     return lightened
 
 
-@app.get("/api/history")
+@app.get("/api/history", tags=["History"])
 def get_history(
     session_id: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 20,
@@ -2183,6 +2549,7 @@ def get_history(
 
 @app.delete(
     "/api/history/{run_id}",
+    tags=["History"],
     responses={
         400: {"description": "Invalid run_id"},
         403: {"description": "Run belongs to a different session"},
@@ -2225,6 +2592,7 @@ class RunNotesUpdate(BaseModel):
 
 @app.put(
     "/api/history/{run_id}/notes",
+    tags=["History"],
     responses={
         400: {"description": "Invalid run_id"},
         403: {"description": "Run belongs to a different session"},
@@ -2260,7 +2628,7 @@ def update_run_notes(
     return {"run_id": run_id, "notes": body.notes, "tags": body.tags}
 
 
-@app.delete("/api/history")
+@app.delete("/api/history", tags=["History"])
 def clear_history(session_id: Annotated[Optional[str], Query()] = None):
     """
     Clear run history. When session_id is given, scopes the wipe to that
@@ -2284,6 +2652,7 @@ def clear_history(session_id: Annotated[Optional[str], Query()] = None):
 
 @app.get(
     "/api/runs/{run_id}",
+    tags=["History"],
     responses={
         400: {"description": "Invalid run_id"},
         404: {"description": "Run not found in the history database"},
@@ -2308,7 +2677,11 @@ def get_run_by_id(run_id: str):
     return sanitize_for_json(run)
 
 
-@app.get("/api/stats", responses={400: {"description": "Invalid session_id"}})
+@app.get(
+    "/api/stats",
+    tags=["History"],
+    responses={400: {"description": "Invalid session_id"}},
+)
 def get_aggregate_stats(session_id: Annotated[Optional[str], Query()] = None):
     """
     Dashboard-level aggregate totals across all runs (total run count,
@@ -2320,6 +2693,7 @@ def get_aggregate_stats(session_id: Annotated[Optional[str], Query()] = None):
 
 @app.get(
     "/api/sequence",
+    tags=["Sequence"],
     responses={
         400: {"description": "Invalid run_id or session_id"},
         404: {"description": "Alignment FASTA not found for this run"},
@@ -2353,7 +2727,7 @@ def get_sequence(
         res_dir = res_dir / session_id
     res_dir = res_dir / run_id
 
-    fasta_path = res_dir / "alignment.fasta"
+    fasta_path = res_dir / _ALIGNMENT_FASTA_FILENAME
     if not fasta_path.exists():
         raise HTTPException(
             status_code=404, detail=f"Alignment FASTA not found for run {run_id}"
@@ -2388,6 +2762,7 @@ def get_sequence(
 
 @app.get(
     "/api/report",
+    tags=["Reports"],
     responses={
         400: {"description": "Invalid run_id or session_id"},
         404: {"description": "Run not found in the history database"},
@@ -2492,6 +2867,7 @@ def get_pdf_report(
 
 @app.get(
     "/api/notebook",
+    tags=["Reports"],
     responses={
         400: {"description": "Invalid run_id or session_id"},
         404: {"description": "Run not found in the history database"},
@@ -2564,6 +2940,7 @@ def get_lab_notebook(
 
 @app.get(
     "/api/notebook/ipynb",
+    tags=["Reports"],
     responses={
         400: {"description": "Invalid run_id or session_id"},
         404: {"description": "Run not found in the history database"},
@@ -2672,6 +3049,7 @@ def _reconstruct_rmsd_df(run: Dict[str, Any]) -> Optional[pd.DataFrame]:
 
 @app.get(
     "/api/report/rmsd-csv",
+    tags=["Reports"],
     responses={
         400: {"description": "Invalid run_id or session_id"},
         404: {"description": "Run not found, or has no stored RMSD matrix"},
@@ -2703,8 +3081,130 @@ def get_rmsd_csv(
     )
 
 
+# Mirrors Viewer3D.js's own CHAIN_COLORS palette (chain-identity coloring),
+# so a reopened PyMOL/ChimeraX session looks like what the user already saw
+# in the app, not an arbitrary new color choice.
+_SCRIPT_EXPORT_CHAIN_COLORS = [
+    "8B5CF6",
+    "06B6D4",
+    "EC4899",
+    "A3E635",
+    "FB923C",
+    "2DD4BF",
+]
+
+
+def _build_pymol_script(run_id: str, pdb_ids: List[str]) -> str:
+    """Plain templated text, not the proprietary .pse binary (that would
+    require bundling an actual PyMOL install server-side just to write a
+    format only PyMOL can open). Assumes the user downloads this script
+    into the same folder as the run's alignment.pdb download, then uses
+    PyMOL's File > Run Script - the realistic desktop workflow, rather
+    than trying to have the script itself fetch a URL (which would need
+    to carry the app's own API-key auth, something a PyMOL `load url`
+    command can't do)."""
+    lines = [
+        f"# StructScope PyMOL session script for run {run_id}",
+        "# Save this file next to the downloaded alignment.pdb, then in PyMOL: File > Run Script.",
+        "load alignment.pdb, aligned",
+        "hide everything",
+        "show cartoon, aligned",
+        "bg_color white",
+    ]
+    for i, pdb_id in enumerate(pdb_ids):
+        chain = chr(65 + i)
+        color = _SCRIPT_EXPORT_CHAIN_COLORS[i % len(_SCRIPT_EXPORT_CHAIN_COLORS)]
+        lines.append(f"color 0x{color}, aligned and chain {chain}  # {pdb_id}")
+    lines.append("zoom aligned")
+    return "\n".join(lines) + "\n"
+
+
+def _build_chimerax_script(run_id: str, pdb_ids: List[str]) -> str:
+    """Same rationale as _build_pymol_script above."""
+    lines = [
+        f"# StructScope ChimeraX session script for run {run_id}",
+        "# Save this file next to the downloaded alignment.pdb, then in ChimeraX: File > Open.",
+        "open alignment.pdb",
+        "hide atoms",
+        "show cartoons",
+    ]
+    for i, pdb_id in enumerate(pdb_ids):
+        chain = chr(65 + i)
+        color = _SCRIPT_EXPORT_CHAIN_COLORS[i % len(_SCRIPT_EXPORT_CHAIN_COLORS)]
+        lines.append(f"color /{chain} #{color}  # {pdb_id}")
+    lines.append("view")
+    return "\n".join(lines) + "\n"
+
+
+@app.get(
+    "/api/report/pymol-script",
+    tags=["Reports"],
+    responses={
+        400: {"description": "Invalid run_id or session_id"},
+        404: {"description": "Run not found, or has no aligned structures"},
+    },
+)
+def get_pymol_script(
+    run_id: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """Download a PyMOL .pml command script reopening this run's alignment
+    with the same per-structure coloring StructScope's own viewer uses."""
+    from fastapi.responses import PlainTextResponse
+
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    run, _ = _lookup_run_and_result_dir(run_id, session_id)
+    pdb_ids = run.get("pdb_ids") or []
+    if not pdb_ids:
+        raise HTTPException(
+            status_code=404, detail=f"No aligned structures found for run {run_id}."
+        )
+
+    return PlainTextResponse(
+        content=_build_pymol_script(run_id, pdb_ids),
+        media_type=_TEXT_PLAIN,
+        headers={"Content-Disposition": f'attachment; filename="session_{run_id}.pml"'},
+    )
+
+
+@app.get(
+    "/api/report/chimerax-script",
+    tags=["Reports"],
+    responses={
+        400: {"description": "Invalid run_id or session_id"},
+        404: {"description": "Run not found, or has no aligned structures"},
+    },
+)
+def get_chimerax_script(
+    run_id: Annotated[str, Query(...)],
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """Download a ChimeraX .cxc command script - same rationale as
+    get_pymol_script above."""
+    from fastapi.responses import PlainTextResponse
+
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    run, _ = _lookup_run_and_result_dir(run_id, session_id)
+    pdb_ids = run.get("pdb_ids") or []
+    if not pdb_ids:
+        raise HTTPException(
+            status_code=404, detail=f"No aligned structures found for run {run_id}."
+        )
+
+    return PlainTextResponse(
+        content=_build_chimerax_script(run_id, pdb_ids),
+        media_type=_TEXT_PLAIN,
+        headers={"Content-Disposition": f'attachment; filename="session_{run_id}.cxc"'},
+    )
+
+
 @app.get(
     "/api/report/heatmap-png",
+    tags=["Reports"],
     responses={
         400: {"description": "Invalid run_id or session_id"},
         404: {"description": "Run not found, or its heatmap image is missing on disk"},
@@ -2738,6 +3238,7 @@ def get_heatmap_png(
 
 @app.get(
     "/api/report/newick",
+    tags=["Reports"],
     responses={
         400: {"description": "Invalid run_id or session_id"},
         404: {
@@ -2773,6 +3274,7 @@ def get_newick_tree(
 
 @app.get(
     "/api/report/zip",
+    tags=["Reports"],
     responses={400: {"description": "Invalid run_id or session_id"}},
 )
 def get_report_zip(
@@ -2844,6 +3346,7 @@ def get_report_zip(
 
 @app.get(
     "/api/report/citations",
+    tags=["Reports"],
     responses={
         400: {"description": "Invalid run_id or session_id"},
         404: {"description": "Run not found in the history database"},
@@ -2918,6 +3421,7 @@ def _get_discover_run_results(run_id: str) -> Dict[str, Any]:
 
 @app.get(
     "/api/discover/report",
+    tags=["Discovery"],
     responses={
         400: {"description": "Invalid run_id, or the run isn't a Discover run"},
         404: {"description": "Run not found, or has no stored Discover results"},
@@ -2957,6 +3461,7 @@ def get_discovery_report(run_id: Annotated[str, Query(...)]):
 
 @app.get(
     "/api/discover/export",
+    tags=["Discovery"],
     responses={
         400: {"description": "Invalid run_id, or the run isn't a Discover run"},
         404: {"description": "Run not found, or has no stored Discover results"},
@@ -2978,6 +3483,7 @@ def export_discovery_json(run_id: Annotated[str, Query(...)]):
 
 @app.get(
     "/api/discover/citations",
+    tags=["Discovery"],
     responses={
         400: {"description": "Invalid run_id, or the run isn't a Discover run"},
         404: {"description": "Run not found, or has no stored Discover results"},
