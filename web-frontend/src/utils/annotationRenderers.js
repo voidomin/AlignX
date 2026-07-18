@@ -64,19 +64,34 @@ export function renderFeatureList(features, heading = 'UniProt features', button
 // a UniProt position), so there's no "Highlight in 3D" button here - this
 // is read-only descriptive annotation, the same honest-fallback pattern
 // the CATH/oligomeric-assembly badges already use elsewhere in this app.
+// Pulled out of renderCatalyticSiteList's template so the residue-list join
+// below isn't a template literal nested inside another one.
+function _formatCatalyticResidue(r) {
+    const code = r.code || '?';
+    const resi = r.resi ?? '?';
+    const pdbId = r.reference_pdb_id || '?';
+    const chain = r.chain || '?';
+    const roles = r.roles_summary ? ` - ${r.roles_summary}` : '';
+    return `${code}${resi} (${pdbId} chain ${chain})${roles}`;
+}
+
 export function renderCatalyticSiteList(catalyticSites, heading = 'Catalytic sites (M-CSA)') {
     if (!catalyticSites?.length) return '';
     return `
         <div class="flex flex-col gap-2">
             <span class="eyebrow">${heading}</span>
-            ${catalyticSites.map(site => `
+            ${catalyticSites.map(site => {
+                const residuesText = site.residues.map(_formatCatalyticResidue).join('; ');
+                const ecText = site.ec_numbers?.length ? ` <span class="font-mono text-secondary text-[11px]">(EC ${site.ec_numbers.join(', ')})</span>` : '';
+                return `
                 <div class="flex flex-col gap-1 py-1.5 border-b border-border-subtle">
-                    <span class="font-body-sm">${site.enzyme_name}${site.ec_numbers?.length ? ` <span class="font-mono text-secondary text-[11px]">(EC ${site.ec_numbers.join(', ')})</span>` : ''}</span>
+                    <span class="font-body-sm">${site.enzyme_name}${ecText}</span>
                     <span class="font-body-sm text-[11px] text-secondary">
-                        ${site.residues.map(r => `${r.code || '?'}${r.resi ?? '?'} (${r.reference_pdb_id || '?'} chain ${r.chain || '?'})${r.roles_summary ? ` - ${r.roles_summary}` : ''}`).join('; ')}
+                        ${residuesText}
                     </span>
                 </div>
-            `).join('')}
+            `;
+            }).join('')}
         </div>
     `;
 }

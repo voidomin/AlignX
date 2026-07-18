@@ -247,6 +247,7 @@ app.mount("/raw", StaticFiles(directory=str(raw_dir)), name="raw")
 _SAFE_PATH_SEGMENT = re.compile(r"^[A-Za-z0-9_-]+$")
 _TEXT_PLAIN = "text/plain"
 _ALIGNMENT_PDB_FILENAME = "alignment.pdb"
+_ALIGNMENT_FASTA_FILENAME = "alignment.fasta"
 
 
 def _safe_segment(value: Optional[str], field_name: str) -> Optional[str]:
@@ -1789,7 +1790,7 @@ def get_difference_distance(
 
     run, res_dir = _lookup_run_and_result_dir(run_id, session_id)
     alignment_pdb = res_dir / _ALIGNMENT_PDB_FILENAME
-    alignment_fasta = res_dir / "alignment.fasta"
+    alignment_fasta = res_dir / _ALIGNMENT_FASTA_FILENAME
     if (
         not alignment_pdb.exists()
         or not alignment_fasta.exists()
@@ -1853,7 +1854,7 @@ def get_morph(
 
     run, res_dir = _lookup_run_and_result_dir(run_id, session_id)
     alignment_pdb = res_dir / _ALIGNMENT_PDB_FILENAME
-    alignment_fasta = res_dir / "alignment.fasta"
+    alignment_fasta = res_dir / _ALIGNMENT_FASTA_FILENAME
     if (
         not alignment_pdb.exists()
         or not alignment_fasta.exists()
@@ -2726,7 +2727,7 @@ def get_sequence(
         res_dir = res_dir / session_id
     res_dir = res_dir / run_id
 
-    fasta_path = res_dir / "alignment.fasta"
+    fasta_path = res_dir / _ALIGNMENT_FASTA_FILENAME
     if not fasta_path.exists():
         raise HTTPException(
             status_code=404, detail=f"Alignment FASTA not found for run {run_id}"
@@ -3163,7 +3164,7 @@ def get_pymol_script(
 
     return PlainTextResponse(
         content=_build_pymol_script(run_id, pdb_ids),
-        media_type="text/plain",
+        media_type=_TEXT_PLAIN,
         headers={"Content-Disposition": f'attachment; filename="session_{run_id}.pml"'},
     )
 
@@ -3196,7 +3197,7 @@ def get_chimerax_script(
 
     return PlainTextResponse(
         content=_build_chimerax_script(run_id, pdb_ids),
-        media_type="text/plain",
+        media_type=_TEXT_PLAIN,
         headers={"Content-Disposition": f'attachment; filename="session_{run_id}.cxc"'},
     )
 

@@ -766,7 +766,7 @@ export class SequenceTab {
             return;
         }
 
-        const traces = Array.from(allResidues).sort().map(aa => {
+        const traces = Array.from(allResidues).sort((a, b) => a.localeCompare(b)).map(aa => {
             const y = profile.map(p => {
                 const total = p.num_homologs || 0;
                 return total > 0 ? (p.residue_counts?.[aa] || 0) / total : 0;
