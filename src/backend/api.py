@@ -348,18 +348,19 @@ def update_settings(update: SettingsUpdate):
 
     try:
         MustangConfig(backend=update.mustang_backend, timeout=update.mustang_timeout)
+
+        config.setdefault("mustang", {})["backend"] = update.mustang_backend.lower()
+        config["mustang"]["timeout"] = update.mustang_timeout
+        config.setdefault("core", {})["max_proteins"] = update.max_proteins
+        config.setdefault("pdb", {})["max_file_size_mb"] = update.max_file_size_mb
+        config.setdefault("visualization", {})[
+            "heatmap_colormap"
+        ] = update.heatmap_colormap
+        config["visualization"]["viewer_default_style"] = update.viewer_default_style
+
+        save_config(config)
     except ValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-    config.setdefault("mustang", {})["backend"] = update.mustang_backend.lower()
-    config["mustang"]["timeout"] = update.mustang_timeout
-    config.setdefault("core", {})["max_proteins"] = update.max_proteins
-    config.setdefault("pdb", {})["max_file_size_mb"] = update.max_file_size_mb
-    config.setdefault("visualization", {})["heatmap_colormap"] = update.heatmap_colormap
-    config["visualization"]["viewer_default_style"] = update.viewer_default_style
-
-    try:
-        save_config(config)
     except Exception as e:
         logger.warning(f"Failed to persist settings to config.yaml: {e}")
         raise HTTPException(
