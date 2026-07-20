@@ -57,6 +57,14 @@ MCSA_ENTRIES_URL = "https://www.ebi.ac.uk/thornton-srv/m-csa/api/entries/"
 # have (those loop over many neighbors in one job; this doesn't).
 CLINVAR_ESEARCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
 CLINVAR_ESUMMARY_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+# myvariant.info (Biothings) aggregates gnomAD + dbNSFP + ClinVar - used
+# here purely for gnomAD's real population allele frequencies, keyed by
+# gene+protein position rather than genomic coordinate (gnomAD's own
+# GraphQL API keys by genomic variant, which would need an extra
+# HGVS/VEP mapping step this app has no existing code for; myvariant.info
+# already indexes dbNSFP's protein-level ref/alt/pos alongside gnomAD's
+# frequencies in the same document, removing that hop entirely).
+MYVARIANT_QUERY_URL = "https://myvariant.info/v1/query"
 
 # UniProt's own /features list carries ~15 feature types per entry (Chain,
 # Domain, Helix, Beta strand, Turn, Glycosylation, ...); most duplicate a
@@ -558,6 +566,75 @@ class AnnotationAggregator:
         return await self._get_or_fetch(
             f"clinvar:{gene}:{variant_notation}", "clinvar", _fetch
         )
+
+    async def fetch_gnomad_frequency(
+        self,
+        gene: str,
+        wildtype_residue: str,
+        position: int,
+        mutant_residue: str,
+        client: httpx.AsyncClient,
+    ) -> Optional[Dict[str, Any]]:
+        """Real gnomAD population allele frequency for a specific protein
+        substitution, via myvariant.info's keyless query API - an
+        independent signal from ClinVar/AlphaMissense (a variant can be
+        common in the population yet still flagged pathogenic by a
+        predictor, or vice versa, and that disagreement is itself
+        informative). One gene+position query can return several distinct
+        genomic hits (different codon-level substitutions can produce the
+        same amino-acid change) - each hit is filtered by its own
+        dbnsfp.aa.ref/alt to the one actually matching wildtype_residue/
+        mutant_residue rather than assuming the top-scored hit is the
+        wanted one; if more than one genomic hit still matches (codon
+        degeneracy), the one with the highest exome allele frequency is
+        used, since that's the predominant real-world observation.
+        Returns None if myvariant.info has no matching record or the
+        request fails - population frequency data not existing for a
+        given substitution is common and expected, not an error."""
+
+        async def _fetch() -> Optional[Dict[str, Any]]:
+            try:
+                response = await client.get(
+                    MYVARIANT_QUERY_URL,
+                    params={
+                        "q": f"dbnsfp.genename:{gene} AND dbnsfp.aa.pos:{position}",
+                        "fields": "dbnsfp.aa.ref,dbnsfp.aa.alt,gnomad_exome.af.af,gnomad_genome.af.af",
+                        "size": 20,
+                    },
+                )
+                if response.status_code != 200:
+                    return None
+                hits = response.json().get("hits") or []
+
+                matches = []
+                for hit in hits:
+                    aa = (hit.get("dbnsfp") or {}).get("aa") or {}
+                    if (
+                        aa.get("ref") == wildtype_residue.upper()
+                        and aa.get("alt") == mutant_residue.upper()
+                    ):
+                        exome_af = (
+                            (hit.get("gnomad_exome") or {}).get("af") or {}
+                        ).get("af")
+                        genome_af = (
+                            (hit.get("gnomad_genome") or {}).get("af") or {}
+                        ).get("af")
+                        matches.append({"af_exome": exome_af, "af_genome": genome_af})
+                if not matches:
+                    return None
+
+                return max(
+                    matches, key=lambda m: m["af_exome"] if m["af_exome"] else -1
+                )
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"gnomAD/myvariant.info lookup failed for {sanitize_for_log(gene)} "
+                    f"{sanitize_for_log(wildtype_residue)}{position}{sanitize_for_log(mutant_residue)}: {e}"
+                )
+                return None
+
+        cache_key = f"gnomad:{gene}:{wildtype_residue.upper()}{position}{mutant_residue.upper()}"
+        return await self._get_or_fetch(cache_key, "gnomad", _fetch)
 
     async def resolve_accession(
         self,

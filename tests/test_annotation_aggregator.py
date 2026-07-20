@@ -1592,6 +1592,89 @@ class TestFetchClinvarSignificance:
         assert result is None
 
 
+class TestFetchGnomadFrequency:
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_filters_hits_to_the_matching_ref_and_alt_residue(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "hits": [
+                    {"dbnsfp": {"aa": {"ref": "V", "alt": "F"}}},
+                    {
+                        "dbnsfp": {"aa": {"ref": "V", "alt": "I"}},
+                        "gnomad_exome": {"af": {"af": 0.856674}},
+                        "gnomad_genome": {"af": {"af": 0.831182}},
+                    },
+                ]
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_gnomad_frequency(
+                "PCSK9", "V", 474, "I", client
+            )
+        assert result == {"af_exome": 0.856674, "af_genome": 0.831182}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_picks_the_highest_exome_af_when_multiple_hits_match(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "hits": [
+                    {
+                        "dbnsfp": {"aa": {"ref": "V", "alt": "I"}},
+                        "gnomad_exome": {"af": {"af": 0.001}},
+                    },
+                    {
+                        "dbnsfp": {"aa": {"ref": "V", "alt": "I"}},
+                        "gnomad_exome": {"af": {"af": 0.856674}},
+                    },
+                ]
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_gnomad_frequency(
+                "PCSK9", "V", 474, "I", client
+            )
+        assert result["af_exome"] == 0.856674
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_when_no_hit_matches_the_substitution(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={"hits": [{"dbnsfp": {"aa": {"ref": "V", "alt": "F"}}}]}
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_gnomad_frequency(
+                "PCSK9", "V", 474, "I", client
+            )
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_non_200(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=500)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_gnomad_frequency(
+                "PCSK9", "V", 474, "I", client
+            )
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_gnomad_frequency(
+                "PCSK9", "V", 474, "I", client
+            )
+        assert result is None
+
+
 class TestResolveAccession:
 
     @pytest.mark.asyncio

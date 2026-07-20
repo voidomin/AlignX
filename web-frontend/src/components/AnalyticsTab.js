@@ -620,6 +620,17 @@ export class AnalyticsTab {
         }
         resultDiv.appendChild(alphamissenseLine);
 
+        const gnomadLine = document.createElement('div');
+        if (data.gnomad && (data.gnomad.af_exome != null || data.gnomad.af_genome != null)) {
+            const parts = [];
+            if (data.gnomad.af_exome != null) parts.push(`exome ${(data.gnomad.af_exome * 100).toPrecision(3)}%`);
+            if (data.gnomad.af_genome != null) parts.push(`genome ${(data.gnomad.af_genome * 100).toPrecision(3)}%`);
+            gnomadLine.textContent = `gnomAD population frequency: ${parts.join(', ')}`;
+        } else {
+            gnomadLine.textContent = 'No gnomAD population frequency data found for this substitution.';
+        }
+        resultDiv.appendChild(gnomadLine);
+
         if (data.known_uniprot_variant) {
             const variantLine = document.createElement('div');
             variantLine.textContent = `Known UniProt variant at this position: ${data.known_uniprot_variant.description || '(no description)'}`;

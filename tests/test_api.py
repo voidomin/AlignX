@@ -1219,6 +1219,9 @@ def test_mutation_impact_endpoint_returns_a_real_looking_result():
                 }
             }
         )
+        mock_aggregator.fetch_gnomad_frequency = AsyncMock(
+            return_value={"af_exome": 0.001, "af_genome": 0.0009}
+        )
 
         response = client.get(
             "/api/mutation-impact?pdb_id=4HHB&chain=A&resi=6&mutant=V"
@@ -1233,9 +1236,13 @@ def test_mutation_impact_endpoint_returns_a_real_looking_result():
     assert data["mutant_residue"] == "V"
     assert data["clinvar"]["clinical_significance"] == "Pathogenic"
     assert data["alphamissense"] == {"pathogenicity": 0.95, "class": "LPath"}
+    assert data["gnomad"] == {"af_exome": 0.001, "af_genome": 0.0009}
     assert data["highlight_chains"] == {"A": [6]}
     mock_aggregator.fetch_clinvar_significance.assert_called_once_with(
         "HBB", "V7V", ANY
+    )
+    mock_aggregator.fetch_gnomad_frequency.assert_called_once_with(
+        "HBB", "V", 7, "V", ANY
     )
 
 
@@ -1269,6 +1276,8 @@ def test_mutation_impact_endpoint_surfaces_a_known_uniprot_variant():
     assert data["clinvar"] is None
     assert data["known_uniprot_variant"]["description"] == "in HBS"
     assert data["alphamissense"] is None
+    assert data["gnomad"] is None
+    mock_aggregator.fetch_gnomad_frequency.assert_not_called()
 
 
 def test_mutation_impact_endpoint_returns_none_alphamissense_when_no_scores_exist_for_this_position():
@@ -1284,6 +1293,7 @@ def test_mutation_impact_endpoint_returns_none_alphamissense_when_no_scores_exis
         mock_aggregator.fetch_alphamissense_scores = AsyncMock(
             return_value={"3": {"wildtype": "H", "scores": {}}}
         )
+        mock_aggregator.fetch_gnomad_frequency = AsyncMock(return_value=None)
 
         response = client.get(
             "/api/mutation-impact?pdb_id=4HHB&chain=A&resi=6&mutant=V"

@@ -844,6 +844,50 @@ describe('AnalyticsTab', () => {
             expect(result.textContent).toContain('No AlphaMissense score available for this substitution.');
         });
 
+        it('shows the gnomAD population frequency when one is available', async () => {
+            fetchMutationImpact.mockResolvedValue({
+                accession: 'P68871', uniprot_position: 7, wildtype_residue: 'V', mutant_residue: 'I',
+                gene: 'HBB',
+                clinvar: null, alphamissense: null,
+                gnomad: { af_exome: 0.856674, af_genome: 0.831182 },
+                known_uniprot_variant: null,
+                highlight_chains: { A: [6] },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-map-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const result = tab.element.querySelector('#mutation-impact-result');
+            expect(result.textContent).toContain('gnomAD population frequency');
+            expect(result.textContent).toContain('exome 85.7%');
+            expect(result.textContent).toContain('genome 83.1%');
+        });
+
+        it('shows a fallback message when no gnomAD frequency data is available', async () => {
+            fetchMutationImpact.mockResolvedValue({
+                accession: 'P68871', uniprot_position: 7, wildtype_residue: 'V', mutant_residue: 'V',
+                gene: 'HBB', clinvar: null, alphamissense: null, gnomad: null,
+                known_uniprot_variant: null,
+                highlight_chains: { A: [6] },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-map-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const result = tab.element.querySelector('#mutation-impact-result');
+            expect(result.textContent).toContain('No gnomAD population frequency data found for this substitution.');
+        });
+
         it('shows a known UniProt variant when ClinVar has no match', async () => {
             fetchMutationImpact.mockResolvedValue({
                 accession: 'P68871', uniprot_position: 7, wildtype_residue: 'V', mutant_residue: 'V',

@@ -672,6 +672,7 @@ the deployment (this is a deployment-wide setting, not a per-session one).
 
 This document covers what's shipped today. v4 (custom structure upload, batch ID
 input, shareable run links) is complete — see [docs/ROADMAP_V4.md](ROADMAP_V4.md)
-for that history, including one real open item found along the way:
-`/api/history`'s response payload growing unbounded as run count/figure data
-accumulates, which is worth a real pagination fix before heavy multi-session use.
+for that history. The one real gap found along the way — `/api/history`'s
+response payload growing unbounded as run count/figure data accumulates — is
+already resolved (v3.20.0): real `limit`/`offset` pagination plus stripping each
+list entry's heavy figure/results blob before it's returned.

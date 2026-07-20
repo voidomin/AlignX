@@ -2236,6 +2236,7 @@ async def get_mutation_impact(
         )
 
         clinvar = None
+        gnomad = None
         gene = summary.get("gene")
         if gene and wildtype_residue:
             variant_notation = (
@@ -2243,6 +2244,9 @@ async def get_mutation_impact(
             )
             clinvar = await annotation_aggregator.fetch_clinvar_significance(
                 gene, variant_notation, client
+            )
+            gnomad = await annotation_aggregator.fetch_gnomad_frequency(
+                gene, wildtype_residue, uniprot_position, mutant, client
             )
 
         features = await annotation_aggregator.fetch_uniprot_features(accession, client)
@@ -2277,6 +2281,7 @@ async def get_mutation_impact(
             "known_uniprot_variant": known_variant,
             "clinvar": clinvar,
             "alphamissense": alphamissense,
+            "gnomad": gnomad,
             "highlight_chains": {chain: [resi]},
         }
     )
