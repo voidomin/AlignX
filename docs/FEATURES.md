@@ -88,6 +88,10 @@ for how to actually use each one.
 | 55 | "Reference vs. many" batch structural screen | SPA | [§2.19](#219-reference-vs-many-batch-screen) |
 | 56 | Structural superposition morph animation | SPA | [§2.20](#220-structural-superposition-morph-animation) |
 | 57 | OpenAPI route tags + typed-client generation guide + CLI | Both | [§4.6](#46-rest-api) |
+| 58 | Population allele frequency (gnomAD) | SPA | [§2.14](#214-mutation-impact-mapping) |
+| 59 | Sequence-based disorder prediction (MobiDB) | SPA | [§2.2](#22-3d-structure-viewer) |
+| 60 | Real-time flexibility prediction (Gaussian Network Model) | SPA | [§2.10](#210-alignment-quality-metrics) |
+| 61 | Real geometric pocket detection (PrankWeb/P2Rank) | SPA | [§2.6](#26-ligand-hunter) |
 
 ---
 
@@ -197,6 +201,15 @@ For a completed 2-structure alignment, a **morph** toggle plays a smooth
 animated transition between the two aligned structures instead of a static
 superposition — see [§2.20](#220-structural-superposition-morph-animation).
 
+A **"Sequence disorder (MobiDB)"** color scheme colors every residue by a
+real sequence-based intrinsic-disorder prediction (MobiDB's own
+AlphaFold-derived predictor, not just AlphaFold's pLDDT relabeled) — a
+computational prediction, not a measurement, honestly labeled as such. A
+**"Predicted flexibility (GNM)"** color scheme does the same for a real-time
+Gaussian Network Model flexibility prediction computed from the structure's
+own coordinates alone — see [§2.10](#210-alignment-quality-metrics) for the
+matching chart and the live-verified correlation against real B-factors.
+
 ### 2.3 RMSD Heatmap
 
 A Plotly-powered heatmap of pairwise RMSD values across every structure in the
@@ -256,6 +269,13 @@ over-estimates a true concave cavity, so treat it as a rough size signal, not
 a measured one) — useful for AlphaFold/ESM Atlas structures, which essentially
 never come with a co-crystallized ligand.
 
+Alongside that heuristic, a **"Detect real pockets (PrankWeb)"** action
+submits the structure to PrankWeb (P2Rank) for a real, validated geometric
+cavity detection — slower (a background job against an external academic
+server) and opt-in, but not a proxy signal the way the heuristic finder is.
+The two are complementary: the heuristic is always available instantly, the
+real detector is a second opinion when you want one.
+
 ### 2.7 Phylogenetic Tree
 
 An interactive structural phylogenetic tree (UPGMA/average-linkage) built from
@@ -309,6 +329,15 @@ and a **TM-score / GDT-TS table** — standard structural-alignment quality
 metrics (each structure's score averaged against every other structure in the
 run) that flag whether structures are a genuinely strong match or only loosely
 superposed despite a low RMSD.
+
+A separate **predicted flexibility (Gaussian Network Model)** chart plots a
+real-time, coarse-grained Normal Mode Analysis over any one structure's own
+CA coordinates — no external API call, unlike every other signal on this
+page, just linear algebra on coordinates already downloaded. For a real PDB
+entry, its own crystallographic B-factor is overlaid as a free real-world
+comparison point (live-verified: a real 0.59 Pearson correlation between the
+two on a real structure) — the prediction and the measurement are
+complementary, not claimed to be the same thing.
 
 ### 2.11 Protein-Protein Interfaces
 
@@ -376,10 +405,13 @@ In the Analytics tab's Annotations sub-tab: enter a chain, residue number, and
 proposed substitution to map it onto the structure's real UniProt position,
 see the real wild-type residue and gene, and — if a matching record exists —
 the real **ClinVar clinical significance** of that substitution, plus the
-real **AlphaMissense pathogenicity score** for that exact substitution. Also
-surfaces any already-known UniProt natural variant at that position. Builds
-on §2.12's real residue mapping, so this works for real PDB entries as well
-as AlphaFold-sourced structures.
+real **AlphaMissense pathogenicity score** for that exact substitution, plus
+the real **gnomAD population allele frequency** for that exact substitution —
+an independent signal from either: a variant can be common in the population
+yet still flagged pathogenic by a predictor, or vice versa, and that
+disagreement is itself informative. Also surfaces any already-known UniProt
+natural variant at that position. Builds on §2.12's real residue mapping, so
+this works for real PDB entries as well as AlphaFold-sourced structures.
 
 A related **"Mutation tolerance (AlphaMissense)"** 3D viewer color scheme
 (alongside the existing chain/secondary-structure/spectrum/pLDDT schemes)
