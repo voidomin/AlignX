@@ -657,6 +657,18 @@ export async function fetchMutationTolerance(pdbId, chain) {
     return res.json();
 }
 
+// Real sequence-based intrinsic-disorder prediction (MobiDB) - see the
+// backend's AnnotationAggregator.aggregate_disorder_prediction(). Same
+// shape as fetchMutationTolerance above.
+export async function fetchDisorderPrediction(pdbId, chain) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const params = { pdb_id: pdbId };
+    if (chain) params.chain = assertSafeSegment(chain, 'chain');
+    const res = await fetch(buildUrl('/api/disorder', params), { headers: authHeaders() });
+    if (!res.ok) throw new Error("Disorder prediction fetch failed");
+    return res.json();
+}
+
 export async function fetchCathClassification(pdbId) {
     pdbId = assertValidPdbId(pdbId, 'pdbId');
     const res = await fetch(buildUrl('/api/cath', { pdb_id: pdbId }), { headers: authHeaders() });

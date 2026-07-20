@@ -1329,6 +1329,34 @@ def test_mutation_tolerance_endpoint_400s_on_invalid_chain_param():
     assert response.status_code == 400
 
 
+def test_disorder_endpoint_returns_the_overlay():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.aggregate_disorder_prediction = AsyncMock(
+            return_value={
+                "accession": "P69905",
+                "per_residue_score": {"1": 0.43, "2": 0.41},
+                "consensus_regions": [[1, 2]],
+            }
+        )
+
+        response = client.get("/api/disorder?pdb_id=AF-P69905-F1")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["pdb_id"] == "AF-P69905-F1"
+        assert data["disorder"]["accession"] == "P69905"
+        assert data["disorder"]["per_residue_score"] == {"1": 0.43, "2": 0.41}
+        assert data["disorder"]["consensus_regions"] == [[1, 2]]
+        call_args = mock_aggregator.aggregate_disorder_prediction.call_args
+        assert call_args.args[0] == "AF-P69905-F1"
+        assert call_args.args[2] == "alphafold"
+
+
+def test_disorder_endpoint_400s_on_invalid_chain_param():
+    response = client.get("/api/disorder?pdb_id=4HHB&chain=../etc")
+    assert response.status_code == 400
+
+
 def test_cath_endpoint_returns_domains_for_a_real_pdb_entry():
     with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
         mock_aggregator.fetch_cath_classification = AsyncMock(

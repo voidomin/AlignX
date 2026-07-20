@@ -7,9 +7,10 @@ vi.mock('../api.js', () => ({
     getMorphFramesUrl: vi.fn((runId, a, b, n) => `http://mock/api/morph?run_id=${runId}&pdb_id_a=${a}&pdb_id_b=${b}&num_frames=${n}`),
     fetchMutationTolerance: vi.fn(),
     fetchAnnotations: vi.fn(),
+    fetchDisorderPrediction: vi.fn(),
 }));
 
-import { fetchMutationTolerance, fetchAnnotations, getMorphFramesUrl } from '../api.js';
+import { fetchMutationTolerance, fetchAnnotations, getMorphFramesUrl, fetchDisorderPrediction } from '../api.js';
 
 function makeMockViewer() {
     return {
@@ -44,6 +45,7 @@ beforeEach(() => {
     global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => 'MOCK PDB DATA' });
     fetchMutationTolerance.mockResolvedValue({ tolerance: { accession: null, per_residue_average: {} } });
     fetchAnnotations.mockResolvedValue({ annotation: { domains: [] } });
+    fetchDisorderPrediction.mockResolvedValue({ disorder: { accession: null, per_residue_score: {}, consensus_regions: [] } });
     window.$3Dmol = {
         createViewer: vi.fn(() => {
             mockViewer = makeMockViewer();
@@ -691,6 +693,70 @@ describe('Viewer3D', () => {
             await loadTwoStructures(v);
 
             await v.setColorScheme('domain');
+
+            expect(mockViewer.setStyle).toHaveBeenCalledWith({ chain: 'A' }, { cartoon: expect.objectContaining({ color: expect.any(String) }) });
+        });
+    });
+
+    describe('sequence disorder (MobiDB) color scheme', () => {
+        it('fetches disorder prediction for every structure and applies a colorfunc once loaded', async () => {
+            fetchDisorderPrediction.mockResolvedValue({
+                disorder: { per_residue_score: { 10: 0.8 } },
+            });
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            await v.setColorScheme('disorder');
+
+            expect(fetchDisorderPrediction).toHaveBeenCalledWith('4RLT', 'A');
+            expect(fetchDisorderPrediction).toHaveBeenCalledWith('3UG9', 'B');
+            expect(mockViewer.setStyle).toHaveBeenCalledWith(
+                { chain: 'A' },
+                { cartoon: expect.objectContaining({ colorfunc: expect.any(Function) }) }
+            );
+        });
+
+        it('colors a high-disorder residue differently from a low-disorder one and falls back to neutral outside any known residue', async () => {
+            fetchDisorderPrediction.mockResolvedValue({
+                disorder: { per_residue_score: { 10: 0.9, 20: 0.1 } },
+            });
+            const v = makeViewer();
+            await loadTwoStructures(v);
+            await v.setColorScheme('disorder');
+
+            const [, styleArg] = mockViewer.setStyle.mock.calls[mockViewer.setStyle.mock.calls.length - 1];
+            const colorfunc = styleArg.cartoon.colorfunc;
+            expect(colorfunc({ resi: 10 })).not.toBe(colorfunc({ resi: 20 }));
+            expect(colorfunc({ resi: 999 })).toBe('#4B5563');
+        });
+
+        it('falls back to identity color when no disorder data resolves for any structure', async () => {
+            fetchDisorderPrediction.mockResolvedValue({ disorder: { per_residue_score: {} } });
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            await v.setColorScheme('disorder');
+
+            expect(mockViewer.setStyle).toHaveBeenCalledWith({ chain: 'A' }, { cartoon: expect.objectContaining({ color: expect.any(String) }) });
+        });
+
+        it('does not re-fetch disorder data already cached for a structure', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            await v.setColorScheme('disorder');
+            fetchDisorderPrediction.mockClear();
+            await v.setColorScheme('disorder');
+
+            expect(fetchDisorderPrediction).not.toHaveBeenCalled();
+        });
+
+        it('handles a fetch failure gracefully by falling back to identity color', async () => {
+            fetchDisorderPrediction.mockRejectedValue(new Error('boom'));
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            await v.setColorScheme('disorder');
 
             expect(mockViewer.setStyle).toHaveBeenCalledWith({ chain: 'A' }, { cartoon: expect.objectContaining({ color: expect.any(String) }) });
         });

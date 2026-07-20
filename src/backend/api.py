@@ -2320,6 +2320,37 @@ async def get_mutation_tolerance(
 
 
 @app.get(
+    "/api/disorder",
+    tags=["Annotations"],
+    responses={400: {"description": "Invalid pdb_id or chain"}},
+)
+async def get_disorder_prediction(
+    pdb_id: Annotated[str, Query(...)],
+    chain: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Real sequence-based intrinsic-disorder prediction (MobiDB) for one
+    Compare-mode structure, resolved to this structure's own residue
+    numbering (see AnnotationAggregator.aggregate_disorder_prediction).
+    Works for any structure with a resolved UniProt accession, the same
+    way /api/mutation-tolerance does.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(chain, "chain")
+
+    source = PDBManager.detect_source(pdb_id)
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        disorder = await annotation_aggregator.aggregate_disorder_prediction(
+            pdb_id, chain, source, client
+        )
+    return {
+        "pdb_id": pdb_id,
+        "chain": chain,
+        "disorder": sanitize_for_json(disorder),
+    }
+
+
+@app.get(
     "/api/pae",
     tags=["Annotations"],
     responses={

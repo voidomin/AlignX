@@ -1,4 +1,4 @@
-import { getAlignmentPdbUrl, getStructureFileUrl, getMorphFramesUrl, fetchMutationTolerance, fetchAnnotations } from '../api';
+import { getAlignmentPdbUrl, getStructureFileUrl, getMorphFramesUrl, fetchMutationTolerance, fetchAnnotations, fetchDisorderPrediction } from '../api';
 
 // Qualitative palette for N-structure identity coloring. Deliberately avoids
 // amber/#F59E0B (reserved for the residue-selection highlight) and the
@@ -24,6 +24,7 @@ const COLOR_SCHEME_OPTIONS = [
     { key: 'confidence', label: 'pLDDT Confidence' },
     { key: 'missense', label: 'Mutation tolerance (AlphaMissense)' },
     { key: 'domain', label: 'InterPro domains' },
+    { key: 'disorder', label: 'Sequence disorder (MobiDB)' },
 ];
 
 // A distinct qualitative palette for domain coloring, deliberately
@@ -74,6 +75,13 @@ export class Viewer3D {
     // domain simultaneously and persistently, the same way pLDDT/missense
     // color the whole structure by a per-residue value.
     domainColorsByPdbId = {};
+    // Keyed by pdbId -> { [authorResi]: disorderScore(0-1) } - real
+    // sequence-based intrinsic-disorder prediction from MobiDB (see
+    // loadDisorderScores). Same per-residue-lookup shape as
+    // missenseScoresByPdbId; reuses _missenseColorForScore's green
+    // (ordered) -> red (disordered) gradient since it's the same 0-1
+    // "how much should you distrust this position" semantic.
+    disorderScoresByPdbId = {};
 
     // Click behavior branches on this - 'inspect' (default, informational
     // residue lookup) vs 'measure' (2-click atom-to-atom distance). Mutually
@@ -324,6 +332,10 @@ export class Viewer3D {
             await this.loadDomainColors();
             if (this.currentColorScheme !== 'domain') return;
         }
+        if (scheme === 'disorder') {
+            await this.loadDisorderScores();
+            if (this.currentColorScheme !== 'disorder') return;
+        }
         this.resetCartoonStyles();
     }
 
@@ -377,6 +389,42 @@ export class Viewer3D {
                 this.domainColorsByPdbId[structure.pdbId] = {};
             }
         }));
+    }
+
+    // Fetches the real MobiDB sequence-based disorder prediction for every
+    // loaded structure that doesn't have one cached yet - same shape as
+    // loadMissenseScores. A structure with no resolvable UniProt accession
+    // or no MobiDB coverage correctly gets an empty map back, not an error.
+    async loadDisorderScores() {
+        const missing = this.structures.filter(s => !(s.pdbId in this.disorderScoresByPdbId));
+        if (missing.length === 0) return;
+
+        await Promise.all(missing.map(async (structure) => {
+            try {
+                const chain = structure.sourceChain !== '?' ? structure.sourceChain : undefined;
+                const data = await fetchDisorderPrediction(structure.pdbId, chain);
+                this.disorderScoresByPdbId[structure.pdbId] = data.disorder?.per_residue_score || {};
+            } catch (err) {
+                console.error(`Failed to load disorder prediction for ${structure.pdbId}:`, err);
+                this.disorderScoresByPdbId[structure.pdbId] = {};
+            }
+        }));
+    }
+
+    // Same colorfunc shape as _missenseColorPartFor (reuses its score->color
+    // gradient directly - both are a 0-1 "how much should you distrust this
+    // position" value), keyed by disorderScoresByPdbId instead.
+    _disorderColorPartFor(structure) {
+        const scores = this.disorderScoresByPdbId[structure.pdbId];
+        if (!scores || Object.keys(scores).length === 0) {
+            return { color: structure.color };
+        }
+        return {
+            colorfunc: (atom) => {
+                const score = scores[atom.resi];
+                return score === undefined ? '#4B5563' : this._missenseColorForScore(score);
+            },
+        };
     }
 
     // Same colorfunc shape as _missenseColorPartFor, keyed by domain
@@ -582,6 +630,8 @@ export class Viewer3D {
                 return this._missenseColorPartFor(structure);
             case 'domain':
                 return this._domainColorPartFor(structure);
+            case 'disorder':
+                return this._disorderColorPartFor(structure);
             case 'chain':
             default:
                 return { color: structure.color };
@@ -1052,6 +1102,7 @@ export class Viewer3D {
         this.currentColorScheme = 'chain';
         this.missenseScoresByPdbId = {};
         this.domainColorsByPdbId = {};
+        this.disorderScoresByPdbId = {};
         this.interactionMode = 'inspect';
         this.measurePoints = [];
         this.measureHandles = [];
