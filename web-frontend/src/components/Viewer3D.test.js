@@ -8,9 +8,10 @@ vi.mock('../api.js', () => ({
     fetchMutationTolerance: vi.fn(),
     fetchAnnotations: vi.fn(),
     fetchDisorderPrediction: vi.fn(),
+    fetchFlexibility: vi.fn(),
 }));
 
-import { fetchMutationTolerance, fetchAnnotations, getMorphFramesUrl, fetchDisorderPrediction } from '../api.js';
+import { fetchMutationTolerance, fetchAnnotations, getMorphFramesUrl, fetchDisorderPrediction, fetchFlexibility } from '../api.js';
 
 function makeMockViewer() {
     return {
@@ -46,6 +47,7 @@ beforeEach(() => {
     fetchMutationTolerance.mockResolvedValue({ tolerance: { accession: null, per_residue_average: {} } });
     fetchAnnotations.mockResolvedValue({ annotation: { domains: [] } });
     fetchDisorderPrediction.mockResolvedValue({ disorder: { accession: null, per_residue_score: {}, consensus_regions: [] } });
+    fetchFlexibility.mockResolvedValue({ flexibility: { residue_numbers: [], flexibility: [], b_factor: null } });
     window.$3Dmol = {
         createViewer: vi.fn(() => {
             mockViewer = makeMockViewer();
@@ -757,6 +759,72 @@ describe('Viewer3D', () => {
             await loadTwoStructures(v);
 
             await v.setColorScheme('disorder');
+
+            expect(mockViewer.setStyle).toHaveBeenCalledWith({ chain: 'A' }, { cartoon: expect.objectContaining({ color: expect.any(String) }) });
+        });
+    });
+
+    describe('predicted flexibility (GNM) color scheme', () => {
+        it('fetches flexibility for every structure (keyed by residue number, using currentRunId) and applies a colorfunc once loaded', async () => {
+            fetchFlexibility.mockResolvedValue({
+                flexibility: { residue_numbers: [10, 20], flexibility: [0.9, 0.1], b_factor: null },
+            });
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            await v.setColorScheme('flexibility');
+
+            expect(fetchFlexibility).toHaveBeenCalledWith('4RLT', 'run_1');
+            expect(fetchFlexibility).toHaveBeenCalledWith('3UG9', 'run_1');
+            expect(mockViewer.setStyle).toHaveBeenCalledWith(
+                { chain: 'A' },
+                { cartoon: expect.objectContaining({ colorfunc: expect.any(Function) }) }
+            );
+        });
+
+        it('colors a high-flexibility residue differently from a low-flexibility one and falls back to neutral outside any known residue', async () => {
+            fetchFlexibility.mockResolvedValue({
+                flexibility: { residue_numbers: [10, 20], flexibility: [0.9, 0.1], b_factor: null },
+            });
+            const v = makeViewer();
+            await loadTwoStructures(v);
+            await v.setColorScheme('flexibility');
+
+            const [, styleArg] = mockViewer.setStyle.mock.calls[mockViewer.setStyle.mock.calls.length - 1];
+            const colorfunc = styleArg.cartoon.colorfunc;
+            expect(colorfunc({ resi: 10 })).not.toBe(colorfunc({ resi: 20 }));
+            expect(colorfunc({ resi: 999 })).toBe('#4B5563');
+        });
+
+        it('falls back to identity color when no flexibility data resolves for any structure', async () => {
+            fetchFlexibility.mockResolvedValue({
+                flexibility: { residue_numbers: [], flexibility: [], b_factor: null },
+            });
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            await v.setColorScheme('flexibility');
+
+            expect(mockViewer.setStyle).toHaveBeenCalledWith({ chain: 'A' }, { cartoon: expect.objectContaining({ color: expect.any(String) }) });
+        });
+
+        it('does not re-fetch flexibility data already cached for a structure', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            await v.setColorScheme('flexibility');
+            fetchFlexibility.mockClear();
+            await v.setColorScheme('flexibility');
+
+            expect(fetchFlexibility).not.toHaveBeenCalled();
+        });
+
+        it('handles a fetch failure gracefully by falling back to identity color', async () => {
+            fetchFlexibility.mockRejectedValue(new Error('boom'));
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            await v.setColorScheme('flexibility');
 
             expect(mockViewer.setStyle).toHaveBeenCalledWith({ chain: 'A' }, { cartoon: expect.objectContaining({ color: expect.any(String) }) });
         });

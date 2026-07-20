@@ -54,6 +54,7 @@ from src.backend.rmsd_calculator import (
     get_morph_frames,
 )
 from src.backend.tm_score_calculator import calculate_pairwise_tm_score
+from src.backend.flexibility_calculator import calculate_gnm_flexibility
 
 logger = get_logger()
 
@@ -1964,6 +1965,51 @@ def get_pockets(
 
     pockets = ligand_analyzer.find_candidate_pockets(pdb_path)
     return {"pdb_id": pdb_id, "pockets": sanitize_for_json(pockets)}
+
+
+@app.get(
+    "/api/flexibility",
+    tags=["Annotations"],
+    responses={
+        400: {"description": "Invalid pdb_id, run_id, or session_id"},
+        404: {
+            "description": "Structure PDB not found in the active workspace, or too few CA-bearing residues to model"
+        },
+    },
+)
+def get_flexibility(
+    pdb_id: Annotated[str, Query(...)],
+    run_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Real-time Gaussian Network Model flexibility prediction for one
+    structure - see flexibility_calculator.calculate_gnm_flexibility. No
+    external API call at all, unlike every other annotation route - pure
+    coordinate math on a structure already downloaded. A computational
+    prediction, not ground truth; `b_factor` (a real PDB entry's own
+    crystallographic per-residue mobility, when present) is included
+    alongside it as a free sanity-comparison point, not a claim the two
+    are equivalent measurements.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    pdb_path = _find_structure_pdb_path(pdb_id, run_id, session_id)
+    if not pdb_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Structure PDB for {pdb_id} not found in active workspace.",
+        )
+
+    result = calculate_gnm_flexibility(pdb_path)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Too few CA-bearing residues in {pdb_id} to model flexibility.",
+        )
+    return {"pdb_id": pdb_id, "flexibility": sanitize_for_json(result)}
 
 
 @app.get(

@@ -669,6 +669,24 @@ export async function fetchDisorderPrediction(pdbId, chain) {
     return res.json();
 }
 
+// Real-time Gaussian Network Model flexibility prediction - see the
+// backend's flexibility_calculator.calculate_gnm_flexibility(). No
+// external service call at all, unlike every other annotation fetch here -
+// pure coordinate math on a structure already downloaded, same
+// run_id/session_id resolution /api/pockets and /api/contact-map use.
+export async function fetchFlexibility(pdbId, runId, sessionId) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const params = { pdb_id: pdbId };
+    if (runId) params.run_id = assertSafeSegment(runId, 'runId');
+    if (sessionId) params.session_id = assertSafeSegment(sessionId, 'sessionId');
+    const res = await fetch(buildUrl('/api/flexibility', params), { headers: authHeaders() });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Flexibility prediction fetch failed");
+    }
+    return res.json();
+}
+
 export async function fetchCathClassification(pdbId) {
     pdbId = assertValidPdbId(pdbId, 'pdbId');
     const res = await fetch(buildUrl('/api/cath', { pdb_id: pdbId }), { headers: authHeaders() });

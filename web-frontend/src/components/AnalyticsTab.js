@@ -1,4 +1,4 @@
-import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae, submitDdgStabilityJob, pollJobUntilDone } from '../api';
+import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae, fetchFlexibility, submitDdgStabilityJob, pollJobUntilDone } from '../api';
 import { renderDomainList, renderGoTermList, renderFeatureList, renderCatalyticSiteList } from '../utils/annotationRenderers';
 import { createInsightIconSvg } from '../utils/insightIcons';
 import { wireArrowKeyNavigation } from '../utils/tabKeyboardNav';
@@ -170,6 +170,20 @@ export class AnalyticsTab {
                             </div>
                         </div>
                     </div>
+                    <div class="flex flex-col gap-2 border-t border-border-subtle pt-4">
+                        <span class="font-label-sm text-label-sm text-secondary uppercase">Predicted flexibility (Gaussian Network Model - a computational prediction from geometry alone, not a measurement)</span>
+                        <div class="flex gap-2 items-center">
+                            <select id="flexibility-pdb-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
+                                <option value="">Select a structure</option>
+                            </select>
+                            <button id="flexibility-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
+                        </div>
+                        <div id="flexibility-plotly" class="w-full h-[240px]">
+                            <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                                Select a structure and load to view its predicted per-residue flexibility.
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Residue Fluctuation (Plotly Line Chart) -->
@@ -299,6 +313,7 @@ export class AnalyticsTab {
         this.setupAnnotationsPicker();
         this.setupContactMapControls();
         this.setupPaeControls();
+        this.setupFlexibilityControls();
         this.setupDiffNarrativeControls();
         this.renderVisuals();
         return div;
@@ -327,6 +342,13 @@ export class AnalyticsTab {
         this.element.querySelector('#pae-load-btn').addEventListener('click', () => this.loadPae());
         this.element.querySelector('#pae-pdb-select').addEventListener('change', (e) => {
             this.element.querySelector('#pae-load-btn').disabled = !e.target.value;
+        });
+    }
+
+    setupFlexibilityControls() {
+        this.element.querySelector('#flexibility-load-btn').addEventListener('click', () => this.loadFlexibility());
+        this.element.querySelector('#flexibility-pdb-select').addEventListener('change', (e) => {
+            this.element.querySelector('#flexibility-load-btn').disabled = !e.target.value;
         });
     }
 
@@ -755,6 +777,7 @@ export class AnalyticsTab {
         this.renderRmsdHeatmap();
         this.populateContactMapSelectors();
         this.populatePaeSelector();
+        this.populateFlexibilitySelector();
         this.populateDiffNarrativeSelectors();
         this.renderPhyloTree();
         this.renderInsightsList();
@@ -1070,6 +1093,75 @@ export class AnalyticsTab {
             yaxis: { autorange: 'reversed' },
         };
         Plotly.newPlot(div, [trace], layout, { responsive: true, displayModeBar: false });
+    }
+
+    // Unlike PAE (AlphaFold-only), GNM flexibility works for any structure
+    // source - no external API, just this structure's own coordinates
+    // (see flexibility_calculator.calculate_gnm_flexibility) - so every
+    // loaded structure is selectable here.
+    populateFlexibilitySelector() {
+        const select = this.element.querySelector('#flexibility-pdb-select');
+        this._populateStructureOptions(select, this.structures);
+        const btn = this.element.querySelector('#flexibility-load-btn');
+        if (btn) btn.disabled = !select.value;
+    }
+
+    async loadFlexibility() {
+        const pdbId = this.element.querySelector('#flexibility-pdb-select').value;
+        const div = this.element.querySelector('#flexibility-plotly');
+        if (!pdbId) return;
+
+        div.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Loading flexibility prediction&hellip;</div>`;
+        try {
+            const data = await fetchFlexibility(pdbId, this.currentRunId);
+            this.renderFlexibilityChart(data.flexibility);
+        } catch (err) {
+            console.error("Failed to load flexibility prediction:", err);
+            div.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">${err.message || 'No flexibility prediction available for this structure.'}</div>`;
+        }
+    }
+
+    renderFlexibilityChart(flexibility) {
+        const div = this.element.querySelector('#flexibility-plotly');
+        if (!div) return;
+
+        div.innerHTML = "";
+        const traces = [{
+            x: flexibility.residue_numbers,
+            y: flexibility.flexibility,
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Predicted flexibility (GNM)',
+            line: { color: '#8B5CF6' },
+        }];
+        // A real crystallographic B-factor, when present, is plotted
+        // alongside the prediction as a free sanity comparison - not
+        // claimed to be the same measurement, just a real-world reference
+        // point on the same chart.
+        if (flexibility.b_factor) {
+            traces.push({
+                x: flexibility.residue_numbers,
+                y: flexibility.b_factor,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Real B-factor',
+                yaxis: 'y2',
+                line: { color: '#F59E0B', dash: 'dot' },
+            });
+        }
+        const layout = {
+            height: 240,
+            margin: { l: 40, r: flexibility.b_factor ? 40 : 10, t: 10, b: 30 },
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            font: { family: "Inter, sans-serif", size: 10, color: "#A79E8E" },
+            xaxis: { title: 'Residue' },
+            yaxis: { title: 'Predicted flexibility (0-1)' },
+            yaxis2: flexibility.b_factor ? { title: 'B-factor', overlaying: 'y', side: 'right' } : undefined,
+            showlegend: !!flexibility.b_factor,
+            legend: { orientation: 'h', y: -0.3 },
+        };
+        Plotly.newPlot(div, traces, layout, { responsive: true, displayModeBar: false });
     }
 
     // Same picker-population pattern as populateContactMapSelectors, for

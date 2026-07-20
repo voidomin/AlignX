@@ -1743,6 +1743,51 @@ def test_pockets_endpoint_400s_on_invalid_pdb_id():
     assert response.status_code == 400
 
 
+def test_flexibility_endpoint_returns_a_real_looking_prediction(tmp_path):
+    pdb_file = tmp_path / "4rlt.pdb"
+    pdb_file.write_text("ATOM      1  N   MET A   1      27.340  24.430   2.614\n")
+    fake_result = {
+        "residue_numbers": [1, 2, 3],
+        "flexibility": [1.0, 0.0, 1.0],
+        "b_factor": None,
+    }
+
+    with patch(
+        "src.backend.api._find_structure_pdb_path", return_value=pdb_file
+    ), patch(
+        "src.backend.api.calculate_gnm_flexibility",
+        return_value=fake_result,
+    ):
+        response = client.get("/api/flexibility?pdb_id=4RLT")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["pdb_id"] == "4RLT"
+    assert body["flexibility"] == fake_result
+
+
+def test_flexibility_endpoint_404s_when_structure_not_found():
+    with patch("src.backend.api._find_structure_pdb_path", return_value=None):
+        response = client.get("/api/flexibility?pdb_id=4RLT")
+    assert response.status_code == 404
+
+
+def test_flexibility_endpoint_404s_when_too_few_residues_to_model(tmp_path):
+    pdb_file = tmp_path / "4rlt.pdb"
+    pdb_file.write_text("ATOM      1  N   MET A   1      27.340  24.430   2.614\n")
+
+    with patch(
+        "src.backend.api._find_structure_pdb_path", return_value=pdb_file
+    ), patch("src.backend.api.calculate_gnm_flexibility", return_value=None):
+        response = client.get("/api/flexibility?pdb_id=4RLT")
+    assert response.status_code == 404
+
+
+def test_flexibility_endpoint_400s_on_invalid_pdb_id():
+    response = client.get("/api/flexibility?pdb_id=../etc")
+    assert response.status_code == 400
+
+
 def test_qc_endpoint_returns_real_looking_stats_for_a_pdb_entry(tmp_path):
     pdb_file = tmp_path / "4hhb.pdb"
     pdb_file.write_text("ATOM      1  N   MET A   1      27.340  24.430   2.614\n")

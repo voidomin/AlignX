@@ -7,11 +7,12 @@ vi.mock('../api.js', () => ({
     fetchDifferenceDistance: vi.fn(),
     fetchMutationImpact: vi.fn(),
     fetchPae: vi.fn(),
+    fetchFlexibility: vi.fn(),
     submitDdgStabilityJob: vi.fn(),
     pollJobUntilDone: vi.fn(),
 }));
 
-import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae, submitDdgStabilityJob, pollJobUntilDone } from '../api.js';
+import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae, fetchFlexibility, submitDdgStabilityJob, pollJobUntilDone } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new AnalyticsTab(overrides);
@@ -668,6 +669,79 @@ describe('AnalyticsTab', () => {
             await Promise.resolve();
 
             expect(fetchPae).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('GNM flexibility prediction', () => {
+        it('lists every loaded structure in the selector, not just AlphaFold-sourced ones', () => {
+            const tab = makeTab();
+            tab.render();
+
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB', 'AF-P69905-F1']));
+
+            const select = tab.element.querySelector('#flexibility-pdb-select');
+            expect(Array.from(select.options).map(o => o.value)).toEqual(['4HHB', 'AF-P69905-F1']);
+        });
+
+        it('loads and renders a flexibility chart on button click, passing the current run id', async () => {
+            fetchFlexibility.mockResolvedValue({
+                flexibility: { residue_numbers: [1, 2, 3], flexibility: [0.9, 0.1, 0.8], b_factor: null },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB']));
+
+            tab.element.querySelector('#flexibility-load-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(fetchFlexibility).toHaveBeenCalledWith('4HHB', 'run_1');
+            expect(global.Plotly.newPlot).toHaveBeenCalled();
+        });
+
+        it('overlays a real B-factor trace when the structure carries one', async () => {
+            fetchFlexibility.mockResolvedValue({
+                flexibility: { residue_numbers: [1, 2, 3], flexibility: [0.9, 0.1, 0.8], b_factor: [20, 25, 22] },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB']));
+
+            tab.element.querySelector('#flexibility-load-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const traces = global.Plotly.newPlot.mock.calls[global.Plotly.newPlot.mock.calls.length - 1][1];
+            expect(traces).toHaveLength(2);
+            expect(traces[1].y).toEqual([20, 25, 22]);
+        });
+
+        it('shows a graceful message when no flexibility prediction is available', async () => {
+            fetchFlexibility.mockRejectedValue(new Error('Too few CA-bearing residues in 4HHB to model flexibility.'));
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB']));
+
+            tab.element.querySelector('#flexibility-load-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(global.Plotly.newPlot).not.toHaveBeenCalled();
+            expect(tab.element.querySelector('#flexibility-plotly').textContent).toContain('Too few CA-bearing residues');
+        });
+
+        it('does nothing when no structure is selected', async () => {
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, []);
+
+            tab.element.querySelector('#flexibility-load-btn').click();
+            await Promise.resolve();
+
+            expect(fetchFlexibility).not.toHaveBeenCalled();
         });
     });
 
