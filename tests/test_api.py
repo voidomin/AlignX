@@ -3464,6 +3464,117 @@ async def test_ddmut_job_sweep_drops_old_finished_jobs_but_keeps_recent_and_runn
     api_module.ddmut_jobs.clear()
 
 
+def test_submit_prankweb_job_returns_queued(tmp_path):
+    """Submitting a pocket-detection job returns a job_id immediately -
+    it must not block on the slow PrankWeb submit/poll pipeline."""
+    api_module.prankweb_jobs.clear()
+    pdb_file = _write_test_pdb(tmp_path)
+
+    with patch("src.backend.api._find_structure_pdb_path", return_value=pdb_file):
+        response = client.post("/api/jobs/pocket-detection", json={"pdb_id": "1UBQ"})
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "queued"
+    assert body["job_id"] in api_module.prankweb_jobs
+    api_module.prankweb_jobs.clear()
+
+
+def test_submit_prankweb_job_404s_when_structure_not_found():
+    with patch("src.backend.api._find_structure_pdb_path", return_value=None):
+        response = client.post("/api/jobs/pocket-detection", json={"pdb_id": "1UBQ"})
+    assert response.status_code == 404
+
+
+def test_submit_prankweb_job_400s_on_invalid_pdb_id():
+    response = client.post("/api/jobs/pocket-detection", json={"pdb_id": "../etc"})
+    assert response.status_code == 400
+
+
+def test_submit_prankweb_job_rejects_an_invalid_webhook_url(tmp_path):
+    pdb_file = _write_test_pdb(tmp_path)
+    with patch("src.backend.api._find_structure_pdb_path", return_value=pdb_file):
+        response = client.post(
+            "/api/jobs/pocket-detection",
+            json={"pdb_id": "1UBQ", "webhook_url": "not-a-url"},
+        )
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_prankweb_job_execution_completes_and_is_pollable():
+    """Directly exercises _execute_prankweb_job (the background task the
+    endpoint schedules) end-to-end, then confirms GET /api/jobs/{job_id} -
+    the same polling endpoint used for every other job type - surfaces
+    the real pocket-detection result."""
+    api_module.prankweb_jobs.clear()
+    job_id = "test-prankweb-job"
+    api_module.prankweb_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    with patch(
+        "src.backend.api.PrankWebClient.detect_pockets", new_callable=AsyncMock
+    ) as mock_detect:
+        mock_detect.return_value = {
+            "pockets": [{"name": "pocket1", "rank": "1", "score": "19.55"}],
+            "structure": {},
+            "metadata": {},
+        }
+        await api_module._execute_prankweb_job(job_id, "PDB TEXT")
+
+    poll = client.get(f"/api/jobs/{job_id}")
+    assert poll.json()["status"] == "completed"
+    assert poll.json()["prediction"]["pockets"][0]["name"] == "pocket1"
+
+    api_module.prankweb_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_prankweb_job_execution_surfaces_pipeline_failure():
+    api_module.prankweb_jobs.clear()
+    job_id = "test-prankweb-job-fail"
+    api_module.prankweb_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    with patch(
+        "src.backend.api.PrankWebClient.detect_pockets", new_callable=AsyncMock
+    ) as mock_detect:
+        from src.backend.prankweb_client import PrankWebError
+
+        mock_detect.side_effect = PrankWebError(
+            "PrankWeb job job-1 did not complete within 480s"
+        )
+        await api_module._execute_prankweb_job(job_id, "PDB TEXT")
+
+    poll = client.get(f"/api/jobs/{job_id}")
+    assert poll.json()["status"] == "failed"
+    assert "did not complete within 480s" in poll.json()["error"]
+
+    api_module.prankweb_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_prankweb_job_sweep_drops_old_finished_jobs_but_keeps_recent_and_running():
+    now = time.time()
+    api_module.prankweb_jobs.clear()
+    api_module.prankweb_jobs.update(
+        {
+            "old_completed": {"status": "completed", "finished_at": now - 10_000},
+            "recent_completed": {"status": "completed", "finished_at": now},
+            "still_running": {"status": "running", "created_at": now - 10_000},
+        }
+    )
+
+    with patch.object(api_module, "_JOB_TTL_SECONDS", 60), patch(
+        "asyncio.sleep", new_callable=AsyncMock
+    ) as mock_sleep:
+        mock_sleep.side_effect = [None, asyncio.CancelledError()]
+        with pytest.raises(asyncio.CancelledError):
+            await api_module._sweep_prankweb_jobs()
+
+    remaining = set(api_module.prankweb_jobs.keys())
+    assert remaining == {"recent_completed", "still_running"}
+    api_module.prankweb_jobs.clear()
+
+
 @pytest.mark.asyncio
 async def test_execute_alignment_job_marks_completed_on_success():
     """Mirrors test_execute_alignment_job_marks_failed_on_pipeline_error but
