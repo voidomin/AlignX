@@ -1,4 +1,4 @@
-import { fetchInteractions, fetchLigands, fetchChains, fetchInterface, fetchLigandInfo, fetchPockets } from '../api';
+import { fetchInteractions, fetchLigands, fetchChains, fetchInterface, fetchLigandInfo, fetchPockets, submitPrankwebJob, pollJobUntilDone } from '../api';
 import { buildContactRow } from '../utils/interactionRenderers';
 
 export class LigandTab {
@@ -92,6 +92,24 @@ export class LigandTab {
                         </thead>
                         <tbody id="candidate-pockets-table-body" class="font-body-sm text-body-sm text-primary font-mono divide-y divide-border-subtle"></tbody>
                     </table>
+                    <div class="flex items-center gap-3 mt-2">
+                        <button id="prankweb-detect-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Detect real pockets (PrankWeb)</button>
+                        <span id="prankweb-feedback" class="font-body-sm text-[11px] text-secondary"></span>
+                    </div>
+                    <div id="prankweb-pockets-section" class="hidden flex-col gap-2">
+                        <span class="font-body-sm text-body-sm text-secondary">Real geometric cavity detection (P2Rank) - not a heuristic, an independent computational prediction</span>
+                        <table class="w-full text-left border-collapse">
+                            <thead class="font-label-sm text-label-sm text-secondary">
+                            <tr>
+                                <th class="px-0 py-2 border-b border-border font-medium">Rank</th>
+                                <th class="px-3 py-2 border-b border-border font-medium">Lining residues</th>
+                                <th class="px-3 py-2 border-b border-border font-medium text-right">Score</th>
+                                <th class="px-3 py-2 border-b border-border font-medium text-right">Probability</th>
+                            </tr>
+                            </thead>
+                            <tbody id="prankweb-pockets-table-body" class="font-body-sm text-body-sm text-primary font-mono divide-y divide-border-subtle"></tbody>
+                        </table>
+                    </div>
                 </div>
 
                 <div id="interface-section" class="hidden flex-col gap-3 mt-6 pt-4 border-t border-border">
@@ -136,6 +154,8 @@ export class LigandTab {
 
         const analyzeBtn = this.element.querySelector('#interface-analyze-btn');
         analyzeBtn.addEventListener('click', () => this.analyzeInterface());
+
+        this.element.querySelector('#prankweb-detect-btn').addEventListener('click', () => this.runPrankwebDetection());
     }
 
     populateStructurePicker() {
@@ -276,6 +296,89 @@ export class LigandTab {
             volumeCell.className = "px-3 py-1.5 text-right";
             volumeCell.textContent = pocket.volume_estimate_a3 != null ? pocket.volume_estimate_a3 : '--';
             tr.appendChild(volumeCell);
+
+            body.appendChild(tr);
+        });
+    }
+
+    // A second, opt-in, slower action alongside loadCandidatePockets'
+    // heuristic finder above - submits a real geometric pocket-detection
+    // job to PrankWeb (P2Rank) and polls it via the same job-queue pattern
+    // submitDdgStabilityJob/pollJobUntilDone already use elsewhere.
+    async runPrankwebDetection() {
+        const btn = this.element.querySelector('#prankweb-detect-btn');
+        const feedback = this.element.querySelector('#prankweb-feedback');
+        const pdbId = this.selectedPDBs[this.currentStructureIndex];
+        if (!pdbId) return;
+
+        btn.disabled = true;
+        feedback.textContent = 'Submitting to PrankWeb…';
+        try {
+            const submitted = await submitPrankwebJob(pdbId, this.currentRunId);
+            feedback.textContent = 'Running P2Rank (this can take a minute)…';
+            const job = await pollJobUntilDone(submitted.job_id, { intervalMs: 8000 });
+            if (job.status === 'failed') {
+                feedback.textContent = job.error || 'PrankWeb pocket detection failed.';
+                return;
+            }
+            const pockets = job.prediction?.pockets || [];
+            feedback.textContent = pockets.length > 0
+                ? `Found ${pockets.length} real pocket(s).`
+                : 'No real pockets detected for this structure.';
+            this.renderPrankwebPockets(pockets);
+        } catch (err) {
+            console.error("PrankWeb pocket detection failed:", err);
+            feedback.textContent = err.message || 'PrankWeb pocket detection failed.';
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    renderPrankwebPockets(pockets) {
+        const section = this.element.querySelector('#prankweb-pockets-section');
+        const body = this.element.querySelector('#prankweb-pockets-table-body');
+
+        if (!pockets || pockets.length === 0) {
+            section.classList.add('hidden');
+            section.classList.remove('flex');
+            return;
+        }
+        section.classList.remove('hidden');
+        section.classList.add('flex');
+
+        body.innerHTML = "";
+        pockets.forEach(pocket => {
+            const tr = document.createElement('tr');
+
+            const rankCell = document.createElement('td');
+            rankCell.className = "py-1.5";
+            rankCell.textContent = pocket.rank;
+            tr.appendChild(rankCell);
+
+            // PrankWeb residues are "chain_resi" strings (e.g. "E_104"),
+            // unlike the heuristic finder's {chain, resi, resn} objects -
+            // no residue name here, since P2Rank doesn't return one.
+            const residuesText = (pocket.residues || [])
+                .map(r => r.replace('_', ''))
+                .join(', ');
+            const residuesCell = document.createElement('td');
+            residuesCell.className = "px-3 py-1.5";
+            const residuesSpan = document.createElement('span');
+            residuesSpan.className = "block max-w-[280px] truncate";
+            residuesSpan.title = residuesText;
+            residuesSpan.textContent = residuesText;
+            residuesCell.appendChild(residuesSpan);
+            tr.appendChild(residuesCell);
+
+            const scoreCell = document.createElement('td');
+            scoreCell.className = "px-3 py-1.5 text-right";
+            scoreCell.textContent = pocket.score;
+            tr.appendChild(scoreCell);
+
+            const probabilityCell = document.createElement('td');
+            probabilityCell.className = "px-3 py-1.5 text-right";
+            probabilityCell.textContent = pocket.probability;
+            tr.appendChild(probabilityCell);
 
             body.appendChild(tr);
         });

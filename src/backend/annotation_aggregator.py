@@ -57,6 +57,22 @@ MCSA_ENTRIES_URL = "https://www.ebi.ac.uk/thornton-srv/m-csa/api/entries/"
 # have (those loop over many neighbors in one job; this doesn't).
 CLINVAR_ESEARCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
 CLINVAR_ESUMMARY_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+# myvariant.info (Biothings) aggregates gnomAD + dbNSFP + ClinVar - used
+# here purely for gnomAD's real population allele frequencies, keyed by
+# gene+protein position rather than genomic coordinate (gnomAD's own
+# GraphQL API keys by genomic variant, which would need an extra
+# HGVS/VEP mapping step this app has no existing code for; myvariant.info
+# already indexes dbNSFP's protein-level ref/alt/pos alongside gnomAD's
+# frequencies in the same document, removing that hop entirely).
+MYVARIANT_QUERY_URL = "https://myvariant.info/v1/query"
+# MobiDB (EBI) - real sequence-based intrinsic-disorder predictions, keyed
+# by UniProt accession alone, keyless. Confirmed live: returns several
+# independent predictors per accession, not one black-box score -
+# "prediction-disorder-alphafold" is a real per-residue 0-1 score array
+# (MobiDB's own disorder-from-pLDDT derivation, not AlphaFold's pLDDT
+# relabeled), and "prediction-disorder-th_50" is MobiDB's own recommended
+# consensus-of-predictors call, as disordered regions rather than a score.
+MOBIDB_DOWNLOAD_URL = "https://mobidb.org/api/download"
 
 # UniProt's own /features list carries ~15 feature types per entry (Chain,
 # Domain, Helix, Beta strand, Turn, Glycosylation, ...); most duplicate a
@@ -559,6 +575,75 @@ class AnnotationAggregator:
             f"clinvar:{gene}:{variant_notation}", "clinvar", _fetch
         )
 
+    async def fetch_gnomad_frequency(
+        self,
+        gene: str,
+        wildtype_residue: str,
+        position: int,
+        mutant_residue: str,
+        client: httpx.AsyncClient,
+    ) -> Optional[Dict[str, Any]]:
+        """Real gnomAD population allele frequency for a specific protein
+        substitution, via myvariant.info's keyless query API - an
+        independent signal from ClinVar/AlphaMissense (a variant can be
+        common in the population yet still flagged pathogenic by a
+        predictor, or vice versa, and that disagreement is itself
+        informative). One gene+position query can return several distinct
+        genomic hits (different codon-level substitutions can produce the
+        same amino-acid change) - each hit is filtered by its own
+        dbnsfp.aa.ref/alt to the one actually matching wildtype_residue/
+        mutant_residue rather than assuming the top-scored hit is the
+        wanted one; if more than one genomic hit still matches (codon
+        degeneracy), the one with the highest exome allele frequency is
+        used, since that's the predominant real-world observation.
+        Returns None if myvariant.info has no matching record or the
+        request fails - population frequency data not existing for a
+        given substitution is common and expected, not an error."""
+
+        async def _fetch() -> Optional[Dict[str, Any]]:
+            try:
+                response = await client.get(
+                    MYVARIANT_QUERY_URL,
+                    params={
+                        "q": f"dbnsfp.genename:{gene} AND dbnsfp.aa.pos:{position}",
+                        "fields": "dbnsfp.aa.ref,dbnsfp.aa.alt,gnomad_exome.af.af,gnomad_genome.af.af",
+                        "size": 20,
+                    },
+                )
+                if response.status_code != 200:
+                    return None
+                hits = response.json().get("hits") or []
+
+                matches = []
+                for hit in hits:
+                    aa = (hit.get("dbnsfp") or {}).get("aa") or {}
+                    if (
+                        aa.get("ref") == wildtype_residue.upper()
+                        and aa.get("alt") == mutant_residue.upper()
+                    ):
+                        exome_af = (
+                            (hit.get("gnomad_exome") or {}).get("af") or {}
+                        ).get("af")
+                        genome_af = (
+                            (hit.get("gnomad_genome") or {}).get("af") or {}
+                        ).get("af")
+                        matches.append({"af_exome": exome_af, "af_genome": genome_af})
+                if not matches:
+                    return None
+
+                return max(
+                    matches, key=lambda m: m["af_exome"] if m["af_exome"] else -1
+                )
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"gnomAD/myvariant.info lookup failed for {sanitize_for_log(gene)} "
+                    f"{sanitize_for_log(wildtype_residue)}{position}{sanitize_for_log(mutant_residue)}: {e}"
+                )
+                return None
+
+        cache_key = f"gnomad:{gene}:{wildtype_residue.upper()}{position}{mutant_residue.upper()}"
+        return await self._get_or_fetch(cache_key, "gnomad", _fetch)
+
     async def resolve_accession(
         self,
         hit: Dict[str, Any],
@@ -1024,6 +1109,106 @@ class AnnotationAggregator:
         return await self._get_or_fetch(
             f"alphamissense:{accession}", "alphamissense", _fetch
         )
+
+    async def fetch_disorder_prediction(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> Optional[Dict[str, Any]]:
+        """Real sequence-based intrinsic-disorder prediction from MobiDB,
+        keyed by UniProt accession alone. Returns
+        {"per_residue_score": {"1": 0.43, "2": 0.41, ...}, "consensus_regions":
+        [[1, 8], [140, 142], ...]} - `per_residue_score` (from MobiDB's own
+        AlphaFold-derived predictor) is what a 3D viewer color scheme needs;
+        `consensus_regions` (MobiDB's own recommended threshold-50 consensus
+        of several independent predictors) is a coarser, more citable
+        disordered-region call. Returns None if MobiDB has no entry for this
+        accession at all - a majority of proteins (especially predicted/
+        uncommon ones) genuinely have no MobiDB record, same honest-fallback
+        shape as M-CSA/CATH coverage elsewhere in this class."""
+
+        async def _fetch() -> Optional[Dict[str, Any]]:
+            try:
+                response = await client.get(
+                    MOBIDB_DOWNLOAD_URL, params={"acc": accession, "format": "json"}
+                )
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"MobiDB disorder lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return None
+            # An unrecognized accession returns HTTP 200 with an empty body
+            # (Content-Length: 0) rather than a 404 - confirmed live - so
+            # response.json() must never be called on an empty body, or it
+            # raises an uncaught JSONDecodeError instead of the honest
+            # "no MobiDB coverage" None this is supposed to return.
+            if response.status_code != 200 or not response.text.strip():
+                return None
+
+            data = response.json()
+            score_entry = data.get("prediction-disorder-alphafold") or {}
+            scores = score_entry.get("scores") or []
+            consensus_entry = data.get("prediction-disorder-th_50") or {}
+            regions = consensus_entry.get("regions") or []
+            if not scores and not regions:
+                return None
+
+            return {
+                "per_residue_score": {
+                    str(i): score for i, score in enumerate(scores, start=1)
+                },
+                "consensus_regions": regions,
+            }
+
+        return await self._get_or_fetch(f"mobidb:{accession}", "mobidb", _fetch)
+
+    async def aggregate_disorder_prediction(
+        self,
+        pdb_id: str,
+        chain: Optional[str],
+        source: str,
+        client: httpx.AsyncClient,
+    ) -> Dict[str, Any]:
+        """Real per-residue intrinsic-disorder overlay for one Compare-mode
+        structure, translated onto this structure's own residue numbering -
+        same accession resolution and AlphaFold-1:1-vs-real-SIFTS-mapping
+        split aggregate_mutation_tolerance() already uses; SWISS-MODEL/ESM
+        Atlas structures correctly get nothing back, same scope those
+        methods already have."""
+        accession = await self._resolve_structure_accession(
+            pdb_id, chain, source, client, None
+        )
+        result: Dict[str, Any] = {
+            "accession": accession,
+            "per_residue_score": {},
+            "consensus_regions": [],
+        }
+        if not accession:
+            return result
+
+        disorder = await self.fetch_disorder_prediction(accession, client)
+        if not disorder:
+            return result
+
+        per_residue_score = disorder["per_residue_score"]
+        if source == "alphafold":
+            result["per_residue_score"] = per_residue_score
+            result["consensus_regions"] = disorder["consensus_regions"]
+        elif source == "pdb" and chain:
+            residue_map = await self.resolve_uniprot_residue_mapping(
+                pdb_id, chain, client
+            )
+            result["per_residue_score"] = {
+                str(author_resi): per_residue_score[str(uniprot_pos)]
+                for uniprot_pos, author_resi in residue_map.items()
+                if str(uniprot_pos) in per_residue_score
+            }
+            # consensus_regions stays [] for real PDB entries - MobiDB's
+            # region boundaries are UniProt-numbered, and translating a
+            # range (not a single position) through a possibly-gapped
+            # residue_map without collapsing it back into misleading
+            # pseudo-contiguous ranges isn't worth doing for a purely
+            # descriptive field when per_residue_score above already
+            # carries the real, correctly-translated signal.
+        return result
 
     async def fetch_cath_classification(
         self, pdb_id: str, client: httpx.AsyncClient
