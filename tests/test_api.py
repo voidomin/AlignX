@@ -1219,6 +1219,9 @@ def test_mutation_impact_endpoint_returns_a_real_looking_result():
                 }
             }
         )
+        mock_aggregator.fetch_gnomad_frequency = AsyncMock(
+            return_value={"af_exome": 0.001, "af_genome": 0.0009}
+        )
 
         response = client.get(
             "/api/mutation-impact?pdb_id=4HHB&chain=A&resi=6&mutant=V"
@@ -1233,9 +1236,13 @@ def test_mutation_impact_endpoint_returns_a_real_looking_result():
     assert data["mutant_residue"] == "V"
     assert data["clinvar"]["clinical_significance"] == "Pathogenic"
     assert data["alphamissense"] == {"pathogenicity": 0.95, "class": "LPath"}
+    assert data["gnomad"] == {"af_exome": 0.001, "af_genome": 0.0009}
     assert data["highlight_chains"] == {"A": [6]}
     mock_aggregator.fetch_clinvar_significance.assert_called_once_with(
         "HBB", "V7V", ANY
+    )
+    mock_aggregator.fetch_gnomad_frequency.assert_called_once_with(
+        "HBB", "V", 7, "V", ANY
     )
 
 
@@ -1269,6 +1276,8 @@ def test_mutation_impact_endpoint_surfaces_a_known_uniprot_variant():
     assert data["clinvar"] is None
     assert data["known_uniprot_variant"]["description"] == "in HBS"
     assert data["alphamissense"] is None
+    assert data["gnomad"] is None
+    mock_aggregator.fetch_gnomad_frequency.assert_not_called()
 
 
 def test_mutation_impact_endpoint_returns_none_alphamissense_when_no_scores_exist_for_this_position():
@@ -1284,6 +1293,7 @@ def test_mutation_impact_endpoint_returns_none_alphamissense_when_no_scores_exis
         mock_aggregator.fetch_alphamissense_scores = AsyncMock(
             return_value={"3": {"wildtype": "H", "scores": {}}}
         )
+        mock_aggregator.fetch_gnomad_frequency = AsyncMock(return_value=None)
 
         response = client.get(
             "/api/mutation-impact?pdb_id=4HHB&chain=A&resi=6&mutant=V"
@@ -1316,6 +1326,34 @@ def test_mutation_tolerance_endpoint_returns_the_overlay():
 
 def test_mutation_tolerance_endpoint_400s_on_invalid_chain_param():
     response = client.get("/api/mutation-tolerance?pdb_id=4HHB&chain=../etc")
+    assert response.status_code == 400
+
+
+def test_disorder_endpoint_returns_the_overlay():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.aggregate_disorder_prediction = AsyncMock(
+            return_value={
+                "accession": "P69905",
+                "per_residue_score": {"1": 0.43, "2": 0.41},
+                "consensus_regions": [[1, 2]],
+            }
+        )
+
+        response = client.get("/api/disorder?pdb_id=AF-P69905-F1")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["pdb_id"] == "AF-P69905-F1"
+        assert data["disorder"]["accession"] == "P69905"
+        assert data["disorder"]["per_residue_score"] == {"1": 0.43, "2": 0.41}
+        assert data["disorder"]["consensus_regions"] == [[1, 2]]
+        call_args = mock_aggregator.aggregate_disorder_prediction.call_args
+        assert call_args.args[0] == "AF-P69905-F1"
+        assert call_args.args[2] == "alphafold"
+
+
+def test_disorder_endpoint_400s_on_invalid_chain_param():
+    response = client.get("/api/disorder?pdb_id=4HHB&chain=../etc")
     assert response.status_code == 400
 
 
@@ -1702,6 +1740,51 @@ def test_pockets_endpoint_404s_when_structure_not_found():
 
 def test_pockets_endpoint_400s_on_invalid_pdb_id():
     response = client.get("/api/pockets?pdb_id=../etc")
+    assert response.status_code == 400
+
+
+def test_flexibility_endpoint_returns_a_real_looking_prediction(tmp_path):
+    pdb_file = tmp_path / "4rlt.pdb"
+    pdb_file.write_text("ATOM      1  N   MET A   1      27.340  24.430   2.614\n")
+    fake_result = {
+        "residue_numbers": [1, 2, 3],
+        "flexibility": [1.0, 0.0, 1.0],
+        "b_factor": None,
+    }
+
+    with patch(
+        "src.backend.api._find_structure_pdb_path", return_value=pdb_file
+    ), patch(
+        "src.backend.api.calculate_gnm_flexibility",
+        return_value=fake_result,
+    ):
+        response = client.get("/api/flexibility?pdb_id=4RLT")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["pdb_id"] == "4RLT"
+    assert body["flexibility"] == fake_result
+
+
+def test_flexibility_endpoint_404s_when_structure_not_found():
+    with patch("src.backend.api._find_structure_pdb_path", return_value=None):
+        response = client.get("/api/flexibility?pdb_id=4RLT")
+    assert response.status_code == 404
+
+
+def test_flexibility_endpoint_404s_when_too_few_residues_to_model(tmp_path):
+    pdb_file = tmp_path / "4rlt.pdb"
+    pdb_file.write_text("ATOM      1  N   MET A   1      27.340  24.430   2.614\n")
+
+    with patch(
+        "src.backend.api._find_structure_pdb_path", return_value=pdb_file
+    ), patch("src.backend.api.calculate_gnm_flexibility", return_value=None):
+        response = client.get("/api/flexibility?pdb_id=4RLT")
+    assert response.status_code == 404
+
+
+def test_flexibility_endpoint_400s_on_invalid_pdb_id():
+    response = client.get("/api/flexibility?pdb_id=../etc")
     assert response.status_code == 400
 
 
@@ -3379,6 +3462,117 @@ async def test_ddmut_job_sweep_drops_old_finished_jobs_but_keeps_recent_and_runn
     remaining = set(api_module.ddmut_jobs.keys())
     assert remaining == {"recent_completed", "still_running"}
     api_module.ddmut_jobs.clear()
+
+
+def test_submit_prankweb_job_returns_queued(tmp_path):
+    """Submitting a pocket-detection job returns a job_id immediately -
+    it must not block on the slow PrankWeb submit/poll pipeline."""
+    api_module.prankweb_jobs.clear()
+    pdb_file = _write_test_pdb(tmp_path)
+
+    with patch("src.backend.api._find_structure_pdb_path", return_value=pdb_file):
+        response = client.post("/api/jobs/pocket-detection", json={"pdb_id": "1UBQ"})
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "queued"
+    assert body["job_id"] in api_module.prankweb_jobs
+    api_module.prankweb_jobs.clear()
+
+
+def test_submit_prankweb_job_404s_when_structure_not_found():
+    with patch("src.backend.api._find_structure_pdb_path", return_value=None):
+        response = client.post("/api/jobs/pocket-detection", json={"pdb_id": "1UBQ"})
+    assert response.status_code == 404
+
+
+def test_submit_prankweb_job_400s_on_invalid_pdb_id():
+    response = client.post("/api/jobs/pocket-detection", json={"pdb_id": "../etc"})
+    assert response.status_code == 400
+
+
+def test_submit_prankweb_job_rejects_an_invalid_webhook_url(tmp_path):
+    pdb_file = _write_test_pdb(tmp_path)
+    with patch("src.backend.api._find_structure_pdb_path", return_value=pdb_file):
+        response = client.post(
+            "/api/jobs/pocket-detection",
+            json={"pdb_id": "1UBQ", "webhook_url": "not-a-url"},
+        )
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_prankweb_job_execution_completes_and_is_pollable():
+    """Directly exercises _execute_prankweb_job (the background task the
+    endpoint schedules) end-to-end, then confirms GET /api/jobs/{job_id} -
+    the same polling endpoint used for every other job type - surfaces
+    the real pocket-detection result."""
+    api_module.prankweb_jobs.clear()
+    job_id = "test-prankweb-job"
+    api_module.prankweb_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    with patch(
+        "src.backend.api.PrankWebClient.detect_pockets", new_callable=AsyncMock
+    ) as mock_detect:
+        mock_detect.return_value = {
+            "pockets": [{"name": "pocket1", "rank": "1", "score": "19.55"}],
+            "structure": {},
+            "metadata": {},
+        }
+        await api_module._execute_prankweb_job(job_id, "PDB TEXT")
+
+    poll = client.get(f"/api/jobs/{job_id}")
+    assert poll.json()["status"] == "completed"
+    assert poll.json()["prediction"]["pockets"][0]["name"] == "pocket1"
+
+    api_module.prankweb_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_prankweb_job_execution_surfaces_pipeline_failure():
+    api_module.prankweb_jobs.clear()
+    job_id = "test-prankweb-job-fail"
+    api_module.prankweb_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    with patch(
+        "src.backend.api.PrankWebClient.detect_pockets", new_callable=AsyncMock
+    ) as mock_detect:
+        from src.backend.prankweb_client import PrankWebError
+
+        mock_detect.side_effect = PrankWebError(
+            "PrankWeb job job-1 did not complete within 480s"
+        )
+        await api_module._execute_prankweb_job(job_id, "PDB TEXT")
+
+    poll = client.get(f"/api/jobs/{job_id}")
+    assert poll.json()["status"] == "failed"
+    assert "did not complete within 480s" in poll.json()["error"]
+
+    api_module.prankweb_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_prankweb_job_sweep_drops_old_finished_jobs_but_keeps_recent_and_running():
+    now = time.time()
+    api_module.prankweb_jobs.clear()
+    api_module.prankweb_jobs.update(
+        {
+            "old_completed": {"status": "completed", "finished_at": now - 10_000},
+            "recent_completed": {"status": "completed", "finished_at": now},
+            "still_running": {"status": "running", "created_at": now - 10_000},
+        }
+    )
+
+    with patch.object(api_module, "_JOB_TTL_SECONDS", 60), patch(
+        "asyncio.sleep", new_callable=AsyncMock
+    ) as mock_sleep:
+        mock_sleep.side_effect = [None, asyncio.CancelledError()]
+        with pytest.raises(asyncio.CancelledError):
+            await api_module._sweep_prankweb_jobs()
+
+    remaining = set(api_module.prankweb_jobs.keys())
+    assert remaining == {"recent_completed", "still_running"}
+    api_module.prankweb_jobs.clear()
 
 
 @pytest.mark.asyncio

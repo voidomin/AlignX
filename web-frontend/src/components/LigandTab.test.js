@@ -8,9 +8,11 @@ vi.mock('../api.js', () => ({
     fetchInterface: vi.fn(),
     fetchLigandInfo: vi.fn(),
     fetchPockets: vi.fn(),
+    submitPrankwebJob: vi.fn(),
+    pollJobUntilDone: vi.fn(),
 }));
 
-import { fetchInteractions, fetchLigands, fetchChains, fetchInterface, fetchLigandInfo, fetchPockets } from '../api.js';
+import { fetchInteractions, fetchLigands, fetchChains, fetchInterface, fetchLigandInfo, fetchPockets, submitPrankwebJob, pollJobUntilDone } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new LigandTab({
@@ -505,6 +507,94 @@ describe('LigandTab', () => {
             await Promise.resolve();
 
             expect(tab.element.querySelector('#candidate-pockets-section').classList.contains('hidden')).toBe(true);
+        });
+    });
+
+    describe('PrankWeb real pocket detection', () => {
+        it('submits a job, polls it, and renders the real ranked pocket table', async () => {
+            submitPrankwebJob.mockResolvedValue({ job_id: 'job-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({
+                status: 'completed',
+                prediction: {
+                    pockets: [
+                        { name: 'pocket1', rank: '1', score: '19.55', probability: '0.841', residues: ['E_104', 'E_120'] },
+                    ],
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([], 'run_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            tab.element.querySelector('#prankweb-detect-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(submitPrankwebJob).toHaveBeenCalledWith('4RLT', 'run_1');
+            expect(pollJobUntilDone).toHaveBeenCalledWith('job-1', expect.objectContaining({ intervalMs: 8000 }));
+            const section = tab.element.querySelector('#prankweb-pockets-section');
+            expect(section.classList.contains('hidden')).toBe(false);
+            const rows = tab.element.querySelectorAll('#prankweb-pockets-table-body tr');
+            expect(rows).toHaveLength(1);
+            expect(rows[0].textContent).toContain('E104');
+            expect(rows[0].textContent).toContain('19.55');
+            expect(tab.element.querySelector('#prankweb-feedback').textContent).toContain('Found 1 real pocket');
+        });
+
+        it('shows a message and hides the table when no real pockets are detected', async () => {
+            submitPrankwebJob.mockResolvedValue({ job_id: 'job-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({ status: 'completed', prediction: { pockets: [] } });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([], 'run_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            tab.element.querySelector('#prankweb-detect-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#prankweb-feedback').textContent).toContain('No real pockets detected');
+            expect(tab.element.querySelector('#prankweb-pockets-section').classList.contains('hidden')).toBe(true);
+        });
+
+        it('shows the job error message when the PrankWeb job fails', async () => {
+            submitPrankwebJob.mockResolvedValue({ job_id: 'job-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({ status: 'failed', error: 'PrankWeb job job-1 did not complete within 480s' });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([], 'run_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            tab.element.querySelector('#prankweb-detect-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#prankweb-feedback').textContent).toContain('did not complete within 480s');
+        });
+
+        it('shows an error message when submission itself fails', async () => {
+            submitPrankwebJob.mockRejectedValue(new Error('boom'));
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([], 'run_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            tab.element.querySelector('#prankweb-detect-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#prankweb-feedback').textContent).toContain('boom');
         });
     });
 });

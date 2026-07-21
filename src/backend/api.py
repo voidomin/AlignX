@@ -40,6 +40,7 @@ from src.backend.foldseek_client import FoldseekClient, FoldseekError
 from src.backend.clustalo_client import ClustalOmegaClient
 from src.backend.blast_client import BlastClient
 from src.backend.ddmut_client import DDMutClient
+from src.backend.prankweb_client import PrankWebClient
 from src.backend.esmfold_client import fold_sequence, ESMFoldError, MAX_SEQUENCE_LENGTH
 from src.backend.database import HistoryDatabase
 from src.backend.ligand_analyzer import LigandAnalyzer
@@ -54,6 +55,7 @@ from src.backend.rmsd_calculator import (
     get_morph_frames,
 )
 from src.backend.tm_score_calculator import calculate_pairwise_tm_score
+from src.backend.flexibility_calculator import calculate_gnm_flexibility
 
 logger = get_logger()
 
@@ -81,12 +83,14 @@ async def lifespan(app: FastAPI):
     clustalo_sweep_task = asyncio.create_task(_sweep_clustalo_jobs())
     blast_sweep_task = asyncio.create_task(_sweep_blast_jobs())
     ddmut_sweep_task = asyncio.create_task(_sweep_ddmut_jobs())
+    prankweb_sweep_task = asyncio.create_task(_sweep_prankweb_jobs())
     yield
     sweep_task.cancel()
     discovery_sweep_task.cancel()
     clustalo_sweep_task.cancel()
     blast_sweep_task.cancel()
     ddmut_sweep_task.cancel()
+    prankweb_sweep_task.cancel()
 
 
 # Initialize FastAPI App
@@ -943,9 +947,9 @@ async def submit_alignment_job(
 def get_alignment_job(job_id: str):
     """
     Poll the status/result of a submitted job (alignment, discovery,
-    Clustal Omega, BLAST conservation, or DDMut ddG stability - job IDs
-    are unique uuid4 hex strings, so one polling endpoint covers all of
-    them).
+    Clustal Omega, BLAST conservation, DDMut ddG stability, or PrankWeb
+    pocket detection - job IDs are unique uuid4 hex strings, so one
+    polling endpoint covers all of them).
     """
     job = (
         alignment_jobs.get(job_id)
@@ -953,6 +957,7 @@ def get_alignment_job(job_id: str):
         or clustalo_jobs.get(job_id)
         or blast_jobs.get(job_id)
         or ddmut_jobs.get(job_id)
+        or prankweb_jobs.get(job_id)
     )
     if job is None:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found.")
@@ -1450,6 +1455,116 @@ async def submit_ddmut_job(
     )
 
     return {"job_id": job_id, "status": "queued", "mutation": mutation_code}
+
+
+# In-memory job registry for the async PrankWeb pocket-detection pipeline
+# (see prankweb_client.py) - the sixth job type, mirroring ddmut_jobs
+# above. Separate from LigandAnalyzer.find_candidate_pockets' existing
+# fast, synchronous heuristic finder - this is a second, opt-in "real
+# geometric detection" action alongside it, not a replacement, since
+# PrankWeb availability/rate limits shouldn't regress the always-available
+# heuristic.
+prankweb_jobs: Dict[str, Dict[str, Any]] = {}
+
+
+async def _sweep_prankweb_jobs():
+    """Periodically drop finished PrankWeb jobs older than _JOB_TTL_SECONDS."""
+    while True:
+        await asyncio.sleep(_JOB_SWEEP_INTERVAL_SECONDS)
+        now = time.time()
+        stale_ids = [
+            jid
+            for jid, job in prankweb_jobs.items()
+            if job.get("status") in ("completed", "failed")
+            and now - job.get("finished_at", now) > _JOB_TTL_SECONDS
+        ]
+        for jid in stale_ids:
+            prankweb_jobs.pop(jid, None)
+
+
+async def _run_prankweb_pipeline(pdb_file_content: str) -> Dict[str, Any]:
+    client = PrankWebClient()
+    prediction = await client.detect_pockets(pdb_file_content)
+    return {"prediction": prediction}
+
+
+async def _execute_prankweb_job(
+    job_id: str, pdb_file_content: str, webhook_url: Optional[str] = None
+):
+    prankweb_jobs[job_id]["status"] = "running"
+    created_at = prankweb_jobs[job_id].get("created_at", time.time())
+    try:
+        outcome = await _run_prankweb_pipeline(pdb_file_content)
+        prankweb_jobs[job_id] = {
+            "status": "completed",
+            "created_at": created_at,
+            "finished_at": time.time(),
+            **outcome,
+        }
+    except Exception as e:
+        prankweb_jobs[job_id] = {
+            "status": "failed",
+            "created_at": created_at,
+            "finished_at": time.time(),
+            "error": str(e),
+        }
+    if webhook_url:
+        await _notify_webhook(
+            webhook_url,
+            {
+                "job_id": job_id,
+                "status": prankweb_jobs[job_id]["status"],
+                "run_id": None,
+            },
+        )
+
+
+@app.post(
+    "/api/jobs/pocket-detection",
+    tags=["Jobs"],
+    status_code=202,
+    responses={
+        400: {"description": "Invalid pdb_id/run_id/session_id"},
+        404: {"description": "Structure PDB not found in the active workspace"},
+    },
+)
+async def submit_prankweb_job(
+    pdb_id: Annotated[str, Body(..., embed=True)],
+    run_id: Annotated[Optional[str], Body(embed=True)] = None,
+    session_id: Annotated[Optional[str], Body(embed=True)] = None,
+    webhook_url: Annotated[Optional[str], Body(embed=True)] = None,
+):
+    """
+    Submit a real geometric pocket-detection job via PrankWeb (P2Rank) -
+    see prankweb_client.py. A second, slower, opt-in action alongside the
+    existing fast, synchronous /api/pockets heuristic finder, the same
+    relationship DDMut's ddG job has to the existing fast ClinVar/
+    AlphaMissense lookup. Returns immediately with a job_id; poll
+    GET /api/jobs/{job_id} for status - or, if webhook_url is given,
+    receive a POST there instead ({job_id, status, run_id: null}) once
+    the job finishes.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    pdb_path = _find_structure_pdb_path(pdb_id, run_id, session_id)
+    if not pdb_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Structure PDB for {pdb_id} not found in active workspace.",
+        )
+
+    webhook_url = await _validate_webhook_url(webhook_url)
+
+    job_id = uuid.uuid4().hex
+    prankweb_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    _spawn_background_task(
+        _execute_prankweb_job(job_id, pdb_path.read_text(), webhook_url)
+    )
+
+    return {"job_id": job_id, "status": "queued"}
 
 
 @app.post(
@@ -1967,6 +2082,51 @@ def get_pockets(
 
 
 @app.get(
+    "/api/flexibility",
+    tags=["Annotations"],
+    responses={
+        400: {"description": "Invalid pdb_id, run_id, or session_id"},
+        404: {
+            "description": "Structure PDB not found in the active workspace, or too few CA-bearing residues to model"
+        },
+    },
+)
+def get_flexibility(
+    pdb_id: Annotated[str, Query(...)],
+    run_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Real-time Gaussian Network Model flexibility prediction for one
+    structure - see flexibility_calculator.calculate_gnm_flexibility. No
+    external API call at all, unlike every other annotation route - pure
+    coordinate math on a structure already downloaded. A computational
+    prediction, not ground truth; `b_factor` (a real PDB entry's own
+    crystallographic per-residue mobility, when present) is included
+    alongside it as a free sanity-comparison point, not a claim the two
+    are equivalent measurements.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    pdb_path = _find_structure_pdb_path(pdb_id, run_id, session_id)
+    if not pdb_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Structure PDB for {pdb_id} not found in active workspace.",
+        )
+
+    result = calculate_gnm_flexibility(pdb_path)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Too few CA-bearing residues in {pdb_id} to model flexibility.",
+        )
+    return {"pdb_id": pdb_id, "flexibility": sanitize_for_json(result)}
+
+
+@app.get(
     "/api/structure-file",
     tags=["Structures"],
     responses={
@@ -2236,6 +2396,7 @@ async def get_mutation_impact(
         )
 
         clinvar = None
+        gnomad = None
         gene = summary.get("gene")
         if gene and wildtype_residue:
             variant_notation = (
@@ -2243,6 +2404,9 @@ async def get_mutation_impact(
             )
             clinvar = await annotation_aggregator.fetch_clinvar_significance(
                 gene, variant_notation, client
+            )
+            gnomad = await annotation_aggregator.fetch_gnomad_frequency(
+                gene, wildtype_residue, uniprot_position, mutant, client
             )
 
         features = await annotation_aggregator.fetch_uniprot_features(accession, client)
@@ -2277,6 +2441,7 @@ async def get_mutation_impact(
             "known_uniprot_variant": known_variant,
             "clinvar": clinvar,
             "alphamissense": alphamissense,
+            "gnomad": gnomad,
             "highlight_chains": {chain: [resi]},
         }
     )
@@ -2311,6 +2476,37 @@ async def get_mutation_tolerance(
         "pdb_id": pdb_id,
         "chain": chain,
         "tolerance": sanitize_for_json(tolerance),
+    }
+
+
+@app.get(
+    "/api/disorder",
+    tags=["Annotations"],
+    responses={400: {"description": "Invalid pdb_id or chain"}},
+)
+async def get_disorder_prediction(
+    pdb_id: Annotated[str, Query(...)],
+    chain: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Real sequence-based intrinsic-disorder prediction (MobiDB) for one
+    Compare-mode structure, resolved to this structure's own residue
+    numbering (see AnnotationAggregator.aggregate_disorder_prediction).
+    Works for any structure with a resolved UniProt accession, the same
+    way /api/mutation-tolerance does.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(chain, "chain")
+
+    source = PDBManager.detect_source(pdb_id)
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        disorder = await annotation_aggregator.aggregate_disorder_prediction(
+            pdb_id, chain, source, client
+        )
+    return {
+        "pdb_id": pdb_id,
+        "chain": chain,
+        "disorder": sanitize_for_json(disorder),
     }
 
 
