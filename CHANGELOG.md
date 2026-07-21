@@ -2,6 +2,83 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.96.0]
+
+Phase 6: a 6-stage feature batch, smallest/most-contained first, all on one
+branch. As with every prior phase, external contracts were verified live
+rather than assumed - and this phase's live-verification discipline caught
+two real bugs before they shipped: InterProScan5's `appl` parameter needing
+non-obvious values (`PfamA`/`PrositeProfiles`, not `Pfam`/`PROSITE-ProfileScan`
+- confirmed via `GET .../parameterdetails/appl`, not the more intuitive names
+a casual read would suggest), and a real correctness bug in the new PAE
+domain segmentation: sequentially-adjacent residues are always confidently
+placed regardless of overall fold confidence, which trivially chains an
+entire chain into one spurious "domain" unless local backbone adjacency is
+explicitly excluded from the connectivity graph (found by testing against a
+real AlphaFold p53 model, not a synthetic one).
+
+### Added
+- **UniProt free-text function summary**: the same plain-English "Function"
+  paragraph UniProt's own entry page shows, surfaced at the top of the
+  Functional Annotation panel.
+- **REVEL pathogenicity score**: a third, independent variant-effect
+  predictor alongside AlphaMissense in Mutation Impact Mapping, from the
+  same myvariant.info lookup gnomAD already uses.
+- **PubChem 2D ligand analog search**: up to 10 structurally similar known
+  compounds (≥95% Tanimoto similarity) for any bound ligand, each linking
+  straight to its real PubChem entry.
+- **InterProScan5 sequence-only annotation**: the one annotation path that
+  works for structures with no resolvable UniProt accession at all (ESM
+  Atlas/uploaded/raw-sequence predictions) - a new 7th async job type
+  submitting the structure's own extracted sequence directly.
+- **PAE-based automatic domain segmentation**: auto-splits an AlphaFold
+  structure into rigid domains by connected-component analysis over its own
+  real PAE matrix - distinct from InterPro's sequence-based domain
+  boundaries. New "PAE-derived domains" 3D viewer color scheme.
+- **Geometric all-atom steric-clash score**: a self-computed van der Waals
+  overlap detector for every structure source, filling the gap left by Bulk
+  QC's wwPDB-only clashscore (which only ever exists for a real PDB entry).
+  New "Self Clash" column in the Bulk QC summary table.
+
+### Verified
+- Full backend suite: 1408 tests passing (up from 1383). `black`/`ruff` clean.
+- Frontend suite: 550 Vitest tests passing (up from 549). `npm run lint`
+  clean, `npm run build` succeeds.
+- Every external call verified live before implementation: a real UniProt
+  function summary for a real accession; a real REVEL score alongside
+  gnomAD/ClinVar/AlphaMissense for a real variant; a real PubChem analog
+  list for a real bound heme ligand; a real InterProScan5 job completed
+  end-to-end for a real sequence (RUNNING to FINISHED, ~90s) with its
+  non-obvious `appl` parameter values confirmed against the live parameter
+  API; a real PAE-domain split for real AlphaFold p53 and EGFR models,
+  matching their known domain architecture (p53's DNA-binding and
+  tetramerization domains; EGFR's extracellular and kinase domains) only
+  after fixing the backbone-adjacency chaining bug above; a real
+  self-computed clash score for a real PDB entry compared against its own
+  wwPDB clashscore, honestly documented as a rough sanity check rather than
+  a reproduction (they track closely for a modern, well-refined structure
+  but diverge sharply for an older one, since real MolProbity's count is
+  dominated by added-hydrogen clashes this heavy-atom-only detector cannot
+  see).
+
+## [3.95.0]
+
+Phase 5: a 4-stage feature batch, smallest/most-contained first. A live-verification research pass checked 7 candidate ideas against real external APIs/libraries before any code was written; 4 came back genuinely feasible. As with every prior phase, external contracts were verified live rather than assumed - this phase's discipline caught two real, ship-blocking bugs before they went out: MobiDB returning HTTP 200 with an empty body (not a 404) for an unrecognized accession, and PrankWeb's real submission protocol (undocumented publicly - found by reading its actual server source) needing both a longer default timeout and transient-connection-error retries than a naive implementation would have used.
+
+### Added
+- **Population allele frequency (gnomAD)**: a real third signal in Mutation Impact Mapping alongside ClinVar/AlphaMissense - a variant can be common in the population yet still flagged pathogenic by a predictor, or vice versa, which is itself informative. Via myvariant.info, keyless.
+- **Sequence-based disorder prediction (MobiDB)**: real per-residue intrinsic-disorder scores and consensus disordered regions, translated onto each structure's own residue numbering. New "Sequence disorder (MobiDB)" 3D viewer color scheme.
+- **Real-time GNM flexibility prediction**: a coarse-grained Gaussian Network Model computed from a structure's own coordinates - no external API at all, unlike everything else in this phase. New Plotly chart in Analytics' Quality sub-tab (with a real B-factor overlay when available) and a new "Predicted flexibility (GNM)" viewer color scheme. Live-verified against a real PDB entry: a real 0.59 Pearson correlation between the prediction and the structure's own crystallographic B-factors.
+- **Real geometric pocket detection (PrankWeb/P2Rank)**: a second, opt-in, slower action in the Ligands tab alongside the existing fast heuristic pocket finder - a real validated cavity detector, not a proxy. New 6th async job type (`POST /api/jobs/pocket-detection`).
+
+### Fixed
+- `docs/FEATURES.md`'s stale "What's next" note claiming `/api/history`'s payload-size issue was still open - it was already fixed in v3.20.0.
+
+### Verified
+- Full backend suite: 1343 tests passing. `black`/`ruff` clean.
+- Frontend suite: 533 Vitest tests passing (up from 503). `npm run lint` clean, `npm run build` succeeds.
+- Every external call verified live before implementation, catching two real bugs mid-session (see above): a real gnomAD population frequency for a real PCSK9 variant; a real MobiDB disorder score for a real AlphaFold structure and a real PDB entry, with a graceful empty result for an accession MobiDB doesn't cover; a real GNM flexibility prediction plotted against real B-factors; PrankWeb's actual submission contract discovered from its server source and confirmed end-to-end (0 pockets for crambin - a real negative, not a bug - and 6 real pockets for a cAMP-dependent protein kinase matching its known ATP-binding site).
+
 ## [3.94.0]
 
 Phase 4: a 9-stage feature batch, ordered smallest/most-contained first, all on one branch. As with prior phases, every external dependency and existing-code assumption was verified live rather than assumed - and this phase's live-verification discipline caught a real bug before it shipped: the new CLI's job-poll parsing initially read a top-level `run_id` that doesn't exist in `GET /api/jobs/{job_id}`'s response (the real run id is nested under `results.id`; only the webhook payload gets a top-level `run_id`), found and fixed by running the CLI end-to-end against a live local server rather than trusting mocked tests alone.

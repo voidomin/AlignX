@@ -1526,6 +1526,83 @@ class TestFetchUniprotGeneAndSequence:
         assert summary == {"gene": None, "sequence": None}
 
 
+class TestFetchUniprotFunctionSummary:
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_the_first_unscoped_function_comment(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "comments": [
+                    {
+                        "commentType": "FUNCTION",
+                        "texts": [
+                            {"value": "Involved in oxygen transport from the lung"}
+                        ],
+                    },
+                    {
+                        "commentType": "FUNCTION",
+                        "molecule": "Hemopressin",
+                        "texts": [{"value": "Hemopressin acts as an antagonist"}],
+                    },
+                ]
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            summary = await aggregator.fetch_uniprot_function_summary("P68871", client)
+        assert summary == "Involved in oxygen transport from the lung"
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_skips_molecule_scoped_entries_entirely_if_no_main_one_exists(
+        self, mock_get
+    ):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "comments": [
+                    {
+                        "commentType": "FUNCTION",
+                        "molecule": "Hemopressin",
+                        "texts": [{"value": "Hemopressin acts as an antagonist"}],
+                    }
+                ]
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            summary = await aggregator.fetch_uniprot_function_summary("P68871", client)
+        assert summary is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_when_no_function_comment_exists(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={"comments": [{"commentType": "SUBUNIT", "texts": []}]}
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            summary = await aggregator.fetch_uniprot_function_summary("P68871", client)
+        assert summary is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_non_200(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            summary = await aggregator.fetch_uniprot_function_summary("NOPE", client)
+        assert summary is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            summary = await aggregator.fetch_uniprot_function_summary("P68871", client)
+        assert summary is None
+
+
 class TestFetchClinvarSignificance:
     @pytest.mark.asyncio
     @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
@@ -1589,6 +1666,116 @@ class TestFetchClinvarSignificance:
         aggregator = AnnotationAggregator()
         async with httpx.AsyncClient() as client:
             result = await aggregator.fetch_clinvar_significance("HBB", "E7V", client)
+        assert result is None
+
+
+class TestFetchGnomadFrequency:
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_filters_hits_to_the_matching_ref_and_alt_residue(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "hits": [
+                    {"dbnsfp": {"aa": {"ref": "V", "alt": "F"}}},
+                    {
+                        "dbnsfp": {
+                            "aa": {"ref": "V", "alt": "I"},
+                            "revel": {"score": 0.051},
+                        },
+                        "gnomad_exome": {"af": {"af": 0.856674}},
+                        "gnomad_genome": {"af": {"af": 0.831182}},
+                    },
+                ]
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_gnomad_frequency(
+                "PCSK9", "V", 474, "I", client
+            )
+        assert result == {
+            "af_exome": 0.856674,
+            "af_genome": 0.831182,
+            "revel_score": 0.051,
+        }
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_revel_score_when_absent_from_the_hit(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "hits": [
+                    {
+                        "dbnsfp": {"aa": {"ref": "V", "alt": "I"}},
+                        "gnomad_exome": {"af": {"af": 0.856674}},
+                    },
+                ]
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_gnomad_frequency(
+                "PCSK9", "V", 474, "I", client
+            )
+        assert result["revel_score"] is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_picks_the_highest_exome_af_when_multiple_hits_match(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "hits": [
+                    {
+                        "dbnsfp": {"aa": {"ref": "V", "alt": "I"}},
+                        "gnomad_exome": {"af": {"af": 0.001}},
+                    },
+                    {
+                        "dbnsfp": {"aa": {"ref": "V", "alt": "I"}},
+                        "gnomad_exome": {"af": {"af": 0.856674}},
+                    },
+                ]
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_gnomad_frequency(
+                "PCSK9", "V", 474, "I", client
+            )
+        assert result["af_exome"] == 0.856674
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_when_no_hit_matches_the_substitution(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={"hits": [{"dbnsfp": {"aa": {"ref": "V", "alt": "F"}}}]}
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_gnomad_frequency(
+                "PCSK9", "V", 474, "I", client
+            )
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_non_200(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=500)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_gnomad_frequency(
+                "PCSK9", "V", 474, "I", client
+            )
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_gnomad_frequency(
+                "PCSK9", "V", 474, "I", client
+            )
         assert result is None
 
 
@@ -1798,6 +1985,7 @@ class TestAggregateForStructure:
             "reactome_pathways": [],
             "uniprot_features": [],
             "catalytic_sites": [],
+            "function_summary": None,
         }
 
     @pytest.mark.asyncio
@@ -1869,6 +2057,10 @@ class TestAggregateForStructure:
                     }
                 ]
             ),
+        ), patch.object(
+            aggregator,
+            "fetch_uniprot_function_summary",
+            AsyncMock(return_value="Involved in oxygen transport"),
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
@@ -1881,6 +2073,7 @@ class TestAggregateForStructure:
         assert result["reactome_pathways"][0]["name"] == "Erythrocytes take up oxygen"
         assert result["uniprot_features"][0]["type"] == "Binding site"
         assert result["catalytic_sites"][0]["enzyme_name"] == "test enzyme"
+        assert result["function_summary"] == "Involved in oxygen transport"
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -1942,6 +2135,8 @@ class TestAggregateForStructure:
             AsyncMock(return_value={n: n + 10 for n in range(1, 100)}),
         ), patch.object(
             aggregator, "fetch_catalytic_site_residues", AsyncMock(return_value=[])
+        ), patch.object(
+            aggregator, "fetch_uniprot_function_summary", AsyncMock(return_value=None)
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
@@ -2007,6 +2202,8 @@ class TestAggregateForStructure:
             aggregator, "fetch_uniprot_features", AsyncMock(return_value=[])
         ), patch.object(
             aggregator, "fetch_catalytic_site_residues", AsyncMock(return_value=[])
+        ), patch.object(
+            aggregator, "fetch_uniprot_function_summary", AsyncMock(return_value=None)
         ), patch.object(
             aggregator,
             "resolve_go_term_names",
@@ -2750,6 +2947,161 @@ class TestAggregateMutationTolerance:
             )
         assert result["accession"] == "P68871"
         assert result["per_residue_average"] == {"6": 0.95}
+
+
+class TestFetchDisorderPrediction:
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_parses_per_residue_scores_and_consensus_regions(self, mock_get):
+        response = _mock_response(
+            json_data={
+                "prediction-disorder-alphafold": {"scores": [0.43, 0.41, 0.3]},
+                "prediction-disorder-th_50": {"regions": [[1, 2]]},
+            }
+        )
+        response.text = "non-empty"
+        mock_get.return_value = response
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_disorder_prediction("P69905", client)
+
+        assert result == {
+            "per_residue_score": {"1": 0.43, "2": 0.41, "3": 0.3},
+            "consensus_regions": [[1, 2]],
+        }
+        called_kwargs = mock_get.call_args.kwargs
+        assert called_kwargs["params"] == {"acc": "P69905", "format": "json"}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_when_mobidb_has_no_data_for_this_accession(
+        self, mock_get
+    ):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_disorder_prediction("P00000", client)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_a_200_with_an_empty_body(self, mock_get):
+        # Confirmed live: MobiDB returns HTTP 200 with an empty body (not a
+        # 404) for an unrecognized accession - a naive response.json() call
+        # here would raise an uncaught JSONDecodeError instead.
+        response = _mock_response(status_code=200)
+        response.text = ""
+        mock_get.return_value = response
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_disorder_prediction(
+                "NOTAREALACCESSION", client
+            )
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_when_response_has_neither_scores_nor_regions(
+        self, mock_get
+    ):
+        response = _mock_response(json_data={"acc": "P69905"})
+        response.text = "non-empty"
+        mock_get.return_value = response
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_disorder_prediction("P69905", client)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_disorder_prediction("P69905", client)
+        assert result is None
+
+
+class TestAggregateDisorderPrediction:
+    @pytest.mark.asyncio
+    @patch.object(AnnotationAggregator, "fetch_disorder_prediction")
+    @patch.object(AnnotationAggregator, "_resolve_structure_accession")
+    async def test_returns_empty_when_no_accession_resolves(
+        self, mock_resolve, mock_disorder
+    ):
+        mock_resolve.return_value = None
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.aggregate_disorder_prediction(
+                "ESM-MGYP1", None, "esm_atlas", client
+            )
+        assert result == {
+            "accession": None,
+            "per_residue_score": {},
+            "consensus_regions": [],
+        }
+        mock_disorder.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch.object(AnnotationAggregator, "fetch_disorder_prediction")
+    @patch.object(AnnotationAggregator, "_resolve_structure_accession")
+    async def test_returns_empty_when_mobidb_has_no_coverage(
+        self, mock_resolve, mock_disorder
+    ):
+        mock_resolve.return_value = "P69905"
+        mock_disorder.return_value = None
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.aggregate_disorder_prediction(
+                "AF-P69905-F1", None, "alphafold", client
+            )
+        assert result == {
+            "accession": "P69905",
+            "per_residue_score": {},
+            "consensus_regions": [],
+        }
+
+    @pytest.mark.asyncio
+    @patch.object(AnnotationAggregator, "fetch_disorder_prediction")
+    @patch.object(AnnotationAggregator, "_resolve_structure_accession")
+    async def test_alphafold_source_uses_positions_and_regions_directly(
+        self, mock_resolve, mock_disorder
+    ):
+        mock_resolve.return_value = "P69905"
+        mock_disorder.return_value = {
+            "per_residue_score": {"1": 0.43, "2": 0.41},
+            "consensus_regions": [[1, 2]],
+        }
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.aggregate_disorder_prediction(
+                "AF-P69905-F1", None, "alphafold", client
+            )
+        assert result["per_residue_score"] == {"1": 0.43, "2": 0.41}
+        assert result["consensus_regions"] == [[1, 2]]
+
+    @pytest.mark.asyncio
+    @patch.object(AnnotationAggregator, "resolve_uniprot_residue_mapping")
+    @patch.object(AnnotationAggregator, "fetch_disorder_prediction")
+    @patch.object(AnnotationAggregator, "_resolve_structure_accession")
+    async def test_pdb_source_translates_scores_but_omits_untranslated_regions(
+        self, mock_resolve, mock_disorder, mock_residue_map
+    ):
+        mock_resolve.return_value = "P68871"
+        mock_disorder.return_value = {
+            "per_residue_score": {"7": 0.6},
+            "consensus_regions": [[1, 8]],
+        }
+        mock_residue_map.return_value = {7: 6}  # uniprot pos 7 -> author resi 6
+
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.aggregate_disorder_prediction(
+                "4HHB", "B", "pdb", client
+            )
+        assert result["accession"] == "P68871"
+        assert result["per_residue_score"] == {"6": 0.6}
+        assert result["consensus_regions"] == []
 
     @pytest.mark.asyncio
     @patch.object(AnnotationAggregator, "fetch_alphamissense_scores")

@@ -290,6 +290,52 @@ export async function submitDdgStabilityJob(pdbId, chain, resi, mutant, webhookU
     return res.json();
 }
 
+// Real geometric pocket detection via PrankWeb - see prankweb_client.py.
+// A second, slower, opt-in action alongside the existing fast, synchronous
+// fetchPockets heuristic finder, the same relationship submitDdgStabilityJob
+// has to the existing fast/synchronous mutation-impact lookup.
+export async function submitPrankwebJob(pdbId, runId, sessionId, webhookUrl) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const body = { pdb_id: pdbId };
+    if (runId) body.run_id = assertSafeSegment(runId, 'runId');
+    if (sessionId) body.session_id = assertSafeSegment(sessionId, 'sessionId');
+    if (webhookUrl) body.webhook_url = webhookUrl;
+    const res = await fetch(buildUrl('/api/jobs/pocket-detection'), {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Pocket detection submission failed");
+    }
+    return res.json();
+}
+
+// Real domain/GO-term annotation via InterProScan5, from a structure's
+// own sequence (extracted server-side) - see interproscan_client.py/
+// api.py's _extract_structure_sequence. The one annotation path
+// available for structures with no resolvable UniProt accession at all
+// (ESM Atlas/uploaded/ESMFold-predicted structures).
+export async function submitInterproscanJob(pdbId, chain, runId, sessionId, webhookUrl) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const body = { pdb_id: pdbId };
+    if (chain) body.chain = assertSafeSegment(chain, 'chain');
+    if (runId) body.run_id = assertSafeSegment(runId, 'runId');
+    if (sessionId) body.session_id = assertSafeSegment(sessionId, 'sessionId');
+    if (webhookUrl) body.webhook_url = webhookUrl;
+    const res = await fetch(buildUrl('/api/jobs/sequence-annotation'), {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Sequence annotation submission failed");
+    }
+    return res.json();
+}
+
 export async function submitDiscoveryJob(pdbId, databases, webhookUrl) {
     const body = { pdb_id: pdbId };
     if (databases && databases.length > 0) body.databases = databases;
@@ -657,6 +703,56 @@ export async function fetchMutationTolerance(pdbId, chain) {
     return res.json();
 }
 
+// Real sequence-based intrinsic-disorder prediction (MobiDB) - see the
+// backend's AnnotationAggregator.aggregate_disorder_prediction(). Same
+// shape as fetchMutationTolerance above.
+export async function fetchDisorderPrediction(pdbId, chain) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const params = { pdb_id: pdbId };
+    if (chain) params.chain = assertSafeSegment(chain, 'chain');
+    const res = await fetch(buildUrl('/api/disorder', params), { headers: authHeaders() });
+    if (!res.ok) throw new Error("Disorder prediction fetch failed");
+    return res.json();
+}
+
+// Real-time Gaussian Network Model flexibility prediction - see the
+// backend's flexibility_calculator.calculate_gnm_flexibility(). No
+// external service call at all, unlike every other annotation fetch here -
+// pure coordinate math on a structure already downloaded, same
+// run_id/session_id resolution /api/pockets and /api/contact-map use.
+export async function fetchFlexibility(pdbId, runId, sessionId) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const params = { pdb_id: pdbId };
+    if (runId) params.run_id = assertSafeSegment(runId, 'runId');
+    if (sessionId) params.session_id = assertSafeSegment(sessionId, 'sessionId');
+    const res = await fetch(buildUrl('/api/flexibility', params), { headers: authHeaders() });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Flexibility prediction fetch failed");
+    }
+    return res.json();
+}
+
+// Real-time all-atom steric-clash detection - see the backend's
+// clash_calculator.calculate_clash_score(). No external service call at
+// all, same run_id/session_id resolution fetchFlexibility uses - fills
+// the gap left by fetchQc's wwPDB-only clashscore, which only exists for
+// real PDB entries. A rough sanity check against that number, not a
+// reproduction of it (excludes hydrogens entirely, so it can read much
+// lower for an older/poorly-refined structure).
+export async function fetchClashScore(pdbId, runId, sessionId) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const params = { pdb_id: pdbId };
+    if (runId) params.run_id = assertSafeSegment(runId, 'runId');
+    if (sessionId) params.session_id = assertSafeSegment(sessionId, 'sessionId');
+    const res = await fetch(buildUrl('/api/clash-score', params), { headers: authHeaders() });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Clash score fetch failed");
+    }
+    return res.json();
+}
+
 export async function fetchCathClassification(pdbId) {
     pdbId = assertValidPdbId(pdbId, 'pdbId');
     const res = await fetch(buildUrl('/api/cath', { pdb_id: pdbId }), { headers: authHeaders() });
@@ -675,6 +771,19 @@ export async function fetchPae(pdbId) {
     pdbId = assertValidPdbId(pdbId, 'pdbId');
     const res = await fetch(buildUrl('/api/pae', { pdb_id: pdbId }), { headers: authHeaders() });
     if (!res.ok) throw new Error("PAE fetch failed");
+    return res.json();
+}
+
+// Auto-split into rigid domains by connectivity in a structure's own real
+// PAE matrix - see pae_domain_calculator.py. A second, independent use of
+// the same PAE data fetchPae already surfaces.
+export async function fetchPaeDomains(pdbId) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const res = await fetch(buildUrl('/api/pae-domains', { pdb_id: pdbId }), { headers: authHeaders() });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "PAE domain segmentation fetch failed");
+    }
     return res.json();
 }
 

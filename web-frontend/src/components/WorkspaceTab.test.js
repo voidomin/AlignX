@@ -11,12 +11,19 @@ vi.mock('../api.js', () => ({
     getDiscoveryCitationsUrl: vi.fn((runId) => `http://mock/api/discover/citations?run_id=${runId}`),
     fetchValidation: vi.fn(),
     fetchQc: vi.fn(),
+    fetchClashScore: vi.fn(),
     fetchCathClassification: vi.fn(),
     fetchAssemblyInfo: vi.fn(),
     screenStructures: vi.fn(),
 }));
 
-import { submitDiscoveryJob, pollJobUntilDone, fetchValidation, fetchQc, fetchCathClassification, fetchAssemblyInfo, screenStructures } from '../api.js';
+import { submitDiscoveryJob, pollJobUntilDone, fetchValidation, fetchQc, fetchClashScore, fetchCathClassification, fetchAssemblyInfo, screenStructures } from '../api.js';
+
+async function flushAsync(times = 10) {
+    for (let i = 0; i < times; i++) {
+        await Promise.resolve();
+    }
+}
 
 function makeTab(overrides = {}) {
     return new WorkspaceTab({
@@ -38,6 +45,7 @@ function makeTab(overrides = {}) {
 describe('WorkspaceTab', () => {
     beforeEach(() => {
         localStorage.clear();
+        fetchClashScore.mockResolvedValue({ clashes: { clashscore: 0.0, clash_count: 0, atom_count: 100, clashing_pairs: [] } });
     });
 
     it('shows the empty-state message and a "0 Proteins" badge with no structures selected', () => {
@@ -1072,22 +1080,44 @@ describe('WorkspaceTab', () => {
                 secondary_structure_stats: { helix_percent: 80.3 },
                 validation: { clashscore: { value: 1.2 } },
             }));
+            fetchClashScore.mockResolvedValue({ clashes: { clashscore: 3.4, clash_count: 1, atom_count: 294, clashing_pairs: [] } });
 
             const tab = makeTab({ selectedPDBs: ['4HHB', '2HHB'] });
             tab.render();
 
             tab.element.querySelector('#workspace-run-qc-btn').click();
-            await Promise.resolve();
-            await Promise.resolve();
-            await Promise.resolve();
+            await flushAsync();
 
             expect(fetchQc).toHaveBeenCalledWith('4HHB');
             expect(fetchQc).toHaveBeenCalledWith('2HHB');
+            expect(fetchClashScore).toHaveBeenCalledWith('4HHB');
+            expect(fetchClashScore).toHaveBeenCalledWith('2HHB');
             const rows = tab.element.querySelectorAll('#workspace-qc-summary tbody tr');
             expect(rows).toHaveLength(2);
             expect(rows[0].textContent).toContain('92.5');
             expect(rows[0].textContent).toContain('80.3');
             expect(rows[0].textContent).toContain('1.2');
+            expect(rows[0].textContent).toContain('3.4');
+        });
+
+        it('still renders the rest of the row when the self-computed clash score fails', async () => {
+            fetchQc.mockResolvedValue({
+                pdb_id: 'AF-P69905-F1',
+                ramachandran_stats: { favored_percent: 92.5, outlier_count: 2 },
+                secondary_structure_stats: { helix_percent: 80.3 },
+                validation: null,
+            });
+            fetchClashScore.mockRejectedValue(new Error('boom'));
+
+            const tab = makeTab({ selectedPDBs: ['AF-P69905-F1'] });
+            tab.render();
+
+            tab.element.querySelector('#workspace-run-qc-btn').click();
+            await flushAsync();
+
+            const row = tab.element.querySelector('#workspace-qc-summary tbody tr');
+            expect(row.textContent).toContain('92.5');
+            expect(row.textContent).toContain('--');
         });
 
         it('shows a per-row failure message when QC fails for one structure', async () => {
@@ -1105,9 +1135,7 @@ describe('WorkspaceTab', () => {
             tab.render();
 
             tab.element.querySelector('#workspace-run-qc-btn').click();
-            await Promise.resolve();
-            await Promise.resolve();
-            await Promise.resolve();
+            await flushAsync();
 
             const rows = tab.element.querySelectorAll('#workspace-qc-summary tbody tr');
             expect(rows[1].textContent).toContain('2HHB');
@@ -1126,9 +1154,7 @@ describe('WorkspaceTab', () => {
             tab.render();
 
             tab.element.querySelector('#workspace-run-qc-btn').click();
-            await Promise.resolve();
-            await Promise.resolve();
-            await Promise.resolve();
+            await flushAsync();
 
             const row = tab.element.querySelector('#workspace-qc-summary tbody tr');
             expect(row.textContent).toContain('--');

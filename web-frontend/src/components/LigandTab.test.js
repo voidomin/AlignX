@@ -8,9 +8,11 @@ vi.mock('../api.js', () => ({
     fetchInterface: vi.fn(),
     fetchLigandInfo: vi.fn(),
     fetchPockets: vi.fn(),
+    submitPrankwebJob: vi.fn(),
+    pollJobUntilDone: vi.fn(),
 }));
 
-import { fetchInteractions, fetchLigands, fetchChains, fetchInterface, fetchLigandInfo, fetchPockets } from '../api.js';
+import { fetchInteractions, fetchLigands, fetchChains, fetchInterface, fetchLigandInfo, fetchPockets, submitPrankwebJob, pollJobUntilDone } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new LigandTab({
@@ -192,6 +194,56 @@ describe('LigandTab', () => {
             await tab.loadInteractions('');
 
             expect(tab.element.querySelector('#ligand-chemistry-info').classList.contains('hidden')).toBe(true);
+        });
+
+        it('renders real PubChem analog links when they resolve', async () => {
+            fetchInteractions.mockResolvedValue({
+                interactions: { ligand: 'HEM_A_1', interactions: [] },
+            });
+            fetchLigandInfo.mockResolvedValue({
+                ligand_code: 'HEM',
+                chemistry: { name: 'HEME', formula: 'C34 H32 Fe N4 O4', smiles: 'CC1=C...' },
+                pubchem_analogs: [
+                    { cid: 4973, url: 'https://pubchem.ncbi.nlm.nih.gov/compound/4973' },
+                    { cid: 9548815, url: 'https://pubchem.ncbi.nlm.nih.gov/compound/9548815' },
+                ],
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([{ id: 'HEM_A_1', name: 'HEM', chain: 'A', resi: 1 }], 'run_1');
+
+            await tab.loadInteractions('HEM_A_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const analogsInfo = tab.element.querySelector('#ligand-analogs-info');
+            expect(analogsInfo.classList.contains('hidden')).toBe(false);
+            const links = analogsInfo.querySelectorAll('a');
+            expect(links).toHaveLength(2);
+            expect(links[0].href).toBe('https://pubchem.ncbi.nlm.nih.gov/compound/4973');
+            expect(links[0].textContent).toBe('CID 4973');
+        });
+
+        it('keeps the analogs section hidden when none resolve', async () => {
+            fetchInteractions.mockResolvedValue({
+                interactions: { ligand: 'HEM_A_1', interactions: [] },
+            });
+            fetchLigandInfo.mockResolvedValue({
+                ligand_code: 'HEM',
+                chemistry: { name: 'HEME' },
+                pubchem_analogs: [],
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([{ id: 'HEM_A_1', name: 'HEM', chain: 'A', resi: 1 }], 'run_1');
+
+            await tab.loadInteractions('HEM_A_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#ligand-analogs-info').classList.contains('hidden')).toBe(true);
         });
     });
 
@@ -505,6 +557,94 @@ describe('LigandTab', () => {
             await Promise.resolve();
 
             expect(tab.element.querySelector('#candidate-pockets-section').classList.contains('hidden')).toBe(true);
+        });
+    });
+
+    describe('PrankWeb real pocket detection', () => {
+        it('submits a job, polls it, and renders the real ranked pocket table', async () => {
+            submitPrankwebJob.mockResolvedValue({ job_id: 'job-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({
+                status: 'completed',
+                prediction: {
+                    pockets: [
+                        { name: 'pocket1', rank: '1', score: '19.55', probability: '0.841', residues: ['E_104', 'E_120'] },
+                    ],
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([], 'run_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            tab.element.querySelector('#prankweb-detect-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(submitPrankwebJob).toHaveBeenCalledWith('4RLT', 'run_1');
+            expect(pollJobUntilDone).toHaveBeenCalledWith('job-1', expect.objectContaining({ intervalMs: 8000 }));
+            const section = tab.element.querySelector('#prankweb-pockets-section');
+            expect(section.classList.contains('hidden')).toBe(false);
+            const rows = tab.element.querySelectorAll('#prankweb-pockets-table-body tr');
+            expect(rows).toHaveLength(1);
+            expect(rows[0].textContent).toContain('E104');
+            expect(rows[0].textContent).toContain('19.55');
+            expect(tab.element.querySelector('#prankweb-feedback').textContent).toContain('Found 1 real pocket');
+        });
+
+        it('shows a message and hides the table when no real pockets are detected', async () => {
+            submitPrankwebJob.mockResolvedValue({ job_id: 'job-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({ status: 'completed', prediction: { pockets: [] } });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([], 'run_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            tab.element.querySelector('#prankweb-detect-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#prankweb-feedback').textContent).toContain('No real pockets detected');
+            expect(tab.element.querySelector('#prankweb-pockets-section').classList.contains('hidden')).toBe(true);
+        });
+
+        it('shows the job error message when the PrankWeb job fails', async () => {
+            submitPrankwebJob.mockResolvedValue({ job_id: 'job-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({ status: 'failed', error: 'PrankWeb job job-1 did not complete within 480s' });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([], 'run_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            tab.element.querySelector('#prankweb-detect-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#prankweb-feedback').textContent).toContain('did not complete within 480s');
+        });
+
+        it('shows an error message when submission itself fails', async () => {
+            submitPrankwebJob.mockRejectedValue(new Error('boom'));
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([], 'run_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            tab.element.querySelector('#prankweb-detect-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#prankweb-feedback').textContent).toContain('boom');
         });
     });
 });
