@@ -497,3 +497,78 @@ class TestFetchLigandChemistry:
         assert LigandAnalyzer._jaccard_score({"A", "B"}, {"A", "C"}) == pytest.approx(
             1 / 3
         )
+
+
+class TestFetchPubchemAnalogs:
+    @pytest.mark.asyncio
+    @patch("src.backend.ligand_analyzer.httpx.AsyncClient.get")
+    async def test_parses_real_looking_cids(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={"IdentifierList": {"CID": [4973, 9548815, 444044]}}
+        )
+        analyzer = LigandAnalyzer()
+        async with httpx.AsyncClient() as client:
+            result = await analyzer.fetch_pubchem_analogs(
+                "CC(=O)OC1=CC=CC=C1C(=O)O", client
+            )
+
+        assert result == [
+            {"cid": 4973, "url": "https://pubchem.ncbi.nlm.nih.gov/compound/4973"},
+            {
+                "cid": 9548815,
+                "url": "https://pubchem.ncbi.nlm.nih.gov/compound/9548815",
+            },
+            {"cid": 444044, "url": "https://pubchem.ncbi.nlm.nih.gov/compound/444044"},
+        ]
+        _, kwargs = mock_get.call_args
+        assert kwargs["params"]["smiles"] == "CC(=O)OC1=CC=CC=C1C(=O)O"
+        assert kwargs["params"]["Threshold"] == 95
+        assert kwargs["params"]["MaxRecords"] == 10
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_list_for_an_empty_smiles(self):
+        analyzer = LigandAnalyzer()
+        async with httpx.AsyncClient() as client:
+            result = await analyzer.fetch_pubchem_analogs("", client)
+        assert result == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.ligand_analyzer.httpx.AsyncClient.get")
+    async def test_returns_empty_list_on_non_200(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        analyzer = LigandAnalyzer()
+        async with httpx.AsyncClient() as client:
+            result = await analyzer.fetch_pubchem_analogs("CCO", client)
+        assert result == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.ligand_analyzer.httpx.AsyncClient.get")
+    async def test_returns_empty_list_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        analyzer = LigandAnalyzer()
+        async with httpx.AsyncClient() as client:
+            result = await analyzer.fetch_pubchem_analogs("CCO", client)
+        assert result == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.ligand_analyzer.httpx.AsyncClient.get")
+    async def test_uses_cache_on_second_call_not_network(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={"IdentifierList": {"CID": [4973]}}
+        )
+        cache_store = {}
+
+        class FakeCacheDb:
+            def get_annotation_cache(self, key, max_age_days):
+                return cache_store.get(key)
+
+            def set_annotation_cache(self, key, service, payload):
+                cache_store[key] = payload
+
+        analyzer = LigandAnalyzer(cache_db=FakeCacheDb())
+        async with httpx.AsyncClient() as client:
+            first = await analyzer.fetch_pubchem_analogs("CCO", client)
+            second = await analyzer.fetch_pubchem_analogs("CCO", client)
+
+        assert first == second
+        mock_get.assert_called_once()

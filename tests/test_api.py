@@ -1495,26 +1495,59 @@ def test_ligand_info_endpoint():
                 "smiles": "CC1=C...",
             }
         ),
-    ) as mock_fetch:
+    ) as mock_fetch, patch(
+        "src.backend.api.ligand_analyzer.fetch_pubchem_analogs",
+        AsyncMock(
+            return_value=[
+                {"cid": 4973, "url": "https://pubchem.ncbi.nlm.nih.gov/compound/4973"}
+            ]
+        ),
+    ) as mock_analogs:
         response = client.get("/api/ligand-info?ligand_code=HEM")
 
     assert response.status_code == 200
     data = response.json()
     assert data["ligand_code"] == "HEM"
     assert data["chemistry"]["name"] == "PROTOPORPHYRIN IX CONTAINING FE"
+    assert data["pubchem_analogs"] == [
+        {"cid": 4973, "url": "https://pubchem.ncbi.nlm.nih.gov/compound/4973"}
+    ]
     mock_fetch.assert_called_once()
     assert mock_fetch.call_args.args[0] == "HEM"
+    mock_analogs.assert_called_once()
+    assert mock_analogs.call_args.args[0] == "CC1=C..."
 
 
 def test_ligand_info_endpoint_returns_none_chemistry_gracefully():
     with patch(
         "src.backend.api.ligand_analyzer.fetch_ligand_chemistry",
         AsyncMock(return_value=None),
-    ):
+    ), patch(
+        "src.backend.api.ligand_analyzer.fetch_pubchem_analogs", AsyncMock()
+    ) as mock_analogs:
         response = client.get("/api/ligand-info?ligand_code=ZZZ")
 
     assert response.status_code == 200
-    assert response.json() == {"ligand_code": "ZZZ", "chemistry": None}
+    assert response.json() == {
+        "ligand_code": "ZZZ",
+        "chemistry": None,
+        "pubchem_analogs": [],
+    }
+    mock_analogs.assert_not_called()
+
+
+def test_ligand_info_endpoint_skips_analog_lookup_when_no_smiles_resolves():
+    with patch(
+        "src.backend.api.ligand_analyzer.fetch_ligand_chemistry",
+        AsyncMock(return_value={"id": "XXX", "name": "Unknown", "smiles": None}),
+    ), patch(
+        "src.backend.api.ligand_analyzer.fetch_pubchem_analogs", AsyncMock()
+    ) as mock_analogs:
+        response = client.get("/api/ligand-info?ligand_code=XXX")
+
+    assert response.status_code == 200
+    assert response.json()["pubchem_analogs"] == []
+    mock_analogs.assert_not_called()
 
 
 def test_ligand_info_endpoint_400s_on_invalid_ligand_code():

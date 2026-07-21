@@ -195,6 +195,56 @@ describe('LigandTab', () => {
 
             expect(tab.element.querySelector('#ligand-chemistry-info').classList.contains('hidden')).toBe(true);
         });
+
+        it('renders real PubChem analog links when they resolve', async () => {
+            fetchInteractions.mockResolvedValue({
+                interactions: { ligand: 'HEM_A_1', interactions: [] },
+            });
+            fetchLigandInfo.mockResolvedValue({
+                ligand_code: 'HEM',
+                chemistry: { name: 'HEME', formula: 'C34 H32 Fe N4 O4', smiles: 'CC1=C...' },
+                pubchem_analogs: [
+                    { cid: 4973, url: 'https://pubchem.ncbi.nlm.nih.gov/compound/4973' },
+                    { cid: 9548815, url: 'https://pubchem.ncbi.nlm.nih.gov/compound/9548815' },
+                ],
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([{ id: 'HEM_A_1', name: 'HEM', chain: 'A', resi: 1 }], 'run_1');
+
+            await tab.loadInteractions('HEM_A_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const analogsInfo = tab.element.querySelector('#ligand-analogs-info');
+            expect(analogsInfo.classList.contains('hidden')).toBe(false);
+            const links = analogsInfo.querySelectorAll('a');
+            expect(links).toHaveLength(2);
+            expect(links[0].href).toBe('https://pubchem.ncbi.nlm.nih.gov/compound/4973');
+            expect(links[0].textContent).toBe('CID 4973');
+        });
+
+        it('keeps the analogs section hidden when none resolve', async () => {
+            fetchInteractions.mockResolvedValue({
+                interactions: { ligand: 'HEM_A_1', interactions: [] },
+            });
+            fetchLigandInfo.mockResolvedValue({
+                ligand_code: 'HEM',
+                chemistry: { name: 'HEME' },
+                pubchem_analogs: [],
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([{ id: 'HEM_A_1', name: 'HEM', chain: 'A', resi: 1 }], 'run_1');
+
+            await tab.loadInteractions('HEM_A_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#ligand-analogs-info').classList.contains('hidden')).toBe(true);
+        });
     });
 
     it('resets to the empty state and notifies the parent when ligand is deselected', async () => {

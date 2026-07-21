@@ -2034,13 +2034,25 @@ async def get_ligand_info(ligand_code: Annotated[str, Query(...)]):
     formula, SMILES) via RCSB's Chemical Component Dictionary - see
     LigandAnalyzer.fetch_ligand_chemistry(). Not tied to any downloaded
     structure file or run - a pure lookup from the ligand code alone, so
-    it works for any ligand a structure's /api/ligands call surfaced.
+    it works for any ligand a structure's /api/ligands call surfaced. Once
+    a SMILES resolves, also fetches real structurally-similar known
+    compounds via PubChem (see fetch_pubchem_analogs) - useful for drug-
+    repurposing/analog scouting off a co-crystallized ligand.
     """
     _safe_segment(ligand_code, "ligand_code")
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         chemistry = await ligand_analyzer.fetch_ligand_chemistry(ligand_code, client)
-    return {"ligand_code": ligand_code.upper(), "chemistry": chemistry}
+        analogs = []
+        if chemistry and chemistry.get("smiles"):
+            analogs = await ligand_analyzer.fetch_pubchem_analogs(
+                chemistry["smiles"], client
+            )
+    return {
+        "ligand_code": ligand_code.upper(),
+        "chemistry": chemistry,
+        "pubchem_analogs": analogs,
+    }
 
 
 @app.get(
