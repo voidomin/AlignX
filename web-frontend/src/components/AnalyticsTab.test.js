@@ -9,10 +9,11 @@ vi.mock('../api.js', () => ({
     fetchPae: vi.fn(),
     fetchFlexibility: vi.fn(),
     submitDdgStabilityJob: vi.fn(),
+    submitInterproscanJob: vi.fn(),
     pollJobUntilDone: vi.fn(),
 }));
 
-import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae, fetchFlexibility, submitDdgStabilityJob, pollJobUntilDone } from '../api.js';
+import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae, fetchFlexibility, submitDdgStabilityJob, submitInterproscanJob, pollJobUntilDone } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new AnalyticsTab(overrides);
@@ -362,6 +363,72 @@ describe('AnalyticsTab', () => {
             await tab.loadAllAnnotations();
 
             expect(tab.element.querySelector('#annotations-content').textContent).toContain('No UniProt accession could be resolved');
+        });
+
+        it('offers a sequence-based InterProScan5 annotation action when no accession resolves', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: { pdb_id: 'ESM-MGYP1', chain: null, accession: null, domains: [], go_terms: [], reactome_pathways: [] },
+            });
+            submitInterproscanJob.mockResolvedValue({ job_id: 'job-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({
+                status: 'completed',
+                domains: [{ name: 'Globin', type: 'DOMAIN' }],
+                go_terms: [{ id: 'GO:0020037', name: 'heme binding', aspect: 'MOLECULAR_FUNCTION' }],
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['ESM-MGYP1']));
+
+            await tab.loadAllAnnotations();
+            tab.element.querySelector('#interproscan-annotate-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(submitInterproscanJob).toHaveBeenCalledWith('ESM-MGYP1', undefined, 'run_1');
+            const resultDiv = tab.element.querySelector('#interproscan-result');
+            expect(resultDiv.textContent).toContain('Globin');
+            expect(resultDiv.textContent).toContain('heme binding');
+            expect(tab.element.querySelector('#interproscan-feedback').textContent).toContain('Found 1 domain(s), 1 GO term(s)');
+        });
+
+        it('shows the job error message when the InterProScan5 job fails', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: { pdb_id: 'ESM-MGYP1', chain: null, accession: null, domains: [], go_terms: [], reactome_pathways: [] },
+            });
+            submitInterproscanJob.mockResolvedValue({ job_id: 'job-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({ status: 'failed', error: 'InterProScan5 job job-1 did not complete within 600s' });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['ESM-MGYP1']));
+
+            await tab.loadAllAnnotations();
+            tab.element.querySelector('#interproscan-annotate-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#interproscan-feedback').textContent).toContain('did not complete within 600s');
+        });
+
+        it('shows an error message when InterProScan5 submission itself fails', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: { pdb_id: 'ESM-MGYP1', chain: null, accession: null, domains: [], go_terms: [], reactome_pathways: [] },
+            });
+            submitInterproscanJob.mockRejectedValue(new Error('Could not extract a real amino-acid sequence'));
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['ESM-MGYP1']));
+
+            await tab.loadAllAnnotations();
+            tab.element.querySelector('#interproscan-annotate-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#interproscan-feedback').textContent).toContain('Could not extract a real amino-acid sequence');
         });
 
         it('shows a "Go to Workspace" button when there are no structures at all, and it calls onGoToWorkspace', () => {

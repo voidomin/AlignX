@@ -312,6 +312,30 @@ export async function submitPrankwebJob(pdbId, runId, sessionId, webhookUrl) {
     return res.json();
 }
 
+// Real domain/GO-term annotation via InterProScan5, from a structure's
+// own sequence (extracted server-side) - see interproscan_client.py/
+// api.py's _extract_structure_sequence. The one annotation path
+// available for structures with no resolvable UniProt accession at all
+// (ESM Atlas/uploaded/ESMFold-predicted structures).
+export async function submitInterproscanJob(pdbId, chain, runId, sessionId, webhookUrl) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const body = { pdb_id: pdbId };
+    if (chain) body.chain = assertSafeSegment(chain, 'chain');
+    if (runId) body.run_id = assertSafeSegment(runId, 'runId');
+    if (sessionId) body.session_id = assertSafeSegment(sessionId, 'sessionId');
+    if (webhookUrl) body.webhook_url = webhookUrl;
+    const res = await fetch(buildUrl('/api/jobs/sequence-annotation'), {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Sequence annotation submission failed");
+    }
+    return res.json();
+}
+
 export async function submitDiscoveryJob(pdbId, databases, webhookUrl) {
     const body = { pdb_id: pdbId };
     if (databases && databases.length > 0) body.databases = databases;
