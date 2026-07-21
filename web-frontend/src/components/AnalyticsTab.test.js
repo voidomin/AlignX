@@ -7,11 +7,12 @@ vi.mock('../api.js', () => ({
     fetchDifferenceDistance: vi.fn(),
     fetchMutationImpact: vi.fn(),
     fetchPae: vi.fn(),
+    fetchFlexibility: vi.fn(),
     submitDdgStabilityJob: vi.fn(),
     pollJobUntilDone: vi.fn(),
 }));
 
-import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae, submitDdgStabilityJob, pollJobUntilDone } from '../api.js';
+import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae, fetchFlexibility, submitDdgStabilityJob, pollJobUntilDone } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new AnalyticsTab(overrides);
@@ -671,6 +672,79 @@ describe('AnalyticsTab', () => {
         });
     });
 
+    describe('GNM flexibility prediction', () => {
+        it('lists every loaded structure in the selector, not just AlphaFold-sourced ones', () => {
+            const tab = makeTab();
+            tab.render();
+
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB', 'AF-P69905-F1']));
+
+            const select = tab.element.querySelector('#flexibility-pdb-select');
+            expect(Array.from(select.options).map(o => o.value)).toEqual(['4HHB', 'AF-P69905-F1']);
+        });
+
+        it('loads and renders a flexibility chart on button click, passing the current run id', async () => {
+            fetchFlexibility.mockResolvedValue({
+                flexibility: { residue_numbers: [1, 2, 3], flexibility: [0.9, 0.1, 0.8], b_factor: null },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB']));
+
+            tab.element.querySelector('#flexibility-load-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(fetchFlexibility).toHaveBeenCalledWith('4HHB', 'run_1');
+            expect(global.Plotly.newPlot).toHaveBeenCalled();
+        });
+
+        it('overlays a real B-factor trace when the structure carries one', async () => {
+            fetchFlexibility.mockResolvedValue({
+                flexibility: { residue_numbers: [1, 2, 3], flexibility: [0.9, 0.1, 0.8], b_factor: [20, 25, 22] },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB']));
+
+            tab.element.querySelector('#flexibility-load-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const traces = global.Plotly.newPlot.mock.calls[global.Plotly.newPlot.mock.calls.length - 1][1];
+            expect(traces).toHaveLength(2);
+            expect(traces[1].y).toEqual([20, 25, 22]);
+        });
+
+        it('shows a graceful message when no flexibility prediction is available', async () => {
+            fetchFlexibility.mockRejectedValue(new Error('Too few CA-bearing residues in 4HHB to model flexibility.'));
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB']));
+
+            tab.element.querySelector('#flexibility-load-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(global.Plotly.newPlot).not.toHaveBeenCalled();
+            expect(tab.element.querySelector('#flexibility-plotly').textContent).toContain('Too few CA-bearing residues');
+        });
+
+        it('does nothing when no structure is selected', async () => {
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, []);
+
+            tab.element.querySelector('#flexibility-load-btn').click();
+            await Promise.resolve();
+
+            expect(fetchFlexibility).not.toHaveBeenCalled();
+        });
+    });
+
     describe('structure-diff narrative', () => {
         const heatmap = {
             data: [{ z: [[0, 1.2], [1.2, 0]], x: ['4RLT', '3UG9'], y: ['4RLT', '3UG9'] }],
@@ -842,6 +916,50 @@ describe('AnalyticsTab', () => {
 
             const result = tab.element.querySelector('#mutation-impact-result');
             expect(result.textContent).toContain('No AlphaMissense score available for this substitution.');
+        });
+
+        it('shows the gnomAD population frequency when one is available', async () => {
+            fetchMutationImpact.mockResolvedValue({
+                accession: 'P68871', uniprot_position: 7, wildtype_residue: 'V', mutant_residue: 'I',
+                gene: 'HBB',
+                clinvar: null, alphamissense: null,
+                gnomad: { af_exome: 0.856674, af_genome: 0.831182 },
+                known_uniprot_variant: null,
+                highlight_chains: { A: [6] },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-map-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const result = tab.element.querySelector('#mutation-impact-result');
+            expect(result.textContent).toContain('gnomAD population frequency');
+            expect(result.textContent).toContain('exome 85.7%');
+            expect(result.textContent).toContain('genome 83.1%');
+        });
+
+        it('shows a fallback message when no gnomAD frequency data is available', async () => {
+            fetchMutationImpact.mockResolvedValue({
+                accession: 'P68871', uniprot_position: 7, wildtype_residue: 'V', mutant_residue: 'V',
+                gene: 'HBB', clinvar: null, alphamissense: null, gnomad: null,
+                known_uniprot_variant: null,
+                highlight_chains: { A: [6] },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-map-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const result = tab.element.querySelector('#mutation-impact-result');
+            expect(result.textContent).toContain('No gnomAD population frequency data found for this substitution.');
         });
 
         it('shows a known UniProt variant when ClinVar has no match', async () => {
