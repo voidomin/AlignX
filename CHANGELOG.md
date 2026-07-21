@@ -2,6 +2,24 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.95.0]
+
+Phase 5: a 4-stage feature batch, smallest/most-contained first. A live-verification research pass checked 7 candidate ideas against real external APIs/libraries before any code was written; 4 came back genuinely feasible. As with every prior phase, external contracts were verified live rather than assumed - this phase's discipline caught two real, ship-blocking bugs before they went out: MobiDB returning HTTP 200 with an empty body (not a 404) for an unrecognized accession, and PrankWeb's real submission protocol (undocumented publicly - found by reading its actual server source) needing both a longer default timeout and transient-connection-error retries than a naive implementation would have used.
+
+### Added
+- **Population allele frequency (gnomAD)**: a real third signal in Mutation Impact Mapping alongside ClinVar/AlphaMissense - a variant can be common in the population yet still flagged pathogenic by a predictor, or vice versa, which is itself informative. Via myvariant.info, keyless.
+- **Sequence-based disorder prediction (MobiDB)**: real per-residue intrinsic-disorder scores and consensus disordered regions, translated onto each structure's own residue numbering. New "Sequence disorder (MobiDB)" 3D viewer color scheme.
+- **Real-time GNM flexibility prediction**: a coarse-grained Gaussian Network Model computed from a structure's own coordinates - no external API at all, unlike everything else in this phase. New Plotly chart in Analytics' Quality sub-tab (with a real B-factor overlay when available) and a new "Predicted flexibility (GNM)" viewer color scheme. Live-verified against a real PDB entry: a real 0.59 Pearson correlation between the prediction and the structure's own crystallographic B-factors.
+- **Real geometric pocket detection (PrankWeb/P2Rank)**: a second, opt-in, slower action in the Ligands tab alongside the existing fast heuristic pocket finder - a real validated cavity detector, not a proxy. New 6th async job type (`POST /api/jobs/pocket-detection`).
+
+### Fixed
+- `docs/FEATURES.md`'s stale "What's next" note claiming `/api/history`'s payload-size issue was still open - it was already fixed in v3.20.0.
+
+### Verified
+- Full backend suite: 1343 tests passing. `black`/`ruff` clean.
+- Frontend suite: 533 Vitest tests passing (up from 503). `npm run lint` clean, `npm run build` succeeds.
+- Every external call verified live before implementation, catching two real bugs mid-session (see above): a real gnomAD population frequency for a real PCSK9 variant; a real MobiDB disorder score for a real AlphaFold structure and a real PDB entry, with a graceful empty result for an accession MobiDB doesn't cover; a real GNM flexibility prediction plotted against real B-factors; PrankWeb's actual submission contract discovered from its server source and confirmed end-to-end (0 pockets for crambin - a real negative, not a bug - and 6 real pockets for a cAMP-dependent protein kinase matching its known ATP-binding site).
+
 ## [3.94.0]
 
 Phase 4: a 9-stage feature batch, ordered smallest/most-contained first, all on one branch. As with prior phases, every external dependency and existing-code assumption was verified live rather than assumed - and this phase's live-verification discipline caught a real bug before it shipped: the new CLI's job-poll parsing initially read a top-level `run_id` that doesn't exist in `GET /api/jobs/{job_id}`'s response (the real run id is nested under `results.id`; only the webhook payload gets a top-level `run_id`), found and fixed by running the CLI end-to-end against a live local server rather than trusting mocked tests alone.
