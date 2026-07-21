@@ -22,7 +22,7 @@ running app right now, this is the quickest orientation:
 
 | Tab (SPA nav) | What it's for | Guide section |
 |---|---|---|
-| **Workspace** | Add/upload/predict structures, run alignment, bulk QC | §2, §4.8 |
+| **Workspace** | Add/upload/predict structures, run alignment, bulk QC | §2, §4.9 |
 | **Ligands** | Binding sites, pockets, chemistry lookup | §6 |
 | **Sequence** | Identity view, motif search, true MSA, true conservation | §5 |
 | **Analytics** | Quality metrics, PAE, contact maps, annotation, mutations, insights | §4, §8.1, §9 |
@@ -55,7 +55,7 @@ is SPA-only.
 6. [Ligand & Binding Site Analysis](#6-ligand--binding-site-analysis)
 7. [Protein-Protein Interfaces](#7-protein-protein-interfaces)
 8. [Functional Annotation & "What Does This Do?"](#8-functional-annotation--what-does-this-do) `(SPA only)`
-9. [Mutations: ClinVar & AlphaMissense](#9-mutations-clinvar--alphamissense) `(SPA only)`
+9. [Mutations: ClinVar, AlphaMissense, gnomAD & REVEL](#9-mutations-clinvar-alphamissense-gnomad--revel) `(SPA only)`
 10. [History, Sharing, Notes & Sessions](#10-history-sharing-notes--sessions)
 11. [Exporting & Sharing Results](#11-exporting--sharing-results)
 12. [Settings & Access Control](#12-settings--access-control) `(SPA only)`
@@ -211,6 +211,21 @@ Color-scheme options beyond plain chain identity:
   predicted pathogenicity across all 19 possible substitutions at that
   position (green = tolerant, red = intolerant) — see §9 for the
   single-substitution version of this.
+- **InterPro domains** — colors every domain simultaneously and
+  persistently (one color per domain, from the same domain/residue mapping
+  §8.1's "Highlight in 3D" uses) — unlike that button, which ghosts
+  everything except one domain at a time, this shows every domain at once as
+  a standing view.
+- **Sequence disorder (MobiDB)** — colors every residue by a real
+  sequence-based intrinsic-disorder prediction (MobiDB's own predictor, not
+  just AlphaFold's pLDDT relabeled) — a computational prediction, honestly
+  labeled as such.
+- **Predicted flexibility (GNM)** — colors every residue by the same
+  real-time Gaussian Network Model prediction described in §4.5.
+- **PAE-derived domains** — for an AlphaFold-sourced structure, auto-splits
+  it into rigid domains by connectivity in its own real PAE matrix (see
+  §4.4) — distinct from the sequence-based "InterPro domains" scheme above.
+  Disabled when nothing in the run is AlphaFold-sourced.
 
 ### 3.3 RMSD heatmap
 
@@ -290,14 +305,37 @@ error (blue) between two regions means you can trust their relative
 positioning; high error (red) means treat it with real skepticism regardless
 of what pLDDT says.
 
-### 4.5 wwPDB validation report
+The same PAE matrix also drives the **"PAE-derived domains"** 3D viewer
+color scheme (§3.2): it auto-splits the structure into rigid domains by
+connected-component analysis over the matrix's own real confidence values —
+group residues whose relative positions are mutually trusted, and cut where
+that trust breaks down. Distinct from the "InterPro domains" scheme, which
+is sequence-based. Deliberately a simplified connectivity split rather than
+full weighted-graph community detection, and only available for
+AlphaFold-sourced structures, since it needs this same PAE data.
+
+### 4.5 Real-time flexibility prediction (GNM)
+
+A separate chart in Analytics' Quality sub-tab runs a real-time, coarse-
+grained Gaussian Network Model (Normal Mode Analysis) over any one
+structure's own CA coordinates — no external API call, unlike every other
+signal on this page, just linear algebra on coordinates already downloaded.
+This is a *prediction* of which residues move the most, not a measurement.
+For a real PDB entry, its own crystallographic B-factor is overlaid as a
+free real-world comparison point (a real 0.59 Pearson correlation was
+verified between the two on a real structure) — the prediction and the
+measurement are complementary, not the same thing. The matching **"Predicted
+flexibility (GNM)"** 3D viewer color scheme (§3.2) colors every residue by
+this same prediction.
+
+### 4.6 wwPDB validation report
 
 For real, experimentally-solved PDB entries: clashscore and Ramachandran/
 rotamer outlier percentiles, with both archive-wide and similar-resolution
 context, pulled directly from the wwPDB's own validation pipeline — the same
 numbers a structural biologist would check before trusting a deposited entry.
 
-### 4.6 Contact maps & difference-distance matrices
+### 4.7 Contact maps & difference-distance matrices
 
 In Analytics' RMSD Matrix sub-tab: a real CA-CA contact map for any one
 structure (thresholded at 8 Å), and a real difference-distance matrix between
@@ -306,7 +344,7 @@ any two structures over their commonly aligned columns. This reveals domain
 example — that a single global RMSD number completely hides, since RMSD only
 tells you the average deviation, not where it's concentrated.
 
-### 4.7 Structure-diff narrative
+### 4.8 Structure-diff narrative
 
 In Analytics' Insights sub-tab, pick any two structures in the run to get a
 plain-English paragraph (RMSD magnitude plus, when available, the TM-score's
@@ -314,7 +352,7 @@ fold-level interpretation) — a fast, exact-pair answer, distinct from the
 automated Insights list, which only ever surfaces the single best/worst pair
 across the whole run.
 
-### 4.8 Bulk QC sweep
+### 4.9 Bulk QC sweep
 
 The **"Run QC on all"** button in the Workspace tab runs Ramachandran outlier
 detection, secondary-structure assignment, and (for real PDB entries) wwPDB
@@ -322,6 +360,18 @@ validation across every loaded structure at once, with **no alignment
 required** — a summary table instead of clicking into each card individually.
 This is the fastest way to sanity-check a whole batch of structures before
 committing to an alignment run at all.
+
+The same summary table also includes a **"Self Clash"** column — a real,
+self-computed all-atom steric-clash score, available for every structure
+regardless of source. The existing wwPDB clashscore column only ever
+populates for a real PDB entry, so AlphaFold/ESM Atlas/uploaded/predicted
+structures previously had no clash signal here at all. Treat this as a
+*rough sanity check* against a real PDB entry's own wwPDB clashscore where
+both exist, not a reproduction of it: real MolProbity adds explicit
+hydrogens before counting overlaps, and hydrogen-dominated clashes are
+invisible to this heavy-atom-only detector, so the two numbers can diverge
+sharply for an older, poorly-refined structure even though they track
+reasonably for a modern, well-refined one.
 
 ---
 
@@ -390,7 +440,11 @@ divergent one, across otherwise-similar structures.
 
 Select any detected ligand for a **"what is this?"** line — its real name,
 molecular formula, SMILES, and InChIKey, resolved live from RCSB's Chemical
-Component Dictionary.
+Component Dictionary. Alongside it, a **"Similar known compounds"** list
+shows real PubChem 2D similarity search results for that ligand's SMILES —
+up to 10 structurally related compounds (≥95% Tanimoto similarity), each a
+clickable link straight to its real PubChem entry. Useful for spotting
+related known ligands or drugs for a binding site you're investigating.
 
 ### 6.4 No bound ligand? Candidate pocket finding
 
@@ -426,10 +480,21 @@ itself only ever aligns one chain per structure.
 For any structure already in a Compare-mode run, StructScope resolves it to a
 real UniProt accession (a live SIFTS lookup for a plain PDB entry; free for
 AlphaFold/SWISS-MODEL IDs, which embed the accession directly) and pulls real
-InterPro domains, GO terms, and Reactome pathways. ESM Atlas structures have
-no UniProt mapping at all (they're uncharacterized, metagenomic sequences)
-and correctly show a plain "no annotation available" message rather than an
-error.
+InterPro domains, GO terms, and Reactome pathways, plus a **real UniProt
+free-text function summary** — the same plain-English "Function" paragraph
+UniProt's own entry page shows — surfaced at the top of the panel as an
+at-a-glance answer before you dig into the structured domain/GO-term lists
+below it.
+
+ESM Atlas structures have no UniProt mapping at all (they're uncharacterized,
+metagenomic sequences), and an uploaded file or a raw-sequence prediction
+(§2.5) has no accession either — every source above is unavailable by
+construction for these, since they all key off that accession. An
+**"Annotate from sequence (InterProScan5)"** action fills that specific gap:
+it submits the structure's own sequence (extracted directly from its
+coordinates, no accession needed) to EBI's InterProScan5 as a background job
+and renders real Pfam/PROSITE domain and GO-term hits once it completes —
+the one annotation path here that works purely from sequence.
 
 When 2+ structures in the run resolve an accession, a **shared across all
 structures** summary lists exactly which domains/terms every one of them has
@@ -506,16 +571,23 @@ from §6.4 applies.
 
 ---
 
-## 9. Mutations: ClinVar & AlphaMissense
+## 9. Mutations: ClinVar, AlphaMissense, gnomAD & REVEL
 
 In Analytics' Annotations sub-tab, enter a chain, residue number, and
 proposed substitution. StructScope maps it onto the structure's real UniProt
 position, reports the real wild-type residue and gene, and — if a matching
 record exists — the real **ClinVar clinical significance** of that exact
-substitution, plus the real **AlphaMissense pathogenicity score** for it. Any
-already-known UniProt natural variant at that position is surfaced too. This
-builds on the same real residue mapping described in §8.1, so it works for
-real PDB entries as well as AlphaFold-sourced ones.
+substitution, plus the real **AlphaMissense pathogenicity score** for it,
+plus the real **gnomAD population allele frequency** and a real **REVEL
+pathogenicity score** for the same exact substitution (both from the same
+myvariant.info lookup). AlphaMissense and REVEL are two independent
+predictors — useful when they disagree — and gnomAD frequency is an
+independent signal from either: a variant can be common in the population
+yet still flagged pathogenic by a predictor, or vice versa, and that
+disagreement is itself informative. Any already-known UniProt natural
+variant at that position is surfaced too. This builds on the same real
+residue mapping described in §8.1, so it works for real PDB entries as well
+as AlphaFold-sourced ones.
 
 **Verified example**: mapping HBB chain B, residue 6, substitution to Val
 (the real sickle-cell mutation) on `4HHB` correctly resolves to HBB position
@@ -611,8 +683,9 @@ proteins actually are).
 | **Jaccard index** (pocket similarity) | 1.0 | Identical pocket-residue composition |
 | | ≥ 0.6 | Meaningfully similar chemical environment |
 | | ≤ 0.2 | Largely divergent pockets |
-| **AlphaMissense pathogenicity** | Closer to 1.0 | More likely pathogenic |
+| **AlphaMissense / REVEL pathogenicity** | Closer to 1.0 | More likely pathogenic |
 | | Closer to 0.0 | More likely benign |
+| **Clashscore (self-computed)** | Lower | Fewer detected all-atom steric overlaps — a rough sanity check against a real PDB entry's own wwPDB clashscore, not a reproduction of it (see §4.9) |
 
 ---
 
@@ -655,7 +728,7 @@ proteins actually are).
 **Why does the Quality tab show "--" for a single structure I just added?**
 Ramachandran/quality metrics are computed as part of a full alignment run
 (2+ structures). For a single structure with no alignment, use **Workspace →
-"Run QC on all"** instead (§4.8) — it needs no alignment at all.
+"Run QC on all"** instead (§4.9) — it needs no alignment at all.
 
 **What's the difference between "ESM Atlas" and "ESMFold prediction"?**
 ESM Atlas (ID prefix `ESM-`) is a *database* of already-predicted structures

@@ -92,6 +92,12 @@ for how to actually use each one.
 | 59 | Sequence-based disorder prediction (MobiDB) | SPA | [§2.2](#22-3d-structure-viewer) |
 | 60 | Real-time flexibility prediction (Gaussian Network Model) | SPA | [§2.10](#210-alignment-quality-metrics) |
 | 61 | Real geometric pocket detection (PrankWeb/P2Rank) | SPA | [§2.6](#26-ligand-hunter) |
+| 62 | Real UniProt free-text function summary | SPA | [§2.12](#212-functional-annotation) |
+| 63 | REVEL pathogenicity score (alongside gnomAD) | SPA | [§2.14](#214-mutation-impact-mapping) |
+| 64 | PubChem 2D ligand analog search | SPA | [§2.6](#26-ligand-hunter) |
+| 65 | InterProScan5 sequence-only annotation (accession-free structures) | SPA | [§2.12](#212-functional-annotation) |
+| 66 | PAE-based automatic domain segmentation | SPA | [§2.16](#216-predicted-aligned-error-pae) |
+| 67 | Geometric all-atom steric-clash score | SPA | [§2.15](#215-bulk-qc-sweep) |
 
 ---
 
@@ -256,6 +262,11 @@ across otherwise-similar structures.
 Select any detected ligand to see a **"what is this?"** chemistry line — its
 real name, molecular formula, SMILES, and InChIKey, resolved from RCSB's
 Chemical Component Dictionary and cached the same way GO terms already are.
+Alongside it, a **"Similar known compounds"** list shows real PubChem 2D
+similarity search results for that ligand's SMILES — up to 10 structurally
+related compounds (≥95% Tanimoto similarity), each a clickable link straight
+to its PubChem entry, useful for spotting related known ligands/drugs for a
+binding site you're investigating.
 
 **No bound ligand?** A heuristic **candidate binding-pocket finder** looks for
 surface-exposed residues that spatially cluster with residues from a distant
@@ -389,6 +400,23 @@ honest "not available" message for the majority of structures M-CSA doesn't
 curate (its coverage is a few thousand well-characterized enzymes, not
 proteome-wide).
 
+A **real UniProt free-text function summary** — the same plain-English
+"Function" paragraph UniProt's own entry page shows, resolved from the
+structure's accession — appears at the top of the panel when available, ahead
+of the domain/GO-term lists, as an at-a-glance answer to "what does this
+protein do" before digging into the structured annotation below it.
+
+For a structure with **no resolvable UniProt accession at all** — an ESM
+Atlas hit, an uploaded file, or a raw-sequence prediction (§1) — every
+annotation source above is unavailable by construction, since they all key
+off that accession. An **"Annotate from sequence (InterProScan5)"** action
+fills that specific gap: submits the structure's own sequence (extracted
+directly from its coordinates, no accession needed) to EBI's InterProScan5
+as a background job and renders real Pfam/PROSITE domain and GO-term hits
+once it completes — the one annotation path in this section that works
+purely from sequence, for structures every other source in this section
+cannot touch.
+
 ### 2.13 Contact Maps & Difference-Distance Matrices
 
 In the Analytics tab's RMSD Matrix sub-tab: a real CA-CA **contact map** for
@@ -406,7 +434,10 @@ proposed substitution to map it onto the structure's real UniProt position,
 see the real wild-type residue and gene, and — if a matching record exists —
 the real **ClinVar clinical significance** of that substitution, plus the
 real **AlphaMissense pathogenicity score** for that exact substitution, plus
-the real **gnomAD population allele frequency** for that exact substitution —
+the real **gnomAD population allele frequency** for that exact substitution,
+alongside a real **REVEL pathogenicity score** for the same substitution
+(from the same myvariant.info lookup gnomAD already uses) — a third,
+independent predictor alongside AlphaMissense, useful when the two disagree —
 an independent signal from either: a variant can be common in the population
 yet still flagged pathogenic by a predictor, or vice versa, and that
 disagreement is itself informative. Also surfaces any already-known UniProt
@@ -435,6 +466,17 @@ validation across every loaded structure at once, with no alignment required
 — a summary table (favored %, outlier count, %helix, clashscore per structure)
 instead of clicking into each structure's card individually.
 
+The same summary table also includes a real **self-computed all-atom steric-
+clash score** (a "Self Clash" column) for every structure, regardless of
+source — the wwPDB clashscore column only ever populates for a real PDB
+entry, so AlphaFold/ESM Atlas/uploaded/predicted structures previously got no
+clash signal at all here. This is a rough sanity check against a real PDB
+entry's own wwPDB clashscore where both exist, not a reproduction of it: real
+MolProbity adds explicit hydrogens before counting overlaps, and hydrogen-
+dominated clashes are invisible to this heavy-atom-only detector, so the two
+numbers can diverge sharply for an older, poorly-refined structure even
+though they track reasonably for a modern, well-refined one.
+
 ### 2.16 Predicted Aligned Error (PAE)
 
 For an AlphaFold-sourced structure, a heatmap in Analytics' Quality sub-tab
@@ -444,6 +486,14 @@ other*, not just how confident it is in either residue's own position
 (pLDDT). Low error (blue) between two domains means their relative
 orientation is trustworthy; high error (red) means treat that relative
 positioning with real skepticism even where each domain's own pLDDT is high.
+
+The same PAE matrix also powers a second, independent use of it: a
+**"PAE-derived domains"** 3D viewer color scheme that auto-splits the
+structure into rigid domains by connected-component analysis over the
+matrix's own real confidence values — distinct from InterPro's sequence-based
+domain boundaries (§2.12). A deliberately simplified connectivity-based
+split rather than full weighted-graph community detection, and only enabled
+for AlphaFold-sourced structures, since it needs this same PAE data.
 
 ### 2.17 Structure-Diff Narrative
 

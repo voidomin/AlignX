@@ -1,4 +1,4 @@
-import { fetchSuggestions, isValidPdbId, fetchValidation, fetchQc, fetchCathClassification, fetchAssemblyInfo, screenStructures } from '../api';
+import { fetchSuggestions, isValidPdbId, fetchValidation, fetchQc, fetchClashScore, fetchCathClassification, fetchAssemblyInfo, screenStructures } from '../api';
 import { escapeHtml } from '../escapeHtml';
 import { QUICK_START_EXAMPLES } from '../quickStartExamples';
 import { DiscoveryPanel } from './DiscoveryPanel';
@@ -753,7 +753,19 @@ export class WorkspaceTab {
         const results = await Promise.all(
             this.selectedPDBs.map(async pid => {
                 try {
-                    return await fetchQc(pid);
+                    const qc = await fetchQc(pid);
+                    // Self-computed, works for every structure source
+                    // (AlphaFold/ESM Atlas/uploaded), unlike qc's own
+                    // clashscore which only ever exists for a real PDB
+                    // entry - a rough sanity check against that number
+                    // when both exist, not a reproduction of it (this
+                    // excludes hydrogens, so it reads lower for a
+                    // structure whose real clashes are dominated by
+                    // hydrogen packing). Failing to compute it shouldn't
+                    // sink the rest of this row's real Ramachandran/SS/
+                    // wwPDB data.
+                    const selfClash = await fetchClashScore(pid).catch(() => null);
+                    return { ...qc, self_clash: selfClash?.clashes ?? null };
                 } catch (err) {
                     console.error('QC failed for', pid, err);
                     return { pdb_id: pid, error: true };
@@ -779,6 +791,7 @@ export class WorkspaceTab {
                     <th class="px-3 py-1.5 border-b border-border font-medium text-right">Outliers</th>
                     <th class="px-3 py-1.5 border-b border-border font-medium text-right">Helix %</th>
                     <th class="px-3 py-1.5 border-b border-border font-medium text-right">Clashscore</th>
+                    <th class="px-3 py-1.5 border-b border-border font-medium text-right">Self Clash</th>
                 </tr>
             </thead>
         `;
@@ -788,7 +801,7 @@ export class WorkspaceTab {
         results.forEach(r => {
             const tr = document.createElement('tr');
             if (r.error) {
-                tr.innerHTML = `<td class="py-1.5">${escapeHtml(r.pdb_id)}</td><td class="px-3 py-1.5 text-secondary" colspan="4">QC failed for this structure.</td>`;
+                tr.innerHTML = `<td class="py-1.5">${escapeHtml(r.pdb_id)}</td><td class="px-3 py-1.5 text-secondary" colspan="5">QC failed for this structure.</td>`;
                 tbody.appendChild(tr);
                 return;
             }
@@ -796,6 +809,7 @@ export class WorkspaceTab {
             const rama = r.ramachandran_stats;
             const ss = r.secondary_structure_stats;
             const clash = r.validation?.clashscore?.value;
+            const selfClash = r.self_clash?.clashscore;
 
             const idCell = document.createElement('td');
             idCell.className = "py-1.5";
@@ -807,6 +821,7 @@ export class WorkspaceTab {
                 rama?.outlier_count ?? '--',
                 ss?.helix_percent != null ? ss.helix_percent.toFixed(1) : '--',
                 clash != null ? clash.toFixed(1) : '--',
+                selfClash != null ? selfClash.toFixed(1) : '--',
             ].forEach(value => {
                 const td = document.createElement('td');
                 td.className = "px-3 py-1.5 text-right";

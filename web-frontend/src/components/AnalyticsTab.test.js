@@ -9,10 +9,11 @@ vi.mock('../api.js', () => ({
     fetchPae: vi.fn(),
     fetchFlexibility: vi.fn(),
     submitDdgStabilityJob: vi.fn(),
+    submitInterproscanJob: vi.fn(),
     pollJobUntilDone: vi.fn(),
 }));
 
-import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae, fetchFlexibility, submitDdgStabilityJob, pollJobUntilDone } from '../api.js';
+import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae, fetchFlexibility, submitDdgStabilityJob, submitInterproscanJob, pollJobUntilDone } from '../api.js';
 
 function makeTab(overrides = {}) {
     return new AnalyticsTab(overrides);
@@ -311,6 +312,45 @@ describe('AnalyticsTab', () => {
             expect(content.textContent).toContain('oxygen carrier activity');
         });
 
+        it('renders the real UniProt function summary when one resolves', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P69905',
+                    domains: [{ name: 'Globin', type: 'domain' }],
+                    go_terms: [], reactome_pathways: [],
+                    function_summary: 'Involved in oxygen transport from the lung',
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            expect(tab.element.querySelector('#annotations-content').textContent)
+                .toContain('Involved in oxygen transport from the lung');
+        });
+
+        it('shows the "no curated annotation" message rather than the function summary line when neither is present', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P69905',
+                    domains: [], go_terms: [], reactome_pathways: [],
+                    uniprot_features: [], catalytic_sites: [], function_summary: null,
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            expect(tab.element.querySelector('#annotations-content').textContent)
+                .toContain('no curated domains, GO terms, pathways, or sequence features were found');
+        });
+
         it('shows a graceful message when no accession resolves (e.g. an ESM Atlas structure)', async () => {
             fetchAnnotations.mockResolvedValue({
                 annotation: { pdb_id: 'ESM-MGYP1', chain: null, accession: null, domains: [], go_terms: [], reactome_pathways: [] },
@@ -323,6 +363,72 @@ describe('AnalyticsTab', () => {
             await tab.loadAllAnnotations();
 
             expect(tab.element.querySelector('#annotations-content').textContent).toContain('No UniProt accession could be resolved');
+        });
+
+        it('offers a sequence-based InterProScan5 annotation action when no accession resolves', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: { pdb_id: 'ESM-MGYP1', chain: null, accession: null, domains: [], go_terms: [], reactome_pathways: [] },
+            });
+            submitInterproscanJob.mockResolvedValue({ job_id: 'job-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({
+                status: 'completed',
+                domains: [{ name: 'Globin', type: 'DOMAIN' }],
+                go_terms: [{ id: 'GO:0020037', name: 'heme binding', aspect: 'MOLECULAR_FUNCTION' }],
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['ESM-MGYP1']));
+
+            await tab.loadAllAnnotations();
+            tab.element.querySelector('#interproscan-annotate-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(submitInterproscanJob).toHaveBeenCalledWith('ESM-MGYP1', undefined, 'run_1');
+            const resultDiv = tab.element.querySelector('#interproscan-result');
+            expect(resultDiv.textContent).toContain('Globin');
+            expect(resultDiv.textContent).toContain('heme binding');
+            expect(tab.element.querySelector('#interproscan-feedback').textContent).toContain('Found 1 domain(s), 1 GO term(s)');
+        });
+
+        it('shows the job error message when the InterProScan5 job fails', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: { pdb_id: 'ESM-MGYP1', chain: null, accession: null, domains: [], go_terms: [], reactome_pathways: [] },
+            });
+            submitInterproscanJob.mockResolvedValue({ job_id: 'job-1', status: 'queued' });
+            pollJobUntilDone.mockResolvedValue({ status: 'failed', error: 'InterProScan5 job job-1 did not complete within 600s' });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['ESM-MGYP1']));
+
+            await tab.loadAllAnnotations();
+            tab.element.querySelector('#interproscan-annotate-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#interproscan-feedback').textContent).toContain('did not complete within 600s');
+        });
+
+        it('shows an error message when InterProScan5 submission itself fails', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: { pdb_id: 'ESM-MGYP1', chain: null, accession: null, domains: [], go_terms: [], reactome_pathways: [] },
+            });
+            submitInterproscanJob.mockRejectedValue(new Error('Could not extract a real amino-acid sequence'));
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['ESM-MGYP1']));
+
+            await tab.loadAllAnnotations();
+            tab.element.querySelector('#interproscan-annotate-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#interproscan-feedback').textContent).toContain('Could not extract a real amino-acid sequence');
         });
 
         it('shows a "Go to Workspace" button when there are no structures at all, and it calls onGoToWorkspace', () => {
@@ -960,6 +1066,48 @@ describe('AnalyticsTab', () => {
 
             const result = tab.element.querySelector('#mutation-impact-result');
             expect(result.textContent).toContain('No gnomAD population frequency data found for this substitution.');
+        });
+
+        it('shows the REVEL pathogenicity score when one is available', async () => {
+            fetchMutationImpact.mockResolvedValue({
+                accession: 'P68871', uniprot_position: 7, wildtype_residue: 'V', mutant_residue: 'I',
+                gene: 'HBB', clinvar: null, alphamissense: null,
+                gnomad: { af_exome: 0.856674, af_genome: 0.831182, revel_score: 0.051 },
+                known_uniprot_variant: null,
+                highlight_chains: { A: [6] },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-map-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const result = tab.element.querySelector('#mutation-impact-result');
+            expect(result.textContent).toContain('REVEL pathogenicity: 0.051');
+        });
+
+        it('shows a fallback message when no REVEL score is available', async () => {
+            fetchMutationImpact.mockResolvedValue({
+                accession: 'P68871', uniprot_position: 7, wildtype_residue: 'V', mutant_residue: 'V',
+                gene: 'HBB', clinvar: null, alphamissense: null,
+                gnomad: { af_exome: 0.001, af_genome: 0.0009, revel_score: null },
+                known_uniprot_variant: null,
+                highlight_chains: { A: [6] },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-map-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const result = tab.element.querySelector('#mutation-impact-result');
+            expect(result.textContent).toContain('No REVEL score available for this substitution.');
         });
 
         it('shows a known UniProt variant when ClinVar has no match', async () => {

@@ -1193,6 +1193,46 @@ def test_pae_endpoint_400s_on_invalid_pdb_id():
     assert response.status_code == 400
 
 
+def test_pae_domains_endpoint_returns_the_domain_split():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.fetch_predicted_aligned_error = AsyncMock(
+            return_value=[[0, 5], [5, 0]]
+        )
+        with patch(
+            "src.backend.api.calculate_pae_domains",
+            return_value=[[1, 2, 3], [4, 5, 6]],
+        ) as mock_calc:
+            response = client.get("/api/pae-domains?pdb_id=AF-P69905-F1")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["pdb_id"] == "AF-P69905-F1"
+    assert data["domains"] == [[1, 2, 3], [4, 5, 6]]
+    mock_calc.assert_called_once_with([[0, 5], [5, 0]])
+
+
+def test_pae_domains_endpoint_404s_when_no_pae_data_is_available():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.fetch_predicted_aligned_error = AsyncMock(return_value=None)
+        response = client.get("/api/pae-domains?pdb_id=4HHB")
+    assert response.status_code == 404
+
+
+def test_pae_domains_endpoint_404s_when_no_domain_structure_found():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.fetch_predicted_aligned_error = AsyncMock(
+            return_value=[[0, 20], [20, 0]]
+        )
+        with patch("src.backend.api.calculate_pae_domains", return_value=None):
+            response = client.get("/api/pae-domains?pdb_id=AF-P69905-F1")
+    assert response.status_code == 404
+
+
+def test_pae_domains_endpoint_400s_on_invalid_pdb_id():
+    response = client.get("/api/pae-domains?pdb_id=../etc")
+    assert response.status_code == 400
+
+
 def test_mutation_impact_endpoint_returns_a_real_looking_result():
     with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
         mock_aggregator.resolve_structure_uniprot_position = AsyncMock(
@@ -1495,26 +1535,59 @@ def test_ligand_info_endpoint():
                 "smiles": "CC1=C...",
             }
         ),
-    ) as mock_fetch:
+    ) as mock_fetch, patch(
+        "src.backend.api.ligand_analyzer.fetch_pubchem_analogs",
+        AsyncMock(
+            return_value=[
+                {"cid": 4973, "url": "https://pubchem.ncbi.nlm.nih.gov/compound/4973"}
+            ]
+        ),
+    ) as mock_analogs:
         response = client.get("/api/ligand-info?ligand_code=HEM")
 
     assert response.status_code == 200
     data = response.json()
     assert data["ligand_code"] == "HEM"
     assert data["chemistry"]["name"] == "PROTOPORPHYRIN IX CONTAINING FE"
+    assert data["pubchem_analogs"] == [
+        {"cid": 4973, "url": "https://pubchem.ncbi.nlm.nih.gov/compound/4973"}
+    ]
     mock_fetch.assert_called_once()
     assert mock_fetch.call_args.args[0] == "HEM"
+    mock_analogs.assert_called_once()
+    assert mock_analogs.call_args.args[0] == "CC1=C..."
 
 
 def test_ligand_info_endpoint_returns_none_chemistry_gracefully():
     with patch(
         "src.backend.api.ligand_analyzer.fetch_ligand_chemistry",
         AsyncMock(return_value=None),
-    ):
+    ), patch(
+        "src.backend.api.ligand_analyzer.fetch_pubchem_analogs", AsyncMock()
+    ) as mock_analogs:
         response = client.get("/api/ligand-info?ligand_code=ZZZ")
 
     assert response.status_code == 200
-    assert response.json() == {"ligand_code": "ZZZ", "chemistry": None}
+    assert response.json() == {
+        "ligand_code": "ZZZ",
+        "chemistry": None,
+        "pubchem_analogs": [],
+    }
+    mock_analogs.assert_not_called()
+
+
+def test_ligand_info_endpoint_skips_analog_lookup_when_no_smiles_resolves():
+    with patch(
+        "src.backend.api.ligand_analyzer.fetch_ligand_chemistry",
+        AsyncMock(return_value={"id": "XXX", "name": "Unknown", "smiles": None}),
+    ), patch(
+        "src.backend.api.ligand_analyzer.fetch_pubchem_analogs", AsyncMock()
+    ) as mock_analogs:
+        response = client.get("/api/ligand-info?ligand_code=XXX")
+
+    assert response.status_code == 200
+    assert response.json()["pubchem_analogs"] == []
+    mock_analogs.assert_not_called()
 
 
 def test_ligand_info_endpoint_400s_on_invalid_ligand_code():
@@ -1785,6 +1858,52 @@ def test_flexibility_endpoint_404s_when_too_few_residues_to_model(tmp_path):
 
 def test_flexibility_endpoint_400s_on_invalid_pdb_id():
     response = client.get("/api/flexibility?pdb_id=../etc")
+    assert response.status_code == 400
+
+
+def test_clash_score_endpoint_returns_a_real_looking_result(tmp_path):
+    pdb_file = tmp_path / "4rlt.pdb"
+    pdb_file.write_text("ATOM      1  N   MET A   1      27.340  24.430   2.614\n")
+    fake_result = {
+        "clash_count": 2,
+        "atom_count": 500,
+        "clashscore": 4.0,
+        "clashing_pairs": [],
+    }
+
+    with patch(
+        "src.backend.api._find_structure_pdb_path", return_value=pdb_file
+    ), patch(
+        "src.backend.api.calculate_clash_score",
+        return_value=fake_result,
+    ):
+        response = client.get("/api/clash-score?pdb_id=4RLT")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["pdb_id"] == "4RLT"
+    assert body["clashes"] == fake_result
+
+
+def test_clash_score_endpoint_404s_when_structure_not_found():
+    with patch("src.backend.api._find_structure_pdb_path", return_value=None):
+        response = client.get("/api/clash-score?pdb_id=4RLT")
+    assert response.status_code == 404
+
+
+def test_clash_score_endpoint_404s_when_no_heavy_atoms_found(tmp_path):
+    pdb_file = tmp_path / "4rlt.pdb"
+    pdb_file.write_text("ATOM      1  N   MET A   1      27.340  24.430   2.614\n")
+
+    with patch(
+        "src.backend.api._find_structure_pdb_path", return_value=pdb_file
+    ), patch("src.backend.api.calculate_clash_score", return_value=None):
+        response = client.get("/api/clash-score?pdb_id=4RLT")
+    assert response.status_code == 404
+
+
+def test_clash_score_endpoint_400s_on_invalid_pdb_id():
+    response = client.get("/api/clash-score?pdb_id=../etc")
     assert response.status_code == 400
 
 
@@ -3335,6 +3454,54 @@ class TestGetWildtypeResidueLetter:
         assert result is None
 
 
+def _write_multi_residue_pdb(tmp_path, residues, chain="A"):
+    """residues: list of (resi, resname) tuples, one CA atom each."""
+    lines = []
+    for i, (resi, resname) in enumerate(residues, start=1):
+        lines.append(
+            f"ATOM  {i:5d}  CA  {resname} {chain}{resi:>4}      27.340  24.430   2.614  1.00  0.00           C\n"
+        )
+    pdb_file = tmp_path / "structure.pdb"
+    pdb_file.write_text("".join(lines))
+    return pdb_file
+
+
+class TestExtractStructureSequence:
+    def test_returns_the_real_sequence_for_the_first_chain(self, tmp_path):
+        pdb_file = _write_multi_residue_pdb(
+            tmp_path, [(1, "MET"), (2, "VAL"), (3, "HIS"), (4, "LEU")]
+        )
+        result = api_module._extract_structure_sequence(pdb_file)
+        assert result == "MVHL"
+
+    def test_extracts_a_specific_chain_when_given(self, tmp_path):
+        pdb_file = tmp_path / "structure.pdb"
+        pdb_file.write_text(
+            "ATOM      1  CA  MET A   1      27.340  24.430   2.614  1.00  0.00           C\n"
+            "ATOM      2  CA  LYS B   1      27.340  24.430   2.614  1.00  0.00           C\n"
+        )
+        result = api_module._extract_structure_sequence(pdb_file, chain="B")
+        assert result == "K"
+
+    def test_skips_hetatm_residues(self, tmp_path):
+        pdb_file = tmp_path / "structure.pdb"
+        pdb_file.write_text(
+            "ATOM      1  CA  MET A   1      27.340  24.430   2.614  1.00  0.00           C\n"
+            "HETATM    2  ZN  ZN  A   2      27.340  24.430   2.614  1.00  0.00          ZN\n"
+        )
+        result = api_module._extract_structure_sequence(pdb_file)
+        assert result == "M"
+
+    def test_returns_none_for_a_chain_that_does_not_exist(self, tmp_path):
+        pdb_file = _write_multi_residue_pdb(tmp_path, [(1, "MET")])
+        result = api_module._extract_structure_sequence(pdb_file, chain="Z")
+        assert result is None
+
+    def test_returns_none_on_parse_failure(self, tmp_path):
+        result = api_module._extract_structure_sequence(tmp_path / "does_not_exist.pdb")
+        assert result is None
+
+
 def test_ddmut_job_submission_returns_queued_and_the_real_mutation_code(tmp_path):
     """Submitting a valid ddG job returns a job_id immediately with status
     "queued" - it must not block on the slow DDMut submit/poll pipeline -
@@ -3573,6 +3740,154 @@ async def test_prankweb_job_sweep_drops_old_finished_jobs_but_keeps_recent_and_r
     remaining = set(api_module.prankweb_jobs.keys())
     assert remaining == {"recent_completed", "still_running"}
     api_module.prankweb_jobs.clear()
+
+
+def test_submit_interproscan_job_returns_queued(tmp_path):
+    """Submitting a sequence-annotation job returns a job_id immediately -
+    it must not block on the slow InterProScan5 submit/poll pipeline."""
+    api_module.interproscan_jobs.clear()
+    pdb_file = _write_test_pdb(tmp_path)
+
+    with patch(
+        "src.backend.api._extract_structure_sequence",
+        return_value="MVHLTPEEKSAVTALWGKVNVDEVGGEALGRLLVVYPWTQRFFESFGDLST",
+    ), patch("src.backend.api._find_structure_pdb_path", return_value=pdb_file):
+        response = client.post("/api/jobs/sequence-annotation", json={"pdb_id": "1UBQ"})
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "queued"
+    assert body["job_id"] in api_module.interproscan_jobs
+    api_module.interproscan_jobs.clear()
+
+
+def test_submit_interproscan_job_404s_when_structure_not_found():
+    with patch("src.backend.api._find_structure_pdb_path", return_value=None):
+        response = client.post("/api/jobs/sequence-annotation", json={"pdb_id": "1UBQ"})
+    assert response.status_code == 404
+
+
+def test_submit_interproscan_job_404s_when_no_sequence_extracted(tmp_path):
+    pdb_file = _write_test_pdb(tmp_path)
+    with patch("src.backend.api._extract_structure_sequence", return_value=None), patch(
+        "src.backend.api._find_structure_pdb_path", return_value=pdb_file
+    ):
+        response = client.post("/api/jobs/sequence-annotation", json={"pdb_id": "1UBQ"})
+    assert response.status_code == 404
+
+
+def test_submit_interproscan_job_400s_on_invalid_pdb_id():
+    response = client.post("/api/jobs/sequence-annotation", json={"pdb_id": "../etc"})
+    assert response.status_code == 400
+
+
+def test_submit_interproscan_job_rejects_an_invalid_webhook_url(tmp_path):
+    pdb_file = _write_test_pdb(tmp_path)
+    with patch(
+        "src.backend.api._extract_structure_sequence",
+        return_value="MVHLTPEEKSAVTALWGKVNVDEVGGEALGRLLVVYPWTQRFFESFGDLST",
+    ), patch("src.backend.api._find_structure_pdb_path", return_value=pdb_file):
+        response = client.post(
+            "/api/jobs/sequence-annotation",
+            json={"pdb_id": "1UBQ", "webhook_url": "not-a-url"},
+        )
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_interproscan_job_execution_completes_and_is_pollable():
+    """Directly exercises _execute_interproscan_job (the background task
+    the endpoint schedules) end-to-end, then confirms GET /api/jobs/{job_id}
+    - the same polling endpoint used for every other job type - surfaces
+    the real domain/GO-term result."""
+    api_module.interproscan_jobs.clear()
+    job_id = "test-interproscan-job"
+    api_module.interproscan_jobs[job_id] = {
+        "status": "queued",
+        "created_at": time.time(),
+    }
+
+    with patch(
+        "src.backend.api.InterProScanClient.annotate", new_callable=AsyncMock
+    ) as mock_annotate:
+        mock_annotate.return_value = {
+            "results": [
+                {
+                    "matches": [
+                        {
+                            "signature": {
+                                "entry": {
+                                    "accession": "IPR000971",
+                                    "name": "Globin",
+                                    "goXRefs": [
+                                        {"id": "GO:0020037", "name": "heme binding"}
+                                    ],
+                                }
+                            },
+                            "locations": [{"start": 27, "end": 142}],
+                        }
+                    ]
+                }
+            ]
+        }
+        await api_module._execute_interproscan_job(job_id, "MVHLTPEEK")
+
+    poll = client.get(f"/api/jobs/{job_id}")
+    assert poll.json()["status"] == "completed"
+    assert poll.json()["domains"][0]["name"] == "Globin"
+    assert poll.json()["go_terms"][0]["id"] == "GO:0020037"
+
+    api_module.interproscan_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_interproscan_job_execution_surfaces_pipeline_failure():
+    api_module.interproscan_jobs.clear()
+    job_id = "test-interproscan-job-fail"
+    api_module.interproscan_jobs[job_id] = {
+        "status": "queued",
+        "created_at": time.time(),
+    }
+
+    with patch(
+        "src.backend.api.InterProScanClient.annotate", new_callable=AsyncMock
+    ) as mock_annotate:
+        from src.backend.interproscan_client import InterProScanError
+
+        mock_annotate.side_effect = InterProScanError(
+            "InterProScan5 job job-1 did not complete within 600s"
+        )
+        await api_module._execute_interproscan_job(job_id, "MVHLTPEEK")
+
+    poll = client.get(f"/api/jobs/{job_id}")
+    assert poll.json()["status"] == "failed"
+    assert "did not complete within 600s" in poll.json()["error"]
+
+    api_module.interproscan_jobs.clear()
+
+
+@pytest.mark.asyncio
+async def test_interproscan_job_sweep_drops_old_finished_jobs_but_keeps_recent_and_running():
+    now = time.time()
+    api_module.interproscan_jobs.clear()
+    api_module.interproscan_jobs.update(
+        {
+            "old_completed": {"status": "completed", "finished_at": now - 10_000},
+            "recent_completed": {"status": "completed", "finished_at": now},
+            "still_running": {"status": "running", "created_at": now - 10_000},
+        }
+    )
+
+    with patch.object(api_module, "_JOB_TTL_SECONDS", 60), patch(
+        "asyncio.sleep", new_callable=AsyncMock
+    ) as mock_sleep:
+        mock_sleep.side_effect = [None, asyncio.CancelledError()]
+        with pytest.raises(asyncio.CancelledError):
+            await api_module._sweep_interproscan_jobs()
+
+    remaining = set(api_module.interproscan_jobs.keys())
+    assert remaining == {"recent_completed", "still_running"}
+    api_module.interproscan_jobs.clear()
 
 
 @pytest.mark.asyncio

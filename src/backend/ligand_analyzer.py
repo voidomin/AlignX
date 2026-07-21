@@ -16,6 +16,15 @@ from src.utils.logger import sanitize_for_log
 logger = logging.getLogger(__name__)
 
 RCSB_CHEMCOMP_BASE_URL = "https://data.rcsb.org/rest/v1/core/chemcomp"
+# PubChem's keyless 2D similarity search - confirmed live against a real
+# heme SMILES (a metal-containing porphyrin, a real edge case) returning
+# real CIDs. Threshold/MaxRecords are both used deliberately: the
+# unthrottled default returned 642 hits for a simpler test molecule - far
+# too many to render as a list, so this is capped to a small, high-
+# similarity set.
+PUBCHEM_SIMILARITY_BASE_URL = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/fastsimilarity_2d/smiles/cids/JSON"
+PUBCHEM_SIMILARITY_THRESHOLD = 95
+PUBCHEM_MAX_ANALOGS = 10
 
 # Ligand/HETATM codes are always alnum (occasionally with a trailing digit
 # for numbered variants) - this allowlist keeps the RCSB request path safe
@@ -623,3 +632,69 @@ class LigandAnalyzer:
                 f"{sanitize_for_log(ligand_code)}: {e}"
             )
             return None
+
+    async def fetch_pubchem_analogs(
+        self, smiles: str, client: httpx.AsyncClient
+    ) -> List[Dict[str, Any]]:
+        """
+        Real structurally-similar known compounds for a bound ligand's
+        SMILES, via PubChem's keyless 2D similarity search - useful for
+        drug-repurposing/analog scouting off a co-crystallized ligand.
+        Cached the same way ligand chemistry already is (this data is
+        static enough not to re-fetch per request).
+
+        Returns a list of {"cid": ..., "url": "https://pubchem.ncbi.nlm.nih.gov/compound/{cid}"}
+        dicts, or [] on no hits/any failure - never raises.
+        """
+        if not smiles:
+            return []
+
+        cache_key = f"pubchem_analogs:{smiles}"
+        if self.cache_db:
+            try:
+                cached = self.cache_db.get_annotation_cache(
+                    cache_key, self.cache_ttl_days
+                )
+                if cached is not None:
+                    return json.loads(cached)
+            except Exception as e:
+                logger.warning(f"PubChem analog cache read failed: {e}")
+
+        result = await self._fetch_pubchem_analogs_live(smiles, client)
+
+        if self.cache_db:
+            try:
+                self.cache_db.set_annotation_cache(
+                    cache_key, "pubchem_analogs", json.dumps(result)
+                )
+            except Exception as e:
+                logger.warning(f"PubChem analog cache write failed: {e}")
+
+        return result
+
+    @staticmethod
+    async def _fetch_pubchem_analogs_live(
+        smiles: str, client: httpx.AsyncClient
+    ) -> List[Dict[str, Any]]:
+        try:
+            response = await client.get(
+                PUBCHEM_SIMILARITY_BASE_URL,
+                params={
+                    "smiles": smiles,
+                    "Threshold": PUBCHEM_SIMILARITY_THRESHOLD,
+                    "MaxRecords": PUBCHEM_MAX_ANALOGS,
+                },
+            )
+            if response.status_code != 200:
+                return []
+            cids = (response.json().get("IdentifierList") or {}).get("CID") or []
+            return [
+                {"cid": cid, "url": f"https://pubchem.ncbi.nlm.nih.gov/compound/{cid}"}
+                for cid in cids
+            ]
+        except httpx.HTTPError as e:
+            logger.warning(f"PubChem analog lookup failed: {e}")
+            return []
+        except Exception as e:
+            logger.warning(f"Failed to parse PubChem analog response: {e}")
+            return []

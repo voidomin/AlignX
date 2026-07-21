@@ -1526,6 +1526,83 @@ class TestFetchUniprotGeneAndSequence:
         assert summary == {"gene": None, "sequence": None}
 
 
+class TestFetchUniprotFunctionSummary:
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_the_first_unscoped_function_comment(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "comments": [
+                    {
+                        "commentType": "FUNCTION",
+                        "texts": [
+                            {"value": "Involved in oxygen transport from the lung"}
+                        ],
+                    },
+                    {
+                        "commentType": "FUNCTION",
+                        "molecule": "Hemopressin",
+                        "texts": [{"value": "Hemopressin acts as an antagonist"}],
+                    },
+                ]
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            summary = await aggregator.fetch_uniprot_function_summary("P68871", client)
+        assert summary == "Involved in oxygen transport from the lung"
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_skips_molecule_scoped_entries_entirely_if_no_main_one_exists(
+        self, mock_get
+    ):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "comments": [
+                    {
+                        "commentType": "FUNCTION",
+                        "molecule": "Hemopressin",
+                        "texts": [{"value": "Hemopressin acts as an antagonist"}],
+                    }
+                ]
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            summary = await aggregator.fetch_uniprot_function_summary("P68871", client)
+        assert summary is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_when_no_function_comment_exists(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={"comments": [{"commentType": "SUBUNIT", "texts": []}]}
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            summary = await aggregator.fetch_uniprot_function_summary("P68871", client)
+        assert summary is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_non_200(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            summary = await aggregator.fetch_uniprot_function_summary("NOPE", client)
+        assert summary is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            summary = await aggregator.fetch_uniprot_function_summary("P68871", client)
+        assert summary is None
+
+
 class TestFetchClinvarSignificance:
     @pytest.mark.asyncio
     @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
@@ -1601,7 +1678,10 @@ class TestFetchGnomadFrequency:
                 "hits": [
                     {"dbnsfp": {"aa": {"ref": "V", "alt": "F"}}},
                     {
-                        "dbnsfp": {"aa": {"ref": "V", "alt": "I"}},
+                        "dbnsfp": {
+                            "aa": {"ref": "V", "alt": "I"},
+                            "revel": {"score": 0.051},
+                        },
                         "gnomad_exome": {"af": {"af": 0.856674}},
                         "gnomad_genome": {"af": {"af": 0.831182}},
                     },
@@ -1613,7 +1693,31 @@ class TestFetchGnomadFrequency:
             result = await aggregator.fetch_gnomad_frequency(
                 "PCSK9", "V", 474, "I", client
             )
-        assert result == {"af_exome": 0.856674, "af_genome": 0.831182}
+        assert result == {
+            "af_exome": 0.856674,
+            "af_genome": 0.831182,
+            "revel_score": 0.051,
+        }
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_revel_score_when_absent_from_the_hit(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "hits": [
+                    {
+                        "dbnsfp": {"aa": {"ref": "V", "alt": "I"}},
+                        "gnomad_exome": {"af": {"af": 0.856674}},
+                    },
+                ]
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_gnomad_frequency(
+                "PCSK9", "V", 474, "I", client
+            )
+        assert result["revel_score"] is None
 
     @pytest.mark.asyncio
     @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
@@ -1881,6 +1985,7 @@ class TestAggregateForStructure:
             "reactome_pathways": [],
             "uniprot_features": [],
             "catalytic_sites": [],
+            "function_summary": None,
         }
 
     @pytest.mark.asyncio
@@ -1952,6 +2057,10 @@ class TestAggregateForStructure:
                     }
                 ]
             ),
+        ), patch.object(
+            aggregator,
+            "fetch_uniprot_function_summary",
+            AsyncMock(return_value="Involved in oxygen transport"),
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
@@ -1964,6 +2073,7 @@ class TestAggregateForStructure:
         assert result["reactome_pathways"][0]["name"] == "Erythrocytes take up oxygen"
         assert result["uniprot_features"][0]["type"] == "Binding site"
         assert result["catalytic_sites"][0]["enzyme_name"] == "test enzyme"
+        assert result["function_summary"] == "Involved in oxygen transport"
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -2025,6 +2135,8 @@ class TestAggregateForStructure:
             AsyncMock(return_value={n: n + 10 for n in range(1, 100)}),
         ), patch.object(
             aggregator, "fetch_catalytic_site_residues", AsyncMock(return_value=[])
+        ), patch.object(
+            aggregator, "fetch_uniprot_function_summary", AsyncMock(return_value=None)
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
@@ -2090,6 +2202,8 @@ class TestAggregateForStructure:
             aggregator, "fetch_uniprot_features", AsyncMock(return_value=[])
         ), patch.object(
             aggregator, "fetch_catalytic_site_residues", AsyncMock(return_value=[])
+        ), patch.object(
+            aggregator, "fetch_uniprot_function_summary", AsyncMock(return_value=None)
         ), patch.object(
             aggregator,
             "resolve_go_term_names",

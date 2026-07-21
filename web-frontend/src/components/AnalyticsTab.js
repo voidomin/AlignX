@@ -1,7 +1,8 @@
-import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae, fetchFlexibility, submitDdgStabilityJob, pollJobUntilDone } from '../api';
+import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae, fetchFlexibility, submitDdgStabilityJob, submitInterproscanJob, pollJobUntilDone } from '../api';
 import { renderDomainList, renderGoTermList, renderFeatureList, renderCatalyticSiteList } from '../utils/annotationRenderers';
 import { createInsightIconSvg } from '../utils/insightIcons';
 import { wireArrowKeyNavigation } from '../utils/tabKeyboardNav';
+import { escapeHtml } from '../escapeHtml';
 
 // Renders one insight string's markdown-lite **bold** segments as real
 // <strong> DOM nodes, built via createElement/createTextNode rather than
@@ -538,8 +539,22 @@ export class AnalyticsTab {
         if (!annotation) {
             content.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Switch to this tab to load functional annotation.</div>`;
         } else if (!annotation.accession) {
-            content.innerHTML = `<div class="font-body-sm text-secondary py-4">No UniProt accession could be resolved for ${selectedPdbId} - no functional annotation available.</div>`;
-        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length) {
+            content.innerHTML = `
+                <div class="font-body-sm text-secondary py-4">No UniProt accession could be resolved for ${selectedPdbId} - no functional annotation available that way.</div>
+                <div class="flex flex-col gap-2 border-t border-border-subtle pt-4">
+                    <span class="font-body-sm text-body-sm text-secondary">Annotate directly from this structure's own sequence instead (InterProScan5) - the one path that works without a UniProt accession.</span>
+                    <div class="flex items-center gap-3">
+                        <button id="interproscan-annotate-btn" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Annotate from sequence</button>
+                        <span id="interproscan-feedback" class="font-body-sm text-[11px] text-secondary"></span>
+                    </div>
+                    <div id="interproscan-result" class="flex flex-col gap-3"></div>
+                </div>
+            `;
+            const annotateBtn = content.querySelector('#interproscan-annotate-btn');
+            if (annotateBtn) {
+                annotateBtn.addEventListener('click', () => this.loadInterproscanAnnotation(selectedPdbId));
+            }
+        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length && !annotation.function_summary) {
             content.innerHTML = `<div class="font-body-sm text-secondary py-4">Resolved to UniProt ${annotation.accession}, but no curated domains, GO terms, pathways, or sequence features were found.</div>`;
         } else {
             // Split the single fetch_uniprot_features() result into a
@@ -553,8 +568,13 @@ export class AnalyticsTab {
             const ptmFeatures = allFeatures.filter(f => PTM_FEATURE_TYPES.has(f.type));
             const otherFeatures = allFeatures.filter(f => !PTM_FEATURE_TYPES.has(f.type));
 
+            const functionSummaryHtml = annotation.function_summary
+                ? `<div class="font-body-sm text-primary py-2 border-b border-border-subtle">${escapeHtml(annotation.function_summary)}</div>`
+                : '';
+
             content.innerHTML = `
                 <div class="font-body-sm text-secondary">Resolved to UniProt <span class="font-mono text-primary">${annotation.accession}</span></div>
+                ${functionSummaryHtml}
                 ${renderDomainList(annotation.domains)}
                 ${renderGoTermList(annotation.go_terms)}
                 ${renderFeatureList(ptmFeatures, 'PTM sites', 'ptm-highlight-btn')}
@@ -653,6 +673,14 @@ export class AnalyticsTab {
         }
         resultDiv.appendChild(gnomadLine);
 
+        const revelLine = document.createElement('div');
+        if (data.gnomad?.revel_score != null) {
+            revelLine.textContent = `REVEL pathogenicity: ${data.gnomad.revel_score.toFixed(3)}`;
+        } else {
+            revelLine.textContent = 'No REVEL score available for this substitution.';
+        }
+        resultDiv.appendChild(revelLine);
+
         if (data.known_uniprot_variant) {
             const variantLine = document.createElement('div');
             variantLine.textContent = `Known UniProt variant at this position: ${data.known_uniprot_variant.description || '(no description)'}`;
@@ -717,6 +745,42 @@ export class AnalyticsTab {
         }
         const direction = ddg >= 0 ? 'stabilizing' : 'destabilizing';
         resultDiv.textContent = `Predicted stability change (DDMut): ${ddg >= 0 ? '+' : ''}${ddg.toFixed(2)} kcal/mol (${direction})`;
+    }
+
+    // Real domain/GO-term annotation directly from this structure's own
+    // sequence via InterProScan5 - the one path available for a structure
+    // with no resolvable UniProt accession (submitInterproscanJob resolves
+    // the sequence server-side, no raw sequence needed from here).
+    async loadInterproscanAnnotation(pdbId) {
+        const feedback = this.element.querySelector('#interproscan-feedback');
+        const resultDiv = this.element.querySelector('#interproscan-result');
+        const btn = this.element.querySelector('#interproscan-annotate-btn');
+        if (!feedback || !resultDiv) return;
+
+        const structure = this.structures.find(s => s.pdbId === pdbId);
+        btn.disabled = true;
+        feedback.textContent = 'Submitting to InterProScan5…';
+        resultDiv.innerHTML = '';
+        try {
+            const submitted = await submitInterproscanJob(pdbId, structure?.chain, this.currentRunId);
+            feedback.textContent = 'Running InterProScan5 (this can take a minute or two)…';
+            const job = await pollJobUntilDone(submitted.job_id, { intervalMs: 10000 });
+            if (job.status === 'failed') {
+                feedback.textContent = job.error || 'InterProScan5 annotation failed.';
+                return;
+            }
+            const domains = job.domains || [];
+            const goTerms = job.go_terms || [];
+            feedback.textContent = domains.length > 0 || goTerms.length > 0
+                ? `Found ${domains.length} domain(s), ${goTerms.length} GO term(s).`
+                : 'No domains or GO terms found for this sequence.';
+            resultDiv.innerHTML = `${renderDomainList(domains)}${renderGoTermList(goTerms)}`;
+        } catch (err) {
+            console.error("InterProScan5 annotation failed:", err);
+            feedback.textContent = err.message || 'InterProScan5 annotation failed.';
+        } finally {
+            btn.disabled = false;
+        }
     }
 
     renderReactomePathways(pathways) {

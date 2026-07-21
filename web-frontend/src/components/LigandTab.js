@@ -44,6 +44,7 @@ export class LigandTab {
                     <span id="ligand-sasa-badge" class="stat-value" title="Solvent-accessible surface area of the binding pocket, in square Angstroms - a rough measure of pocket size">-- Å²</span>
                 </div>
                 <div id="ligand-chemistry-info" class="font-body-sm text-[11px] text-secondary hidden"></div>
+                <div id="ligand-analogs-info" class="font-body-sm text-[11px] text-secondary hidden flex-wrap items-baseline gap-1.5"></div>
 
                 <div class="flex items-baseline justify-between mt-2 pt-4 border-t border-border">
                     <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Molecular interactions</span>
@@ -686,6 +687,7 @@ export class LigandTab {
     // RESNAME_CHAIN_RESI, not directly usable for a chemistry lookup).
     async loadLigandChemistry(ligandId) {
         const info = this.element.querySelector('#ligand-chemistry-info');
+        const analogsInfo = this.element.querySelector('#ligand-analogs-info');
         if (!info) return;
 
         const ligand = this.ligandsList.find(l => l.id === ligandId);
@@ -693,6 +695,11 @@ export class LigandTab {
 
         info.textContent = 'Looking up ligand chemistry…';
         info.classList.remove('hidden');
+        if (analogsInfo) {
+            analogsInfo.classList.add('hidden');
+            analogsInfo.classList.remove('flex');
+            analogsInfo.innerHTML = "";
+        }
 
         try {
             const data = await fetchLigandInfo(code);
@@ -704,9 +711,33 @@ export class LigandTab {
             const parts = [c.name, c.formula].filter(Boolean);
             info.textContent = parts.length > 0 ? parts.join(' · ') : `${code}: no chemistry data found.`;
             info.title = c.smiles ? `SMILES: ${c.smiles}` : '';
+            this.renderLigandAnalogs(data.pubchem_analogs);
         } catch (err) {
             console.error("Failed to load ligand chemistry:", err);
             info.textContent = `${code}: chemistry lookup failed.`;
         }
+    }
+
+    // Real structurally-similar known compounds from PubChem (see
+    // fetch_pubchem_analogs) - useful for drug-repurposing/analog scouting
+    // off this ligand. Only shown when at least one analog resolves.
+    renderLigandAnalogs(analogs) {
+        const analogsInfo = this.element.querySelector('#ligand-analogs-info');
+        if (!analogsInfo || !analogs || analogs.length === 0) return;
+
+        analogsInfo.classList.remove('hidden');
+        analogsInfo.classList.add('flex');
+        const label = document.createElement('span');
+        label.textContent = 'Similar known compounds:';
+        analogsInfo.appendChild(label);
+        analogs.forEach(({ cid, url }) => {
+            const link = document.createElement('a');
+            link.href = url;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.className = 'text-accent hover:underline';
+            link.textContent = `CID ${cid}`;
+            analogsInfo.appendChild(link);
+        });
     }
 }

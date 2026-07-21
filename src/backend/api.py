@@ -41,11 +41,12 @@ from src.backend.clustalo_client import ClustalOmegaClient
 from src.backend.blast_client import BlastClient
 from src.backend.ddmut_client import DDMutClient
 from src.backend.prankweb_client import PrankWebClient
+from src.backend.interproscan_client import InterProScanClient
 from src.backend.esmfold_client import fold_sequence, ESMFoldError, MAX_SEQUENCE_LENGTH
 from src.backend.database import HistoryDatabase
 from src.backend.ligand_analyzer import LigandAnalyzer
 from src.backend.interface_analyzer import InterfaceAnalyzer
-from src.backend.pdb_manager import PDBManager
+from src.backend.pdb_manager import PDBManager, parse_structure_file
 from src.backend.rmsd_analyzer import RMSDAnalyzer
 from src.backend.ramachandran_service import RamachandranService
 from src.backend.result_manager import ResultManager
@@ -56,6 +57,8 @@ from src.backend.rmsd_calculator import (
 )
 from src.backend.tm_score_calculator import calculate_pairwise_tm_score
 from src.backend.flexibility_calculator import calculate_gnm_flexibility
+from src.backend.pae_domain_calculator import calculate_pae_domains
+from src.backend.clash_calculator import calculate_clash_score
 
 logger = get_logger()
 
@@ -84,6 +87,7 @@ async def lifespan(app: FastAPI):
     blast_sweep_task = asyncio.create_task(_sweep_blast_jobs())
     ddmut_sweep_task = asyncio.create_task(_sweep_ddmut_jobs())
     prankweb_sweep_task = asyncio.create_task(_sweep_prankweb_jobs())
+    interproscan_sweep_task = asyncio.create_task(_sweep_interproscan_jobs())
     yield
     sweep_task.cancel()
     discovery_sweep_task.cancel()
@@ -91,6 +95,7 @@ async def lifespan(app: FastAPI):
     blast_sweep_task.cancel()
     ddmut_sweep_task.cancel()
     prankweb_sweep_task.cancel()
+    interproscan_sweep_task.cancel()
 
 
 # Initialize FastAPI App
@@ -947,9 +952,9 @@ async def submit_alignment_job(
 def get_alignment_job(job_id: str):
     """
     Poll the status/result of a submitted job (alignment, discovery,
-    Clustal Omega, BLAST conservation, DDMut ddG stability, or PrankWeb
-    pocket detection - job IDs are unique uuid4 hex strings, so one
-    polling endpoint covers all of them).
+    Clustal Omega, BLAST conservation, DDMut ddG stability, PrankWeb
+    pocket detection, or InterProScan5 sequence annotation - job IDs are
+    unique uuid4 hex strings, so one polling endpoint covers all of them).
     """
     job = (
         alignment_jobs.get(job_id)
@@ -958,6 +963,7 @@ def get_alignment_job(job_id: str):
         or blast_jobs.get(job_id)
         or ddmut_jobs.get(job_id)
         or prankweb_jobs.get(job_id)
+        or interproscan_jobs.get(job_id)
     )
     if job is None:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found.")
@@ -1346,6 +1352,47 @@ def _get_wildtype_residue_letter(
     return None
 
 
+def _extract_structure_sequence(
+    pdb_path: Path, chain: Optional[str] = None
+) -> Optional[str]:
+    """Reads a structure's own real amino-acid sequence directly from its
+    file (first model, first chain unless one is given) - the input
+    InterProScan5 needs, since it works from a raw sequence rather than a
+    resolved UniProt accession (the one annotation path available for
+    structures with no accession at all). Uses parse_structure_file
+    (pdb_manager.py), not a hardcoded PDBParser - AlphaFold/ESM Atlas-
+    sourced downloads are real mmCIF, which PDBParser silently produces
+    zero models for (v3.87.0's fix for the same bug in ligand_analyzer.py/
+    interface_analyzer.py). Skips non-standard/HETATM residues and any
+    residue whose 3-letter code doesn't map to a standard amino acid.
+    Returns None if the structure has no resolvable chain/sequence."""
+    from Bio.PDB.Polypeptide import protein_letters_3to1
+
+    try:
+        structure = parse_structure_file(pdb_path)
+        model = next(iter(structure))
+        target_chain = None
+        for c in model:
+            if chain is None or c.id == chain:
+                target_chain = c
+                break
+        if target_chain is None:
+            return None
+
+        letters = []
+        for residue in target_chain:
+            if residue.id[0] != " ":
+                continue
+            letter = protein_letters_3to1.get(residue.resname)
+            if letter:
+                letters.append(letter)
+        sequence = "".join(letters)
+        return sequence or None
+    except Exception:
+        logger.exception(f"Failed to extract sequence from {pdb_path}")
+        return None
+
+
 async def _run_ddmut_pipeline(
     pdb_file_content: str, chain: str, mutation: str
 ) -> Dict[str, Any]:
@@ -1563,6 +1610,125 @@ async def submit_prankweb_job(
     _spawn_background_task(
         _execute_prankweb_job(job_id, pdb_path.read_text(), webhook_url)
     )
+
+    return {"job_id": job_id, "status": "queued"}
+
+
+# In-memory job registry for the async InterProScan5 sequence-only
+# annotation pipeline (see interproscan_client.py) - the 7th job type,
+# mirroring prankweb_jobs above. The one annotation path that works for
+# structures with no resolvable UniProt accession at all (ESM Atlas/
+# uploaded/ESMFold-predicted structures), which otherwise get "no
+# annotation available" from the existing accession-resolution pipeline.
+interproscan_jobs: Dict[str, Dict[str, Any]] = {}
+
+
+async def _sweep_interproscan_jobs():
+    """Periodically drop finished InterProScan5 jobs older than _JOB_TTL_SECONDS."""
+    while True:
+        await asyncio.sleep(_JOB_SWEEP_INTERVAL_SECONDS)
+        now = time.time()
+        stale_ids = [
+            jid
+            for jid, job in interproscan_jobs.items()
+            if job.get("status") in ("completed", "failed")
+            and now - job.get("finished_at", now) > _JOB_TTL_SECONDS
+        ]
+        for jid in stale_ids:
+            interproscan_jobs.pop(jid, None)
+
+
+async def _run_interproscan_pipeline(sequence: str) -> Dict[str, Any]:
+    client = InterProScanClient()
+    result = await client.annotate(sequence)
+    domains, go_terms = InterProScanClient.parse_domains_and_go_terms(result)
+    return {"domains": domains, "go_terms": go_terms}
+
+
+async def _execute_interproscan_job(
+    job_id: str, sequence: str, webhook_url: Optional[str] = None
+):
+    interproscan_jobs[job_id]["status"] = "running"
+    created_at = interproscan_jobs[job_id].get("created_at", time.time())
+    try:
+        outcome = await _run_interproscan_pipeline(sequence)
+        interproscan_jobs[job_id] = {
+            "status": "completed",
+            "created_at": created_at,
+            "finished_at": time.time(),
+            **outcome,
+        }
+    except Exception as e:
+        interproscan_jobs[job_id] = {
+            "status": "failed",
+            "created_at": created_at,
+            "finished_at": time.time(),
+            "error": str(e),
+        }
+    if webhook_url:
+        await _notify_webhook(
+            webhook_url,
+            {
+                "job_id": job_id,
+                "status": interproscan_jobs[job_id]["status"],
+                "run_id": None,
+            },
+        )
+
+
+@app.post(
+    "/api/jobs/sequence-annotation",
+    tags=["Jobs"],
+    status_code=202,
+    responses={
+        400: {"description": "Invalid pdb_id/chain/run_id/session_id"},
+        404: {
+            "description": "Structure PDB not found, or no resolvable amino-acid sequence on that chain"
+        },
+    },
+)
+async def submit_interproscan_job(
+    pdb_id: Annotated[str, Body(..., embed=True)],
+    chain: Annotated[Optional[str], Body(embed=True)] = None,
+    run_id: Annotated[Optional[str], Body(embed=True)] = None,
+    session_id: Annotated[Optional[str], Body(embed=True)] = None,
+    webhook_url: Annotated[Optional[str], Body(embed=True)] = None,
+):
+    """
+    Submit a real domain/GO-term annotation job via InterProScan5 (see
+    interproscan_client.py) - works directly from a structure's own
+    sequence (extracted server-side, see _extract_structure_sequence),
+    unlike every other annotation route, which needs a resolved UniProt
+    accession. The one annotation path available for structures with no
+    accession at all (ESM Atlas/uploaded/ESMFold-predicted structures).
+    Returns immediately with a job_id; poll GET /api/jobs/{job_id} for
+    status - or, if webhook_url is given, receive a POST there instead
+    ({job_id, status, run_id: null}) once the job finishes.
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(chain, "chain")
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    pdb_path = _find_structure_pdb_path(pdb_id, run_id, session_id)
+    if not pdb_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Structure PDB for {pdb_id} not found in active workspace.",
+        )
+
+    sequence = _extract_structure_sequence(pdb_path, chain)
+    if not sequence or not _SAFE_PROTEIN_SEQUENCE.match(sequence):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Could not extract a real amino-acid sequence (10+ residues) from {pdb_id}.",
+        )
+    webhook_url = await _validate_webhook_url(webhook_url)
+
+    job_id = uuid.uuid4().hex
+    interproscan_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+
+    _spawn_background_task(_execute_interproscan_job(job_id, sequence, webhook_url))
 
     return {"job_id": job_id, "status": "queued"}
 
@@ -2034,13 +2200,25 @@ async def get_ligand_info(ligand_code: Annotated[str, Query(...)]):
     formula, SMILES) via RCSB's Chemical Component Dictionary - see
     LigandAnalyzer.fetch_ligand_chemistry(). Not tied to any downloaded
     structure file or run - a pure lookup from the ligand code alone, so
-    it works for any ligand a structure's /api/ligands call surfaced.
+    it works for any ligand a structure's /api/ligands call surfaced. Once
+    a SMILES resolves, also fetches real structurally-similar known
+    compounds via PubChem (see fetch_pubchem_analogs) - useful for drug-
+    repurposing/analog scouting off a co-crystallized ligand.
     """
     _safe_segment(ligand_code, "ligand_code")
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         chemistry = await ligand_analyzer.fetch_ligand_chemistry(ligand_code, client)
-    return {"ligand_code": ligand_code.upper(), "chemistry": chemistry}
+        analogs = []
+        if chemistry and chemistry.get("smiles"):
+            analogs = await ligand_analyzer.fetch_pubchem_analogs(
+                chemistry["smiles"], client
+            )
+    return {
+        "ligand_code": ligand_code.upper(),
+        "chemistry": chemistry,
+        "pubchem_analogs": analogs,
+    }
 
 
 @app.get(
@@ -2124,6 +2302,53 @@ def get_flexibility(
             detail=f"Too few CA-bearing residues in {pdb_id} to model flexibility.",
         )
     return {"pdb_id": pdb_id, "flexibility": sanitize_for_json(result)}
+
+
+@app.get(
+    "/api/clash-score",
+    tags=["Annotations"],
+    responses={
+        400: {"description": "Invalid pdb_id, run_id, or session_id"},
+        404: {
+            "description": "Structure PDB not found in the active workspace, or no heavy atoms to analyze"
+        },
+    },
+)
+def get_clash_score(
+    pdb_id: Annotated[str, Query(...)],
+    run_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Real-time all-atom steric-clash detection for one structure - see
+    clash_calculator.calculate_clash_score. No external API call, same as
+    /api/flexibility - pure geometry on a structure already downloaded.
+    Bulk QC (§2.15) only ever reports a real clashscore for real PDB
+    entries (fetched from wwPDB validation); this fills that gap for
+    every structure source, in the same nominal clashes-per-1000-atoms
+    units - a rough real-world sanity check against a real PDB entry's
+    own wwPDB clashscore, not a reproduction of it (see this module's
+    docstring for why the two can diverge for an older/poorly-refined
+    structure).
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    pdb_path = _find_structure_pdb_path(pdb_id, run_id, session_id)
+    if not pdb_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Structure PDB for {pdb_id} not found in active workspace.",
+        )
+
+    result = calculate_clash_score(pdb_path)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No heavy atoms in a standard residue found in {pdb_id} to analyze.",
+        )
+    return {"pdb_id": pdb_id, "clashes": sanitize_for_json(result)}
 
 
 @app.get(
@@ -2535,6 +2760,44 @@ async def get_pae(pdb_id: Annotated[str, Query(...)]):
             status_code=404, detail=f"No PAE data available for {pdb_id}."
         )
     return {"pdb_id": pdb_id, "pae": matrix}
+
+
+@app.get(
+    "/api/pae-domains",
+    tags=["Annotations"],
+    responses={
+        400: {"description": "Invalid pdb_id"},
+        404: {
+            "description": "No PAE data available for this structure, or no domain structure found"
+        },
+    },
+)
+async def get_pae_domains(pdb_id: Annotated[str, Query(...)]):
+    """
+    Auto-splits an AlphaFold-sourced structure into rigid domains by
+    connectivity in its own real PAE matrix - see
+    pae_domain_calculator.calculate_pae_domains. A second, independent use
+    of the same PAE data /api/pae already surfaces, distinct from
+    InterPro's sequence-based domain boundaries (§2.12) - a simplified
+    connectivity-based split, not full weighted-graph community
+    detection (see that module's docstring for why).
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        matrix = await annotation_aggregator.fetch_predicted_aligned_error(
+            pdb_id, client
+        )
+    if matrix is None:
+        raise HTTPException(
+            status_code=404, detail=f"No PAE data available for {pdb_id}."
+        )
+    domains = calculate_pae_domains(matrix)
+    if domains is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No domain structure found in the PAE matrix for {pdb_id}.",
+        )
+    return {"pdb_id": pdb_id, "domains": domains}
 
 
 @app.get(
