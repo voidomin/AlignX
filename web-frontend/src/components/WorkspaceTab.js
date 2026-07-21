@@ -713,7 +713,7 @@ export class WorkspaceTab {
     _assemblyBadgeContent(pid) {
         const cached = this.assemblyCache[pid];
         if (cached === undefined) return 'Checking assembly state…';
-        if (!cached || !cached.oligomeric_details) return 'No assembly state available';
+        if (!cached?.oligomeric_details) return 'No assembly state available';
         return cached.oligomeric_details.charAt(0).toUpperCase() + cached.oligomeric_details.slice(1);
     }
 
