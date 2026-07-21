@@ -1,4 +1,4 @@
-import { getAlignmentPdbUrl, getStructureFileUrl, getMorphFramesUrl, fetchMutationTolerance, fetchAnnotations, fetchDisorderPrediction, fetchFlexibility } from '../api';
+import { getAlignmentPdbUrl, getStructureFileUrl, getMorphFramesUrl, fetchMutationTolerance, fetchAnnotations, fetchDisorderPrediction, fetchFlexibility, fetchPaeDomains } from '../api';
 
 // Qualitative palette for N-structure identity coloring. Deliberately avoids
 // amber/#F59E0B (reserved for the residue-selection highlight) and the
@@ -26,6 +26,7 @@ const COLOR_SCHEME_OPTIONS = [
     { key: 'domain', label: 'InterPro domains' },
     { key: 'disorder', label: 'Sequence disorder (MobiDB)' },
     { key: 'flexibility', label: 'Predicted flexibility (GNM)' },
+    { key: 'pae-domains', label: 'PAE-derived domains' },
 ];
 
 // A distinct qualitative palette for domain coloring, deliberately
@@ -88,6 +89,13 @@ export class Viewer3D {
     // API call at all unlike every other per-residue score here. Same
     // colorfunc shape and gradient as missense/disorder.
     flexibilityScoresByPdbId = {};
+    // Keyed by pdbId -> { [authorResi]: colorHex } - PAE-derived rigid-
+    // domain grouping (see loadPaeDomains), reusing DOMAIN_COLORS/
+    // colorForDomainIndex from the existing InterPro "Color by domain"
+    // scheme's palette. Distinct from that scheme: this is graph
+    // connectivity in the structure's own real PAE matrix, not sequence-
+    // based InterPro domain boundaries.
+    paeDomainColorsByPdbId = {};
 
     // Click behavior branches on this - 'inspect' (default, informational
     // residue lookup) vs 'measure' (2-click atom-to-atom distance). Mutually
@@ -313,6 +321,9 @@ export class Viewer3D {
             if (scheme === 'confidence') {
                 btn.disabled = !this.hasPlddtStructures();
             }
+            if (scheme === 'pae-domains') {
+                btn.disabled = !this.hasAlphaFoldStructures();
+            }
             const active = scheme === this.currentColorScheme;
             btn.classList.toggle('bg-surface-raised', active);
             btn.classList.toggle('text-primary', active);
@@ -345,6 +356,10 @@ export class Viewer3D {
         if (scheme === 'flexibility') {
             await this.loadFlexibilityScores();
             if (this.currentColorScheme !== 'flexibility') return;
+        }
+        if (scheme === 'pae-domains') {
+            await this.loadPaeDomainColors();
+            if (this.currentColorScheme !== 'pae-domains') return;
         }
         this.resetCartoonStyles();
     }
@@ -486,6 +501,46 @@ export class Viewer3D {
     // "no data at this residue."
     _domainColorPartFor(structure) {
         const colors = this.domainColorsByPdbId[structure.pdbId];
+        if (!colors || Object.keys(colors).length === 0) {
+            return { color: structure.color };
+        }
+        return {
+            colorfunc: (atom) => colors[atom.resi] ?? '#4B5563',
+        };
+    }
+
+    // Fetches the real PAE-derived rigid-domain split (/api/pae-domains,
+    // graph connectivity over the structure's own PAE matrix) for every
+    // AlphaFold-sourced structure that doesn't have a color map cached yet.
+    // Non-AlphaFold structures (no PAE data) and structures with no
+    // detected domain split correctly get an empty map back, not an error.
+    async loadPaeDomainColors() {
+        const missing = this.structures.filter(
+            s => (s.pdbId || '').toUpperCase().startsWith('AF-') && !(s.pdbId in this.paeDomainColorsByPdbId)
+        );
+        if (missing.length === 0) return;
+
+        await Promise.all(missing.map(async (structure) => {
+            try {
+                const data = await fetchPaeDomains(structure.pdbId);
+                const colorMap = {};
+                (data.domains || []).forEach((residues, i) => {
+                    residues.forEach(resi => {
+                        colorMap[resi] = colorForDomainIndex(i);
+                    });
+                });
+                this.paeDomainColorsByPdbId[structure.pdbId] = colorMap;
+            } catch (err) {
+                console.error(`Failed to load PAE domain split for ${structure.pdbId}:`, err);
+                this.paeDomainColorsByPdbId[structure.pdbId] = {};
+            }
+        }));
+    }
+
+    // Same colorfunc shape as _domainColorPartFor, keyed by
+    // paeDomainColorsByPdbId instead.
+    _paeDomainsColorPartFor(structure) {
+        const colors = this.paeDomainColorsByPdbId[structure.pdbId];
         if (!colors || Object.keys(colors).length === 0) {
             return { color: structure.color };
         }
@@ -687,6 +742,8 @@ export class Viewer3D {
                 return this._disorderColorPartFor(structure);
             case 'flexibility':
                 return this._flexibilityColorPartFor(structure);
+            case 'pae-domains':
+                return this._paeDomainsColorPartFor(structure);
             case 'chain':
             default:
                 return { color: structure.color };
@@ -912,6 +969,13 @@ export class Viewer3D {
 
     hasPlddtStructures() {
         return this.structures.some(s => this._isPlddtStructure(s.pdbId));
+    }
+
+    // PAE only exists for AlphaFold-sourced structures specifically (not
+    // ESM Atlas) - see AnnotationAggregator.fetch_predicted_aligned_error's
+    // own gating.
+    hasAlphaFoldStructures() {
+        return this.structures.some(s => (s.pdbId || '').toUpperCase().startsWith('AF-'));
     }
 
     // A structure with no mustangChain (a single, non-aligned structure -
@@ -1159,6 +1223,7 @@ export class Viewer3D {
         this.domainColorsByPdbId = {};
         this.disorderScoresByPdbId = {};
         this.flexibilityScoresByPdbId = {};
+        this.paeDomainColorsByPdbId = {};
         this.interactionMode = 'inspect';
         this.measurePoints = [];
         this.measureHandles = [];

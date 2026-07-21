@@ -754,6 +754,19 @@ export async function fetchPae(pdbId) {
     return res.json();
 }
 
+// Auto-split into rigid domains by connectivity in a structure's own real
+// PAE matrix - see pae_domain_calculator.py. A second, independent use of
+// the same PAE data fetchPae already surfaces.
+export async function fetchPaeDomains(pdbId) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const res = await fetch(buildUrl('/api/pae-domains', { pdb_id: pdbId }), { headers: authHeaders() });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "PAE domain segmentation fetch failed");
+    }
+    return res.json();
+}
+
 export async function fetchContactMap(runId, pdbId, threshold) {
     runId = assertSafeSegment(runId, 'runId');
     pdbId = assertSafeSegment(pdbId, 'pdbId');

@@ -57,6 +57,7 @@ from src.backend.rmsd_calculator import (
 )
 from src.backend.tm_score_calculator import calculate_pairwise_tm_score
 from src.backend.flexibility_calculator import calculate_gnm_flexibility
+from src.backend.pae_domain_calculator import calculate_pae_domains
 
 logger = get_logger()
 
@@ -2711,6 +2712,44 @@ async def get_pae(pdb_id: Annotated[str, Query(...)]):
             status_code=404, detail=f"No PAE data available for {pdb_id}."
         )
     return {"pdb_id": pdb_id, "pae": matrix}
+
+
+@app.get(
+    "/api/pae-domains",
+    tags=["Annotations"],
+    responses={
+        400: {"description": "Invalid pdb_id"},
+        404: {
+            "description": "No PAE data available for this structure, or no domain structure found"
+        },
+    },
+)
+async def get_pae_domains(pdb_id: Annotated[str, Query(...)]):
+    """
+    Auto-splits an AlphaFold-sourced structure into rigid domains by
+    connectivity in its own real PAE matrix - see
+    pae_domain_calculator.calculate_pae_domains. A second, independent use
+    of the same PAE data /api/pae already surfaces, distinct from
+    InterPro's sequence-based domain boundaries (§2.12) - a simplified
+    connectivity-based split, not full weighted-graph community
+    detection (see that module's docstring for why).
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        matrix = await annotation_aggregator.fetch_predicted_aligned_error(
+            pdb_id, client
+        )
+    if matrix is None:
+        raise HTTPException(
+            status_code=404, detail=f"No PAE data available for {pdb_id}."
+        )
+    domains = calculate_pae_domains(matrix)
+    if domains is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No domain structure found in the PAE matrix for {pdb_id}.",
+        )
+    return {"pdb_id": pdb_id, "domains": domains}
 
 
 @app.get(

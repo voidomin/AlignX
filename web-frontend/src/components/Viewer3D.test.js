@@ -9,9 +9,10 @@ vi.mock('../api.js', () => ({
     fetchAnnotations: vi.fn(),
     fetchDisorderPrediction: vi.fn(),
     fetchFlexibility: vi.fn(),
+    fetchPaeDomains: vi.fn(),
 }));
 
-import { fetchMutationTolerance, fetchAnnotations, getMorphFramesUrl, fetchDisorderPrediction, fetchFlexibility } from '../api.js';
+import { fetchMutationTolerance, fetchAnnotations, getMorphFramesUrl, fetchDisorderPrediction, fetchFlexibility, fetchPaeDomains } from '../api.js';
 
 function makeMockViewer() {
     return {
@@ -48,6 +49,7 @@ beforeEach(() => {
     fetchAnnotations.mockResolvedValue({ annotation: { domains: [] } });
     fetchDisorderPrediction.mockResolvedValue({ disorder: { accession: null, per_residue_score: {}, consensus_regions: [] } });
     fetchFlexibility.mockResolvedValue({ flexibility: { residue_numbers: [], flexibility: [], b_factor: null } });
+    fetchPaeDomains.mockResolvedValue({ domains: [] });
     window.$3Dmol = {
         createViewer: vi.fn(() => {
             mockViewer = makeMockViewer();
@@ -827,6 +829,82 @@ describe('Viewer3D', () => {
             await v.setColorScheme('flexibility');
 
             expect(mockViewer.setStyle).toHaveBeenCalledWith({ chain: 'A' }, { cartoon: expect.objectContaining({ color: expect.any(String) }) });
+        });
+    });
+
+    describe('PAE-derived domain color scheme', () => {
+        it('fetches PAE domains only for AlphaFold-sourced structures and applies a colorfunc once loaded', async () => {
+            fetchPaeDomains.mockResolvedValue({ domains: [[10, 11], [20, 21]] });
+            const v = makeViewer();
+            await v.loadSuperposition('run_1', ['AF-P69905-F1', '3UG9'], {}, null);
+
+            await v.setColorScheme('pae-domains');
+
+            expect(fetchPaeDomains).toHaveBeenCalledWith('AF-P69905-F1');
+            expect(fetchPaeDomains).not.toHaveBeenCalledWith('3UG9');
+            expect(mockViewer.setStyle).toHaveBeenCalledWith(
+                { chain: 'A' },
+                { cartoon: expect.objectContaining({ colorfunc: expect.any(Function) }) }
+            );
+        });
+
+        it('colors each detected domain differently and falls back to neutral outside any known residue', async () => {
+            fetchPaeDomains.mockResolvedValue({ domains: [[10, 11], [20, 21]] });
+            const v = makeViewer();
+            await v.loadSuperposition('run_1', ['AF-P69905-F1', '3UG9'], {}, null);
+            await v.setColorScheme('pae-domains');
+
+            const [, styleArg] = mockViewer.setStyle.mock.calls.filter(([selector]) => selector.chain === 'A').pop();
+            const colorfunc = styleArg.cartoon.colorfunc;
+            expect(colorfunc({ resi: 10 })).not.toBe(colorfunc({ resi: 20 }));
+            expect(colorfunc({ resi: 999 })).toBe('#4B5563');
+        });
+
+        it('falls back to identity color when no domain split resolves for any AlphaFold structure', async () => {
+            fetchPaeDomains.mockResolvedValue({ domains: [] });
+            const v = makeViewer();
+            await v.loadSuperposition('run_1', ['AF-P69905-F1', '3UG9'], {}, null);
+
+            await v.setColorScheme('pae-domains');
+
+            expect(mockViewer.setStyle).toHaveBeenCalledWith({ chain: 'A' }, { cartoon: expect.objectContaining({ color: expect.any(String) }) });
+        });
+
+        it('does not re-fetch PAE domains already cached for a structure', async () => {
+            const v = makeViewer();
+            await v.loadSuperposition('run_1', ['AF-P69905-F1', '3UG9'], {}, null);
+
+            await v.setColorScheme('pae-domains');
+            fetchPaeDomains.mockClear();
+            await v.setColorScheme('pae-domains');
+
+            expect(fetchPaeDomains).not.toHaveBeenCalled();
+        });
+
+        it('handles a fetch failure gracefully by falling back to identity color', async () => {
+            fetchPaeDomains.mockRejectedValue(new Error('boom'));
+            const v = makeViewer();
+            await v.loadSuperposition('run_1', ['AF-P69905-F1', '3UG9'], {}, null);
+
+            await v.setColorScheme('pae-domains');
+
+            expect(mockViewer.setStyle).toHaveBeenCalledWith({ chain: 'A' }, { cartoon: expect.objectContaining({ color: expect.any(String) }) });
+        });
+
+        it('the pae-domains option is disabled with no AlphaFold-sourced structure loaded', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+
+            const btn = v.element.querySelector('.viewer-colorscheme-option[data-scheme="pae-domains"]');
+            expect(btn.disabled).toBe(true);
+        });
+
+        it('the pae-domains option is enabled once an AF- structure is loaded', async () => {
+            const v = makeViewer();
+            await v.loadSuperposition('run_1', ['AF-P69905-F1', '3UG9'], {}, null);
+
+            const btn = v.element.querySelector('.viewer-colorscheme-option[data-scheme="pae-domains"]');
+            expect(btn.disabled).toBe(false);
         });
     });
 

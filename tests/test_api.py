@@ -1193,6 +1193,46 @@ def test_pae_endpoint_400s_on_invalid_pdb_id():
     assert response.status_code == 400
 
 
+def test_pae_domains_endpoint_returns_the_domain_split():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.fetch_predicted_aligned_error = AsyncMock(
+            return_value=[[0, 5], [5, 0]]
+        )
+        with patch(
+            "src.backend.api.calculate_pae_domains",
+            return_value=[[1, 2, 3], [4, 5, 6]],
+        ) as mock_calc:
+            response = client.get("/api/pae-domains?pdb_id=AF-P69905-F1")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["pdb_id"] == "AF-P69905-F1"
+    assert data["domains"] == [[1, 2, 3], [4, 5, 6]]
+    mock_calc.assert_called_once_with([[0, 5], [5, 0]])
+
+
+def test_pae_domains_endpoint_404s_when_no_pae_data_is_available():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.fetch_predicted_aligned_error = AsyncMock(return_value=None)
+        response = client.get("/api/pae-domains?pdb_id=4HHB")
+    assert response.status_code == 404
+
+
+def test_pae_domains_endpoint_404s_when_no_domain_structure_found():
+    with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
+        mock_aggregator.fetch_predicted_aligned_error = AsyncMock(
+            return_value=[[0, 20], [20, 0]]
+        )
+        with patch("src.backend.api.calculate_pae_domains", return_value=None):
+            response = client.get("/api/pae-domains?pdb_id=AF-P69905-F1")
+    assert response.status_code == 404
+
+
+def test_pae_domains_endpoint_400s_on_invalid_pdb_id():
+    response = client.get("/api/pae-domains?pdb_id=../etc")
+    assert response.status_code == 400
+
+
 def test_mutation_impact_endpoint_returns_a_real_looking_result():
     with patch("src.backend.api.annotation_aggregator") as mock_aggregator:
         mock_aggregator.resolve_structure_uniprot_position = AsyncMock(
