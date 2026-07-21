@@ -1678,7 +1678,10 @@ class TestFetchGnomadFrequency:
                 "hits": [
                     {"dbnsfp": {"aa": {"ref": "V", "alt": "F"}}},
                     {
-                        "dbnsfp": {"aa": {"ref": "V", "alt": "I"}},
+                        "dbnsfp": {
+                            "aa": {"ref": "V", "alt": "I"},
+                            "revel": {"score": 0.051},
+                        },
                         "gnomad_exome": {"af": {"af": 0.856674}},
                         "gnomad_genome": {"af": {"af": 0.831182}},
                     },
@@ -1690,7 +1693,31 @@ class TestFetchGnomadFrequency:
             result = await aggregator.fetch_gnomad_frequency(
                 "PCSK9", "V", 474, "I", client
             )
-        assert result == {"af_exome": 0.856674, "af_genome": 0.831182}
+        assert result == {
+            "af_exome": 0.856674,
+            "af_genome": 0.831182,
+            "revel_score": 0.051,
+        }
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_revel_score_when_absent_from_the_hit(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "hits": [
+                    {
+                        "dbnsfp": {"aa": {"ref": "V", "alt": "I"}},
+                        "gnomad_exome": {"af": {"af": 0.856674}},
+                    },
+                ]
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_gnomad_frequency(
+                "PCSK9", "V", 474, "I", client
+            )
+        assert result["revel_score"] is None
 
     @pytest.mark.asyncio
     @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")

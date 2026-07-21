@@ -626,11 +626,13 @@ class AnnotationAggregator:
         mutant_residue: str,
         client: httpx.AsyncClient,
     ) -> Optional[Dict[str, Any]]:
-        """Real gnomAD population allele frequency for a specific protein
-        substitution, via myvariant.info's keyless query API - an
-        independent signal from ClinVar/AlphaMissense (a variant can be
-        common in the population yet still flagged pathogenic by a
-        predictor, or vice versa, and that disagreement is itself
+        """Real gnomAD population allele frequency plus REVEL pathogenicity
+        score for a specific protein substitution, via myvariant.info's
+        keyless query API - both are independent signals from ClinVar/
+        AlphaMissense (a variant can be common in the population yet still
+        flagged pathogenic by a predictor, or vice versa, and REVEL is
+        itself a separately-validated ensemble predictor distinct from
+        AlphaMissense, so agreement/disagreement between the two is
         informative). One gene+position query can return several distinct
         genomic hits (different codon-level substitutions can produce the
         same amino-acid change) - each hit is filtered by its own
@@ -638,10 +640,13 @@ class AnnotationAggregator:
         mutant_residue rather than assuming the top-scored hit is the
         wanted one; if more than one genomic hit still matches (codon
         degeneracy), the one with the highest exome allele frequency is
-        used, since that's the predominant real-world observation.
-        Returns None if myvariant.info has no matching record or the
-        request fails - population frequency data not existing for a
-        given substitution is common and expected, not an error."""
+        used, since that's the predominant real-world observation (REVEL's
+        own score is protein-position-based, not codon-based, so it's
+        identical across codon-degenerate hits regardless of which one
+        wins this tie-break). Returns None if myvariant.info has no
+        matching record or the request fails - population frequency/REVEL
+        data not existing for a given substitution is common and expected,
+        not an error."""
 
         async def _fetch() -> Optional[Dict[str, Any]]:
             try:
@@ -649,7 +654,7 @@ class AnnotationAggregator:
                     MYVARIANT_QUERY_URL,
                     params={
                         "q": f"dbnsfp.genename:{gene} AND dbnsfp.aa.pos:{position}",
-                        "fields": "dbnsfp.aa.ref,dbnsfp.aa.alt,gnomad_exome.af.af,gnomad_genome.af.af",
+                        "fields": "dbnsfp.aa.ref,dbnsfp.aa.alt,dbnsfp.revel.score,gnomad_exome.af.af,gnomad_genome.af.af",
                         "size": 20,
                     },
                 )
@@ -659,7 +664,8 @@ class AnnotationAggregator:
 
                 matches = []
                 for hit in hits:
-                    aa = (hit.get("dbnsfp") or {}).get("aa") or {}
+                    dbnsfp = hit.get("dbnsfp") or {}
+                    aa = dbnsfp.get("aa") or {}
                     if (
                         aa.get("ref") == wildtype_residue.upper()
                         and aa.get("alt") == mutant_residue.upper()
@@ -670,7 +676,14 @@ class AnnotationAggregator:
                         genome_af = (
                             (hit.get("gnomad_genome") or {}).get("af") or {}
                         ).get("af")
-                        matches.append({"af_exome": exome_af, "af_genome": genome_af})
+                        revel_score = (dbnsfp.get("revel") or {}).get("score")
+                        matches.append(
+                            {
+                                "af_exome": exome_af,
+                                "af_genome": genome_af,
+                                "revel_score": revel_score,
+                            }
+                        )
                 if not matches:
                     return None
 

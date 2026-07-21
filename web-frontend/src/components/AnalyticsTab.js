@@ -659,6 +659,14 @@ export class AnalyticsTab {
         }
         resultDiv.appendChild(gnomadLine);
 
+        const revelLine = document.createElement('div');
+        if (data.gnomad?.revel_score != null) {
+            revelLine.textContent = `REVEL pathogenicity: ${data.gnomad.revel_score.toFixed(3)}`;
+        } else {
+            revelLine.textContent = 'No REVEL score available for this substitution.';
+        }
+        resultDiv.appendChild(revelLine);
+
         if (data.known_uniprot_variant) {
             const variantLine = document.createElement('div');
             variantLine.textContent = `Known UniProt variant at this position: ${data.known_uniprot_variant.description || '(no description)'}`;

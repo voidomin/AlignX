@@ -1001,6 +1001,48 @@ describe('AnalyticsTab', () => {
             expect(result.textContent).toContain('No gnomAD population frequency data found for this substitution.');
         });
 
+        it('shows the REVEL pathogenicity score when one is available', async () => {
+            fetchMutationImpact.mockResolvedValue({
+                accession: 'P68871', uniprot_position: 7, wildtype_residue: 'V', mutant_residue: 'I',
+                gene: 'HBB', clinvar: null, alphamissense: null,
+                gnomad: { af_exome: 0.856674, af_genome: 0.831182, revel_score: 0.051 },
+                known_uniprot_variant: null,
+                highlight_chains: { A: [6] },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-map-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const result = tab.element.querySelector('#mutation-impact-result');
+            expect(result.textContent).toContain('REVEL pathogenicity: 0.051');
+        });
+
+        it('shows a fallback message when no REVEL score is available', async () => {
+            fetchMutationImpact.mockResolvedValue({
+                accession: 'P68871', uniprot_position: 7, wildtype_residue: 'V', mutant_residue: 'V',
+                gene: 'HBB', clinvar: null, alphamissense: null,
+                gnomad: { af_exome: 0.001, af_genome: 0.0009, revel_score: null },
+                known_uniprot_variant: null,
+                highlight_chains: { A: [6] },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            setUpForMutation(tab);
+
+            tab.element.querySelector('#mutation-map-btn').click();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const result = tab.element.querySelector('#mutation-impact-result');
+            expect(result.textContent).toContain('No REVEL score available for this substitution.');
+        });
+
         it('shows a known UniProt variant when ClinVar has no match', async () => {
             fetchMutationImpact.mockResolvedValue({
                 accession: 'P68871', uniprot_position: 7, wildtype_residue: 'V', mutant_residue: 'V',
