@@ -733,6 +733,26 @@ export async function fetchFlexibility(pdbId, runId, sessionId) {
     return res.json();
 }
 
+// Real-time all-atom steric-clash detection - see the backend's
+// clash_calculator.calculate_clash_score(). No external service call at
+// all, same run_id/session_id resolution fetchFlexibility uses - fills
+// the gap left by fetchQc's wwPDB-only clashscore, which only exists for
+// real PDB entries. A rough sanity check against that number, not a
+// reproduction of it (excludes hydrogens entirely, so it can read much
+// lower for an older/poorly-refined structure).
+export async function fetchClashScore(pdbId, runId, sessionId) {
+    pdbId = assertValidPdbId(pdbId, 'pdbId');
+    const params = { pdb_id: pdbId };
+    if (runId) params.run_id = assertSafeSegment(runId, 'runId');
+    if (sessionId) params.session_id = assertSafeSegment(sessionId, 'sessionId');
+    const res = await fetch(buildUrl('/api/clash-score', params), { headers: authHeaders() });
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Clash score fetch failed");
+    }
+    return res.json();
+}
+
 export async function fetchCathClassification(pdbId) {
     pdbId = assertValidPdbId(pdbId, 'pdbId');
     const res = await fetch(buildUrl('/api/cath', { pdb_id: pdbId }), { headers: authHeaders() });

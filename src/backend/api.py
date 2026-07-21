@@ -58,6 +58,7 @@ from src.backend.rmsd_calculator import (
 from src.backend.tm_score_calculator import calculate_pairwise_tm_score
 from src.backend.flexibility_calculator import calculate_gnm_flexibility
 from src.backend.pae_domain_calculator import calculate_pae_domains
+from src.backend.clash_calculator import calculate_clash_score
 
 logger = get_logger()
 
@@ -2301,6 +2302,53 @@ def get_flexibility(
             detail=f"Too few CA-bearing residues in {pdb_id} to model flexibility.",
         )
     return {"pdb_id": pdb_id, "flexibility": sanitize_for_json(result)}
+
+
+@app.get(
+    "/api/clash-score",
+    tags=["Annotations"],
+    responses={
+        400: {"description": "Invalid pdb_id, run_id, or session_id"},
+        404: {
+            "description": "Structure PDB not found in the active workspace, or no heavy atoms to analyze"
+        },
+    },
+)
+def get_clash_score(
+    pdb_id: Annotated[str, Query(...)],
+    run_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[Optional[str], Query()] = None,
+):
+    """
+    Real-time all-atom steric-clash detection for one structure - see
+    clash_calculator.calculate_clash_score. No external API call, same as
+    /api/flexibility - pure geometry on a structure already downloaded.
+    Bulk QC (§2.15) only ever reports a real clashscore for real PDB
+    entries (fetched from wwPDB validation); this fills that gap for
+    every structure source, in the same nominal clashes-per-1000-atoms
+    units - a rough real-world sanity check against a real PDB entry's
+    own wwPDB clashscore, not a reproduction of it (see this module's
+    docstring for why the two can diverge for an older/poorly-refined
+    structure).
+    """
+    _safe_segment(pdb_id, "pdb_id")
+    _safe_segment(run_id, "run_id")
+    _safe_segment(session_id, "session_id")
+
+    pdb_path = _find_structure_pdb_path(pdb_id, run_id, session_id)
+    if not pdb_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Structure PDB for {pdb_id} not found in active workspace.",
+        )
+
+    result = calculate_clash_score(pdb_path)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No heavy atoms in a standard residue found in {pdb_id} to analyze.",
+        )
+    return {"pdb_id": pdb_id, "clashes": sanitize_for_json(result)}
 
 
 @app.get(
