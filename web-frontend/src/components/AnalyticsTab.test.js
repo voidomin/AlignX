@@ -311,6 +311,45 @@ describe('AnalyticsTab', () => {
             expect(content.textContent).toContain('oxygen carrier activity');
         });
 
+        it('renders the real UniProt function summary when one resolves', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P69905',
+                    domains: [{ name: 'Globin', type: 'domain' }],
+                    go_terms: [], reactome_pathways: [],
+                    function_summary: 'Involved in oxygen transport from the lung',
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            expect(tab.element.querySelector('#annotations-content').textContent)
+                .toContain('Involved in oxygen transport from the lung');
+        });
+
+        it('shows the "no curated annotation" message rather than the function summary line when neither is present', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P69905',
+                    domains: [], go_terms: [], reactome_pathways: [],
+                    uniprot_features: [], catalytic_sites: [], function_summary: null,
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            expect(tab.element.querySelector('#annotations-content').textContent)
+                .toContain('no curated domains, GO terms, pathways, or sequence features were found');
+        });
+
         it('shows a graceful message when no accession resolves (e.g. an ESM Atlas structure)', async () => {
             fetchAnnotations.mockResolvedValue({
                 annotation: { pdb_id: 'ESM-MGYP1', chain: null, accession: null, domains: [], go_terms: [], reactome_pathways: [] },

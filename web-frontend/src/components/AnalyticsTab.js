@@ -2,6 +2,7 @@ import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutati
 import { renderDomainList, renderGoTermList, renderFeatureList, renderCatalyticSiteList } from '../utils/annotationRenderers';
 import { createInsightIconSvg } from '../utils/insightIcons';
 import { wireArrowKeyNavigation } from '../utils/tabKeyboardNav';
+import { escapeHtml } from '../escapeHtml';
 
 // Renders one insight string's markdown-lite **bold** segments as real
 // <strong> DOM nodes, built via createElement/createTextNode rather than
@@ -539,7 +540,7 @@ export class AnalyticsTab {
             content.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Switch to this tab to load functional annotation.</div>`;
         } else if (!annotation.accession) {
             content.innerHTML = `<div class="font-body-sm text-secondary py-4">No UniProt accession could be resolved for ${selectedPdbId} - no functional annotation available.</div>`;
-        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length) {
+        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length && !annotation.function_summary) {
             content.innerHTML = `<div class="font-body-sm text-secondary py-4">Resolved to UniProt ${annotation.accession}, but no curated domains, GO terms, pathways, or sequence features were found.</div>`;
         } else {
             // Split the single fetch_uniprot_features() result into a
@@ -553,8 +554,13 @@ export class AnalyticsTab {
             const ptmFeatures = allFeatures.filter(f => PTM_FEATURE_TYPES.has(f.type));
             const otherFeatures = allFeatures.filter(f => !PTM_FEATURE_TYPES.has(f.type));
 
+            const functionSummaryHtml = annotation.function_summary
+                ? `<div class="font-body-sm text-primary py-2 border-b border-border-subtle">${escapeHtml(annotation.function_summary)}</div>`
+                : '';
+
             content.innerHTML = `
                 <div class="font-body-sm text-secondary">Resolved to UniProt <span class="font-mono text-primary">${annotation.accession}</span></div>
+                ${functionSummaryHtml}
                 ${renderDomainList(annotation.domains)}
                 ${renderGoTermList(annotation.go_terms)}
                 ${renderFeatureList(ptmFeatures, 'PTM sites', 'ptm-highlight-btn')}

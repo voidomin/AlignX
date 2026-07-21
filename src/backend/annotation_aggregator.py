@@ -518,6 +518,49 @@ class AnnotationAggregator:
             f"uniprot_summary:{accession}", "uniprot_summary", _fetch
         )
 
+    async def fetch_uniprot_function_summary(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> Optional[str]:
+        """Real plain-English "what does this protein do" text from
+        UniProt's own curated FUNCTION comment - the single most useful
+        sentence for a non-specialist, distinct from the structured
+        domains/GO-terms/pathways this class already surfaces. Returns
+        None if UniProt has no FUNCTION comment for this accession (common
+        for less-characterized proteins) or the request fails."""
+
+        async def _fetch() -> Optional[str]:
+            try:
+                response = await client.get(
+                    f"{UNIPROT_BASE_URL}/{accession}.json",
+                    params={"fields": "cc_function"},
+                    headers=_JSON_ACCEPT_HEADERS,
+                )
+                if response.status_code != 200:
+                    return None
+                data = response.json()
+                for comment in data.get("comments") or []:
+                    if comment.get("commentType") != "FUNCTION":
+                        continue
+                    # A `molecule`-scoped entry describes a cleaved peptide's
+                    # own function (e.g. hemopressin, cleaved from HBB), not
+                    # the main protein - skip those in favor of the
+                    # unscoped, whole-protein entry.
+                    if comment.get("molecule"):
+                        continue
+                    texts = comment.get("texts") or []
+                    if texts and texts[0].get("value"):
+                        return texts[0]["value"]
+                return None
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"UniProt function summary lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return None
+
+        return await self._get_or_fetch(
+            f"uniprot_function:{accession}", "uniprot_function", _fetch
+        )
+
     async def fetch_clinvar_significance(
         self, gene: str, variant_notation: str, client: httpx.AsyncClient
     ) -> Optional[Dict[str, Any]]:
@@ -1494,6 +1537,7 @@ class AnnotationAggregator:
             "reactome_pathways": [],
             "uniprot_features": [],
             "catalytic_sites": [],
+            "function_summary": None,
         }
         if not accession:
             return result
@@ -1504,14 +1548,17 @@ class AnnotationAggregator:
             reactome_pathways,
             uniprot_features,
             catalytic_sites,
+            function_summary,
         ) = await asyncio.gather(
             self.fetch_interpro_entries(accession, client),
             self.fetch_quickgo_annotations(accession, client),
             self.fetch_reactome_pathways(accession, client),
             self.fetch_uniprot_features(accession, client),
             self.fetch_catalytic_site_residues(accession, client),
+            self.fetch_uniprot_function_summary(accession, client),
         )
         result["catalytic_sites"] = catalytic_sites
+        result["function_summary"] = function_summary
 
         go_ids = [g["id"] for g in quickgo_terms if g.get("id")]
         names = await self.resolve_go_term_names(go_ids, client)
