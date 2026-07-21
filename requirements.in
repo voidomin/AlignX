@@ -4,7 +4,7 @@
 # requirements-pip.txt.
 
 # Core Web Framework
-streamlit>=1.35.0
+streamlit>=1.59.2
 
 # Bioinformatics & Data Processing
 biopython>=1.81
@@ -38,7 +38,7 @@ fpdf>=1.7.2  # ships no wheel (sdist only) - exempted from --only-binary :all: b
 # report section), not a side effect of a CI hardening pass.
 
 # Phylogenetics
-dendropy>=4.6.0
+dendropy>=5.0.10
 
 # Independent TM-score (tm_score_calculator.py) - a Cython-wrapped USalign
 # core with prebuilt wheels for every target platform incl. cp310, no
@@ -52,7 +52,7 @@ jinja2>=3.1.0
 psutil>=5.9.0
 
 # Progress & CLI
-tqdm>=4.66.0
+tqdm>=4.69.0
 rich>=13.5.0
 
 # Optional: R integration for Bio3D (Mustang alternative)
@@ -63,10 +63,10 @@ pytest>=7.4.0
 pytest-asyncio>=0.21.0
 pytest-cov>=4.1.0
 black==26.5.1
-ruff==0.15.21
+ruff==0.15.22
 
 # API Web Server
-fastapi>=0.110.0
+fastapi>=0.139.2
 uvicorn>=0.28.0
 python-multipart>=0.0.9  # required by FastAPI's UploadFile (POST /api/upload)
 
