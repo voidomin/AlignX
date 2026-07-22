@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderDomainList, renderGoTermList, renderFeatureList, renderCatalyticSiteList } from './annotationRenderers';
+import { renderDomainList, renderGoTermList, renderFeatureList, renderCatalyticSiteList, renderFunctionSummary } from './annotationRenderers';
 
 describe('annotationRenderers', () => {
     describe('renderDomainList', () => {
@@ -51,10 +51,15 @@ describe('annotationRenderers', () => {
             expect(renderGoTermList(null)).toBe('');
         });
 
-        it('renders name (falling back to id) and aspect per term', () => {
-            const html = renderGoTermList([{ id: 'GO:0005344', name: 'oxygen carrier activity', aspect: 'F' }]);
+        it('renders name (falling back to id) grouped under its aspect', () => {
+            const html = renderGoTermList([{ id: 'GO:0005344', name: 'oxygen carrier activity', aspect: 'molecular_function' }]);
             expect(html).toContain('oxygen carrier activity');
-            expect(html).toContain('(F)');
+            expect(html).toContain('Molecular function');
+        });
+
+        it('falls back to the raw aspect value for an unrecognized aspect', () => {
+            const html = renderGoTermList([{ id: 'GO:0005344', name: 'oxygen carrier activity', aspect: 'F' }]);
+            expect(html).toContain('>F<');
         });
 
         it('falls back to the raw GO id when no name is resolved', () => {
@@ -62,9 +67,23 @@ describe('annotationRenderers', () => {
             expect(html).toContain('GO:0005344');
         });
 
-        it('shows n/a for a missing aspect', () => {
+        it('groups terms with a missing aspect under "Unspecified aspect"', () => {
             const html = renderGoTermList([{ id: 'GO:0005344', name: 'oxygen carrier activity' }]);
-            expect(html).toContain('(n/a)');
+            expect(html).toContain('Unspecified aspect');
+        });
+
+        it('groups multiple terms under their own aspect sub-headers in a fixed order', () => {
+            const html = renderGoTermList([
+                { id: 'GO:1', name: 'a cellular component term', aspect: 'cellular_component' },
+                { id: 'GO:2', name: 'a molecular function term', aspect: 'molecular_function' },
+                { id: 'GO:3', name: 'a biological process term', aspect: 'biological_process' },
+            ]);
+            const mfIndex = html.indexOf('Molecular function');
+            const bpIndex = html.indexOf('Biological process');
+            const ccIndex = html.indexOf('Cellular component');
+            expect(mfIndex).toBeGreaterThan(-1);
+            expect(mfIndex).toBeLessThan(bpIndex);
+            expect(bpIndex).toBeLessThan(ccIndex);
         });
     });
 
@@ -150,6 +169,65 @@ describe('annotationRenderers', () => {
                 { mcsa_id: 1, enzyme_name: 'test enzyme', ec_numbers: [], residues: [] },
             ]);
             expect(html).not.toContain('Highlight in 3D');
+        });
+    });
+
+    describe('renderFeatureList overflow capping', () => {
+        const makeFeatures = (n) => Array.from({ length: n }, (_, i) => ({ type: 'Binding site', description: '', start: i, end: i }));
+
+        it('shows no "Show all" button and no hidden rows when under the cap', () => {
+            const html = renderFeatureList(makeFeatures(5));
+            expect(html).not.toContain('Show all');
+            expect(html).not.toContain('feature-overflow-row');
+        });
+
+        it('hides rows past the cap and shows a "Show all N" button grouped by buttonClass', () => {
+            const html = renderFeatureList(makeFeatures(20), 'UniProt features', 'feature-highlight-btn');
+            expect(html).toContain('Show all 20');
+            expect(html).toContain('data-feature-overflow-group="feature-highlight-btn"');
+            const hiddenRowCount = (html.match(/feature-overflow-row/g) || []).length;
+            expect(hiddenRowCount).toBe(5); // 20 - default capAt of 15
+        });
+    });
+
+    describe('renderFunctionSummary', () => {
+        it('returns an empty string for missing text', () => {
+            expect(renderFunctionSummary('')).toBe('');
+            expect(renderFunctionSummary(null)).toBe('');
+            expect(renderFunctionSummary(undefined)).toBe('');
+        });
+
+        it('renders plain text with no references block when there are no PubMed citations', () => {
+            const html = renderFunctionSummary('Binds oxygen reversibly.');
+            expect(html).toContain('Binds oxygen reversibly.');
+            expect(html).not.toContain('reference');
+        });
+
+        it('strips an inline PubMed citation group and appends it as real links in a collapsed references list', () => {
+            const html = renderFunctionSummary('Binds oxygen reversibly (PubMed:12345, PubMed:67890).');
+            expect(html).not.toContain('(PubMed:12345');
+            expect(html).toContain('Binds oxygen reversibly.');
+            expect(html).toContain('2 references');
+            expect(html).toContain('https://pubmed.ncbi.nlm.nih.gov/12345/');
+            expect(html).toContain('https://pubmed.ncbi.nlm.nih.gov/67890/');
+        });
+
+        it('uses singular "reference" for exactly one citation', () => {
+            const html = renderFunctionSummary('Binds oxygen (PubMed:12345).');
+            expect(html).toContain('1 reference');
+            expect(html).not.toContain('1 references');
+        });
+
+        it('fails closed and leaves a non-PubMed parenthetical untouched', () => {
+            const html = renderFunctionSummary('Binds oxygen (see Figure 2).');
+            expect(html).toContain('(see Figure 2)');
+            expect(html).not.toContain('reference');
+        });
+
+        it('escapes HTML in the summary text', () => {
+            const html = renderFunctionSummary('<script>alert(1)</script>');
+            expect(html).not.toContain('<script>');
+            expect(html).toContain('&lt;script&gt;');
         });
     });
 });

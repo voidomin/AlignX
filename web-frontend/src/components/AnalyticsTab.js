@@ -1,5 +1,5 @@
 import { fetchAnnotations, fetchContactMap, fetchDifferenceDistance, fetchMutationImpact, fetchPae, fetchFlexibility, submitDdgStabilityJob, submitInterproscanJob, pollJobUntilDone } from '../api';
-import { renderDomainList, renderGoTermList, renderFeatureList, renderCatalyticSiteList } from '../utils/annotationRenderers';
+import { renderDomainList, renderGoTermList, renderFeatureList, renderCatalyticSiteList, renderFunctionSummary } from '../utils/annotationRenderers';
 import { createInsightIconSvg } from '../utils/insightIcons';
 import { wireArrowKeyNavigation } from '../utils/tabKeyboardNav';
 import { escapeHtml } from '../escapeHtml';
@@ -36,6 +36,27 @@ function splitInsightIcon(text) {
     const match = INSIGHT_ICON_PATTERN.exec(String(text ?? ''));
     if (!match) return { icon: null, text: text ?? '' };
     return { icon: match[1], text: text.slice(match[0].length) };
+}
+
+// The Annotations sub-tab stacks ~12 real data blocks for a well-annotated
+// protein (function summary, domains, GO terms, PTM sites, ...) with no
+// navigation between them - wraps each in its own <details>/<summary>
+// (matching the pattern already used by the color-scheme picker and
+// toolbar popovers elsewhere in this app) so the two most broadly useful
+// blocks can default open while the denser/narrower ones stay collapsed
+// until asked for. Returns '' when the block itself has nothing to show,
+// same as the block-rendering functions this wraps.
+function wrapAnnotationBlock(label, html, open = false) {
+    if (!html) return '';
+    return `
+        <details ${open ? 'open' : ''} class="group border-b border-border-subtle">
+            <summary class="flex items-center gap-1.5 py-2 cursor-pointer select-none font-label-sm text-label-sm text-secondary uppercase tracking-wider list-none [&::-webkit-details-marker]:hidden">
+                <span class="material-symbols-outlined text-[16px] transition-transform group-open:rotate-90">chevron_right</span>
+                ${escapeHtml(label)}
+            </summary>
+            <div class="pb-2 pl-1">${html}</div>
+        </details>
+    `;
 }
 
 const SUB_TABS = [
@@ -568,32 +589,37 @@ export class AnalyticsTab {
             const ptmFeatures = allFeatures.filter(f => PTM_FEATURE_TYPES.has(f.type));
             const otherFeatures = allFeatures.filter(f => !PTM_FEATURE_TYPES.has(f.type));
 
-            const functionSummaryHtml = annotation.function_summary
-                ? `<div class="font-body-sm text-primary py-2 border-b border-border-subtle">${escapeHtml(annotation.function_summary)}</div>`
-                : '';
-
-            const tissueExpressionHtml = this.renderTissueExpression(annotation.tissue_expression);
-            const orthologsHtml = this.renderOrthologs(annotation.orthologs);
-            const disprotHtml = this.renderDisprotRegions(annotation.disprot_regions);
-            const intactHtml = this.renderIntactPartners(annotation.intact_partners);
-            const tractabilityHtml = this.renderTractability(annotation.tractability);
+            const functionSummaryHtml = wrapAnnotationBlock('Function summary', renderFunctionSummary(annotation.function_summary), true);
+            const domainsHtml = wrapAnnotationBlock('Domains / families', renderDomainList(annotation.domains, ''), true);
+            const goTermsHtml = wrapAnnotationBlock('GO terms', renderGoTermList(annotation.go_terms, ''), false);
+            const ptmFeaturesHtml = wrapAnnotationBlock('PTM sites', renderFeatureList(ptmFeatures, '', 'ptm-highlight-btn'), false);
+            const otherFeaturesHtml = wrapAnnotationBlock('UniProt features', renderFeatureList(otherFeatures, '', 'feature-highlight-btn'), false);
+            const catalyticSitesHtml = wrapAnnotationBlock('Catalytic sites (M-CSA)', renderCatalyticSiteList(annotation.catalytic_sites, ''), false);
+            const tissueExpressionHtml = wrapAnnotationBlock('Tissue expression (Human Protein Atlas)', this.renderTissueExpression(annotation.tissue_expression), false);
+            const orthologsHtml = wrapAnnotationBlock('Orthologs (OrthoDB)', this.renderOrthologs(annotation.orthologs), false);
+            const disprotHtml = wrapAnnotationBlock('Curated disordered regions (DisProt)', this.renderDisprotRegions(annotation.disprot_regions), false);
+            const intactHtml = wrapAnnotationBlock('Curated interaction partners (IntAct)', this.renderIntactPartners(annotation.intact_partners), false);
+            const tractabilityHtml = wrapAnnotationBlock('Druggability (Open Targets)', this.renderTractability(annotation.tractability), false);
+            const reactomeHtml = wrapAnnotationBlock('Reactome pathways', this.renderReactomePathways(annotation.reactome_pathways), false);
+            const keggHtml = wrapAnnotationBlock('KEGG pathways', this.renderKeggPathways(annotation.kegg_pathways), false);
+            const rheaHtml = wrapAnnotationBlock('Catalyzed reactions (Rhea)', this.renderRheaReactions(annotation.rhea_reactions), false);
 
             content.innerHTML = `
-                <div class="font-body-sm text-secondary">Resolved to UniProt <span class="font-mono text-primary">${annotation.accession}</span></div>
+                <div class="font-body-sm text-secondary pb-1">Resolved to UniProt <span class="font-mono text-primary">${annotation.accession}</span></div>
                 ${functionSummaryHtml}
+                ${domainsHtml}
+                ${goTermsHtml}
+                ${ptmFeaturesHtml}
+                ${otherFeaturesHtml}
+                ${catalyticSitesHtml}
                 ${tissueExpressionHtml}
                 ${orthologsHtml}
                 ${disprotHtml}
                 ${intactHtml}
                 ${tractabilityHtml}
-                ${renderDomainList(annotation.domains)}
-                ${renderGoTermList(annotation.go_terms)}
-                ${renderFeatureList(ptmFeatures, 'PTM sites', 'ptm-highlight-btn')}
-                ${renderFeatureList(otherFeatures, 'UniProt features', 'feature-highlight-btn')}
-                ${renderCatalyticSiteList(annotation.catalytic_sites)}
-                ${this.renderReactomePathways(annotation.reactome_pathways)}
-                ${this.renderKeggPathways(annotation.kegg_pathways)}
-                ${this.renderRheaReactions(annotation.rhea_reactions)}
+                ${reactomeHtml}
+                ${keggHtml}
+                ${rheaHtml}
             `;
             content.querySelectorAll('.domain-highlight-btn').forEach(btn => {
                 const domain = annotation.domains[Number(btn.dataset.domainIndex)];
@@ -612,6 +638,13 @@ export class AnalyticsTab {
                 if (feature?.highlight_chains) {
                     btn.addEventListener('click', () => this.onHighlightResidues(feature.highlight_chains));
                 }
+            });
+            content.querySelectorAll('.feature-show-all-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const group = btn.dataset.featureOverflowGroup;
+                    content.querySelectorAll(`.feature-overflow-row[data-feature-overflow-group="${group}"]`).forEach(row => row.classList.remove('hidden'));
+                    btn.remove();
+                });
             });
         }
 
@@ -797,7 +830,7 @@ export class AnalyticsTab {
     }
 
     renderReactomePathways(pathways) {
-        return this._renderPathwayList(pathways, 'Reactome pathways');
+        return this._renderPathwayList(pathways);
     }
 
     // KEGG (fetch_kegg_pathways) is a second, independently-curated
@@ -805,7 +838,7 @@ export class AnalyticsTab {
     // into Reactome's, since the two can legitimately disagree on scope
     // or naming for the same protein.
     renderKeggPathways(pathways) {
-        return this._renderPathwayList(pathways, 'KEGG pathways');
+        return this._renderPathwayList(pathways);
     }
 
     // Real biochemical reactions this protein catalyzes (Rhea) - the
@@ -816,15 +849,13 @@ export class AnalyticsTab {
         if (!reactions?.length) return '';
         return this._renderPathwayList(
             reactions.map(r => ({ name: r.equation, url: `https://www.rhea-db.org/rhea/${r.id}` })),
-            'Catalyzed reactions (Rhea)'
         );
     }
 
-    _renderPathwayList(pathways, label) {
+    _renderPathwayList(pathways) {
         if (!pathways?.length) return '';
         return `
             <div class="flex flex-col gap-2">
-                <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">${escapeHtml(label)}</span>
                 ${pathways.map(p => `
                     <div class="flex items-center py-1.5 border-b border-border-subtle">
                         ${p.url
@@ -851,8 +882,7 @@ export class AnalyticsTab {
             : '';
         if (!parts.length && !locationLine) return '';
         return `
-            <div class="flex flex-col gap-1 py-2 border-b border-border-subtle">
-                <span class="font-label-sm text-label-sm text-secondary uppercase tracking-wider">Tissue expression (Human Protein Atlas)</span>
+            <div class="flex flex-col gap-1">
                 ${parts.length ? `<div class="font-body-sm text-primary">${parts.join(' · ')}</div>` : ''}
                 ${locationLine}
             </div>
@@ -869,8 +899,7 @@ export class AnalyticsTab {
             ([species, symbols]) => `${speciesLabels[species] || species}: ${symbols.map(escapeHtml).join(', ')}`
         );
         return `
-            <div class="flex flex-col gap-1 py-2 border-b border-border-subtle">
-                <span class="font-label-sm text-label-sm text-secondary uppercase tracking-wider">Orthologs (OrthoDB)</span>
+            <div class="flex flex-col gap-1">
                 <div class="font-body-sm text-primary">${parts.join(' · ')}</div>
             </div>
         `;
@@ -884,8 +913,7 @@ export class AnalyticsTab {
         if (!regions || regions.length === 0) return '';
         const rangeText = regions.map(([start, end]) => `${start}-${end}`).join(', ');
         return `
-            <div class="flex flex-col gap-1 py-2 border-b border-border-subtle">
-                <span class="font-label-sm text-label-sm text-secondary uppercase tracking-wider">Curated disordered regions (DisProt)</span>
+            <div class="flex flex-col gap-1">
                 <div class="font-body-sm text-primary">${escapeHtml(rangeText)}</div>
             </div>
         `;
@@ -898,8 +926,7 @@ export class AnalyticsTab {
     renderIntactPartners(partners) {
         if (!partners || partners.length === 0) return '';
         return `
-            <div class="flex flex-col gap-1 py-2 border-b border-border-subtle">
-                <span class="font-label-sm text-label-sm text-secondary uppercase tracking-wider">Curated interaction partners (IntAct)</span>
+            <div class="flex flex-col gap-1">
                 <div class="font-body-sm text-primary">${partners.map(escapeHtml).join(', ')}</div>
             </div>
         `;
@@ -916,8 +943,7 @@ export class AnalyticsTab {
             ([modality, buckets]) => `${modalityLabels[modality] || modality}: ${buckets.map(escapeHtml).join(', ')}`
         );
         return `
-            <div class="flex flex-col gap-1 py-2 border-b border-border-subtle">
-                <span class="font-label-sm text-label-sm text-secondary uppercase tracking-wider">Druggability (Open Targets)</span>
+            <div class="flex flex-col gap-1">
                 <div class="font-body-sm text-primary">${parts.join(' · ')}</div>
             </div>
         `;
