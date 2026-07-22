@@ -554,7 +554,7 @@ export class AnalyticsTab {
             if (annotateBtn) {
                 annotateBtn.addEventListener('click', () => this.loadInterproscanAnnotation(selectedPdbId));
             }
-        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.kegg_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length && !annotation.function_summary && !annotation.tissue_expression && !annotation.orthologs && !annotation.disprot_regions?.length && !annotation.intact_partners?.length && !annotation.rhea_reactions?.length) {
+        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.kegg_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length && !annotation.function_summary && !annotation.tissue_expression && !annotation.orthologs && !annotation.disprot_regions?.length && !annotation.intact_partners?.length && !annotation.rhea_reactions?.length && !annotation.tractability) {
             content.innerHTML = `<div class="font-body-sm text-secondary py-4">Resolved to UniProt ${annotation.accession}, but no curated domains, GO terms, pathways, or sequence features were found.</div>`;
         } else {
             // Split the single fetch_uniprot_features() result into a
@@ -576,6 +576,7 @@ export class AnalyticsTab {
             const orthologsHtml = this.renderOrthologs(annotation.orthologs);
             const disprotHtml = this.renderDisprotRegions(annotation.disprot_regions);
             const intactHtml = this.renderIntactPartners(annotation.intact_partners);
+            const tractabilityHtml = this.renderTractability(annotation.tractability);
 
             content.innerHTML = `
                 <div class="font-body-sm text-secondary">Resolved to UniProt <span class="font-mono text-primary">${annotation.accession}</span></div>
@@ -584,6 +585,7 @@ export class AnalyticsTab {
                 ${orthologsHtml}
                 ${disprotHtml}
                 ${intactHtml}
+                ${tractabilityHtml}
                 ${renderDomainList(annotation.domains)}
                 ${renderGoTermList(annotation.go_terms)}
                 ${renderFeatureList(ptmFeatures, 'PTM sites', 'ptm-highlight-btn')}
@@ -899,6 +901,24 @@ export class AnalyticsTab {
             <div class="flex flex-col gap-1 py-2 border-b border-border-subtle">
                 <span class="font-label-sm text-label-sm text-secondary uppercase tracking-wider">Curated interaction partners (IntAct)</span>
                 <div class="font-body-sm text-primary">${partners.map(escapeHtml).join(', ')}</div>
+            </div>
+        `;
+    }
+
+    // Real target druggability/tractability data from the Open Targets
+    // Platform - "is this protein itself a viable drug target," distinct
+    // from ChEMBL/PubChem above (both about a specific ligand, not the
+    // target). Shows each modality's highest-value tractability bucket.
+    renderTractability(tractability) {
+        if (!tractability || Object.keys(tractability).length === 0) return '';
+        const modalityLabels = { SM: 'Small molecule', AB: 'Antibody', PR: 'PROTAC', OC: 'Other modality' };
+        const parts = Object.entries(tractability).map(
+            ([modality, buckets]) => `${modalityLabels[modality] || modality}: ${buckets.map(escapeHtml).join(', ')}`
+        );
+        return `
+            <div class="flex flex-col gap-1 py-2 border-b border-border-subtle">
+                <span class="font-label-sm text-label-sm text-secondary uppercase tracking-wider">Druggability (Open Targets)</span>
+                <div class="font-body-sm text-primary">${parts.join(' · ')}</div>
             </div>
         `;
     }

@@ -561,6 +561,45 @@ describe('AnalyticsTab', () => {
                 .not.toContain('Catalyzed reactions (Rhea)');
         });
 
+        it('renders real druggability/tractability data (Open Targets) when it resolves', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P04637',
+                    domains: [], go_terms: [], reactome_pathways: [],
+                    tractability: { SM: ['Advanced Clinical', 'Structure with Ligand'] },
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            const content = tab.element.querySelector('#annotations-content');
+            expect(content.textContent).toContain('Druggability (Open Targets)');
+            expect(content.textContent).toContain('Small molecule: Advanced Clinical, Structure with Ligand');
+        });
+
+        it('does not render a druggability section when none resolves', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P69905',
+                    domains: [{ name: 'Globin', type: 'domain' }],
+                    go_terms: [], reactome_pathways: [], tractability: null,
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            expect(tab.element.querySelector('#annotations-content').textContent)
+                .not.toContain('Druggability (Open Targets)');
+        });
+
         it('shows the "no curated annotation" message rather than the function summary line when neither is present', async () => {
             fetchAnnotations.mockResolvedValue({
                 annotation: {
@@ -568,7 +607,7 @@ describe('AnalyticsTab', () => {
                     domains: [], go_terms: [], reactome_pathways: [],
                     uniprot_features: [], catalytic_sites: [], function_summary: null,
                     tissue_expression: null, orthologs: null, disprot_regions: null,
-                    intact_partners: [], rhea_reactions: [],
+                    intact_partners: [], rhea_reactions: [], tractability: null,
                 },
             });
 

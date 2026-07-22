@@ -137,6 +137,16 @@ INTACT_MAX_PARTNERS = 10
 # returns HTTP 200 with an empty result list, not an error - the same
 # honest-zero shape M-CSA already has for the majority of proteins.
 RHEA_BASE_URL = "https://www.rhea-db.org/rhea"
+# Open Targets Platform - "is this protein a viable drug target" (real
+# tractability buckets per drug modality: small molecule, antibody,
+# etc.), distinct from ChEMBL's ligand potency and PubChem's ligand-
+# analog search (both already shipped, both about a specific ligand,
+# not the target itself). Verified live: the search query accepts a
+# UniProt accession directly as queryString and returns exactly one
+# clean hit - a real improvement over searching by gene symbol, which
+# returns dozens of fuzzy substring matches (e.g. querying "TP53"
+# returns TP53BP1, TP53TG3, ...) that would need exact-name filtering.
+OPEN_TARGETS_GRAPHQL_URL = "https://api.platform.opentargets.org/api/v4/graphql"
 
 # UniProt's own /features list carries ~15 feature types per entry (Chain,
 # Domain, Helix, Beta strand, Turn, Glycosylation, ...); most duplicate a
@@ -938,6 +948,79 @@ class AnnotationAggregator:
                 return []
 
         return await self._get_or_fetch(f"rhea:{accession}", "rhea", _fetch)
+
+    async def fetch_open_targets_tractability(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> Optional[Dict[str, List[str]]]:
+        """Real target druggability/tractability data from the Open
+        Targets Platform - see OPEN_TARGETS_GRAPHQL_URL's comment for why
+        this is a different question from ChEMBL/PubChem (which are both
+        about a specific ligand, not the target protein itself). Two
+        GraphQL POSTs: search-by-accession resolves the real Ensembl gene
+        id (a single clean hit, confirmed live), then tractability-by-
+        Ensembl-id returns real buckets per drug modality. Only `value:
+        true` buckets are kept, grouped by modality (e.g. {"SM": [
+        "Advanced Clinical", ...], "AB": [...]}). Returns None if the
+        accession has no target hit, an ambiguous (not exactly one) hit,
+        every bucket is false, or the request fails."""
+
+        async def _fetch() -> Optional[Dict[str, List[str]]]:
+            try:
+                search_response = await client.post(
+                    OPEN_TARGETS_GRAPHQL_URL,
+                    json={
+                        "query": (
+                            "query($q: String!) { search(queryString: $q, "
+                            'entityNames: ["target"]) { hits { id } } }'
+                        ),
+                        "variables": {"q": accession},
+                    },
+                )
+                if search_response.status_code != 200:
+                    return None
+                hits = (
+                    (search_response.json().get("data") or {}).get("search") or {}
+                ).get("hits") or []
+                if len(hits) != 1:
+                    return None
+                ensembl_id = hits[0].get("id")
+                if not ensembl_id or not ensembl_id.startswith("ENSG"):
+                    return None
+
+                tractability_response = await client.post(
+                    OPEN_TARGETS_GRAPHQL_URL,
+                    json={
+                        "query": (
+                            "query($id: String!) { target(ensemblId: $id) { "
+                            "tractability { label modality value } } }"
+                        ),
+                        "variables": {"id": ensembl_id},
+                    },
+                )
+                if tractability_response.status_code != 200:
+                    return None
+                buckets = (
+                    (tractability_response.json().get("data") or {}).get("target") or {}
+                ).get("tractability") or []
+
+                by_modality: Dict[str, List[str]] = {}
+                for bucket in buckets:
+                    if not bucket.get("value"):
+                        continue
+                    modality = bucket.get("modality")
+                    label = bucket.get("label")
+                    if modality and label:
+                        by_modality.setdefault(modality, []).append(label)
+                return by_modality or None
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"Open Targets lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return None
+
+        return await self._get_or_fetch(
+            f"open_targets:{accession}", "open_targets", _fetch
+        )
 
     async def fetch_clinvar_significance(
         self, gene: str, variant_notation: str, client: httpx.AsyncClient
@@ -1935,6 +2018,7 @@ class AnnotationAggregator:
             "disprot_regions": None,
             "intact_partners": [],
             "rhea_reactions": [],
+            "tractability": None,
         }
         if not accession:
             return result
@@ -1952,6 +2036,7 @@ class AnnotationAggregator:
             disprot_regions,
             intact_partners,
             rhea_reactions,
+            tractability,
         ) = await asyncio.gather(
             self.fetch_interpro_entries(accession, client),
             self.fetch_quickgo_annotations(accession, client),
@@ -1965,6 +2050,7 @@ class AnnotationAggregator:
             self.fetch_disprot_regions(accession, client),
             self.fetch_intact_interactions(accession, client),
             self.fetch_rhea_reactions(accession, client),
+            self.fetch_open_targets_tractability(accession, client),
         )
         result["catalytic_sites"] = catalytic_sites
         result["function_summary"] = function_summary
@@ -1974,6 +2060,7 @@ class AnnotationAggregator:
         result["disprot_regions"] = disprot_regions
         result["intact_partners"] = intact_partners
         result["rhea_reactions"] = rhea_reactions
+        result["tractability"] = tractability
 
         go_ids = [g["id"] for g in quickgo_terms if g.get("id")]
         names = await self.resolve_go_term_names(go_ids, client)

@@ -2208,6 +2208,147 @@ class TestFetchRheaReactions:
         assert reactions == []
 
 
+class TestFetchOpenTargetsTractability:
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.post")
+    async def test_returns_real_looking_tractability_grouped_by_modality(
+        self, mock_post
+    ):
+        def _post_side_effect(url, **kwargs):
+            if "search" in kwargs["json"]["query"]:
+                return _mock_response(
+                    json_data={
+                        "data": {"search": {"hits": [{"id": "ENSG00000141510"}]}}
+                    }
+                )
+            return _mock_response(
+                json_data={
+                    "data": {
+                        "target": {
+                            "tractability": [
+                                {
+                                    "label": "Approved Drug",
+                                    "modality": "SM",
+                                    "value": False,
+                                },
+                                {
+                                    "label": "Advanced Clinical",
+                                    "modality": "SM",
+                                    "value": True,
+                                },
+                                {
+                                    "label": "Structure with Ligand",
+                                    "modality": "SM",
+                                    "value": True,
+                                },
+                                {
+                                    "label": "Approved Drug",
+                                    "modality": "AB",
+                                    "value": False,
+                                },
+                            ]
+                        }
+                    }
+                }
+            )
+
+        mock_post.side_effect = _post_side_effect
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            tractability = await aggregator.fetch_open_targets_tractability(
+                "P04637", client
+            )
+        assert tractability == {"SM": ["Advanced Clinical", "Structure with Ligand"]}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.post")
+    async def test_returns_none_when_search_has_no_hit(self, mock_post):
+        mock_post.return_value = _mock_response(
+            json_data={"data": {"search": {"hits": []}}}
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            tractability = await aggregator.fetch_open_targets_tractability(
+                "P00000", client
+            )
+        assert tractability is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.post")
+    async def test_returns_none_on_an_ambiguous_multi_hit_search(self, mock_post):
+        mock_post.return_value = _mock_response(
+            json_data={
+                "data": {
+                    "search": {
+                        "hits": [{"id": "ENSG00000141510"}, {"id": "ENSG00000172315"}]
+                    }
+                }
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            tractability = await aggregator.fetch_open_targets_tractability(
+                "P04637", client
+            )
+        assert tractability is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.post")
+    async def test_returns_none_when_every_bucket_is_false(self, mock_post):
+        def _post_side_effect(url, **kwargs):
+            if "search" in kwargs["json"]["query"]:
+                return _mock_response(
+                    json_data={
+                        "data": {"search": {"hits": [{"id": "ENSG00000000001"}]}}
+                    }
+                )
+            return _mock_response(
+                json_data={
+                    "data": {
+                        "target": {
+                            "tractability": [
+                                {
+                                    "label": "Approved Drug",
+                                    "modality": "SM",
+                                    "value": False,
+                                }
+                            ]
+                        }
+                    }
+                }
+            )
+
+        mock_post.side_effect = _post_side_effect
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            tractability = await aggregator.fetch_open_targets_tractability(
+                "P00000", client
+            )
+        assert tractability is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.post")
+    async def test_returns_none_on_non_200(self, mock_post):
+        mock_post.return_value = _mock_response(status_code=500)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            tractability = await aggregator.fetch_open_targets_tractability(
+                "P04637", client
+            )
+        assert tractability is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.post")
+    async def test_returns_none_on_http_error(self, mock_post):
+        mock_post.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            tractability = await aggregator.fetch_open_targets_tractability(
+                "P04637", client
+            )
+        assert tractability is None
+
+
 class TestFetchClinvarSignificance:
     @pytest.mark.asyncio
     @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
@@ -2597,6 +2738,7 @@ class TestAggregateForStructure:
             "disprot_regions": None,
             "intact_partners": [],
             "rhea_reactions": [],
+            "tractability": None,
         }
 
     @pytest.mark.asyncio
@@ -2702,6 +2844,10 @@ class TestAggregateForStructure:
             aggregator,
             "fetch_rhea_reactions",
             AsyncMock(return_value=[{"id": "10748", "equation": "H2O + CO2 = H2CO3"}]),
+        ), patch.object(
+            aggregator,
+            "fetch_open_targets_tractability",
+            AsyncMock(return_value={"SM": ["Advanced Clinical"]}),
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
@@ -2719,6 +2865,7 @@ class TestAggregateForStructure:
         assert result["rhea_reactions"] == [
             {"id": "10748", "equation": "H2O + CO2 = H2CO3"}
         ]
+        assert result["tractability"] == {"SM": ["Advanced Clinical"]}
         assert result["uniprot_features"][0]["type"] == "Binding site"
         assert result["catalytic_sites"][0]["enzyme_name"] == "test enzyme"
         assert result["function_summary"] == "Involved in oxygen transport"
@@ -2798,6 +2945,8 @@ class TestAggregateForStructure:
             aggregator, "fetch_intact_interactions", AsyncMock(return_value=[])
         ), patch.object(
             aggregator, "fetch_rhea_reactions", AsyncMock(return_value=[])
+        ), patch.object(
+            aggregator, "fetch_open_targets_tractability", AsyncMock(return_value=None)
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
@@ -2877,6 +3026,8 @@ class TestAggregateForStructure:
             aggregator, "fetch_intact_interactions", AsyncMock(return_value=[])
         ), patch.object(
             aggregator, "fetch_rhea_reactions", AsyncMock(return_value=[])
+        ), patch.object(
+            aggregator, "fetch_open_targets_tractability", AsyncMock(return_value=None)
         ), patch.object(
             aggregator,
             "resolve_go_term_names",
