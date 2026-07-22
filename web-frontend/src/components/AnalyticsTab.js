@@ -554,7 +554,7 @@ export class AnalyticsTab {
             if (annotateBtn) {
                 annotateBtn.addEventListener('click', () => this.loadInterproscanAnnotation(selectedPdbId));
             }
-        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.kegg_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length && !annotation.function_summary && !annotation.tissue_expression && !annotation.orthologs) {
+        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.kegg_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length && !annotation.function_summary && !annotation.tissue_expression && !annotation.orthologs && !annotation.disprot_regions?.length && !annotation.intact_partners?.length && !annotation.rhea_reactions?.length && !annotation.tractability) {
             content.innerHTML = `<div class="font-body-sm text-secondary py-4">Resolved to UniProt ${annotation.accession}, but no curated domains, GO terms, pathways, or sequence features were found.</div>`;
         } else {
             // Split the single fetch_uniprot_features() result into a
@@ -574,12 +574,18 @@ export class AnalyticsTab {
 
             const tissueExpressionHtml = this.renderTissueExpression(annotation.tissue_expression);
             const orthologsHtml = this.renderOrthologs(annotation.orthologs);
+            const disprotHtml = this.renderDisprotRegions(annotation.disprot_regions);
+            const intactHtml = this.renderIntactPartners(annotation.intact_partners);
+            const tractabilityHtml = this.renderTractability(annotation.tractability);
 
             content.innerHTML = `
                 <div class="font-body-sm text-secondary">Resolved to UniProt <span class="font-mono text-primary">${annotation.accession}</span></div>
                 ${functionSummaryHtml}
                 ${tissueExpressionHtml}
                 ${orthologsHtml}
+                ${disprotHtml}
+                ${intactHtml}
+                ${tractabilityHtml}
                 ${renderDomainList(annotation.domains)}
                 ${renderGoTermList(annotation.go_terms)}
                 ${renderFeatureList(ptmFeatures, 'PTM sites', 'ptm-highlight-btn')}
@@ -587,6 +593,7 @@ export class AnalyticsTab {
                 ${renderCatalyticSiteList(annotation.catalytic_sites)}
                 ${this.renderReactomePathways(annotation.reactome_pathways)}
                 ${this.renderKeggPathways(annotation.kegg_pathways)}
+                ${this.renderRheaReactions(annotation.rhea_reactions)}
             `;
             content.querySelectorAll('.domain-highlight-btn').forEach(btn => {
                 const domain = annotation.domains[Number(btn.dataset.domainIndex)];
@@ -801,6 +808,18 @@ export class AnalyticsTab {
         return this._renderPathwayList(pathways, 'KEGG pathways');
     }
 
+    // Real biochemical reactions this protein catalyzes (Rhea) - the
+    // actual chemical equation, distinct from M-CSA's catalytic
+    // *residues* already shown above. Each row links to its real Rhea
+    // entry.
+    renderRheaReactions(reactions) {
+        if (!reactions?.length) return '';
+        return this._renderPathwayList(
+            reactions.map(r => ({ name: r.equation, url: `https://www.rhea-db.org/rhea/${r.id}` })),
+            'Catalyzed reactions (Rhea)'
+        );
+    }
+
     _renderPathwayList(pathways, label) {
         if (!pathways?.length) return '';
         return `
@@ -808,7 +827,9 @@ export class AnalyticsTab {
                 <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">${escapeHtml(label)}</span>
                 ${pathways.map(p => `
                     <div class="flex items-center py-1.5 border-b border-border-subtle">
-                        <span class="font-body-sm">${escapeHtml(p.name)}</span>
+                        ${p.url
+                            ? `<a href="${escapeHtml(p.url)}" target="_blank" rel="noopener noreferrer" class="font-body-sm text-accent hover:underline">${escapeHtml(p.name)}</a>`
+                            : `<span class="font-body-sm">${escapeHtml(p.name)}</span>`}
                     </div>
                 `).join('')}
             </div>
@@ -850,6 +871,53 @@ export class AnalyticsTab {
         return `
             <div class="flex flex-col gap-1 py-2 border-b border-border-subtle">
                 <span class="font-label-sm text-label-sm text-secondary uppercase tracking-wider">Orthologs (OrthoDB)</span>
+                <div class="font-body-sm text-primary">${parts.join(' · ')}</div>
+            </div>
+        `;
+    }
+
+    // Real literature-curated, experimentally-demonstrated disorder
+    // regions from DisProt - a fundamentally different evidence class
+    // from MobiDB's prediction (measurement vs. prediction), a small
+    // textual cross-check rather than a second full viewer overlay.
+    renderDisprotRegions(regions) {
+        if (!regions || regions.length === 0) return '';
+        const rangeText = regions.map(([start, end]) => `${start}-${end}`).join(', ');
+        return `
+            <div class="flex flex-col gap-1 py-2 border-b border-border-subtle">
+                <span class="font-label-sm text-label-sm text-secondary uppercase tracking-wider">Curated disordered regions (DisProt)</span>
+                <div class="font-body-sm text-primary">${escapeHtml(rangeText)}</div>
+            </div>
+        `;
+    }
+
+    // Real, purely curated PubMed-backed physical interaction partners
+    // from IntAct - a higher-precision complement to STRING's mixed
+    // computational/text-mining/experimental confidence score, for the
+    // same "who does this protein bind" question.
+    renderIntactPartners(partners) {
+        if (!partners || partners.length === 0) return '';
+        return `
+            <div class="flex flex-col gap-1 py-2 border-b border-border-subtle">
+                <span class="font-label-sm text-label-sm text-secondary uppercase tracking-wider">Curated interaction partners (IntAct)</span>
+                <div class="font-body-sm text-primary">${partners.map(escapeHtml).join(', ')}</div>
+            </div>
+        `;
+    }
+
+    // Real target druggability/tractability data from the Open Targets
+    // Platform - "is this protein itself a viable drug target," distinct
+    // from ChEMBL/PubChem above (both about a specific ligand, not the
+    // target). Shows each modality's highest-value tractability bucket.
+    renderTractability(tractability) {
+        if (!tractability || Object.keys(tractability).length === 0) return '';
+        const modalityLabels = { SM: 'Small molecule', AB: 'Antibody', PR: 'PROTAC', OC: 'Other modality' };
+        const parts = Object.entries(tractability).map(
+            ([modality, buckets]) => `${modalityLabels[modality] || modality}: ${buckets.map(escapeHtml).join(', ')}`
+        );
+        return `
+            <div class="flex flex-col gap-1 py-2 border-b border-border-subtle">
+                <span class="font-label-sm text-label-sm text-secondary uppercase tracking-wider">Druggability (Open Targets)</span>
                 <div class="font-body-sm text-primary">${parts.join(' · ')}</div>
             </div>
         `;

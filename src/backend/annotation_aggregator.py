@@ -108,6 +108,45 @@ ORTHODB_MODEL_ORGANISMS = {
     "fly": "7227",
     "yeast": "4932",
 }
+# DisProt - literature-curated, experimentally-demonstrated disorder
+# regions, keyed by UniProt accession alone. A fundamentally different
+# evidence class from MobiDB's prediction above (measurement vs.
+# prediction, the same distinction this app already draws for GNM
+# flexibility vs. real B-factor). Verified live: clean, well-behaved
+# status codes, unlike MobiDB's known 200-with-empty-body gotcha - a
+# real accession with no DisProt curation returns a clean 404
+# ({"status": "not-exist"}), a malformed accession returns 400
+# ({"status": "not-valid-id"}), so these must be checked in that order
+# rather than treating "any non-200" as one undifferentiated failure.
+DISPROT_BASE_URL = "https://disprot.org/api"
+# IntAct (EBI) - purely curated, PubMed-backed physical interaction
+# evidence, keyed by UniProt accession alone. A higher-precision
+# complement to STRING's already-shipped mixed computational/text-
+# mining/experimental confidence score, for the same "who does this
+# protein bind" question. Verified live: the intuitive-sounding endpoint
+# path (/interaction/list/uniprotAc/{acc}) 404s - the real path below was
+# only found by reading the actual OpenAPI spec, not older tutorials.
+INTACT_INTERACTIONS_URL = "https://www.ebi.ac.uk/intact/ws/interaction/findInteractions"
+INTACT_MAX_PARTNERS = 10
+# Rhea (EBI) - the actual chemical reaction an enzyme catalyzes (a
+# balanced ChEBI-participant equation), distinct from M-CSA's catalytic
+# *residues* (fetch_catalytic_site_residues above) - a different
+# question ("what reaction happens here" vs. "which residues do it"),
+# and Rhea covers far more enzymes than M-CSA's few-thousand curated
+# entries. Verified live: a non-enzyme (e.g. hemoglobin) correctly
+# returns HTTP 200 with an empty result list, not an error - the same
+# honest-zero shape M-CSA already has for the majority of proteins.
+RHEA_BASE_URL = "https://www.rhea-db.org/rhea"
+# Open Targets Platform - "is this protein a viable drug target" (real
+# tractability buckets per drug modality: small molecule, antibody,
+# etc.), distinct from ChEMBL's ligand potency and PubChem's ligand-
+# analog search (both already shipped, both about a specific ligand,
+# not the target itself). Verified live: the search query accepts a
+# UniProt accession directly as queryString and returns exactly one
+# clean hit - a real improvement over searching by gene symbol, which
+# returns dozens of fuzzy substring matches (e.g. querying "TP53"
+# returns TP53BP1, TP53TG3, ...) that would need exact-name filtering.
+OPEN_TARGETS_GRAPHQL_URL = "https://api.platform.opentargets.org/api/v4/graphql"
 
 # UniProt's own /features list carries ~15 feature types per entry (Chain,
 # Domain, Helix, Beta strand, Turn, Glycosylation, ...); most duplicate a
@@ -794,6 +833,194 @@ class AnnotationAggregator:
                 return None
 
         return await self._get_or_fetch(f"orthodb:{accession}", "orthodb", _fetch)
+
+    async def fetch_disprot_regions(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> Optional[List[List[int]]]:
+        """Real literature-curated, experimentally-demonstrated disorder
+        regions from DisProt - see DISPROT_BASE_URL's comment for why
+        this is a fundamentally different signal from MobiDB's
+        prediction (fetch_disorder_prediction above). Extracts the
+        "Structural state" consensus regions (DisProt's own recommended
+        categorical call) restricted to type "D" (disordered), into the
+        same [[start, end], ...] shape MobiDB's own consensus_regions
+        already uses. Returns None if the accession has no DisProt
+        curation at all (the majority of proteins - DisProt's coverage is
+        a curated subset, same scope M-CSA already has) or the request
+        fails."""
+
+        async def _fetch() -> Optional[List[List[int]]]:
+            try:
+                response = await client.get(f"{DISPROT_BASE_URL}/{accession}")
+                if response.status_code != 200:
+                    return None
+                data = response.json()
+                structural_state = (data.get("disprot_consensus") or {}).get(
+                    "Structural state"
+                ) or []
+                regions = [
+                    [region["start"], region["end"]]
+                    for region in structural_state
+                    if region.get("type") == "D"
+                ]
+                return regions or None
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"DisProt lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return None
+
+        return await self._get_or_fetch(f"disprot:{accession}", "disprot", _fetch)
+
+    async def fetch_intact_interactions(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> List[str]:
+        """Real, purely curated PubMed-backed physical interaction
+        partners from IntAct - see INTACT_INTERACTIONS_URL's comment for
+        why this complements STRING's already-shipped mixed-evidence
+        score rather than duplicating it. Each interaction record names
+        both sides (moleculeA/uniqueIdA and moleculeB/uniqueIdB) - the
+        partner is whichever side's uniqueId does NOT match the query
+        accession itself, so this is correct regardless of which side
+        IntAct happened to list the query protein on. Returns a
+        deduplicated list of partner names (capped to
+        INTACT_MAX_PARTNERS), or [] on no curated interactions/failure -
+        a real, common negative for less-studied proteins."""
+
+        async def _fetch() -> List[str]:
+            try:
+                response = await client.get(
+                    f"{INTACT_INTERACTIONS_URL}/{accession}",
+                    params={"page": 0, "pageSize": INTACT_MAX_PARTNERS},
+                )
+                if response.status_code != 200:
+                    return []
+                partners = []
+                for record in response.json().get("content") or []:
+                    if record.get("uniqueIdA") == accession:
+                        partner = record.get("moleculeB")
+                    elif record.get("uniqueIdB") == accession:
+                        partner = record.get("moleculeA")
+                    else:
+                        continue
+                    if partner and partner not in partners:
+                        partners.append(partner)
+                return partners[:INTACT_MAX_PARTNERS]
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"IntAct lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return []
+
+        return await self._get_or_fetch(f"intact:{accession}", "intact", _fetch)
+
+    async def fetch_rhea_reactions(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> List[Dict[str, str]]:
+        """Real biochemical reactions this protein catalyzes, from Rhea -
+        see RHEA_BASE_URL's comment for how this differs from M-CSA's
+        catalytic residues. Returns a list of {"id": ..., "equation": ...}
+        dicts (only "approved" status entries), or [] on no reactions
+        (a real, correct negative for the majority of non-enzyme
+        proteins) or any request failure."""
+
+        async def _fetch() -> List[Dict[str, str]]:
+            try:
+                response = await client.get(
+                    RHEA_BASE_URL,
+                    params={
+                        "query": f"uniprot:{accession}",
+                        "columns": "rhea-id,equation",
+                        "format": "json",
+                    },
+                )
+                if response.status_code != 200:
+                    return []
+                return [
+                    {"id": result["id"], "equation": result["equation"]}
+                    for result in response.json().get("results") or []
+                    if result.get("status") == "approved"
+                ]
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"Rhea lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return []
+
+        return await self._get_or_fetch(f"rhea:{accession}", "rhea", _fetch)
+
+    async def fetch_open_targets_tractability(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> Optional[Dict[str, List[str]]]:
+        """Real target druggability/tractability data from the Open
+        Targets Platform - see OPEN_TARGETS_GRAPHQL_URL's comment for why
+        this is a different question from ChEMBL/PubChem (which are both
+        about a specific ligand, not the target protein itself). Two
+        GraphQL POSTs: search-by-accession resolves the real Ensembl gene
+        id (a single clean hit, confirmed live), then tractability-by-
+        Ensembl-id returns real buckets per drug modality. Only `value:
+        true` buckets are kept, grouped by modality (e.g. {"SM": [
+        "Advanced Clinical", ...], "AB": [...]}). Returns None if the
+        accession has no target hit, an ambiguous (not exactly one) hit,
+        every bucket is false, or the request fails."""
+
+        async def _fetch() -> Optional[Dict[str, List[str]]]:
+            try:
+                search_response = await client.post(
+                    OPEN_TARGETS_GRAPHQL_URL,
+                    json={
+                        "query": (
+                            "query($q: String!) { search(queryString: $q, "
+                            'entityNames: ["target"]) { hits { id } } }'
+                        ),
+                        "variables": {"q": accession},
+                    },
+                )
+                if search_response.status_code != 200:
+                    return None
+                hits = (
+                    (search_response.json().get("data") or {}).get("search") or {}
+                ).get("hits") or []
+                if len(hits) != 1:
+                    return None
+                ensembl_id = hits[0].get("id")
+                if not ensembl_id or not ensembl_id.startswith("ENSG"):
+                    return None
+
+                tractability_response = await client.post(
+                    OPEN_TARGETS_GRAPHQL_URL,
+                    json={
+                        "query": (
+                            "query($id: String!) { target(ensemblId: $id) { "
+                            "tractability { label modality value } } }"
+                        ),
+                        "variables": {"id": ensembl_id},
+                    },
+                )
+                if tractability_response.status_code != 200:
+                    return None
+                buckets = (
+                    (tractability_response.json().get("data") or {}).get("target") or {}
+                ).get("tractability") or []
+
+                by_modality: Dict[str, List[str]] = {}
+                for bucket in buckets:
+                    if not bucket.get("value"):
+                        continue
+                    modality = bucket.get("modality")
+                    label = bucket.get("label")
+                    if modality and label:
+                        by_modality.setdefault(modality, []).append(label)
+                return by_modality or None
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"Open Targets lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return None
+
+        return await self._get_or_fetch(
+            f"open_targets:{accession}", "open_targets", _fetch
+        )
 
     async def fetch_clinvar_significance(
         self, gene: str, variant_notation: str, client: httpx.AsyncClient
@@ -1788,6 +2015,10 @@ class AnnotationAggregator:
             "tissue_expression": None,
             "kegg_pathways": [],
             "orthologs": None,
+            "disprot_regions": None,
+            "intact_partners": [],
+            "rhea_reactions": [],
+            "tractability": None,
         }
         if not accession:
             return result
@@ -1802,6 +2033,10 @@ class AnnotationAggregator:
             tissue_expression,
             kegg_pathways,
             orthologs,
+            disprot_regions,
+            intact_partners,
+            rhea_reactions,
+            tractability,
         ) = await asyncio.gather(
             self.fetch_interpro_entries(accession, client),
             self.fetch_quickgo_annotations(accession, client),
@@ -1812,12 +2047,20 @@ class AnnotationAggregator:
             self.fetch_protein_atlas_expression(accession, client),
             self.fetch_kegg_pathways(accession, client),
             self.fetch_orthodb_orthologs(accession, client),
+            self.fetch_disprot_regions(accession, client),
+            self.fetch_intact_interactions(accession, client),
+            self.fetch_rhea_reactions(accession, client),
+            self.fetch_open_targets_tractability(accession, client),
         )
         result["catalytic_sites"] = catalytic_sites
         result["function_summary"] = function_summary
         result["tissue_expression"] = tissue_expression
         result["kegg_pathways"] = kegg_pathways
         result["orthologs"] = orthologs
+        result["disprot_regions"] = disprot_regions
+        result["intact_partners"] = intact_partners
+        result["rhea_reactions"] = rhea_reactions
+        result["tractability"] = tractability
 
         go_ids = [g["id"] for g in quickgo_terms if g.get("id")]
         names = await self.resolve_go_term_names(go_ids, client)

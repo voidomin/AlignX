@@ -2,6 +2,55 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.98.0]
+
+Phase 8: a 4-stage feature batch, smallest/most-contained first, all on one
+branch. A live-verification research pass checked 6 candidate ideas against
+real external APIs; 4 came back genuinely feasible. Ruled out this round:
+BRENDA (enzyme kinetics) - a mandatory-auth SOAP service. COSMIC (cancer
+mutations) - an HTTP 302 auth-wall redirect rather than public JSON. Both
+rejected for the same zero-auth-pattern mismatch BioGRID was rejected for
+in Phase 7. As with every prior phase, external contracts were verified
+live rather than assumed - this phase's discipline caught a real gotcha in
+Stage 2 (IntAct's intuitive-sounding endpoint path 404s; the real path was
+only found by reading the actual OpenAPI spec) and refined Stage 4's
+integration beyond the initial research pass (an accession-based Open
+Targets search returns exactly one clean hit, avoiding the dozens of fuzzy
+substring matches a gene-symbol search returns).
+
+### Added
+- **DisProt curated disorder regions**: literature-curated, experimentally-
+  demonstrated disorder - a fundamentally different evidence class from
+  MobiDB's prediction (already shipped), the same measurement-vs-prediction
+  distinction this app already draws for GNM flexibility vs. real B-factor.
+- **IntAct curated molecular interaction partners**: purely curated,
+  PubMed-backed physical interaction evidence, complementing STRING's
+  mixed computational/text-mining/experimental confidence score.
+- **Rhea biochemical reactions**: the actual chemical reaction an enzyme
+  catalyzes (a balanced ChEBI-participant equation), distinct from M-CSA's
+  catalytic residues, with a working link to each real Rhea entry.
+- **Open Targets druggability/tractability**: real tractability buckets per
+  drug modality (small molecule, antibody, PROTAC) answering "is this
+  protein itself a viable drug target," distinct from ChEMBL/PubChem's
+  ligand-specific data.
+
+### Verified
+- Full backend suite: 1460 tests passing (up from 1438). `black`/`ruff` clean.
+- Frontend suite: 565 Vitest tests passing (up from 557). `npm run lint`
+  clean, `npm run build` succeeds.
+- Real end-to-end verification against live external APIs for Stages 2-4:
+  a real HBA1-AHSP interaction (IntAct) for hemoglobin; real reactions for
+  carbonic anhydrase (Rhea) matching its known catalytic function, with a
+  correct honest-empty result for a non-enzyme; real tractability data for
+  TP53 (Open Targets) matching its known status as a well-studied but
+  historically hard-to-drug target. Stage 1 (DisProt)'s real curated
+  regions for p53 were captured and verified during API research before
+  implementation began; a live end-to-end re-check during and after
+  implementation was blocked by an extended DisProt server outage (a TCP
+  connection timeout to disprot.org:443, confirmed via verbose curl,
+  persisting across the entire implementation window) - backend tests use
+  the exact real response shape captured during that earlier research.
+
 ## [3.97.0]
 
 Phase 7: a 4-stage feature batch, smallest/most-contained first, all on one

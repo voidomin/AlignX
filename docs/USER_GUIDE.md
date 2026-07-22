@@ -503,6 +503,21 @@ distinct from the BLAST-based true evolutionary conservation feature
 (§5.3), which searches for homologs rather than a defined per-species
 ortholog group.
 
+Also alongside it: real **DisProt curated disordered regions** —
+literature-curated, experimentally-demonstrated disorder, a real
+measurement to cross-check against MobiDB's own sequence-based prediction
+(the "Sequence disorder" 3D viewer color scheme, §3.2); real **IntAct
+curated interaction partners** — purely curated, PubMed-backed physical
+interaction evidence, a higher-precision complement to the structural-
+interface analysis in §7; real **Rhea catalyzed reactions** — the actual
+chemical reaction an enzyme catalyzes, each linking to its real Rhea entry,
+distinct from M-CSA's catalytic *residues* above; and real **Open Targets
+druggability/tractability** data answering "is this protein itself a viable
+drug target," across drug modalities (small molecule, antibody, PROTAC) —
+distinct from ChEMBL's ligand potency and PubChem's ligand-analog search
+(§6.3), both of which are about a specific bound ligand rather than the
+target protein itself.
+
 ESM Atlas structures have no UniProt mapping at all (they're uncharacterized,
 metagenomic sequences), and an uploaded file or a raw-sequence prediction
 (§2.5) has no accession either — every source above is unavailable by
