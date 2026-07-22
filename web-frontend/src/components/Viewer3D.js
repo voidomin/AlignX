@@ -17,16 +17,20 @@ const STYLE_OPTIONS = [
     { key: 'line', label: 'Line' },
 ];
 
+// Grouped (not just flat) so the popover can separate "always available"
+// from "needs a specific structure type" - a scheme's `title` explains why
+// it might be disabled, shown on every option (not just disabled ones) so
+// hovering any scheme tells you what it actually needs.
 const COLOR_SCHEME_OPTIONS = [
-    { key: 'chain', label: 'Chain identity' },
-    { key: 'secondary', label: 'Secondary structure' },
-    { key: 'spectrum', label: 'Spectrum (N→C)' },
-    { key: 'confidence', label: 'pLDDT Confidence' },
-    { key: 'missense', label: 'Mutation tolerance (AlphaMissense)' },
-    { key: 'domain', label: 'InterPro domains' },
-    { key: 'disorder', label: 'Sequence disorder (MobiDB)' },
-    { key: 'flexibility', label: 'Predicted flexibility (GNM)' },
-    { key: 'pae-domains', label: 'PAE-derived domains' },
+    { key: 'chain', label: 'Chain identity', group: 'General', title: 'Colors each structure a distinct color - always available.' },
+    { key: 'secondary', label: 'Secondary structure', group: 'General', title: 'Colors by real backbone secondary structure (helix/sheet/coil) - always available.' },
+    { key: 'spectrum', label: 'Spectrum (N→C)', group: 'General', title: 'Colors along a gradient from the N-terminus to the C-terminus - always available.' },
+    { key: 'confidence', label: 'pLDDT Confidence', group: 'Prediction-derived', title: 'Requires an AlphaFold- or ESM Atlas-sourced structure in the run.' },
+    { key: 'pae-domains', label: 'PAE-derived domains', group: 'Prediction-derived', title: 'Requires an AlphaFold-sourced structure in the run (needs its real PAE matrix).' },
+    { key: 'flexibility', label: 'Predicted flexibility (GNM)', group: 'Prediction-derived', title: "A real-time Gaussian Network Model prediction, computed from any structure's own coordinates." },
+    { key: 'missense', label: 'Mutation tolerance (AlphaMissense)', group: 'External annotation', title: 'Requires a resolvable UniProt accession for the structure.' },
+    { key: 'domain', label: 'InterPro domains', group: 'External annotation', title: 'Requires a resolvable UniProt accession for the structure.' },
+    { key: 'disorder', label: 'Sequence disorder (MobiDB)', group: 'External annotation', title: 'Requires a resolvable UniProt accession for the structure.' },
 ];
 
 // A distinct qualitative palette for domain coloring, deliberately
@@ -141,10 +145,20 @@ export class Viewer3D {
                                 <span class="material-symbols-outlined text-[18px]">palette</span>
                                 <span class="material-symbols-outlined text-[14px] group-open:rotate-180 transition-transform">expand_more</span>
                             </summary>
-                            <div class="absolute right-0 top-full mt-1 z-20 bg-surface border border-border rounded-md shadow-panel p-1 flex flex-col gap-0.5 min-w-[170px]">
-                                ${COLOR_SCHEME_OPTIONS.map(o => `
-                                    <button data-scheme="${o.key}" class="viewer-colorscheme-option text-left px-2 py-1 rounded-sm font-label-sm text-label-sm text-secondary hover:text-primary hover:bg-surface-raised transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-secondary" ${o.key === 'confidence' ? 'disabled' : ''}>${o.label}</button>
-                                `).join('')}
+                            <div class="absolute right-0 top-full mt-1 z-20 bg-surface border border-border rounded-md shadow-panel p-1 flex flex-col gap-0.5 min-w-[220px] max-h-[70vh] overflow-y-auto">
+                                ${(() => {
+                                    let lastGroup = null;
+                                    return COLOR_SCHEME_OPTIONS.map(o => {
+                                        const groupHeaderHtml = o.group !== lastGroup
+                                            ? `<span class="font-label-sm text-label-sm text-secondary uppercase tracking-wider px-2 pt-1.5 pb-0.5 ${lastGroup === null ? '' : 'mt-1 border-t border-border-subtle'}">${o.group}</span>`
+                                            : '';
+                                        lastGroup = o.group;
+                                        return `
+                                    ${groupHeaderHtml}
+                                    <button data-scheme="${o.key}" title="${o.title}" class="viewer-colorscheme-option text-left px-2 py-1 rounded-sm font-label-sm text-label-sm text-secondary hover:text-primary hover:bg-surface-raised transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-secondary" ${o.key === 'confidence' ? 'disabled' : ''}>${o.label}</button>
+                                `;
+                                    }).join('');
+                                })()}
                             </div>
                         </details>
                         <button id="btn-toggle-surface" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Surface" aria-label="Toggle Surface">
