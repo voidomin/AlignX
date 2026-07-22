@@ -1712,6 +1712,128 @@ class TestFetchProteinAtlasExpression:
         assert result is None
 
 
+class TestFetchKeggPathways:
+    @staticmethod
+    def _text_response(text):
+        response = AsyncMock()
+        response.status_code = 200
+        response.text = text
+        return response
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_real_looking_pathways(self, mock_get):
+        def _get_side_effect(url, **kwargs):
+            if "conv" in url:
+                return self._text_response("up:P69905\thsa:3039\n")
+            return self._text_response(
+                "ENTRY       3039              CDS       T01001\n"
+                "SYMBOL      HBA1\n"
+                "PATHWAY     hsa05143  African trypanosomiasis\n"
+                "            hsa05144  Malaria\n"
+                "DISEASE     H00228  Thalassemia\n"
+            )
+
+        mock_get.side_effect = _get_side_effect
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            pathways = await aggregator.fetch_kegg_pathways("P69905", client)
+        assert pathways == [
+            {"id": "hsa05143", "name": "African trypanosomiasis"},
+            {"id": "hsa05144", "name": "Malaria"},
+        ]
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_uses_only_the_first_mapped_gene_id_when_several_exist(
+        self, mock_get
+    ):
+        # A real fan-out: identical-protein paralogs (e.g. HBA1/HBA2) can
+        # both map from one UniProt accession - a deliberate scope
+        # decision to use only the first, not silently ignored.
+        def _get_side_effect(url, **kwargs):
+            if "conv" in url:
+                return self._text_response("up:P69905\thsa:3039\nup:P69905\thsa:3040\n")
+            assert url.endswith("hsa:3039")
+            return self._text_response("PATHWAY     hsa05144  Malaria\n")
+
+        mock_get.side_effect = _get_side_effect
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            pathways = await aggregator.fetch_kegg_pathways("P69905", client)
+        assert pathways == [{"id": "hsa05144", "name": "Malaria"}]
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_list_when_the_record_has_no_pathway_section(
+        self, mock_get
+    ):
+        def _get_side_effect(url, **kwargs):
+            if "conv" in url:
+                return self._text_response("up:P00000\thsa:1\n")
+            return self._text_response("ENTRY       1\nSYMBOL      TEST\n")
+
+        mock_get.side_effect = _get_side_effect
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            pathways = await aggregator.fetch_kegg_pathways("P00000", client)
+        assert pathways == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_list_when_conv_has_no_mapping(self, mock_get):
+        mock_get.return_value = self._text_response("")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            pathways = await aggregator.fetch_kegg_pathways("P00000", client)
+        assert pathways == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_list_on_non_200(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            pathways = await aggregator.fetch_kegg_pathways("P00000", client)
+        assert pathways == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_list_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            pathways = await aggregator.fetch_kegg_pathways("P69905", client)
+        assert pathways == []
+
+
+class TestParseKeggPathways:
+    def test_parses_multiple_entries_with_continuation_lines(self):
+        record = (
+            "PATHWAY     hsa05143  African trypanosomiasis\n"
+            "            hsa05144  Malaria\n"
+            "DISEASE     H00228  Thalassemia\n"
+        )
+        assert AnnotationAggregator._parse_kegg_pathways(record) == [
+            {"id": "hsa05143", "name": "African trypanosomiasis"},
+            {"id": "hsa05144", "name": "Malaria"},
+        ]
+
+    def test_returns_empty_list_when_no_pathway_field_present(self):
+        record = "ENTRY       3039\nSYMBOL      HBA1\n"
+        assert AnnotationAggregator._parse_kegg_pathways(record) == []
+
+    def test_stops_at_the_next_all_caps_field_header(self):
+        record = (
+            "PATHWAY     hsa05144  Malaria\n"
+            "DISEASE     H00228  Thalassemia\n"
+            "            H00235  Methemoglobinemia\n"
+        )
+        assert AnnotationAggregator._parse_kegg_pathways(record) == [
+            {"id": "hsa05144", "name": "Malaria"},
+        ]
+
+
 class TestFetchClinvarSignificance:
     @pytest.mark.asyncio
     @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
@@ -2096,6 +2218,7 @@ class TestAggregateForStructure:
             "catalytic_sites": [],
             "function_summary": None,
             "tissue_expression": None,
+            "kegg_pathways": [],
         }
 
     @pytest.mark.asyncio
@@ -2181,6 +2304,10 @@ class TestAggregateForStructure:
                     "subcellular_location": ["Cytosol"],
                 }
             ),
+        ), patch.object(
+            aggregator,
+            "fetch_kegg_pathways",
+            AsyncMock(return_value=[{"id": "hsa05144", "name": "Malaria"}]),
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
@@ -2191,6 +2318,7 @@ class TestAggregateForStructure:
         assert result["domains"][0]["name"] == "Globin"
         assert result["go_terms"][0]["name"] == "oxygen carrier activity"
         assert result["reactome_pathways"][0]["name"] == "Erythrocytes take up oxygen"
+        assert result["kegg_pathways"][0]["name"] == "Malaria"
         assert result["uniprot_features"][0]["type"] == "Binding site"
         assert result["catalytic_sites"][0]["enzyme_name"] == "test enzyme"
         assert result["function_summary"] == "Involved in oxygen transport"
@@ -2260,6 +2388,8 @@ class TestAggregateForStructure:
             aggregator, "fetch_uniprot_function_summary", AsyncMock(return_value=None)
         ), patch.object(
             aggregator, "fetch_protein_atlas_expression", AsyncMock(return_value=None)
+        ), patch.object(
+            aggregator, "fetch_kegg_pathways", AsyncMock(return_value=[])
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
@@ -2329,6 +2459,8 @@ class TestAggregateForStructure:
             aggregator, "fetch_uniprot_function_summary", AsyncMock(return_value=None)
         ), patch.object(
             aggregator, "fetch_protein_atlas_expression", AsyncMock(return_value=None)
+        ), patch.object(
+            aggregator, "fetch_kegg_pathways", AsyncMock(return_value=[])
         ), patch.object(
             aggregator,
             "resolve_go_term_names",

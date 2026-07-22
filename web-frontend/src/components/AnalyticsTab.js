@@ -554,7 +554,7 @@ export class AnalyticsTab {
             if (annotateBtn) {
                 annotateBtn.addEventListener('click', () => this.loadInterproscanAnnotation(selectedPdbId));
             }
-        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length && !annotation.function_summary && !annotation.tissue_expression) {
+        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.kegg_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length && !annotation.function_summary && !annotation.tissue_expression) {
             content.innerHTML = `<div class="font-body-sm text-secondary py-4">Resolved to UniProt ${annotation.accession}, but no curated domains, GO terms, pathways, or sequence features were found.</div>`;
         } else {
             // Split the single fetch_uniprot_features() result into a
@@ -584,6 +584,7 @@ export class AnalyticsTab {
                 ${renderFeatureList(otherFeatures, 'UniProt features', 'feature-highlight-btn')}
                 ${renderCatalyticSiteList(annotation.catalytic_sites)}
                 ${this.renderReactomePathways(annotation.reactome_pathways)}
+                ${this.renderKeggPathways(annotation.kegg_pathways)}
             `;
             content.querySelectorAll('.domain-highlight-btn').forEach(btn => {
                 const domain = annotation.domains[Number(btn.dataset.domainIndex)];
@@ -787,13 +788,25 @@ export class AnalyticsTab {
     }
 
     renderReactomePathways(pathways) {
+        return this._renderPathwayList(pathways, 'Reactome pathways');
+    }
+
+    // KEGG (fetch_kegg_pathways) is a second, independently-curated
+    // pathway database - shown as its own labeled list rather than merged
+    // into Reactome's, since the two can legitimately disagree on scope
+    // or naming for the same protein.
+    renderKeggPathways(pathways) {
+        return this._renderPathwayList(pathways, 'KEGG pathways');
+    }
+
+    _renderPathwayList(pathways, label) {
         if (!pathways?.length) return '';
         return `
             <div class="flex flex-col gap-2">
-                <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Reactome pathways</span>
+                <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">${escapeHtml(label)}</span>
                 ${pathways.map(p => `
                     <div class="flex items-center py-1.5 border-b border-border-subtle">
-                        <span class="font-body-sm">${p.name}</span>
+                        <span class="font-body-sm">${escapeHtml(p.name)}</span>
                     </div>
                 `).join('')}
             </div>

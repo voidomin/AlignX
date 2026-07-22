@@ -83,6 +83,13 @@ MOBIDB_DOWNLOAD_URL = "https://mobidb.org/api/download"
 # fetch in this module. The per-gene record endpoint below is plain JSON.
 PROTEIN_ATLAS_SEARCH_URL = "https://www.proteinatlas.org/api/search_download.php"
 PROTEIN_ATLAS_GENE_URL = "https://www.proteinatlas.org"
+# KEGG's REST API (rest.kegg.jp) - a second, independently-curated pathway
+# database alongside Reactome (fetch_reactome_pathways above), which can
+# legitimately disagree on scope/naming. Verified live: both endpoints
+# below return flat plain text (Content-Type: text/plain), not JSON - the
+# only non-JSON external response this module parses.
+KEGG_CONV_URL = "https://rest.kegg.jp/conv/genes/uniprot"
+KEGG_GET_URL = "https://rest.kegg.jp/get"
 
 # UniProt's own /features list carries ~15 feature types per entry (Chain,
 # Domain, Helix, Beta strand, Turn, Glycosylation, ...); most duplicate a
@@ -626,6 +633,64 @@ class AnnotationAggregator:
         return await self._get_or_fetch(
             f"protein_atlas:{accession}", "protein_atlas", _fetch
         )
+
+    async def fetch_kegg_pathways(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> List[Dict[str, str]]:
+        """Real KEGG pathway membership - a second, independently-curated
+        pathway database alongside Reactome (fetch_reactome_pathways
+        above), which can legitimately disagree on scope/naming. Two
+        hops, both plain text (not JSON, see KEGG_CONV_URL's comment):
+        conv (UniProt accession -> KEGG gene id) then get (gene id -> its
+        full flat record, from which the PATHWAY section is parsed).
+        A UniProt accession can map to more than one KEGG gene id (real
+        paralogs sharing an identical protein sequence, e.g. HBA1/HBA2) -
+        only the first mapped gene id is used, a deliberate scope
+        decision. Returns [] if nothing maps or on any request failure."""
+
+        async def _fetch() -> List[Dict[str, str]]:
+            try:
+                conv_response = await client.get(f"{KEGG_CONV_URL}:{accession}")
+                if conv_response.status_code != 200 or not conv_response.text.strip():
+                    return []
+                gene_id = conv_response.text.strip().splitlines()[0].split("\t")[1]
+
+                get_response = await client.get(f"{KEGG_GET_URL}/{gene_id}")
+                if get_response.status_code != 200:
+                    return []
+                return self._parse_kegg_pathways(get_response.text)
+            except (httpx.HTTPError, IndexError) as e:
+                logger.warning(
+                    f"KEGG pathway lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return []
+
+        return await self._get_or_fetch(
+            f"kegg_pathways:{accession}", "kegg_pathways", _fetch
+        )
+
+    @staticmethod
+    def _parse_kegg_pathways(flat_record: str) -> List[Dict[str, str]]:
+        """KEGG's flat-record format has no delimiters a JSON parser could
+        use - a field starts at a fixed-width, all-caps header at the
+        start of a line, and continues on every following line that
+        starts with whitespace instead of a new header. Extracts just the
+        PATHWAY field's entries (each "hsa#####  Description" pair)."""
+        pathways = []
+        in_pathway_section = False
+        for line in flat_record.splitlines():
+            if line.startswith("PATHWAY"):
+                in_pathway_section = True
+                entry = line[len("PATHWAY") :].strip()
+            elif in_pathway_section and line.startswith(" "):
+                entry = line.strip()
+            else:
+                in_pathway_section = False
+                continue
+            parts = entry.split(None, 1)
+            if len(parts) == 2:
+                pathways.append({"id": parts[0], "name": parts[1]})
+        return pathways
 
     async def fetch_clinvar_significance(
         self, gene: str, variant_notation: str, client: httpx.AsyncClient
@@ -1618,6 +1683,7 @@ class AnnotationAggregator:
             "catalytic_sites": [],
             "function_summary": None,
             "tissue_expression": None,
+            "kegg_pathways": [],
         }
         if not accession:
             return result
@@ -1630,6 +1696,7 @@ class AnnotationAggregator:
             catalytic_sites,
             function_summary,
             tissue_expression,
+            kegg_pathways,
         ) = await asyncio.gather(
             self.fetch_interpro_entries(accession, client),
             self.fetch_quickgo_annotations(accession, client),
@@ -1638,10 +1705,12 @@ class AnnotationAggregator:
             self.fetch_catalytic_site_residues(accession, client),
             self.fetch_uniprot_function_summary(accession, client),
             self.fetch_protein_atlas_expression(accession, client),
+            self.fetch_kegg_pathways(accession, client),
         )
         result["catalytic_sites"] = catalytic_sites
         result["function_summary"] = function_summary
         result["tissue_expression"] = tissue_expression
+        result["kegg_pathways"] = kegg_pathways
 
         go_ids = [g["id"] for g in quickgo_terms if g.get("id")]
         names = await self.resolve_go_term_names(go_ids, client)
