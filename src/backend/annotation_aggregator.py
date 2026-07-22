@@ -108,6 +108,17 @@ ORTHODB_MODEL_ORGANISMS = {
     "fly": "7227",
     "yeast": "4932",
 }
+# DisProt - literature-curated, experimentally-demonstrated disorder
+# regions, keyed by UniProt accession alone. A fundamentally different
+# evidence class from MobiDB's prediction above (measurement vs.
+# prediction, the same distinction this app already draws for GNM
+# flexibility vs. real B-factor). Verified live: clean, well-behaved
+# status codes, unlike MobiDB's known 200-with-empty-body gotcha - a
+# real accession with no DisProt curation returns a clean 404
+# ({"status": "not-exist"}), a malformed accession returns 400
+# ({"status": "not-valid-id"}), so these must be checked in that order
+# rather than treating "any non-200" as one undifferentiated failure.
+DISPROT_BASE_URL = "https://disprot.org/api"
 
 # UniProt's own /features list carries ~15 feature types per entry (Chain,
 # Domain, Helix, Beta strand, Turn, Glycosylation, ...); most duplicate a
@@ -794,6 +805,44 @@ class AnnotationAggregator:
                 return None
 
         return await self._get_or_fetch(f"orthodb:{accession}", "orthodb", _fetch)
+
+    async def fetch_disprot_regions(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> Optional[List[List[int]]]:
+        """Real literature-curated, experimentally-demonstrated disorder
+        regions from DisProt - see DISPROT_BASE_URL's comment for why
+        this is a fundamentally different signal from MobiDB's
+        prediction (fetch_disorder_prediction above). Extracts the
+        "Structural state" consensus regions (DisProt's own recommended
+        categorical call) restricted to type "D" (disordered), into the
+        same [[start, end], ...] shape MobiDB's own consensus_regions
+        already uses. Returns None if the accession has no DisProt
+        curation at all (the majority of proteins - DisProt's coverage is
+        a curated subset, same scope M-CSA already has) or the request
+        fails."""
+
+        async def _fetch() -> Optional[List[List[int]]]:
+            try:
+                response = await client.get(f"{DISPROT_BASE_URL}/{accession}")
+                if response.status_code != 200:
+                    return None
+                data = response.json()
+                structural_state = (data.get("disprot_consensus") or {}).get(
+                    "Structural state"
+                ) or []
+                regions = [
+                    [region["start"], region["end"]]
+                    for region in structural_state
+                    if region.get("type") == "D"
+                ]
+                return regions or None
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"DisProt lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return None
+
+        return await self._get_or_fetch(f"disprot:{accession}", "disprot", _fetch)
 
     async def fetch_clinvar_significance(
         self, gene: str, variant_notation: str, client: httpx.AsyncClient
@@ -1788,6 +1837,7 @@ class AnnotationAggregator:
             "tissue_expression": None,
             "kegg_pathways": [],
             "orthologs": None,
+            "disprot_regions": None,
         }
         if not accession:
             return result
@@ -1802,6 +1852,7 @@ class AnnotationAggregator:
             tissue_expression,
             kegg_pathways,
             orthologs,
+            disprot_regions,
         ) = await asyncio.gather(
             self.fetch_interpro_entries(accession, client),
             self.fetch_quickgo_annotations(accession, client),
@@ -1812,12 +1863,14 @@ class AnnotationAggregator:
             self.fetch_protein_atlas_expression(accession, client),
             self.fetch_kegg_pathways(accession, client),
             self.fetch_orthodb_orthologs(accession, client),
+            self.fetch_disprot_regions(accession, client),
         )
         result["catalytic_sites"] = catalytic_sites
         result["function_summary"] = function_summary
         result["tissue_expression"] = tissue_expression
         result["kegg_pathways"] = kegg_pathways
         result["orthologs"] = orthologs
+        result["disprot_regions"] = disprot_regions
 
         go_ids = [g["id"] for g in quickgo_terms if g.get("id")]
         names = await self.resolve_go_term_names(go_ids, client)

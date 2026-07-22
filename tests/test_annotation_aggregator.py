@@ -1967,6 +1967,73 @@ class TestFetchOrthodbOrthologs:
         assert result is None
 
 
+class TestFetchDisprotRegions:
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_extracts_real_looking_disordered_regions(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "disprot_consensus": {
+                    "Structural state": [
+                        {"start": 1, "end": 93, "type": "D"},
+                        {"start": 100, "end": 288, "type": "F"},
+                        {"start": 291, "end": 312, "type": "D"},
+                        {"start": 361, "end": 393, "type": "D"},
+                    ]
+                }
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            regions = await aggregator.fetch_disprot_regions("P04637", client)
+        assert regions == [[1, 93], [291, 312], [361, 393]]
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_when_no_disordered_type_entries_exist(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "disprot_consensus": {
+                    "Structural state": [{"start": 1, "end": 10, "type": "F"}]
+                }
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            regions = await aggregator.fetch_disprot_regions("P00000", client)
+        assert regions is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_a_real_not_curated_404(self, mock_get):
+        # Confirmed live: an accession with no DisProt curation returns a
+        # clean 404 ({"status": "not-exist"}) - unlike MobiDB's known
+        # 200-with-empty-body gotcha, this is a well-behaved status code.
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            regions = await aggregator.fetch_disprot_regions("P69905", client)
+        assert regions is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_a_malformed_accession_400(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=400)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            regions = await aggregator.fetch_disprot_regions("NOT-VALID", client)
+        assert regions is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            regions = await aggregator.fetch_disprot_regions("P04637", client)
+        assert regions is None
+
+
 class TestFetchClinvarSignificance:
     @pytest.mark.asyncio
     @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
@@ -2353,6 +2420,7 @@ class TestAggregateForStructure:
             "tissue_expression": None,
             "kegg_pathways": [],
             "orthologs": None,
+            "disprot_regions": None,
         }
 
     @pytest.mark.asyncio
@@ -2446,6 +2514,10 @@ class TestAggregateForStructure:
             aggregator,
             "fetch_orthodb_orthologs",
             AsyncMock(return_value={"mouse": ["Hba-x"]}),
+        ), patch.object(
+            aggregator,
+            "fetch_disprot_regions",
+            AsyncMock(return_value=[[1, 10]]),
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
@@ -2458,6 +2530,7 @@ class TestAggregateForStructure:
         assert result["reactome_pathways"][0]["name"] == "Erythrocytes take up oxygen"
         assert result["kegg_pathways"][0]["name"] == "Malaria"
         assert result["orthologs"] == {"mouse": ["Hba-x"]}
+        assert result["disprot_regions"] == [[1, 10]]
         assert result["uniprot_features"][0]["type"] == "Binding site"
         assert result["catalytic_sites"][0]["enzyme_name"] == "test enzyme"
         assert result["function_summary"] == "Involved in oxygen transport"
@@ -2531,6 +2604,8 @@ class TestAggregateForStructure:
             aggregator, "fetch_kegg_pathways", AsyncMock(return_value=[])
         ), patch.object(
             aggregator, "fetch_orthodb_orthologs", AsyncMock(return_value=None)
+        ), patch.object(
+            aggregator, "fetch_disprot_regions", AsyncMock(return_value=None)
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
@@ -2604,6 +2679,8 @@ class TestAggregateForStructure:
             aggregator, "fetch_kegg_pathways", AsyncMock(return_value=[])
         ), patch.object(
             aggregator, "fetch_orthodb_orthologs", AsyncMock(return_value=None)
+        ), patch.object(
+            aggregator, "fetch_disprot_regions", AsyncMock(return_value=None)
         ), patch.object(
             aggregator,
             "resolve_go_term_names",

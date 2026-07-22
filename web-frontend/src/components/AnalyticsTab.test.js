@@ -440,13 +440,52 @@ describe('AnalyticsTab', () => {
                 .not.toContain('Orthologs (OrthoDB)');
         });
 
+        it('renders real curated disordered regions (DisProt) when they resolve', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P04637',
+                    domains: [], go_terms: [], reactome_pathways: [],
+                    disprot_regions: [[1, 93], [291, 312], [361, 393]],
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            const content = tab.element.querySelector('#annotations-content');
+            expect(content.textContent).toContain('Curated disordered regions (DisProt)');
+            expect(content.textContent).toContain('1-93, 291-312, 361-393');
+        });
+
+        it('does not render a DisProt section when no regions resolve', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P69905',
+                    domains: [{ name: 'Globin', type: 'domain' }],
+                    go_terms: [], reactome_pathways: [], disprot_regions: null,
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            expect(tab.element.querySelector('#annotations-content').textContent)
+                .not.toContain('Curated disordered regions (DisProt)');
+        });
+
         it('shows the "no curated annotation" message rather than the function summary line when neither is present', async () => {
             fetchAnnotations.mockResolvedValue({
                 annotation: {
                     pdb_id: '4HHB', chain: 'A', accession: 'P69905',
                     domains: [], go_terms: [], reactome_pathways: [],
                     uniprot_features: [], catalytic_sites: [], function_summary: null,
-                    tissue_expression: null, orthologs: null,
+                    tissue_expression: null, orthologs: null, disprot_regions: null,
                 },
             });
 
