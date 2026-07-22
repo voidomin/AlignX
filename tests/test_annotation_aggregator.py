@@ -1603,6 +1603,115 @@ class TestFetchUniprotFunctionSummary:
         assert summary is None
 
 
+class TestFetchProteinAtlasExpression:
+    @staticmethod
+    def _gzip_response(payload):
+        import gzip
+        import json
+
+        response = AsyncMock()
+        response.status_code = 200
+        response.content = gzip.compress(json.dumps(payload).encode())
+        return response
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_real_looking_tissue_and_subcellular_data(self, mock_get):
+        def _get_side_effect(url, **kwargs):
+            if "search_download" in url:
+                return self._gzip_response(
+                    [
+                        {
+                            "Gene": "ERBB2",
+                            "Ensembl": "ENSG00000141736",
+                            "Uniprot": ["P04626"],
+                        }
+                    ]
+                )
+            return _mock_response(
+                json_data={
+                    "RNA tissue specificity": "Low tissue specificity",
+                    "RNA tissue distribution": "Detected in all",
+                    "Subcellular location": ["Nucleoplasm", "Plasma membrane"],
+                }
+            )
+
+        mock_get.side_effect = _get_side_effect
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_protein_atlas_expression("P04626", client)
+        assert result == {
+            "tissue_specificity": "Low tissue specificity",
+            "tissue_distribution": "Detected in all",
+            "subcellular_location": ["Nucleoplasm", "Plasma membrane"],
+        }
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_when_the_accession_is_not_in_the_search_hits(
+        self, mock_get
+    ):
+        mock_get.return_value = self._gzip_response(
+            [{"Gene": "OTHER", "Ensembl": "ENSG99999999999", "Uniprot": ["Q00000"]}]
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_protein_atlas_expression("P04626", client)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_when_the_search_hop_is_not_200(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_protein_atlas_expression("P04626", client)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_when_the_gene_record_hop_is_not_200(self, mock_get):
+        def _get_side_effect(url, **kwargs):
+            if "search_download" in url:
+                return self._gzip_response(
+                    [
+                        {
+                            "Gene": "ERBB2",
+                            "Ensembl": "ENSG00000141736",
+                            "Uniprot": ["P04626"],
+                        }
+                    ]
+                )
+            return _mock_response(status_code=404)
+
+        mock_get.side_effect = _get_side_effect
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_protein_atlas_expression("P04626", client)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_a_malformed_non_gzip_body(self, mock_get):
+        response = AsyncMock()
+        response.status_code = 200
+        response.content = b"not actually gzip data"
+        mock_get.return_value = response
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_protein_atlas_expression("P04626", client)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_protein_atlas_expression("P04626", client)
+        assert result is None
+
+
 class TestFetchClinvarSignificance:
     @pytest.mark.asyncio
     @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
@@ -1986,6 +2095,7 @@ class TestAggregateForStructure:
             "uniprot_features": [],
             "catalytic_sites": [],
             "function_summary": None,
+            "tissue_expression": None,
         }
 
     @pytest.mark.asyncio
@@ -2061,6 +2171,16 @@ class TestAggregateForStructure:
             aggregator,
             "fetch_uniprot_function_summary",
             AsyncMock(return_value="Involved in oxygen transport"),
+        ), patch.object(
+            aggregator,
+            "fetch_protein_atlas_expression",
+            AsyncMock(
+                return_value={
+                    "tissue_specificity": "Tissue enhanced",
+                    "tissue_distribution": "Detected in some",
+                    "subcellular_location": ["Cytosol"],
+                }
+            ),
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
@@ -2074,6 +2194,7 @@ class TestAggregateForStructure:
         assert result["uniprot_features"][0]["type"] == "Binding site"
         assert result["catalytic_sites"][0]["enzyme_name"] == "test enzyme"
         assert result["function_summary"] == "Involved in oxygen transport"
+        assert result["tissue_expression"]["tissue_specificity"] == "Tissue enhanced"
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -2137,6 +2258,8 @@ class TestAggregateForStructure:
             aggregator, "fetch_catalytic_site_residues", AsyncMock(return_value=[])
         ), patch.object(
             aggregator, "fetch_uniprot_function_summary", AsyncMock(return_value=None)
+        ), patch.object(
+            aggregator, "fetch_protein_atlas_expression", AsyncMock(return_value=None)
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
@@ -2204,6 +2327,8 @@ class TestAggregateForStructure:
             aggregator, "fetch_catalytic_site_residues", AsyncMock(return_value=[])
         ), patch.object(
             aggregator, "fetch_uniprot_function_summary", AsyncMock(return_value=None)
+        ), patch.object(
+            aggregator, "fetch_protein_atlas_expression", AsyncMock(return_value=None)
         ), patch.object(
             aggregator,
             "resolve_go_term_names",

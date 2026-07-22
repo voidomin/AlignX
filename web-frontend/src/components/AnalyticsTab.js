@@ -554,7 +554,7 @@ export class AnalyticsTab {
             if (annotateBtn) {
                 annotateBtn.addEventListener('click', () => this.loadInterproscanAnnotation(selectedPdbId));
             }
-        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length && !annotation.function_summary) {
+        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length && !annotation.function_summary && !annotation.tissue_expression) {
             content.innerHTML = `<div class="font-body-sm text-secondary py-4">Resolved to UniProt ${annotation.accession}, but no curated domains, GO terms, pathways, or sequence features were found.</div>`;
         } else {
             // Split the single fetch_uniprot_features() result into a
@@ -572,9 +572,12 @@ export class AnalyticsTab {
                 ? `<div class="font-body-sm text-primary py-2 border-b border-border-subtle">${escapeHtml(annotation.function_summary)}</div>`
                 : '';
 
+            const tissueExpressionHtml = this.renderTissueExpression(annotation.tissue_expression);
+
             content.innerHTML = `
                 <div class="font-body-sm text-secondary">Resolved to UniProt <span class="font-mono text-primary">${annotation.accession}</span></div>
                 ${functionSummaryHtml}
+                ${tissueExpressionHtml}
                 ${renderDomainList(annotation.domains)}
                 ${renderGoTermList(annotation.go_terms)}
                 ${renderFeatureList(ptmFeatures, 'PTM sites', 'ptm-highlight-btn')}
@@ -793,6 +796,29 @@ export class AnalyticsTab {
                         <span class="font-body-sm">${p.name}</span>
                     </div>
                 `).join('')}
+            </div>
+        `;
+    }
+
+    // Real tissue/subcellular expression data (Human Protein Atlas) -
+    // genuinely different information from every other annotation source
+    // this panel already shows, none of which answer "where in the body
+    // is this actually expressed."
+    renderTissueExpression(tissueExpression) {
+        if (!tissueExpression) return '';
+        const { tissue_specificity, tissue_distribution, subcellular_location } = tissueExpression;
+        const parts = [];
+        if (tissue_specificity) parts.push(escapeHtml(tissue_specificity));
+        if (tissue_distribution) parts.push(escapeHtml(tissue_distribution));
+        const locationLine = subcellular_location?.length
+            ? `<div class="font-body-sm text-secondary">Subcellular location: <span class="text-primary">${subcellular_location.map(escapeHtml).join(', ')}</span></div>`
+            : '';
+        if (!parts.length && !locationLine) return '';
+        return `
+            <div class="flex flex-col gap-1 py-2 border-b border-border-subtle">
+                <span class="font-label-sm text-label-sm text-secondary uppercase tracking-wider">Tissue expression (Human Protein Atlas)</span>
+                ${parts.length ? `<div class="font-body-sm text-primary">${parts.join(' · ')}</div>` : ''}
+                ${locationLine}
             </div>
         `;
     }

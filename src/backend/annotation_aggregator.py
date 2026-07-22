@@ -14,6 +14,7 @@ into a tiered, narrative "function hypothesis" report is a later phase.
 """
 
 import asyncio
+import gzip
 import json
 import re
 import threading
@@ -73,6 +74,15 @@ MYVARIANT_QUERY_URL = "https://myvariant.info/v1/query"
 # relabeled), and "prediction-disorder-th_50" is MobiDB's own recommended
 # consensus-of-predictors call, as disordered regions rather than a score.
 MOBIDB_DOWNLOAD_URL = "https://mobidb.org/api/download"
+# Human Protein Atlas - real tissue/subcellular expression data, keyed by
+# UniProt accession via a two-hop lookup (resolve to an Ensembl gene ID,
+# then fetch that gene's full record). Verified live: search_download.php
+# responds with Content-Type: application/gzip but NO Content-Encoding
+# header, so httpx does NOT auto-decompress it - the raw bytes must be
+# gzip.decompress()'d by hand before json.loads(), unlike every other
+# fetch in this module. The per-gene record endpoint below is plain JSON.
+PROTEIN_ATLAS_SEARCH_URL = "https://www.proteinatlas.org/api/search_download.php"
+PROTEIN_ATLAS_GENE_URL = "https://www.proteinatlas.org"
 
 # UniProt's own /features list carries ~15 feature types per entry (Chain,
 # Domain, Helix, Beta strand, Turn, Glycosylation, ...); most duplicate a
@@ -559,6 +569,62 @@ class AnnotationAggregator:
 
         return await self._get_or_fetch(
             f"uniprot_function:{accession}", "uniprot_function", _fetch
+        )
+
+    async def fetch_protein_atlas_expression(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> Optional[Dict[str, Any]]:
+        """Real tissue/subcellular expression data from the Human Protein
+        Atlas - genuinely different information from every other source
+        this class fetches, none of which answer "where in the body is
+        this actually expressed." Two hops: resolve the accession to an
+        Ensembl gene id (search_download.php, which needs a manual gzip
+        decompress - see PROTEIN_ATLAS_SEARCH_URL's comment), then fetch
+        that gene's full record (plain JSON) and pull out 3 human-readable
+        fields out of the dozens available. Returns None if the accession
+        doesn't resolve to a Human Protein Atlas gene (e.g. non-human
+        proteins, which HPA doesn't cover) or the request fails."""
+
+        async def _fetch() -> Optional[Dict[str, Any]]:
+            try:
+                search_response = await client.get(
+                    PROTEIN_ATLAS_SEARCH_URL,
+                    params={
+                        "search": accession,
+                        "format": "json",
+                        "columns": "g,eg,up",
+                    },
+                )
+                if search_response.status_code != 200:
+                    return None
+                search_hits = json.loads(gzip.decompress(search_response.content))
+                ensembl_id = None
+                for hit in search_hits:
+                    if accession in (hit.get("Uniprot") or []):
+                        ensembl_id = hit.get("Ensembl")
+                        break
+                if not ensembl_id:
+                    return None
+
+                gene_response = await client.get(
+                    f"{PROTEIN_ATLAS_GENE_URL}/{ensembl_id}.json"
+                )
+                if gene_response.status_code != 200:
+                    return None
+                gene_data = gene_response.json()
+                return {
+                    "tissue_specificity": gene_data.get("RNA tissue specificity"),
+                    "tissue_distribution": gene_data.get("RNA tissue distribution"),
+                    "subcellular_location": gene_data.get("Subcellular location") or [],
+                }
+            except (httpx.HTTPError, OSError, ValueError) as e:
+                logger.warning(
+                    f"Human Protein Atlas lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return None
+
+        return await self._get_or_fetch(
+            f"protein_atlas:{accession}", "protein_atlas", _fetch
         )
 
     async def fetch_clinvar_significance(
@@ -1551,6 +1617,7 @@ class AnnotationAggregator:
             "uniprot_features": [],
             "catalytic_sites": [],
             "function_summary": None,
+            "tissue_expression": None,
         }
         if not accession:
             return result
@@ -1562,6 +1629,7 @@ class AnnotationAggregator:
             uniprot_features,
             catalytic_sites,
             function_summary,
+            tissue_expression,
         ) = await asyncio.gather(
             self.fetch_interpro_entries(accession, client),
             self.fetch_quickgo_annotations(accession, client),
@@ -1569,9 +1637,11 @@ class AnnotationAggregator:
             self.fetch_uniprot_features(accession, client),
             self.fetch_catalytic_site_residues(accession, client),
             self.fetch_uniprot_function_summary(accession, client),
+            self.fetch_protein_atlas_expression(accession, client),
         )
         result["catalytic_sites"] = catalytic_sites
         result["function_summary"] = function_summary
+        result["tissue_expression"] = tissue_expression
 
         go_ids = [g["id"] for g in quickgo_terms if g.get("id")]
         names = await self.resolve_go_term_names(go_ids, client)
