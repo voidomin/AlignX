@@ -102,6 +102,10 @@ for how to actually use each one.
 | 69 | KEGG pathway membership (alongside Reactome) | SPA | [§2.12](#212-functional-annotation) |
 | 70 | ChEMBL bioactivity data for ligands | SPA | [§2.6](#26-ligand-hunter) |
 | 71 | OrthoDB cross-species ortholog mapping | SPA | [§2.12](#212-functional-annotation) |
+| 72 | DisProt curated disorder regions | SPA | [§2.12](#212-functional-annotation) |
+| 73 | IntAct curated molecular interaction partners | SPA | [§2.12](#212-functional-annotation) |
+| 74 | Rhea biochemical reactions | SPA | [§2.12](#212-functional-annotation) |
+| 75 | Open Targets druggability/tractability | SPA | [§2.12](#212-functional-annotation) |
 
 ---
 
@@ -431,6 +435,30 @@ symbol in a small fixed set of common model organisms (mouse, zebrafish,
 fly, yeast) — genuinely different from the BLAST-based true evolutionary
 conservation feature (§5.3), which finds whatever homologous sequences BLAST
 returns rather than a defined per-species ortholog group.
+
+Real **DisProt curated disordered regions** — literature-curated,
+experimentally-demonstrated disorder — appear as a compact range list
+alongside MobiDB's own sequence-based prediction (§2.2's "Sequence disorder"
+color scheme), a measurement-vs-prediction cross-check rather than a second
+full viewer overlay.
+
+Real **IntAct curated interaction partners** — purely curated, PubMed-backed
+physical interaction evidence — complement STRING's mixed computational/
+text-mining/experimental confidence score for the same "who does this
+protein bind" question, with higher precision at the cost of lower coverage.
+
+Real **Rhea catalyzed reactions** — the actual chemical reaction an enzyme
+catalyzes, as a balanced equation, each linking to its real Rhea entry —
+appear alongside the KEGG/Reactome pathway lists, distinct from M-CSA's
+catalytic *residues* above (a different question: "what reaction happens"
+vs. "which residues do it"), and Rhea's enzyme coverage is far broader than
+M-CSA's few-thousand curated entries.
+
+Real **Open Targets druggability/tractability** data answers "is this
+protein itself a viable drug target" — real tractability buckets across
+drug modalities (small molecule, antibody, PROTAC) — distinct from ChEMBL's
+ligand potency and PubChem's ligand-analog search (§2.6), both of which are
+about a specific bound ligand rather than the target protein itself.
 
 For a structure with **no resolvable UniProt accession at all** — an ESM
 Atlas hit, an uploaded file, or a raw-sequence prediction (§1) — every
