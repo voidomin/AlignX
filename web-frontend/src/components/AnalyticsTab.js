@@ -554,7 +554,7 @@ export class AnalyticsTab {
             if (annotateBtn) {
                 annotateBtn.addEventListener('click', () => this.loadInterproscanAnnotation(selectedPdbId));
             }
-        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.kegg_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length && !annotation.function_summary && !annotation.tissue_expression && !annotation.orthologs && !annotation.disprot_regions?.length) {
+        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.kegg_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length && !annotation.function_summary && !annotation.tissue_expression && !annotation.orthologs && !annotation.disprot_regions?.length && !annotation.intact_partners?.length) {
             content.innerHTML = `<div class="font-body-sm text-secondary py-4">Resolved to UniProt ${annotation.accession}, but no curated domains, GO terms, pathways, or sequence features were found.</div>`;
         } else {
             // Split the single fetch_uniprot_features() result into a
@@ -575,6 +575,7 @@ export class AnalyticsTab {
             const tissueExpressionHtml = this.renderTissueExpression(annotation.tissue_expression);
             const orthologsHtml = this.renderOrthologs(annotation.orthologs);
             const disprotHtml = this.renderDisprotRegions(annotation.disprot_regions);
+            const intactHtml = this.renderIntactPartners(annotation.intact_partners);
 
             content.innerHTML = `
                 <div class="font-body-sm text-secondary">Resolved to UniProt <span class="font-mono text-primary">${annotation.accession}</span></div>
@@ -582,6 +583,7 @@ export class AnalyticsTab {
                 ${tissueExpressionHtml}
                 ${orthologsHtml}
                 ${disprotHtml}
+                ${intactHtml}
                 ${renderDomainList(annotation.domains)}
                 ${renderGoTermList(annotation.go_terms)}
                 ${renderFeatureList(ptmFeatures, 'PTM sites', 'ptm-highlight-btn')}
@@ -868,6 +870,20 @@ export class AnalyticsTab {
             <div class="flex flex-col gap-1 py-2 border-b border-border-subtle">
                 <span class="font-label-sm text-label-sm text-secondary uppercase tracking-wider">Curated disordered regions (DisProt)</span>
                 <div class="font-body-sm text-primary">${escapeHtml(rangeText)}</div>
+            </div>
+        `;
+    }
+
+    // Real, purely curated PubMed-backed physical interaction partners
+    // from IntAct - a higher-precision complement to STRING's mixed
+    // computational/text-mining/experimental confidence score, for the
+    // same "who does this protein bind" question.
+    renderIntactPartners(partners) {
+        if (!partners || partners.length === 0) return '';
+        return `
+            <div class="flex flex-col gap-1 py-2 border-b border-border-subtle">
+                <span class="font-label-sm text-label-sm text-secondary uppercase tracking-wider">Curated interaction partners (IntAct)</span>
+                <div class="font-body-sm text-primary">${partners.map(escapeHtml).join(', ')}</div>
             </div>
         `;
     }

@@ -119,6 +119,15 @@ ORTHODB_MODEL_ORGANISMS = {
 # ({"status": "not-valid-id"}), so these must be checked in that order
 # rather than treating "any non-200" as one undifferentiated failure.
 DISPROT_BASE_URL = "https://disprot.org/api"
+# IntAct (EBI) - purely curated, PubMed-backed physical interaction
+# evidence, keyed by UniProt accession alone. A higher-precision
+# complement to STRING's already-shipped mixed computational/text-
+# mining/experimental confidence score, for the same "who does this
+# protein bind" question. Verified live: the intuitive-sounding endpoint
+# path (/interaction/list/uniprotAc/{acc}) 404s - the real path below was
+# only found by reading the actual OpenAPI spec, not older tutorials.
+INTACT_INTERACTIONS_URL = "https://www.ebi.ac.uk/intact/ws/interaction/findInteractions"
+INTACT_MAX_PARTNERS = 10
 
 # UniProt's own /features list carries ~15 feature types per entry (Chain,
 # Domain, Helix, Beta strand, Turn, Glycosylation, ...); most duplicate a
@@ -843,6 +852,48 @@ class AnnotationAggregator:
                 return None
 
         return await self._get_or_fetch(f"disprot:{accession}", "disprot", _fetch)
+
+    async def fetch_intact_interactions(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> List[str]:
+        """Real, purely curated PubMed-backed physical interaction
+        partners from IntAct - see INTACT_INTERACTIONS_URL's comment for
+        why this complements STRING's already-shipped mixed-evidence
+        score rather than duplicating it. Each interaction record names
+        both sides (moleculeA/uniqueIdA and moleculeB/uniqueIdB) - the
+        partner is whichever side's uniqueId does NOT match the query
+        accession itself, so this is correct regardless of which side
+        IntAct happened to list the query protein on. Returns a
+        deduplicated list of partner names (capped to
+        INTACT_MAX_PARTNERS), or [] on no curated interactions/failure -
+        a real, common negative for less-studied proteins."""
+
+        async def _fetch() -> List[str]:
+            try:
+                response = await client.get(
+                    f"{INTACT_INTERACTIONS_URL}/{accession}",
+                    params={"page": 0, "pageSize": INTACT_MAX_PARTNERS},
+                )
+                if response.status_code != 200:
+                    return []
+                partners = []
+                for record in response.json().get("content") or []:
+                    if record.get("uniqueIdA") == accession:
+                        partner = record.get("moleculeB")
+                    elif record.get("uniqueIdB") == accession:
+                        partner = record.get("moleculeA")
+                    else:
+                        continue
+                    if partner and partner not in partners:
+                        partners.append(partner)
+                return partners[:INTACT_MAX_PARTNERS]
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"IntAct lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return []
+
+        return await self._get_or_fetch(f"intact:{accession}", "intact", _fetch)
 
     async def fetch_clinvar_significance(
         self, gene: str, variant_notation: str, client: httpx.AsyncClient
@@ -1838,6 +1889,7 @@ class AnnotationAggregator:
             "kegg_pathways": [],
             "orthologs": None,
             "disprot_regions": None,
+            "intact_partners": [],
         }
         if not accession:
             return result
@@ -1853,6 +1905,7 @@ class AnnotationAggregator:
             kegg_pathways,
             orthologs,
             disprot_regions,
+            intact_partners,
         ) = await asyncio.gather(
             self.fetch_interpro_entries(accession, client),
             self.fetch_quickgo_annotations(accession, client),
@@ -1864,6 +1917,7 @@ class AnnotationAggregator:
             self.fetch_kegg_pathways(accession, client),
             self.fetch_orthodb_orthologs(accession, client),
             self.fetch_disprot_regions(accession, client),
+            self.fetch_intact_interactions(accession, client),
         )
         result["catalytic_sites"] = catalytic_sites
         result["function_summary"] = function_summary
@@ -1871,6 +1925,7 @@ class AnnotationAggregator:
         result["kegg_pathways"] = kegg_pathways
         result["orthologs"] = orthologs
         result["disprot_regions"] = disprot_regions
+        result["intact_partners"] = intact_partners
 
         go_ids = [g["id"] for g in quickgo_terms if g.get("id")]
         names = await self.resolve_go_term_names(go_ids, client)

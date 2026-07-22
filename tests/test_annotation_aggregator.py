@@ -2034,6 +2034,104 @@ class TestFetchDisprotRegions:
         assert regions is None
 
 
+class TestFetchIntactInteractions:
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_extracts_the_partner_when_query_is_the_a_side(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "content": [
+                    {
+                        "uniqueIdA": "P69905",
+                        "uniqueIdB": "Q9NZD4",
+                        "moleculeA": "HBA1",
+                        "moleculeB": "AHSP",
+                    }
+                ]
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            partners = await aggregator.fetch_intact_interactions("P69905", client)
+        assert partners == ["AHSP"]
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_extracts_the_partner_when_query_is_the_b_side(self, mock_get):
+        # IntAct doesn't guarantee which side of a record the query
+        # protein lands on - getting this backwards would show the
+        # query's own name as its "partner" instead of the real one.
+        mock_get.return_value = _mock_response(
+            json_data={
+                "content": [
+                    {
+                        "uniqueIdA": "Q9NZD4",
+                        "uniqueIdB": "P69905",
+                        "moleculeA": "AHSP",
+                        "moleculeB": "HBA1",
+                    }
+                ]
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            partners = await aggregator.fetch_intact_interactions("P69905", client)
+        assert partners == ["AHSP"]
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_deduplicates_and_caps_partners(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "content": [
+                    {
+                        "uniqueIdA": "P69905",
+                        "uniqueIdB": "Q9NZD4",
+                        "moleculeA": "HBA1",
+                        "moleculeB": "AHSP",
+                    },
+                    {
+                        "uniqueIdA": "P69905",
+                        "uniqueIdB": "Q9NZD4",
+                        "moleculeA": "HBA1",
+                        "moleculeB": "AHSP",
+                    },
+                ]
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            partners = await aggregator.fetch_intact_interactions("P69905", client)
+        assert partners == ["AHSP"]
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_list_on_no_interactions(self, mock_get):
+        mock_get.return_value = _mock_response(json_data={"content": []})
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            partners = await aggregator.fetch_intact_interactions("P00000", client)
+        assert partners == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_list_on_non_200(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            partners = await aggregator.fetch_intact_interactions("P69905", client)
+        assert partners == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_list_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            partners = await aggregator.fetch_intact_interactions("P69905", client)
+        assert partners == []
+
+
 class TestFetchClinvarSignificance:
     @pytest.mark.asyncio
     @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
@@ -2421,6 +2519,7 @@ class TestAggregateForStructure:
             "kegg_pathways": [],
             "orthologs": None,
             "disprot_regions": None,
+            "intact_partners": [],
         }
 
     @pytest.mark.asyncio
@@ -2518,6 +2617,10 @@ class TestAggregateForStructure:
             aggregator,
             "fetch_disprot_regions",
             AsyncMock(return_value=[[1, 10]]),
+        ), patch.object(
+            aggregator,
+            "fetch_intact_interactions",
+            AsyncMock(return_value=["AHSP"]),
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
@@ -2531,6 +2634,7 @@ class TestAggregateForStructure:
         assert result["kegg_pathways"][0]["name"] == "Malaria"
         assert result["orthologs"] == {"mouse": ["Hba-x"]}
         assert result["disprot_regions"] == [[1, 10]]
+        assert result["intact_partners"] == ["AHSP"]
         assert result["uniprot_features"][0]["type"] == "Binding site"
         assert result["catalytic_sites"][0]["enzyme_name"] == "test enzyme"
         assert result["function_summary"] == "Involved in oxygen transport"
@@ -2606,6 +2710,8 @@ class TestAggregateForStructure:
             aggregator, "fetch_orthodb_orthologs", AsyncMock(return_value=None)
         ), patch.object(
             aggregator, "fetch_disprot_regions", AsyncMock(return_value=None)
+        ), patch.object(
+            aggregator, "fetch_intact_interactions", AsyncMock(return_value=[])
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
@@ -2681,6 +2787,8 @@ class TestAggregateForStructure:
             aggregator, "fetch_orthodb_orthologs", AsyncMock(return_value=None)
         ), patch.object(
             aggregator, "fetch_disprot_regions", AsyncMock(return_value=None)
+        ), patch.object(
+            aggregator, "fetch_intact_interactions", AsyncMock(return_value=[])
         ), patch.object(
             aggregator,
             "resolve_go_term_names",

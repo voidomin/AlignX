@@ -479,6 +479,45 @@ describe('AnalyticsTab', () => {
                 .not.toContain('Curated disordered regions (DisProt)');
         });
 
+        it('renders real curated interaction partners (IntAct) when they resolve', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P69905',
+                    domains: [], go_terms: [], reactome_pathways: [],
+                    intact_partners: ['AHSP'],
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            const content = tab.element.querySelector('#annotations-content');
+            expect(content.textContent).toContain('Curated interaction partners (IntAct)');
+            expect(content.textContent).toContain('AHSP');
+        });
+
+        it('does not render an IntAct section when no partners resolve', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P69905',
+                    domains: [{ name: 'Globin', type: 'domain' }],
+                    go_terms: [], reactome_pathways: [], intact_partners: [],
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            expect(tab.element.querySelector('#annotations-content').textContent)
+                .not.toContain('Curated interaction partners (IntAct)');
+        });
+
         it('shows the "no curated annotation" message rather than the function summary line when neither is present', async () => {
             fetchAnnotations.mockResolvedValue({
                 annotation: {
@@ -486,6 +525,7 @@ describe('AnalyticsTab', () => {
                     domains: [], go_terms: [], reactome_pathways: [],
                     uniprot_features: [], catalytic_sites: [], function_summary: null,
                     tissue_expression: null, orthologs: null, disprot_regions: null,
+                    intact_partners: [],
                 },
             });
 
