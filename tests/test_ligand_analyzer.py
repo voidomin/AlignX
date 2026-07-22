@@ -572,3 +572,142 @@ class TestFetchPubchemAnalogs:
 
         assert first == second
         mock_get.assert_called_once()
+
+
+class TestFetchChemblBioactivity:
+    @pytest.mark.asyncio
+    @patch("src.backend.ligand_analyzer.httpx.AsyncClient.get")
+    async def test_parses_real_looking_activities_sorted_by_potency(self, mock_get):
+        def _get_side_effect(url, **kwargs):
+            if "molecule" in url:
+                return _mock_response(
+                    json_data={"molecules": [{"molecule_chembl_id": "CHEMBL941"}]}
+                )
+            return _mock_response(
+                json_data={
+                    "activities": [
+                        {
+                            "target_pref_name": "Platelet-derived growth factor receptor beta",
+                            "standard_type": "IC50",
+                            "standard_value": "240.0",
+                            "standard_units": "nM",
+                        },
+                        {
+                            "target_pref_name": "Tyrosine-protein kinase ABL",
+                            "standard_type": "IC50",
+                            "standard_value": "40.0",
+                            "standard_units": "nM",
+                        },
+                        # Non-numeric/unsupported rows must be skipped, not crash.
+                        {
+                            "target_pref_name": "Unchecked",
+                            "standard_type": "Ratio",
+                            "standard_value": None,
+                            "standard_units": None,
+                        },
+                    ]
+                }
+            )
+
+        mock_get.side_effect = _get_side_effect
+        analyzer = LigandAnalyzer()
+        async with httpx.AsyncClient() as client:
+            result = await analyzer.fetch_chembl_bioactivity(
+                "KTUFNOKKBVMGRW-UHFFFAOYSA-N", client
+            )
+
+        assert result == [
+            {
+                "target": "Tyrosine-protein kinase ABL",
+                "type": "IC50",
+                "value": 40.0,
+                "units": "nM",
+            },
+            {
+                "target": "Platelet-derived growth factor receptor beta",
+                "type": "IC50",
+                "value": 240.0,
+                "units": "nM",
+            },
+        ]
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_list_for_an_empty_inchi_key(self):
+        analyzer = LigandAnalyzer()
+        async with httpx.AsyncClient() as client:
+            result = await analyzer.fetch_chembl_bioactivity("", client)
+        assert result == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.ligand_analyzer.httpx.AsyncClient.get")
+    async def test_returns_empty_list_when_no_molecule_matches(self, mock_get):
+        mock_get.return_value = _mock_response(json_data={"molecules": []})
+        analyzer = LigandAnalyzer()
+        async with httpx.AsyncClient() as client:
+            result = await analyzer.fetch_chembl_bioactivity("NOTAREALKEY", client)
+        assert result == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.ligand_analyzer.httpx.AsyncClient.get")
+    async def test_returns_empty_list_on_non_200(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        analyzer = LigandAnalyzer()
+        async with httpx.AsyncClient() as client:
+            result = await analyzer.fetch_chembl_bioactivity(
+                "KTUFNOKKBVMGRW-UHFFFAOYSA-N", client
+            )
+        assert result == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.ligand_analyzer.httpx.AsyncClient.get")
+    async def test_returns_empty_list_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        analyzer = LigandAnalyzer()
+        async with httpx.AsyncClient() as client:
+            result = await analyzer.fetch_chembl_bioactivity(
+                "KTUFNOKKBVMGRW-UHFFFAOYSA-N", client
+            )
+        assert result == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.ligand_analyzer.httpx.AsyncClient.get")
+    async def test_uses_cache_on_second_call_not_network(self, mock_get):
+        def _get_side_effect(url, **kwargs):
+            if "molecule" in url:
+                return _mock_response(
+                    json_data={"molecules": [{"molecule_chembl_id": "CHEMBL941"}]}
+                )
+            return _mock_response(
+                json_data={
+                    "activities": [
+                        {
+                            "target_pref_name": "Tyrosine-protein kinase ABL",
+                            "standard_type": "IC50",
+                            "standard_value": "40.0",
+                            "standard_units": "nM",
+                        }
+                    ]
+                }
+            )
+
+        mock_get.side_effect = _get_side_effect
+        cache_store = {}
+
+        class FakeCacheDb:
+            def get_annotation_cache(self, key, max_age_days):
+                return cache_store.get(key)
+
+            def set_annotation_cache(self, key, service, payload):
+                cache_store[key] = payload
+
+        analyzer = LigandAnalyzer(cache_db=FakeCacheDb())
+        async with httpx.AsyncClient() as client:
+            first = await analyzer.fetch_chembl_bioactivity(
+                "KTUFNOKKBVMGRW-UHFFFAOYSA-N", client
+            )
+            second = await analyzer.fetch_chembl_bioactivity(
+                "KTUFNOKKBVMGRW-UHFFFAOYSA-N", client
+            )
+
+        assert first == second
+        assert mock_get.call_count == 2
