@@ -1160,6 +1160,51 @@ describe('WorkspaceTab', () => {
             expect(row.textContent).toContain('--');
         });
 
+        it('shows "N/A" (not "--") for the wwPDB clashscore column when the structure has no PDB validation report to begin with', async () => {
+            fetchQc.mockResolvedValue({
+                pdb_id: 'AF-P69905-F1',
+                ramachandran_stats: { favored_percent: 92.5, outlier_count: 2 },
+                secondary_structure_stats: { helix_percent: 80.3 },
+                validation: null,
+            });
+
+            const tab = makeTab({
+                selectedPDBs: ['AF-P69905-F1'],
+                pdbMetadata: { 'AF-P69905-F1': { source: 'alphafold' } },
+            });
+            tab.render();
+
+            tab.element.querySelector('#workspace-run-qc-btn').click();
+            await flushAsync();
+
+            const cells = tab.element.querySelectorAll('#workspace-qc-summary tbody tr td');
+            const clashCell = cells[4];
+            expect(clashCell.textContent).toBe('N/A');
+            expect(clashCell.title).toContain('real, experimentally-solved PDB entries');
+        });
+
+        it('shows a plain "--" (not "N/A") for a real PDB entry with no validation report available', async () => {
+            fetchQc.mockResolvedValue({
+                pdb_id: '4HHB',
+                ramachandran_stats: { favored_percent: 92.5, outlier_count: 2 },
+                secondary_structure_stats: { helix_percent: 80.3 },
+                validation: null,
+            });
+
+            const tab = makeTab({
+                selectedPDBs: ['4HHB'],
+                pdbMetadata: { '4HHB': { source: 'pdb' } },
+            });
+            tab.render();
+
+            tab.element.querySelector('#workspace-run-qc-btn').click();
+            await flushAsync();
+
+            const cells = tab.element.querySelectorAll('#workspace-qc-summary tbody tr td');
+            const clashCell = cells[4];
+            expect(clashCell.textContent).toBe('--');
+        });
+
         it('does nothing when there are no structures in the workspace', async () => {
             fetchQc.mockClear();
             const tab = makeTab({ selectedPDBs: [] });

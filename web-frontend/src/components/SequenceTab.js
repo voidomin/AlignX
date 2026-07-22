@@ -168,11 +168,11 @@ export class SequenceTab {
                         <a id="download-newick-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download Tree</a>
                     </div>
                     <div class="flex items-center justify-between py-2 border-b border-border-subtle">
-                        <span class="font-body-sm text-body-sm text-primary font-mono">session_&lt;run_id&gt;.pml</span>
+                        <span class="font-body-sm text-body-sm text-primary font-mono">session.pml</span>
                         <a id="download-pymol-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download PyMOL Script</a>
                     </div>
                     <div class="flex items-center justify-between py-2 border-b border-border-subtle">
-                        <span class="font-body-sm text-body-sm text-primary font-mono">session_&lt;run_id&gt;.cxc</span>
+                        <span class="font-body-sm text-body-sm text-primary font-mono">session.cxc</span>
                         <a id="download-chimerax-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download ChimeraX Script</a>
                     </div>
                     <div class="flex items-center justify-between py-2">
