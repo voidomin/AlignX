@@ -179,6 +179,18 @@ residues) and click Predict Structure —
 MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHFDLSHGSAQVKGHGKKVADALTNAVAHVDDMPNALSALSDLHAHKLRVDPVNFKLLSHCLLVTLAAHLPAEFTPAVHASLDKFLASVSTVLTSKYR
 ```
 
+### 2.6 "Reference vs. many" batch screen
+
+Already have a structure in your workspace and want to know how it compares
+against a much larger batch than a full N-structure alignment could
+reasonably handle? Pick one workspace structure as the **reference**, paste
+up to **50** target PDB IDs/accessions, and get back a ranked table of
+TM-score and RMSD for each target against that one reference. Each
+comparison runs its own independent pairwise TM-align superposition rather
+than sharing one common N-way coordinate frame — so it scales to far more
+structures than raising the alignment cap would, at the cost of no combined
+3D view across the whole batch (unlike Compare mode's shared superposition).
+
 ---
 
 ## 3. Comparing Multiple Structures
@@ -226,6 +238,13 @@ Color-scheme options beyond plain chain identity:
   it into rigid domains by connectivity in its own real PAE matrix (see
   §4.4) — distinct from the sequence-based "InterPro domains" scheme above.
   Disabled when nothing in the run is AlphaFold-sourced.
+
+For a completed **2-structure** alignment, a **morph** toggle replaces the
+static superposition with a smooth animated transition between the two —
+a synthetic multi-model trajectory linearly interpolating their commonly
+aligned CA coordinates, played back frame-by-frame. Useful for seeing
+exactly which regions move (and how far) between two conformational
+states, rather than reading that off a static RMSD number or heatmap cell.
 
 ### 3.3 RMSD heatmap
 
@@ -408,6 +427,11 @@ Two background jobs, independent of Mustang's structural alignment entirely:
   minutes, which is exactly the kind of job worth attaching a webhook to
   (§8.5) so you don't have to keep the tab open.
 
+The BLAST conservation result also renders as a real **sequence logo** — a
+stacked-bar chart per position, each residue's share of the bar scaled to
+how often it appears across the real homologs found — shown alongside the
+existing compact single-glyph conservation view rather than replacing it.
+
 ---
 
 ## 6. Ligand & Binding Site Analysis
@@ -465,6 +489,14 @@ measured volume (a convex hull over-estimates a true concave cavity — treat
 it as a rough size signal). Especially useful for AlphaFold/ESM Atlas
 structures, which essentially never come with a co-crystallized ligand.
 
+Alongside it, a **"Detect real pockets (PrankWeb)"** action submits the
+structure to PrankWeb (P2Rank) for a real, validated geometric cavity
+detection — slower (a background job against an external academic server)
+and opt-in, unlike the heuristic finder above, which is instant but a proxy
+signal, not a validated result. Use the heuristic finder for an immediate
+first look, and PrankWeb as a second opinion when you want a real detector's
+answer.
+
 ---
 
 ## 7. Protein-Protein Interfaces
@@ -511,12 +543,21 @@ curated interaction partners** — purely curated, PubMed-backed physical
 interaction evidence, a higher-precision complement to the structural-
 interface analysis in §7; real **Rhea catalyzed reactions** — the actual
 chemical reaction an enzyme catalyzes, each linking to its real Rhea entry,
-distinct from M-CSA's catalytic *residues* above; and real **Open Targets
+distinct from M-CSA's catalytic *residues* below; and real **Open Targets
 druggability/tractability** data answering "is this protein itself a viable
 drug target," across drug modalities (small molecule, antibody, PROTAC) —
 distinct from ChEMBL's ligand potency and PubChem's ligand-analog search
 (§6.3), both of which are about a specific bound ligand rather than the
 target protein itself.
+
+The panel also lists real **PTM (post-translational modification) sites**
+— modified residues, glycosylation, lipidation, cross-links, and disulfide
+bonds — from UniProt's own curated feature annotations, and real
+**catalytic/active-site residues** from the curated Mechanism and Catalytic
+Site Atlas (M-CSA) — the actual residues that do the chemistry, distinct
+from Rhea's reaction-level view above. M-CSA's coverage is a few thousand
+well-characterized enzymes, not proteome-wide, so an honest "not available"
+message is the expected result for most structures, not a bug.
 
 ESM Atlas structures have no UniProt mapping at all (they're uncharacterized,
 metagenomic sequences), and an uploaded file or a raw-sequence prediction
@@ -625,6 +666,14 @@ as AlphaFold-sourced ones.
 (the real sickle-cell mutation) on `4HHB` correctly resolves to HBB position
 7 and returns a real ClinVar record — the well-known `rs334` variant.
 
+A separate **"Predict stability impact"** action submits the same
+substitution to DDMut and reports a real predicted **ddG** (kcal/mol,
+stabilizing or destabilizing) — a background job, since DDMut itself is an
+external, queued service, not the synchronous ClinVar/AlphaMissense/gnomAD
+lookup above. An independent signal from clinical significance or
+pathogenicity: a mutation can be clinically benign yet structurally
+destabilizing, or vice versa.
+
 For a whole-structure view rather than one substitution at a time, use the
 **"Mutation tolerance (AlphaMissense)"** 3D viewer color scheme described in
 §3.2.
@@ -664,8 +713,9 @@ other's runs.
 | **Jupyter Notebook** (`.ipynb`) | A real, *runnable* notebook whose code cells re-fetch the run's data live from StructScope's own REST API — for continued programmatic exploration, not just a static snapshot. |
 | **Discover export** | A completed Discover run as a standalone HTML report or raw JSON. |
 | **Raw data exports** | RMSD matrix as CSV, heatmap as PNG, phylogenetic tree as a standard Newick file — for pulling numbers into your own analysis or a dedicated phylogenetics tool. |
+| **PyMOL / ChimeraX script** | A downloadable `.pml` or `.cxc` script (plain, human-readable text, not the proprietary `.pse` binary) that loads the run's aligned structure files in your own molecular-visualization tool and applies the same per-structure coloring StructScope's own viewer uses — for continuing to work with a result outside the browser. |
 | **Download everything** | One ZIP bundling the aligned PDB, FASTA, RMSD matrix CSV, heatmap PNG, and an auto-generated lab notebook. |
-| **REST API** | Every backend route is documented and explorable at `/docs`, machine-readable at `/openapi.json` — script against StructScope directly instead of only using the UI. |
+| **REST API** | Every backend route is documented and explorable at `/docs`, machine-readable at `/openapi.json`, with typed-client generation guidance for scripting against it directly. A companion CLI wraps the same API for submitting runs and polling job status from the command line, without writing your own HTTP client. |
 
 ---
 
