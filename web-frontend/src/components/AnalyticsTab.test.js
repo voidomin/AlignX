@@ -518,6 +518,49 @@ describe('AnalyticsTab', () => {
                 .not.toContain('Curated interaction partners (IntAct)');
         });
 
+        it('renders real catalyzed reactions (Rhea) linking to their real Rhea entry', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P00918',
+                    domains: [], go_terms: [], reactome_pathways: [],
+                    rhea_reactions: [
+                        { id: '10748', equation: 'hydrogencarbonate + H(+) = CO2 + H2O' },
+                    ],
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            const content = tab.element.querySelector('#annotations-content');
+            expect(content.textContent).toContain('Catalyzed reactions (Rhea)');
+            expect(content.textContent).toContain('hydrogencarbonate + H(+) = CO2 + H2O');
+            const link = content.querySelector('a[href="https://www.rhea-db.org/rhea/10748"]');
+            expect(link).not.toBeNull();
+        });
+
+        it('does not render a Rhea section when no reactions resolve', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P69905',
+                    domains: [{ name: 'Globin', type: 'domain' }],
+                    go_terms: [], reactome_pathways: [], rhea_reactions: [],
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            expect(tab.element.querySelector('#annotations-content').textContent)
+                .not.toContain('Catalyzed reactions (Rhea)');
+        });
+
         it('shows the "no curated annotation" message rather than the function summary line when neither is present', async () => {
             fetchAnnotations.mockResolvedValue({
                 annotation: {
@@ -525,7 +568,7 @@ describe('AnalyticsTab', () => {
                     domains: [], go_terms: [], reactome_pathways: [],
                     uniprot_features: [], catalytic_sites: [], function_summary: null,
                     tissue_expression: null, orthologs: null, disprot_regions: null,
-                    intact_partners: [],
+                    intact_partners: [], rhea_reactions: [],
                 },
             });
 

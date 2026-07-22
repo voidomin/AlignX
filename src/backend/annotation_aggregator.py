@@ -128,6 +128,15 @@ DISPROT_BASE_URL = "https://disprot.org/api"
 # only found by reading the actual OpenAPI spec, not older tutorials.
 INTACT_INTERACTIONS_URL = "https://www.ebi.ac.uk/intact/ws/interaction/findInteractions"
 INTACT_MAX_PARTNERS = 10
+# Rhea (EBI) - the actual chemical reaction an enzyme catalyzes (a
+# balanced ChEBI-participant equation), distinct from M-CSA's catalytic
+# *residues* (fetch_catalytic_site_residues above) - a different
+# question ("what reaction happens here" vs. "which residues do it"),
+# and Rhea covers far more enzymes than M-CSA's few-thousand curated
+# entries. Verified live: a non-enzyme (e.g. hemoglobin) correctly
+# returns HTTP 200 with an empty result list, not an error - the same
+# honest-zero shape M-CSA already has for the majority of proteins.
+RHEA_BASE_URL = "https://www.rhea-db.org/rhea"
 
 # UniProt's own /features list carries ~15 feature types per entry (Chain,
 # Domain, Helix, Beta strand, Turn, Glycosylation, ...); most duplicate a
@@ -894,6 +903,41 @@ class AnnotationAggregator:
                 return []
 
         return await self._get_or_fetch(f"intact:{accession}", "intact", _fetch)
+
+    async def fetch_rhea_reactions(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> List[Dict[str, str]]:
+        """Real biochemical reactions this protein catalyzes, from Rhea -
+        see RHEA_BASE_URL's comment for how this differs from M-CSA's
+        catalytic residues. Returns a list of {"id": ..., "equation": ...}
+        dicts (only "approved" status entries), or [] on no reactions
+        (a real, correct negative for the majority of non-enzyme
+        proteins) or any request failure."""
+
+        async def _fetch() -> List[Dict[str, str]]:
+            try:
+                response = await client.get(
+                    RHEA_BASE_URL,
+                    params={
+                        "query": f"uniprot:{accession}",
+                        "columns": "rhea-id,equation",
+                        "format": "json",
+                    },
+                )
+                if response.status_code != 200:
+                    return []
+                return [
+                    {"id": result["id"], "equation": result["equation"]}
+                    for result in response.json().get("results") or []
+                    if result.get("status") == "approved"
+                ]
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"Rhea lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return []
+
+        return await self._get_or_fetch(f"rhea:{accession}", "rhea", _fetch)
 
     async def fetch_clinvar_significance(
         self, gene: str, variant_notation: str, client: httpx.AsyncClient
@@ -1890,6 +1934,7 @@ class AnnotationAggregator:
             "orthologs": None,
             "disprot_regions": None,
             "intact_partners": [],
+            "rhea_reactions": [],
         }
         if not accession:
             return result
@@ -1906,6 +1951,7 @@ class AnnotationAggregator:
             orthologs,
             disprot_regions,
             intact_partners,
+            rhea_reactions,
         ) = await asyncio.gather(
             self.fetch_interpro_entries(accession, client),
             self.fetch_quickgo_annotations(accession, client),
@@ -1918,6 +1964,7 @@ class AnnotationAggregator:
             self.fetch_orthodb_orthologs(accession, client),
             self.fetch_disprot_regions(accession, client),
             self.fetch_intact_interactions(accession, client),
+            self.fetch_rhea_reactions(accession, client),
         )
         result["catalytic_sites"] = catalytic_sites
         result["function_summary"] = function_summary
@@ -1926,6 +1973,7 @@ class AnnotationAggregator:
         result["orthologs"] = orthologs
         result["disprot_regions"] = disprot_regions
         result["intact_partners"] = intact_partners
+        result["rhea_reactions"] = rhea_reactions
 
         go_ids = [g["id"] for g in quickgo_terms if g.get("id")]
         names = await self.resolve_go_term_names(go_ids, client)

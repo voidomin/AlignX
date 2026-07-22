@@ -554,7 +554,7 @@ export class AnalyticsTab {
             if (annotateBtn) {
                 annotateBtn.addEventListener('click', () => this.loadInterproscanAnnotation(selectedPdbId));
             }
-        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.kegg_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length && !annotation.function_summary && !annotation.tissue_expression && !annotation.orthologs && !annotation.disprot_regions?.length && !annotation.intact_partners?.length) {
+        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.kegg_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length && !annotation.function_summary && !annotation.tissue_expression && !annotation.orthologs && !annotation.disprot_regions?.length && !annotation.intact_partners?.length && !annotation.rhea_reactions?.length) {
             content.innerHTML = `<div class="font-body-sm text-secondary py-4">Resolved to UniProt ${annotation.accession}, but no curated domains, GO terms, pathways, or sequence features were found.</div>`;
         } else {
             // Split the single fetch_uniprot_features() result into a
@@ -591,6 +591,7 @@ export class AnalyticsTab {
                 ${renderCatalyticSiteList(annotation.catalytic_sites)}
                 ${this.renderReactomePathways(annotation.reactome_pathways)}
                 ${this.renderKeggPathways(annotation.kegg_pathways)}
+                ${this.renderRheaReactions(annotation.rhea_reactions)}
             `;
             content.querySelectorAll('.domain-highlight-btn').forEach(btn => {
                 const domain = annotation.domains[Number(btn.dataset.domainIndex)];
@@ -805,6 +806,18 @@ export class AnalyticsTab {
         return this._renderPathwayList(pathways, 'KEGG pathways');
     }
 
+    // Real biochemical reactions this protein catalyzes (Rhea) - the
+    // actual chemical equation, distinct from M-CSA's catalytic
+    // *residues* already shown above. Each row links to its real Rhea
+    // entry.
+    renderRheaReactions(reactions) {
+        if (!reactions?.length) return '';
+        return this._renderPathwayList(
+            reactions.map(r => ({ name: r.equation, url: `https://www.rhea-db.org/rhea/${r.id}` })),
+            'Catalyzed reactions (Rhea)'
+        );
+    }
+
     _renderPathwayList(pathways, label) {
         if (!pathways?.length) return '';
         return `
@@ -812,7 +825,9 @@ export class AnalyticsTab {
                 <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">${escapeHtml(label)}</span>
                 ${pathways.map(p => `
                     <div class="flex items-center py-1.5 border-b border-border-subtle">
-                        <span class="font-body-sm">${escapeHtml(p.name)}</span>
+                        ${p.url
+                            ? `<a href="${escapeHtml(p.url)}" target="_blank" rel="noopener noreferrer" class="font-body-sm text-accent hover:underline">${escapeHtml(p.name)}</a>`
+                            : `<span class="font-body-sm">${escapeHtml(p.name)}</span>`}
                     </div>
                 `).join('')}
             </div>

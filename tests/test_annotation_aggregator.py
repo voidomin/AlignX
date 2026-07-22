@@ -2132,6 +2132,82 @@ class TestFetchIntactInteractions:
         assert partners == []
 
 
+class TestFetchRheaReactions:
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_real_looking_approved_reactions(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "count": 2,
+                "results": [
+                    {
+                        "id": "10748",
+                        "equation": "hydrogencarbonate + H(+) = CO2 + H2O",
+                        "status": "approved",
+                    },
+                    {
+                        "id": "23056",
+                        "equation": "urea = cyanamide + H2O",
+                        "status": "approved",
+                    },
+                ],
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            reactions = await aggregator.fetch_rhea_reactions("P00918", client)
+        assert reactions == [
+            {"id": "10748", "equation": "hydrogencarbonate + H(+) = CO2 + H2O"},
+            {"id": "23056", "equation": "urea = cyanamide + H2O"},
+        ]
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_skips_non_approved_entries(self, mock_get):
+        mock_get.return_value = _mock_response(
+            json_data={
+                "count": 1,
+                "results": [
+                    {"id": "1", "equation": "A = B", "status": "obsolete"},
+                ],
+            }
+        )
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            reactions = await aggregator.fetch_rhea_reactions("P00918", client)
+        assert reactions == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_list_for_a_real_non_enzyme(self, mock_get):
+        # Confirmed live: a non-enzyme (hemoglobin) correctly returns
+        # HTTP 200 with an empty result list, not an error - a real,
+        # honest negative, not a bug.
+        mock_get.return_value = _mock_response(json_data={"count": 0, "results": []})
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            reactions = await aggregator.fetch_rhea_reactions("P69905", client)
+        assert reactions == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_list_on_non_200(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=500)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            reactions = await aggregator.fetch_rhea_reactions("P00918", client)
+        assert reactions == []
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_empty_list_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            reactions = await aggregator.fetch_rhea_reactions("P00918", client)
+        assert reactions == []
+
+
 class TestFetchClinvarSignificance:
     @pytest.mark.asyncio
     @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
@@ -2520,6 +2596,7 @@ class TestAggregateForStructure:
             "orthologs": None,
             "disprot_regions": None,
             "intact_partners": [],
+            "rhea_reactions": [],
         }
 
     @pytest.mark.asyncio
@@ -2621,6 +2698,10 @@ class TestAggregateForStructure:
             aggregator,
             "fetch_intact_interactions",
             AsyncMock(return_value=["AHSP"]),
+        ), patch.object(
+            aggregator,
+            "fetch_rhea_reactions",
+            AsyncMock(return_value=[{"id": "10748", "equation": "H2O + CO2 = H2CO3"}]),
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
@@ -2635,6 +2716,9 @@ class TestAggregateForStructure:
         assert result["orthologs"] == {"mouse": ["Hba-x"]}
         assert result["disprot_regions"] == [[1, 10]]
         assert result["intact_partners"] == ["AHSP"]
+        assert result["rhea_reactions"] == [
+            {"id": "10748", "equation": "H2O + CO2 = H2CO3"}
+        ]
         assert result["uniprot_features"][0]["type"] == "Binding site"
         assert result["catalytic_sites"][0]["enzyme_name"] == "test enzyme"
         assert result["function_summary"] == "Involved in oxygen transport"
@@ -2712,6 +2796,8 @@ class TestAggregateForStructure:
             aggregator, "fetch_disprot_regions", AsyncMock(return_value=None)
         ), patch.object(
             aggregator, "fetch_intact_interactions", AsyncMock(return_value=[])
+        ), patch.object(
+            aggregator, "fetch_rhea_reactions", AsyncMock(return_value=[])
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
@@ -2789,6 +2875,8 @@ class TestAggregateForStructure:
             aggregator, "fetch_disprot_regions", AsyncMock(return_value=None)
         ), patch.object(
             aggregator, "fetch_intact_interactions", AsyncMock(return_value=[])
+        ), patch.object(
+            aggregator, "fetch_rhea_reactions", AsyncMock(return_value=[])
         ), patch.object(
             aggregator,
             "resolve_go_term_names",
