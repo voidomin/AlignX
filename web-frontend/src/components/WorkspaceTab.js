@@ -618,7 +618,7 @@ export class WorkspaceTab {
             ${metaParts.length > 0 ? `<span class="pdb-meta-line font-body-sm text-[11px] text-secondary pl-0.5">${metaParts.join(' · ')}</span>` : ''}
             ${meta?.is_nmr ? `<span class="pdb-nmr-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="Showing model 1 of ${meta.num_models} - other conformers in this NMR ensemble aren't analyzed.">NMR · ${meta.num_models} models (model 1 shown)</span>` : ''}
             ${gapCount > 0 ? `<span class="pdb-gaps-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="${escapeHtml(gapTooltip)}">${gapCount} disordered ${gapLabel}</span>` : ''}
-            ${meta?.source === 'pdb' ? `<span id="validation-badge-${pid}" class="pdb-validation-badge font-body-sm text-[11px] text-tertiary pl-0.5">${this._validationBadgeContent(pid)}</span>` : ''}
+            ${meta?.source === 'pdb' ? `<span id="validation-badge-${pid}" class="pdb-validation-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="From wwPDB's own validation pipeline. Archive percentile is how this structure's clashscore/Ramachandran-outlier rate compares to every other validated entry in the archive - higher is better.">${this._validationBadgeContent(pid)}</span>` : ''}
             ${meta?.source === 'pdb' ? `<span id="cath-badge-${pid}" class="pdb-cath-badge font-body-sm text-[11px] text-tertiary pl-0.5">${this._cathBadgeContent(pid)}</span>` : ''}
             ${meta?.source === 'pdb' ? `<span id="assembly-badge-${pid}" class="pdb-assembly-badge font-body-sm text-[11px] text-tertiary pl-0.5">${this._assemblyBadgeContent(pid)}</span>` : ''}
             ${citationLinkHTML}
@@ -788,7 +788,7 @@ export class WorkspaceTab {
                 <tr>
                     <th class="px-0 py-1.5 border-b border-border font-medium">Structure</th>
                     <th class="px-3 py-1.5 border-b border-border font-medium text-right">Favored %</th>
-                    <th class="px-3 py-1.5 border-b border-border font-medium text-right">Outliers</th>
+                    <th class="px-3 py-1.5 border-b border-border font-medium text-right" title="Raw count of Ramachandran-outlier residues from this sweep's own computation - a different, independent signal from the wwPDB validation badge's percentage above.">Outlier Count</th>
                     <th class="px-3 py-1.5 border-b border-border font-medium text-right">Helix %</th>
                     <th class="px-3 py-1.5 border-b border-border font-medium text-right">Clashscore</th>
                     <th class="px-3 py-1.5 border-b border-border font-medium text-right">Self Clash</th>
@@ -810,6 +810,11 @@ export class WorkspaceTab {
             const ss = r.secondary_structure_stats;
             const clash = r.validation?.clashscore?.value;
             const selfClash = r.self_clash?.clashscore;
+            // wwPDB validation only ever exists for a real, experimentally-
+            // solved PDB entry (see /api/qc) - "N/A" for every other source
+            // distinguishes "this genuinely doesn't apply" from the plain
+            // "--" used elsewhere for "not yet loaded/failed."
+            const isRealPdbEntry = this.pdbMetadata[r.pdb_id]?.source === 'pdb';
 
             const idCell = document.createElement('td');
             idCell.className = "py-1.5";
@@ -817,15 +822,21 @@ export class WorkspaceTab {
             tr.appendChild(idCell);
 
             [
-                rama?.favored_percent != null ? rama.favored_percent.toFixed(1) : '--',
-                rama?.outlier_count ?? '--',
-                ss?.helix_percent != null ? ss.helix_percent.toFixed(1) : '--',
-                clash != null ? clash.toFixed(1) : '--',
-                selfClash != null ? selfClash.toFixed(1) : '--',
-            ].forEach(value => {
+                { value: rama?.favored_percent != null ? rama.favored_percent.toFixed(1) : '--' },
+                { value: rama?.outlier_count ?? '--' },
+                { value: ss?.helix_percent != null ? ss.helix_percent.toFixed(1) : '--' },
+                clash != null
+                    ? { value: clash.toFixed(1) }
+                    : {
+                        value: isRealPdbEntry ? '--' : 'N/A',
+                        title: isRealPdbEntry ? undefined : 'wwPDB validation only exists for real, experimentally-solved PDB entries.',
+                    },
+                { value: selfClash != null ? selfClash.toFixed(1) : '--' },
+            ].forEach(({ value, title }) => {
                 const td = document.createElement('td');
                 td.className = "px-3 py-1.5 text-right";
                 td.textContent = value;
+                if (title) td.title = title;
                 tr.appendChild(td);
             });
 
