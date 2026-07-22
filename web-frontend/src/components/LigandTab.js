@@ -45,6 +45,7 @@ export class LigandTab {
                 </div>
                 <div id="ligand-chemistry-info" class="font-body-sm text-[11px] text-secondary hidden"></div>
                 <div id="ligand-analogs-info" class="font-body-sm text-[11px] text-secondary hidden flex-wrap items-baseline gap-1.5"></div>
+                <div id="ligand-bioactivity-info" class="font-body-sm text-[11px] text-secondary hidden flex-col gap-1"></div>
 
                 <div class="flex items-baseline justify-between mt-2 pt-4 border-t border-border">
                     <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Molecular interactions</span>
@@ -688,6 +689,7 @@ export class LigandTab {
     async loadLigandChemistry(ligandId) {
         const info = this.element.querySelector('#ligand-chemistry-info');
         const analogsInfo = this.element.querySelector('#ligand-analogs-info');
+        const bioactivityInfo = this.element.querySelector('#ligand-bioactivity-info');
         if (!info) return;
 
         const ligand = this.ligandsList.find(l => l.id === ligandId);
@@ -699,6 +701,11 @@ export class LigandTab {
             analogsInfo.classList.add('hidden');
             analogsInfo.classList.remove('flex');
             analogsInfo.innerHTML = "";
+        }
+        if (bioactivityInfo) {
+            bioactivityInfo.classList.add('hidden');
+            bioactivityInfo.classList.remove('flex');
+            bioactivityInfo.innerHTML = "";
         }
 
         try {
@@ -712,6 +719,7 @@ export class LigandTab {
             info.textContent = parts.length > 0 ? parts.join(' · ') : `${code}: no chemistry data found.`;
             info.title = c.smiles ? `SMILES: ${c.smiles}` : '';
             this.renderLigandAnalogs(data.pubchem_analogs);
+            this.renderLigandBioactivity(data.chembl_bioactivity);
         } catch (err) {
             console.error("Failed to load ligand chemistry:", err);
             info.textContent = `${code}: chemistry lookup failed.`;
@@ -738,6 +746,26 @@ export class LigandTab {
             link.className = 'text-accent hover:underline';
             link.textContent = `CID ${cid}`;
             analogsInfo.appendChild(link);
+        });
+    }
+
+    // Real bioactivity/potency data from ChEMBL (see fetch_chembl_bioactivity)
+    // - a fundamentally different signal from the PubChem analogs above
+    // (potency against a real target, not just structural similarity).
+    // Only shown when at least one activity record resolves.
+    renderLigandBioactivity(activities) {
+        const bioactivityInfo = this.element.querySelector('#ligand-bioactivity-info');
+        if (!bioactivityInfo || !activities || activities.length === 0) return;
+
+        bioactivityInfo.classList.remove('hidden');
+        bioactivityInfo.classList.add('flex');
+        const label = document.createElement('span');
+        label.textContent = 'Known bioactivity:';
+        bioactivityInfo.appendChild(label);
+        activities.forEach(({ target, type, value, units }) => {
+            const row = document.createElement('span');
+            row.textContent = `${target || 'Unknown target'}: ${type} ${value} ${units || ''}`.trim();
+            bioactivityInfo.appendChild(row);
         });
     }
 }

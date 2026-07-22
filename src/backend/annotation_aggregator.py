@@ -14,6 +14,7 @@ into a tiered, narrative "function hypothesis" report is a later phase.
 """
 
 import asyncio
+import gzip
 import json
 import re
 import threading
@@ -73,6 +74,40 @@ MYVARIANT_QUERY_URL = "https://myvariant.info/v1/query"
 # relabeled), and "prediction-disorder-th_50" is MobiDB's own recommended
 # consensus-of-predictors call, as disordered regions rather than a score.
 MOBIDB_DOWNLOAD_URL = "https://mobidb.org/api/download"
+# Human Protein Atlas - real tissue/subcellular expression data, keyed by
+# UniProt accession via a two-hop lookup (resolve to an Ensembl gene ID,
+# then fetch that gene's full record). Verified live: search_download.php
+# responds with Content-Type: application/gzip but NO Content-Encoding
+# header, so httpx does NOT auto-decompress it - the raw bytes must be
+# gzip.decompress()'d by hand before json.loads(), unlike every other
+# fetch in this module. The per-gene record endpoint below is plain JSON.
+PROTEIN_ATLAS_SEARCH_URL = "https://www.proteinatlas.org/api/search_download.php"
+PROTEIN_ATLAS_GENE_URL = "https://www.proteinatlas.org"
+# KEGG's REST API (rest.kegg.jp) - a second, independently-curated pathway
+# database alongside Reactome (fetch_reactome_pathways above), which can
+# legitimately disagree on scope/naming. Verified live: both endpoints
+# below return flat plain text (Content-Type: text/plain), not JSON - the
+# only non-JSON external response this module parses.
+KEGG_CONV_URL = "https://rest.kegg.jp/conv/genes/uniprot"
+KEGG_GET_URL = "https://rest.kegg.jp/get"
+# OrthoDB - real cross-species ortholog mapping, genuinely different from
+# BLAST conservation's unstructured homolog search (whatever sequences
+# BLAST returns, not a defined per-species ortholog group). Verified live
+# gotcha: an invalid/malformed group id does NOT 404 - it returns HTTP
+# 200 with a generic usage-help body ({"message": "id - is an ODB
+# orthologous group or gene id..."}, no "status"/"data" keys). A real
+# result always has "status": "ok" plus a populated "data" key - every
+# response must be checked for that shape, not just the HTTP status code.
+ORTHODB_BASE_URL = "https://data.orthodb.org/current"
+# A small fixed set of common model organisms (NCBI taxon ids) rather than
+# a user-configurable species picker - a deliberate first-version scope
+# decision, documented rather than silent.
+ORTHODB_MODEL_ORGANISMS = {
+    "mouse": "10090",
+    "zebrafish": "7955",
+    "fly": "7227",
+    "yeast": "4932",
+}
 
 # UniProt's own /features list carries ~15 feature types per entry (Chain,
 # Domain, Helix, Beta strand, Turn, Glycosylation, ...); most duplicate a
@@ -560,6 +595,205 @@ class AnnotationAggregator:
         return await self._get_or_fetch(
             f"uniprot_function:{accession}", "uniprot_function", _fetch
         )
+
+    async def fetch_protein_atlas_expression(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> Optional[Dict[str, Any]]:
+        """Real tissue/subcellular expression data from the Human Protein
+        Atlas - genuinely different information from every other source
+        this class fetches, none of which answer "where in the body is
+        this actually expressed." Two hops: resolve the accession to an
+        Ensembl gene id (search_download.php, which needs a manual gzip
+        decompress - see PROTEIN_ATLAS_SEARCH_URL's comment), then fetch
+        that gene's full record (plain JSON) and pull out 3 human-readable
+        fields out of the dozens available. Returns None if the accession
+        doesn't resolve to a Human Protein Atlas gene (e.g. non-human
+        proteins, which HPA doesn't cover) or the request fails."""
+
+        async def _fetch() -> Optional[Dict[str, Any]]:
+            try:
+                search_response = await client.get(
+                    PROTEIN_ATLAS_SEARCH_URL,
+                    params={
+                        "search": accession,
+                        "format": "json",
+                        "columns": "g,eg,up",
+                    },
+                )
+                if search_response.status_code != 200:
+                    return None
+                search_hits = json.loads(gzip.decompress(search_response.content))
+                ensembl_id = None
+                for hit in search_hits:
+                    if accession in (hit.get("Uniprot") or []):
+                        ensembl_id = hit.get("Ensembl")
+                        break
+                if not ensembl_id:
+                    return None
+
+                gene_response = await client.get(
+                    f"{PROTEIN_ATLAS_GENE_URL}/{ensembl_id}.json"
+                )
+                if gene_response.status_code != 200:
+                    return None
+                gene_data = gene_response.json()
+                return {
+                    "tissue_specificity": gene_data.get("RNA tissue specificity"),
+                    "tissue_distribution": gene_data.get("RNA tissue distribution"),
+                    "subcellular_location": gene_data.get("Subcellular location") or [],
+                }
+            except (httpx.HTTPError, OSError, ValueError) as e:
+                logger.warning(
+                    f"Human Protein Atlas lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return None
+
+        return await self._get_or_fetch(
+            f"protein_atlas:{accession}", "protein_atlas", _fetch
+        )
+
+    async def fetch_kegg_pathways(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> List[Dict[str, str]]:
+        """Real KEGG pathway membership - a second, independently-curated
+        pathway database alongside Reactome (fetch_reactome_pathways
+        above), which can legitimately disagree on scope/naming. Two
+        hops, both plain text (not JSON, see KEGG_CONV_URL's comment):
+        conv (UniProt accession -> KEGG gene id) then get (gene id -> its
+        full flat record, from which the PATHWAY section is parsed).
+        A UniProt accession can map to more than one KEGG gene id (real
+        paralogs sharing an identical protein sequence, e.g. HBA1/HBA2) -
+        only the first mapped gene id is used, a deliberate scope
+        decision. Returns [] if nothing maps or on any request failure."""
+
+        async def _fetch() -> List[Dict[str, str]]:
+            try:
+                conv_response = await client.get(f"{KEGG_CONV_URL}:{accession}")
+                if conv_response.status_code != 200 or not conv_response.text.strip():
+                    return []
+                gene_id = conv_response.text.strip().splitlines()[0].split("\t")[1]
+
+                get_response = await client.get(f"{KEGG_GET_URL}/{gene_id}")
+                if get_response.status_code != 200:
+                    return []
+                return self._parse_kegg_pathways(get_response.text)
+            except (httpx.HTTPError, IndexError) as e:
+                logger.warning(
+                    f"KEGG pathway lookup failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return []
+
+        return await self._get_or_fetch(
+            f"kegg_pathways:{accession}", "kegg_pathways", _fetch
+        )
+
+    @staticmethod
+    def _parse_kegg_pathways(flat_record: str) -> List[Dict[str, str]]:
+        """KEGG's flat-record format has no delimiters a JSON parser could
+        use - a field starts at a fixed-width, all-caps header at the
+        start of a line, and continues on every following line that
+        starts with whitespace instead of a new header. Extracts just the
+        PATHWAY field's entries (each "hsa#####  Description" pair)."""
+        pathways = []
+        in_pathway_section = False
+        for line in flat_record.splitlines():
+            if line.startswith("PATHWAY"):
+                in_pathway_section = True
+                entry = line[len("PATHWAY") :].strip()
+            elif in_pathway_section and line.startswith(" "):
+                entry = line.strip()
+            else:
+                in_pathway_section = False
+                continue
+            parts = entry.split(None, 1)
+            if len(parts) == 2:
+                pathways.append({"id": parts[0], "name": parts[1]})
+        return pathways
+
+    async def fetch_orthodb_orthologs(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> Optional[Dict[str, List[str]]]:
+        """Real cross-species ortholog gene symbols from OrthoDB - "what's
+        the equivalent gene in mouse/zebrafish/fly/yeast," genuinely
+        different from BLAST conservation's unstructured homolog search
+        (which finds whatever sequences BLAST returns, not a defined
+        per-species ortholog group). Two hops: search (accession -> an
+        OrthoDB ortholog-group id) then, for each of a small fixed set of
+        model organisms (ORTHODB_MODEL_ORGANISMS - a deliberate
+        first-version scope decision, not a user-configurable species
+        picker), orthologs (group id + species -> that species' real gene
+        symbols in the group). Every response is checked for the real
+        "status": "ok" + non-empty "data" shape before being trusted - see
+        ORTHODB_BASE_URL's comment for why (an invalid id returns HTTP 200
+        with a fake-looking success body). Returns None if the accession
+        has no OrthoDB group at all, or a dict of species -> gene symbols
+        (a species with no ortholog found in the group is simply omitted,
+        not an error)."""
+
+        async def _orthologs_for(group_id, species_name, taxon_id):
+            try:
+                response = await client.get(
+                    f"{ORTHODB_BASE_URL}/orthologs",
+                    params={"id": group_id, "species": taxon_id},
+                )
+                if response.status_code != 200:
+                    return species_name, []
+                data = response.json()
+                if data.get("status") != "ok" or not data.get("data"):
+                    return species_name, []
+                # Live-verified real-data gotcha: OrthoDB's gene_id.id is
+                # NOT reliably a gene symbol - for some entries it's a
+                # real symbol ("HBA", "Hba-x"), for others (even within
+                # the same species' result) it's an internal numeric gene
+                # id with no symbol at all. Numeric-only ids are far less
+                # useful to show as "the equivalent gene," so real symbols
+                # are preferred; numeric ids are only used as a fallback
+                # when a species has no symbol-form entry at all.
+                symbol_ids, numeric_ids = [], []
+                for entry in data["data"]:
+                    for gene in entry.get("genes", []):
+                        gene_id = (gene.get("gene_id") or {}).get("id")
+                        if not gene_id:
+                            continue
+                        bucket = numeric_ids if gene_id.isdigit() else symbol_ids
+                        if gene_id not in bucket:
+                            bucket.append(gene_id)
+                ids = symbol_ids or numeric_ids
+                return species_name, ids[:2]
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"OrthoDB ortholog lookup failed for {sanitize_for_log(accession)} ({species_name}): {e}"
+                )
+                return species_name, []
+
+        async def _fetch() -> Optional[Dict[str, List[str]]]:
+            try:
+                search_response = await client.get(
+                    f"{ORTHODB_BASE_URL}/search",
+                    params={"query": accession, "level": "2759"},
+                )
+                if search_response.status_code != 200:
+                    return None
+                search_data = search_response.json()
+                if search_data.get("status") != "ok" or not search_data.get("data"):
+                    return None
+                group_id = search_data["data"][0]
+
+                results = await asyncio.gather(
+                    *(
+                        _orthologs_for(group_id, name, taxon_id)
+                        for name, taxon_id in ORTHODB_MODEL_ORGANISMS.items()
+                    )
+                )
+                orthologs = {name: symbols for name, symbols in results if symbols}
+                return orthologs or None
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"OrthoDB search failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return None
+
+        return await self._get_or_fetch(f"orthodb:{accession}", "orthodb", _fetch)
 
     async def fetch_clinvar_significance(
         self, gene: str, variant_notation: str, client: httpx.AsyncClient
@@ -1551,6 +1785,9 @@ class AnnotationAggregator:
             "uniprot_features": [],
             "catalytic_sites": [],
             "function_summary": None,
+            "tissue_expression": None,
+            "kegg_pathways": [],
+            "orthologs": None,
         }
         if not accession:
             return result
@@ -1562,6 +1799,9 @@ class AnnotationAggregator:
             uniprot_features,
             catalytic_sites,
             function_summary,
+            tissue_expression,
+            kegg_pathways,
+            orthologs,
         ) = await asyncio.gather(
             self.fetch_interpro_entries(accession, client),
             self.fetch_quickgo_annotations(accession, client),
@@ -1569,9 +1809,15 @@ class AnnotationAggregator:
             self.fetch_uniprot_features(accession, client),
             self.fetch_catalytic_site_residues(accession, client),
             self.fetch_uniprot_function_summary(accession, client),
+            self.fetch_protein_atlas_expression(accession, client),
+            self.fetch_kegg_pathways(accession, client),
+            self.fetch_orthodb_orthologs(accession, client),
         )
         result["catalytic_sites"] = catalytic_sites
         result["function_summary"] = function_summary
+        result["tissue_expression"] = tissue_expression
+        result["kegg_pathways"] = kegg_pathways
+        result["orthologs"] = orthologs
 
         go_ids = [g["id"] for g in quickgo_terms if g.get("id")]
         names = await self.resolve_go_term_names(go_ids, client)

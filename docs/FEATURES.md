@@ -98,6 +98,10 @@ for how to actually use each one.
 | 65 | InterProScan5 sequence-only annotation (accession-free structures) | SPA | [§2.12](#212-functional-annotation) |
 | 66 | PAE-based automatic domain segmentation | SPA | [§2.16](#216-predicted-aligned-error-pae) |
 | 67 | Geometric all-atom steric-clash score | SPA | [§2.15](#215-bulk-qc-sweep) |
+| 68 | Human Protein Atlas tissue/subcellular expression | SPA | [§2.12](#212-functional-annotation) |
+| 69 | KEGG pathway membership (alongside Reactome) | SPA | [§2.12](#212-functional-annotation) |
+| 70 | ChEMBL bioactivity data for ligands | SPA | [§2.6](#26-ligand-hunter) |
+| 71 | OrthoDB cross-species ortholog mapping | SPA | [§2.12](#212-functional-annotation) |
 
 ---
 
@@ -268,6 +272,12 @@ related compounds (≥95% Tanimoto similarity), each a clickable link straight
 to its PubChem entry, useful for spotting related known ligands/drugs for a
 binding site you're investigating.
 
+A **"Known bioactivity"** list shows real ChEMBL potency data (IC50, Ki, Kd,
+or EC50, against a real target) for that same ligand — a fundamentally
+different signal from the PubChem list above, which only says "looks
+alike," not "how potent." Resolved from the ligand's own InChIKey, capped to
+the 10 most potent numeric records for a well-studied compound.
+
 **No bound ligand?** A heuristic **candidate binding-pocket finder** looks for
 surface-exposed residues that spatially cluster with residues from a distant
 part of the sequence (the standard signature of a fold packing together to
@@ -405,6 +415,22 @@ A **real UniProt free-text function summary** — the same plain-English
 structure's accession — appears at the top of the panel when available, ahead
 of the domain/GO-term lists, as an at-a-glance answer to "what does this
 protein do" before digging into the structured annotation below it.
+
+Alongside it, real **Human Protein Atlas tissue/subcellular expression**
+data — RNA tissue specificity/distribution and subcellular location —
+answers "where in the body is this actually expressed," a question none of
+the other sources on this page address.
+
+A second, independently-curated **KEGG pathway list** appears alongside the
+existing Reactome pathways — shown as its own labeled section rather than
+merged into Reactome's, since the two databases can legitimately disagree
+on scope or naming for the same protein.
+
+A real **OrthoDB cross-species ortholog** line lists the equivalent gene's
+symbol in a small fixed set of common model organisms (mouse, zebrafish,
+fly, yeast) — genuinely different from the BLAST-based true evolutionary
+conservation feature (§5.3), which finds whatever homologous sequences BLAST
+returns rather than a defined per-species ortholog group.
 
 For a structure with **no resolvable UniProt accession at all** — an ESM
 Atlas hit, an uploaded file, or a raw-sequence prediction (§1) — every

@@ -446,6 +446,13 @@ up to 10 structurally related compounds (≥95% Tanimoto similarity), each a
 clickable link straight to its real PubChem entry. Useful for spotting
 related known ligands or drugs for a binding site you're investigating.
 
+A **"Known bioactivity"** list shows real ChEMBL potency data (IC50, Ki, Kd,
+or EC50, against a real target) for that same ligand — a different question
+from the analog list above: not "what looks like this" but "how potent is
+this, against what." Resolved from the ligand's own InChIKey, capped to the
+10 most potent numeric records for a well-studied compound (a real drug can
+carry thousands).
+
 ### 6.4 No bound ligand? Candidate pocket finding
 
 A heuristic candidate binding-pocket finder looks for surface-exposed
@@ -485,6 +492,16 @@ free-text function summary** — the same plain-English "Function" paragraph
 UniProt's own entry page shows — surfaced at the top of the panel as an
 at-a-glance answer before you dig into the structured domain/GO-term lists
 below it.
+
+Alongside it: real **Human Protein Atlas tissue/subcellular expression**
+data (where in the body this is actually expressed — nothing else here
+answers that); a second, independently-curated **KEGG pathway list**
+alongside Reactome's (the two can legitimately disagree); and a real
+**OrthoDB cross-species ortholog** line naming the equivalent gene in a
+small fixed set of model organisms (mouse, zebrafish, fly, yeast) —
+distinct from the BLAST-based true evolutionary conservation feature
+(§5.3), which searches for homologs rather than a defined per-species
+ortholog group.
 
 ESM Atlas structures have no UniProt mapping at all (they're uncharacterized,
 metagenomic sequences), and an uploaded file or a raw-sequence prediction

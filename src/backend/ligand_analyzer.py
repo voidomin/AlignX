@@ -25,6 +25,21 @@ RCSB_CHEMCOMP_BASE_URL = "https://data.rcsb.org/rest/v1/core/chemcomp"
 PUBCHEM_SIMILARITY_BASE_URL = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/fastsimilarity_2d/smiles/cids/JSON"
 PUBCHEM_SIMILARITY_THRESHOLD = 95
 PUBCHEM_MAX_ANALOGS = 10
+# ChEMBL - real bioactivity/potency data for a ligand, a fundamentally
+# different signal from PubChem's structural-similarity search above
+# (that only says "looks alike," not "how potent"). Ligand-centric via
+# the ligand's own InChIKey (already resolved by fetch_ligand_chemistry,
+# no new RCSB call needed) rather than the protein target's UniProt
+# accession - confirmed live that the target-accession path has a broken
+# organism filter (a raw HTTP 500), while an exact InChIKey match is
+# reliable. Confirmed live for imatinib (KTUFNOKKBVMGRW-UHFFFAOYSA-N):
+# a well-studied drug can carry thousands of records (4878), so this is
+# capped to a small top-N by potency, restricted to numeric IC50/Ki/Kd/
+# EC50 values (skipping non-numeric "Unchecked"-style rows).
+CHEMBL_MOLECULE_URL = "https://www.ebi.ac.uk/chembl/api/data/molecule.json"
+CHEMBL_ACTIVITY_URL = "https://www.ebi.ac.uk/chembl/api/data/activity.json"
+CHEMBL_ACTIVITY_TYPES = {"IC50", "Ki", "Kd", "EC50"}
+CHEMBL_MAX_ACTIVITIES = 10
 
 # Ligand/HETATM codes are always alnum (occasionally with a trailing digit
 # for numbered variants) - this allowlist keeps the RCSB request path safe
@@ -697,4 +712,100 @@ class LigandAnalyzer:
             return []
         except Exception as e:
             logger.warning(f"Failed to parse PubChem analog response: {e}")
+            return []
+
+    async def fetch_chembl_bioactivity(
+        self, inchi_key: str, client: httpx.AsyncClient
+    ) -> List[Dict[str, Any]]:
+        """
+        Real bioactivity/potency data for a bound ligand, via ChEMBL -
+        resolves the ligand's own InChIKey to a ChEMBL molecule id, then
+        fetches that molecule's real assay results (target + potency),
+        capped to a small top-N by potency. Cached the same way ligand
+        chemistry/PubChem analogs already are.
+
+        Returns a list of {"target": ..., "type": "IC50"/"Ki"/"Kd"/"EC50",
+        "value": ..., "units": ...} dicts, sorted most-potent first, or []
+        on no match/any failure - never raises.
+        """
+        if not inchi_key:
+            return []
+
+        cache_key = f"chembl_bioactivity:{inchi_key}"
+        if self.cache_db:
+            try:
+                cached = self.cache_db.get_annotation_cache(
+                    cache_key, self.cache_ttl_days
+                )
+                if cached is not None:
+                    return json.loads(cached)
+            except Exception as e:
+                logger.warning(f"ChEMBL bioactivity cache read failed: {e}")
+
+        result = await self._fetch_chembl_bioactivity_live(inchi_key, client)
+
+        if self.cache_db:
+            try:
+                self.cache_db.set_annotation_cache(
+                    cache_key, "chembl_bioactivity", json.dumps(result)
+                )
+            except Exception as e:
+                logger.warning(f"ChEMBL bioactivity cache write failed: {e}")
+
+        return result
+
+    @staticmethod
+    async def _fetch_chembl_bioactivity_live(
+        inchi_key: str, client: httpx.AsyncClient
+    ) -> List[Dict[str, Any]]:
+        try:
+            molecule_response = await client.get(
+                CHEMBL_MOLECULE_URL,
+                params={"molecule_structures__standard_inchi_key": inchi_key},
+            )
+            if molecule_response.status_code != 200:
+                return []
+            molecules = molecule_response.json().get("molecules") or []
+            if not molecules:
+                return []
+            molecule_chembl_id = molecules[0].get("molecule_chembl_id")
+            if not molecule_chembl_id:
+                return []
+
+            activity_response = await client.get(
+                CHEMBL_ACTIVITY_URL,
+                params={
+                    "molecule_chembl_id": molecule_chembl_id,
+                    "limit": 200,
+                },
+            )
+            if activity_response.status_code != 200:
+                return []
+            activities = activity_response.json().get("activities") or []
+
+            records = []
+            for activity in activities:
+                activity_type = activity.get("standard_type")
+                if activity_type not in CHEMBL_ACTIVITY_TYPES:
+                    continue
+                try:
+                    value = float(activity.get("standard_value"))
+                except (TypeError, ValueError):
+                    continue
+                records.append(
+                    {
+                        "target": activity.get("target_pref_name"),
+                        "type": activity_type,
+                        "value": value,
+                        "units": activity.get("standard_units"),
+                    }
+                )
+
+            records.sort(key=lambda r: r["value"])
+            return records[:CHEMBL_MAX_ACTIVITIES]
+        except httpx.HTTPError as e:
+            logger.warning(f"ChEMBL bioactivity lookup failed: {e}")
+            return []
+        except Exception as e:
+            logger.warning(f"Failed to parse ChEMBL bioactivity response: {e}")
             return []

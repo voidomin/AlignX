@@ -1533,6 +1533,7 @@ def test_ligand_info_endpoint():
                 "name": "PROTOPORPHYRIN IX CONTAINING FE",
                 "formula": "C34 H32 Fe N4 O4",
                 "smiles": "CC1=C...",
+                "inchi_key": "KABFMIBPWCXCRK-UHFFFAOYSA-N",
             }
         ),
     ) as mock_fetch, patch(
@@ -1542,7 +1543,19 @@ def test_ligand_info_endpoint():
                 {"cid": 4973, "url": "https://pubchem.ncbi.nlm.nih.gov/compound/4973"}
             ]
         ),
-    ) as mock_analogs:
+    ) as mock_analogs, patch(
+        "src.backend.api.ligand_analyzer.fetch_chembl_bioactivity",
+        AsyncMock(
+            return_value=[
+                {
+                    "target": "Ferrochelatase",
+                    "type": "IC50",
+                    "value": 40.0,
+                    "units": "nM",
+                }
+            ]
+        ),
+    ) as mock_bioactivity:
         response = client.get("/api/ligand-info?ligand_code=HEM")
 
     assert response.status_code == 200
@@ -1552,10 +1565,15 @@ def test_ligand_info_endpoint():
     assert data["pubchem_analogs"] == [
         {"cid": 4973, "url": "https://pubchem.ncbi.nlm.nih.gov/compound/4973"}
     ]
+    assert data["chembl_bioactivity"] == [
+        {"target": "Ferrochelatase", "type": "IC50", "value": 40.0, "units": "nM"}
+    ]
     mock_fetch.assert_called_once()
     assert mock_fetch.call_args.args[0] == "HEM"
     mock_analogs.assert_called_once()
     assert mock_analogs.call_args.args[0] == "CC1=C..."
+    mock_bioactivity.assert_called_once()
+    assert mock_bioactivity.call_args.args[0] == "KABFMIBPWCXCRK-UHFFFAOYSA-N"
 
 
 def test_ligand_info_endpoint_returns_none_chemistry_gracefully():
@@ -1564,7 +1582,9 @@ def test_ligand_info_endpoint_returns_none_chemistry_gracefully():
         AsyncMock(return_value=None),
     ), patch(
         "src.backend.api.ligand_analyzer.fetch_pubchem_analogs", AsyncMock()
-    ) as mock_analogs:
+    ) as mock_analogs, patch(
+        "src.backend.api.ligand_analyzer.fetch_chembl_bioactivity", AsyncMock()
+    ) as mock_bioactivity:
         response = client.get("/api/ligand-info?ligand_code=ZZZ")
 
     assert response.status_code == 200
@@ -1572,22 +1592,59 @@ def test_ligand_info_endpoint_returns_none_chemistry_gracefully():
         "ligand_code": "ZZZ",
         "chemistry": None,
         "pubchem_analogs": [],
+        "chembl_bioactivity": [],
     }
     mock_analogs.assert_not_called()
+    mock_bioactivity.assert_not_called()
 
 
 def test_ligand_info_endpoint_skips_analog_lookup_when_no_smiles_resolves():
     with patch(
         "src.backend.api.ligand_analyzer.fetch_ligand_chemistry",
-        AsyncMock(return_value={"id": "XXX", "name": "Unknown", "smiles": None}),
+        AsyncMock(
+            return_value={
+                "id": "XXX",
+                "name": "Unknown",
+                "smiles": None,
+                "inchi_key": None,
+            }
+        ),
     ), patch(
         "src.backend.api.ligand_analyzer.fetch_pubchem_analogs", AsyncMock()
-    ) as mock_analogs:
+    ) as mock_analogs, patch(
+        "src.backend.api.ligand_analyzer.fetch_chembl_bioactivity", AsyncMock()
+    ) as mock_bioactivity:
         response = client.get("/api/ligand-info?ligand_code=XXX")
 
     assert response.status_code == 200
     assert response.json()["pubchem_analogs"] == []
+    assert response.json()["chembl_bioactivity"] == []
     mock_analogs.assert_not_called()
+    mock_bioactivity.assert_not_called()
+
+
+def test_ligand_info_endpoint_skips_bioactivity_lookup_when_no_inchi_key_resolves():
+    with patch(
+        "src.backend.api.ligand_analyzer.fetch_ligand_chemistry",
+        AsyncMock(
+            return_value={
+                "id": "XXX",
+                "name": "Unknown",
+                "smiles": "CCO",
+                "inchi_key": None,
+            }
+        ),
+    ), patch(
+        "src.backend.api.ligand_analyzer.fetch_pubchem_analogs",
+        AsyncMock(return_value=[]),
+    ), patch(
+        "src.backend.api.ligand_analyzer.fetch_chembl_bioactivity", AsyncMock()
+    ) as mock_bioactivity:
+        response = client.get("/api/ligand-info?ligand_code=XXX")
+
+    assert response.status_code == 200
+    assert response.json()["chembl_bioactivity"] == []
+    mock_bioactivity.assert_not_called()
 
 
 def test_ligand_info_endpoint_400s_on_invalid_ligand_code():

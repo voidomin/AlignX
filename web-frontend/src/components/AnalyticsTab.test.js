@@ -332,12 +332,121 @@ describe('AnalyticsTab', () => {
                 .toContain('Involved in oxygen transport from the lung');
         });
 
+        it('renders the real Human Protein Atlas tissue/subcellular expression when it resolves', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P69905',
+                    domains: [], go_terms: [], reactome_pathways: [],
+                    tissue_expression: {
+                        tissue_specificity: 'Tissue enhanced',
+                        tissue_distribution: 'Detected in some',
+                        subcellular_location: ['Cytosol', 'Nucleoplasm'],
+                    },
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            const content = tab.element.querySelector('#annotations-content');
+            expect(content.textContent).toContain('Tissue enhanced');
+            expect(content.textContent).toContain('Detected in some');
+            expect(content.textContent).toContain('Cytosol');
+            expect(content.textContent).toContain('Nucleoplasm');
+        });
+
+        it('renders real KEGG pathways in their own labeled list, alongside Reactome', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P69905',
+                    domains: [], go_terms: [],
+                    reactome_pathways: [{ id: 'R-HSA-1247673', name: 'Erythrocytes take up oxygen' }],
+                    kegg_pathways: [{ id: 'hsa05144', name: 'Malaria' }],
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            const content = tab.element.querySelector('#annotations-content');
+            expect(content.textContent).toContain('KEGG pathways');
+            expect(content.textContent).toContain('Malaria');
+            expect(content.textContent).toContain('Reactome pathways');
+            expect(content.textContent).toContain('Erythrocytes take up oxygen');
+        });
+
+        it('does not render a KEGG pathways section when none resolve', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P69905',
+                    domains: [{ name: 'Globin', type: 'domain' }],
+                    go_terms: [], reactome_pathways: [], kegg_pathways: [],
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            expect(tab.element.querySelector('#annotations-content').textContent)
+                .not.toContain('KEGG pathways');
+        });
+
+        it('renders real cross-species ortholog gene symbols (OrthoDB) when they resolve', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P69905',
+                    domains: [], go_terms: [], reactome_pathways: [],
+                    orthologs: { mouse: ['HBA', 'Hba-x'], zebrafish: ['hbae1'] },
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            const content = tab.element.querySelector('#annotations-content');
+            expect(content.textContent).toContain('Orthologs (OrthoDB)');
+            expect(content.textContent).toContain('Mouse: HBA, Hba-x');
+            expect(content.textContent).toContain('Zebrafish: hbae1');
+        });
+
+        it('does not render an orthologs section when none resolve', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P69905',
+                    domains: [{ name: 'Globin', type: 'domain' }],
+                    go_terms: [], reactome_pathways: [], orthologs: null,
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            expect(tab.element.querySelector('#annotations-content').textContent)
+                .not.toContain('Orthologs (OrthoDB)');
+        });
+
         it('shows the "no curated annotation" message rather than the function summary line when neither is present', async () => {
             fetchAnnotations.mockResolvedValue({
                 annotation: {
                     pdb_id: '4HHB', chain: 'A', accession: 'P69905',
                     domains: [], go_terms: [], reactome_pathways: [],
                     uniprot_features: [], catalytic_sites: [], function_summary: null,
+                    tissue_expression: null, orthologs: null,
                 },
             });
 

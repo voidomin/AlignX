@@ -245,6 +245,55 @@ describe('LigandTab', () => {
 
             expect(tab.element.querySelector('#ligand-analogs-info').classList.contains('hidden')).toBe(true);
         });
+
+        it('renders real ChEMBL bioactivity records when they resolve', async () => {
+            fetchInteractions.mockResolvedValue({
+                interactions: { ligand: 'HEM_A_1', interactions: [] },
+            });
+            fetchLigandInfo.mockResolvedValue({
+                ligand_code: 'HEM',
+                chemistry: { name: 'HEME', formula: 'C34 H32 Fe N4 O4', smiles: 'CC1=C...', inchi_key: 'KABFMIBPWCXCRK-UHFFFAOYSA-N' },
+                pubchem_analogs: [],
+                chembl_bioactivity: [
+                    { target: 'Ferrochelatase', type: 'IC50', value: 40.0, units: 'nM' },
+                ],
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([{ id: 'HEM_A_1', name: 'HEM', chain: 'A', resi: 1 }], 'run_1');
+
+            await tab.loadInteractions('HEM_A_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const bioactivityInfo = tab.element.querySelector('#ligand-bioactivity-info');
+            expect(bioactivityInfo.classList.contains('hidden')).toBe(false);
+            expect(bioactivityInfo.textContent).toContain('Ferrochelatase');
+            expect(bioactivityInfo.textContent).toContain('IC50 40 nM');
+        });
+
+        it('keeps the bioactivity section hidden when none resolve', async () => {
+            fetchInteractions.mockResolvedValue({
+                interactions: { ligand: 'HEM_A_1', interactions: [] },
+            });
+            fetchLigandInfo.mockResolvedValue({
+                ligand_code: 'HEM',
+                chemistry: { name: 'HEME' },
+                pubchem_analogs: [],
+                chembl_bioactivity: [],
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateLigands([{ id: 'HEM_A_1', name: 'HEM', chain: 'A', resi: 1 }], 'run_1');
+
+            await tab.loadInteractions('HEM_A_1');
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(tab.element.querySelector('#ligand-bioactivity-info').classList.contains('hidden')).toBe(true);
+        });
     });
 
     it('resets to the empty state and notifies the parent when ligand is deselected', async () => {

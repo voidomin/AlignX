@@ -2204,21 +2204,30 @@ async def get_ligand_info(ligand_code: Annotated[str, Query(...)]):
     it works for any ligand a structure's /api/ligands call surfaced. Once
     a SMILES resolves, also fetches real structurally-similar known
     compounds via PubChem (see fetch_pubchem_analogs) - useful for drug-
-    repurposing/analog scouting off a co-crystallized ligand.
+    repurposing/analog scouting off a co-crystallized ligand. Once an
+    InChIKey resolves, also fetches real bioactivity/potency data via
+    ChEMBL (see fetch_chembl_bioactivity) - a fundamentally different
+    signal from PubChem's structural similarity (potency, not lookalikes).
     """
     _safe_segment(ligand_code, "ligand_code")
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         chemistry = await ligand_analyzer.fetch_ligand_chemistry(ligand_code, client)
         analogs = []
+        bioactivity = []
         if chemistry and chemistry.get("smiles"):
             analogs = await ligand_analyzer.fetch_pubchem_analogs(
                 chemistry["smiles"], client
+            )
+        if chemistry and chemistry.get("inchi_key"):
+            bioactivity = await ligand_analyzer.fetch_chembl_bioactivity(
+                chemistry["inchi_key"], client
             )
     return {
         "ligand_code": ligand_code.upper(),
         "chemistry": chemistry,
         "pubchem_analogs": analogs,
+        "chembl_bioactivity": bioactivity,
     }
 
 

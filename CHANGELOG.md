@@ -2,6 +2,54 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.97.0]
+
+Phase 7: a 4-stage feature batch, smallest/most-contained first, all on one
+branch. A live-verification research pass checked 5 candidate ideas against
+real external APIs; 4 came back genuinely feasible. Ruled out this round:
+BioGRID (genetic/physical interactions) - verified live, requires a
+mandatory registered API key, breaking this app's established zero-auth
+pattern (every one of the ~15 external sources shipped so far works
+keyless). As with every prior phase, external contracts were verified live
+rather than assumed - and this phase's discipline caught two real gotchas:
+Human Protein Atlas's search endpoint responding with `Content-Type:
+application/gzip` but no `Content-Encoding` header (so httpx does not
+auto-decompress it), and a real, live-discovered bug in the new OrthoDB
+integration where its `gene_id.id` field is not reliably a gene symbol -
+some entries even within the same species' result carry an internal
+numeric gene id instead, caught only during end-to-end verification against
+a real accession, not the initial API research pass.
+
+### Added
+- **Human Protein Atlas tissue/subcellular expression**: real RNA tissue
+  specificity/distribution and subcellular location, surfaced at the top of
+  the Functional Annotation panel - nothing shipped previously answered
+  "where in the body is this protein actually expressed."
+- **KEGG pathway membership**: a second, independently-curated pathway
+  database alongside Reactome, shown as its own labeled list since the two
+  can legitimately disagree on scope/naming for the same protein.
+- **ChEMBL bioactivity data for ligands**: real IC50/Ki/Kd/EC50 potency
+  records for a bound ligand, via its own InChIKey - a fundamentally
+  different signal from PubChem's structural-similarity search (already
+  shipped), which only says "looks alike," not "how potent."
+- **OrthoDB cross-species ortholog mapping**: real gene symbols for the
+  equivalent gene in mouse/zebrafish/fly/yeast - genuinely different from
+  BLAST conservation's unstructured homolog search, which finds whatever
+  sequences BLAST returns rather than a defined per-species ortholog group.
+
+### Verified
+- Full backend suite: 1438 tests passing (up from 1408). `black`/`ruff` clean.
+- Frontend suite: 557 Vitest tests passing (up from 550). `npm run lint`
+  clean, `npm run build` succeeds.
+- Every external call verified live before implementation: a real HPA
+  tissue/subcellular result for ERBB2; a real KEGG pathway list for HBA1
+  matching its known disease associations (African trypanosomiasis,
+  Malaria); a real ChEMBL bioactivity list for imatinib matching its known
+  pharmacology (nanomolar Kd/Ki against Tyrosine-protein kinase ABL1/ABL2);
+  a real OrthoDB ortholog set for insulin (P01308) confirmed against known
+  biology (mouse Ins1/Ins2, fly dILP1/dILP2), only after fixing the
+  numeric-vs-symbol gene id bug above.
+
 ## [3.96.0]
 
 Phase 6: a 6-stage feature batch, smallest/most-contained first, all on one
