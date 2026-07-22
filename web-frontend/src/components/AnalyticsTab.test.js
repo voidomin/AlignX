@@ -400,13 +400,53 @@ describe('AnalyticsTab', () => {
                 .not.toContain('KEGG pathways');
         });
 
+        it('renders real cross-species ortholog gene symbols (OrthoDB) when they resolve', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P69905',
+                    domains: [], go_terms: [], reactome_pathways: [],
+                    orthologs: { mouse: ['HBA', 'Hba-x'], zebrafish: ['hbae1'] },
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            const content = tab.element.querySelector('#annotations-content');
+            expect(content.textContent).toContain('Orthologs (OrthoDB)');
+            expect(content.textContent).toContain('Mouse: HBA, Hba-x');
+            expect(content.textContent).toContain('Zebrafish: hbae1');
+        });
+
+        it('does not render an orthologs section when none resolve', async () => {
+            fetchAnnotations.mockResolvedValue({
+                annotation: {
+                    pdb_id: '4HHB', chain: 'A', accession: 'P69905',
+                    domains: [{ name: 'Globin', type: 'domain' }],
+                    go_terms: [], reactome_pathways: [], orthologs: null,
+                },
+            });
+
+            const tab = makeTab();
+            tab.render();
+            tab.updateResults('run_1', null, null, [], [], null, structuresFor(['4HHB'], { '4HHB': 'A' }));
+
+            await tab.loadAllAnnotations();
+
+            expect(tab.element.querySelector('#annotations-content').textContent)
+                .not.toContain('Orthologs (OrthoDB)');
+        });
+
         it('shows the "no curated annotation" message rather than the function summary line when neither is present', async () => {
             fetchAnnotations.mockResolvedValue({
                 annotation: {
                     pdb_id: '4HHB', chain: 'A', accession: 'P69905',
                     domains: [], go_terms: [], reactome_pathways: [],
                     uniprot_features: [], catalytic_sites: [], function_summary: null,
-                    tissue_expression: null,
+                    tissue_expression: null, orthologs: null,
                 },
             });
 

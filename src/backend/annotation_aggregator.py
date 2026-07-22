@@ -90,6 +90,24 @@ PROTEIN_ATLAS_GENE_URL = "https://www.proteinatlas.org"
 # only non-JSON external response this module parses.
 KEGG_CONV_URL = "https://rest.kegg.jp/conv/genes/uniprot"
 KEGG_GET_URL = "https://rest.kegg.jp/get"
+# OrthoDB - real cross-species ortholog mapping, genuinely different from
+# BLAST conservation's unstructured homolog search (whatever sequences
+# BLAST returns, not a defined per-species ortholog group). Verified live
+# gotcha: an invalid/malformed group id does NOT 404 - it returns HTTP
+# 200 with a generic usage-help body ({"message": "id - is an ODB
+# orthologous group or gene id..."}, no "status"/"data" keys). A real
+# result always has "status": "ok" plus a populated "data" key - every
+# response must be checked for that shape, not just the HTTP status code.
+ORTHODB_BASE_URL = "https://data.orthodb.org/current"
+# A small fixed set of common model organisms (NCBI taxon ids) rather than
+# a user-configurable species picker - a deliberate first-version scope
+# decision, documented rather than silent.
+ORTHODB_MODEL_ORGANISMS = {
+    "mouse": "10090",
+    "zebrafish": "7955",
+    "fly": "7227",
+    "yeast": "4932",
+}
 
 # UniProt's own /features list carries ~15 feature types per entry (Chain,
 # Domain, Helix, Beta strand, Turn, Glycosylation, ...); most duplicate a
@@ -691,6 +709,91 @@ class AnnotationAggregator:
             if len(parts) == 2:
                 pathways.append({"id": parts[0], "name": parts[1]})
         return pathways
+
+    async def fetch_orthodb_orthologs(
+        self, accession: str, client: httpx.AsyncClient
+    ) -> Optional[Dict[str, List[str]]]:
+        """Real cross-species ortholog gene symbols from OrthoDB - "what's
+        the equivalent gene in mouse/zebrafish/fly/yeast," genuinely
+        different from BLAST conservation's unstructured homolog search
+        (which finds whatever sequences BLAST returns, not a defined
+        per-species ortholog group). Two hops: search (accession -> an
+        OrthoDB ortholog-group id) then, for each of a small fixed set of
+        model organisms (ORTHODB_MODEL_ORGANISMS - a deliberate
+        first-version scope decision, not a user-configurable species
+        picker), orthologs (group id + species -> that species' real gene
+        symbols in the group). Every response is checked for the real
+        "status": "ok" + non-empty "data" shape before being trusted - see
+        ORTHODB_BASE_URL's comment for why (an invalid id returns HTTP 200
+        with a fake-looking success body). Returns None if the accession
+        has no OrthoDB group at all, or a dict of species -> gene symbols
+        (a species with no ortholog found in the group is simply omitted,
+        not an error)."""
+
+        async def _orthologs_for(group_id, species_name, taxon_id):
+            try:
+                response = await client.get(
+                    f"{ORTHODB_BASE_URL}/orthologs",
+                    params={"id": group_id, "species": taxon_id},
+                )
+                if response.status_code != 200:
+                    return species_name, []
+                data = response.json()
+                if data.get("status") != "ok" or not data.get("data"):
+                    return species_name, []
+                # Live-verified real-data gotcha: OrthoDB's gene_id.id is
+                # NOT reliably a gene symbol - for some entries it's a
+                # real symbol ("HBA", "Hba-x"), for others (even within
+                # the same species' result) it's an internal numeric gene
+                # id with no symbol at all. Numeric-only ids are far less
+                # useful to show as "the equivalent gene," so real symbols
+                # are preferred; numeric ids are only used as a fallback
+                # when a species has no symbol-form entry at all.
+                symbol_ids, numeric_ids = [], []
+                for entry in data["data"]:
+                    for gene in entry.get("genes", []):
+                        gene_id = (gene.get("gene_id") or {}).get("id")
+                        if not gene_id:
+                            continue
+                        bucket = numeric_ids if gene_id.isdigit() else symbol_ids
+                        if gene_id not in bucket:
+                            bucket.append(gene_id)
+                ids = symbol_ids or numeric_ids
+                return species_name, ids[:2]
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"OrthoDB ortholog lookup failed for {sanitize_for_log(accession)} ({species_name}): {e}"
+                )
+                return species_name, []
+
+        async def _fetch() -> Optional[Dict[str, List[str]]]:
+            try:
+                search_response = await client.get(
+                    f"{ORTHODB_BASE_URL}/search",
+                    params={"query": accession, "level": "2759"},
+                )
+                if search_response.status_code != 200:
+                    return None
+                search_data = search_response.json()
+                if search_data.get("status") != "ok" or not search_data.get("data"):
+                    return None
+                group_id = search_data["data"][0]
+
+                results = await asyncio.gather(
+                    *(
+                        _orthologs_for(group_id, name, taxon_id)
+                        for name, taxon_id in ORTHODB_MODEL_ORGANISMS.items()
+                    )
+                )
+                orthologs = {name: symbols for name, symbols in results if symbols}
+                return orthologs or None
+            except httpx.HTTPError as e:
+                logger.warning(
+                    f"OrthoDB search failed for {sanitize_for_log(accession)}: {e}"
+                )
+                return None
+
+        return await self._get_or_fetch(f"orthodb:{accession}", "orthodb", _fetch)
 
     async def fetch_clinvar_significance(
         self, gene: str, variant_notation: str, client: httpx.AsyncClient
@@ -1684,6 +1787,7 @@ class AnnotationAggregator:
             "function_summary": None,
             "tissue_expression": None,
             "kegg_pathways": [],
+            "orthologs": None,
         }
         if not accession:
             return result
@@ -1697,6 +1801,7 @@ class AnnotationAggregator:
             function_summary,
             tissue_expression,
             kegg_pathways,
+            orthologs,
         ) = await asyncio.gather(
             self.fetch_interpro_entries(accession, client),
             self.fetch_quickgo_annotations(accession, client),
@@ -1706,11 +1811,13 @@ class AnnotationAggregator:
             self.fetch_uniprot_function_summary(accession, client),
             self.fetch_protein_atlas_expression(accession, client),
             self.fetch_kegg_pathways(accession, client),
+            self.fetch_orthodb_orthologs(accession, client),
         )
         result["catalytic_sites"] = catalytic_sites
         result["function_summary"] = function_summary
         result["tissue_expression"] = tissue_expression
         result["kegg_pathways"] = kegg_pathways
+        result["orthologs"] = orthologs
 
         go_ids = [g["id"] for g in quickgo_terms if g.get("id")]
         names = await self.resolve_go_term_names(go_ids, client)

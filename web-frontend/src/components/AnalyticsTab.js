@@ -554,7 +554,7 @@ export class AnalyticsTab {
             if (annotateBtn) {
                 annotateBtn.addEventListener('click', () => this.loadInterproscanAnnotation(selectedPdbId));
             }
-        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.kegg_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length && !annotation.function_summary && !annotation.tissue_expression) {
+        } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.kegg_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length && !annotation.function_summary && !annotation.tissue_expression && !annotation.orthologs) {
             content.innerHTML = `<div class="font-body-sm text-secondary py-4">Resolved to UniProt ${annotation.accession}, but no curated domains, GO terms, pathways, or sequence features were found.</div>`;
         } else {
             // Split the single fetch_uniprot_features() result into a
@@ -573,11 +573,13 @@ export class AnalyticsTab {
                 : '';
 
             const tissueExpressionHtml = this.renderTissueExpression(annotation.tissue_expression);
+            const orthologsHtml = this.renderOrthologs(annotation.orthologs);
 
             content.innerHTML = `
                 <div class="font-body-sm text-secondary">Resolved to UniProt <span class="font-mono text-primary">${annotation.accession}</span></div>
                 ${functionSummaryHtml}
                 ${tissueExpressionHtml}
+                ${orthologsHtml}
                 ${renderDomainList(annotation.domains)}
                 ${renderGoTermList(annotation.go_terms)}
                 ${renderFeatureList(ptmFeatures, 'PTM sites', 'ptm-highlight-btn')}
@@ -832,6 +834,23 @@ export class AnalyticsTab {
                 <span class="font-label-sm text-label-sm text-secondary uppercase tracking-wider">Tissue expression (Human Protein Atlas)</span>
                 ${parts.length ? `<div class="font-body-sm text-primary">${parts.join(' · ')}</div>` : ''}
                 ${locationLine}
+            </div>
+        `;
+    }
+
+    // Real cross-species ortholog gene symbols (OrthoDB) - "what's the
+    // equivalent gene in mouse/zebrafish/fly/yeast," genuinely different
+    // from BLAST conservation's unstructured homolog search (§5.3).
+    renderOrthologs(orthologs) {
+        if (!orthologs || Object.keys(orthologs).length === 0) return '';
+        const speciesLabels = { mouse: 'Mouse', zebrafish: 'Zebrafish', fly: 'Fly', yeast: 'Yeast' };
+        const parts = Object.entries(orthologs).map(
+            ([species, symbols]) => `${speciesLabels[species] || species}: ${symbols.map(escapeHtml).join(', ')}`
+        );
+        return `
+            <div class="flex flex-col gap-1 py-2 border-b border-border-subtle">
+                <span class="font-label-sm text-label-sm text-secondary uppercase tracking-wider">Orthologs (OrthoDB)</span>
+                <div class="font-body-sm text-primary">${parts.join(' · ')}</div>
             </div>
         `;
     }

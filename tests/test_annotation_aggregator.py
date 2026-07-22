@@ -1834,6 +1834,139 @@ class TestParseKeggPathways:
         ]
 
 
+class TestFetchOrthodbOrthologs:
+    @staticmethod
+    def _search_response(group_ids):
+        return _mock_response(json_data={"status": "ok", "data": group_ids})
+
+    @staticmethod
+    def _orthologs_response(gene_symbols):
+        return _mock_response(
+            json_data={
+                "status": "ok",
+                "data": [
+                    {"genes": [{"gene_id": {"id": symbol}} for symbol in gene_symbols]}
+                ],
+            }
+        )
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_real_looking_orthologs_per_species(self, mock_get):
+        def _get_side_effect(url, **kwargs):
+            if "search" in url:
+                return self._search_response(["4325642at2759"])
+            species = kwargs["params"]["species"]
+            if species == "10090":
+                return self._orthologs_response(["HBA", "Hba-x"])
+            return self._orthologs_response([])
+
+        mock_get.side_effect = _get_side_effect
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_orthodb_orthologs("P69905", client)
+
+        assert result == {"mouse": ["HBA", "Hba-x"]}
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_prefers_real_gene_symbols_over_internal_numeric_ids(self, mock_get):
+        # Real-data gotcha (confirmed live): OrthoDB's gene_id.id is not
+        # reliably a gene symbol - some entries in the very same species'
+        # result carry an internal numeric id instead ("110257") with no
+        # symbol at all. A numeric id is far less useful as "the
+        # equivalent gene," so real symbols must be preferred whenever
+        # both appear for the same species.
+        def _get_side_effect(url, **kwargs):
+            if "search" in url:
+                return self._search_response(["4325642at2759"])
+            return self._orthologs_response(["110257", "15122", "HBA", "Hba-x"])
+
+        mock_get.side_effect = _get_side_effect
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_orthodb_orthologs("P69905", client)
+
+        assert result["mouse"] == ["HBA", "Hba-x"]
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_falls_back_to_numeric_ids_when_no_symbol_exists(self, mock_get):
+        def _get_side_effect(url, **kwargs):
+            if "search" in url:
+                return self._search_response(["4325642at2759"])
+            return self._orthologs_response(["110257", "15122"])
+
+        mock_get.side_effect = _get_side_effect
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_orthodb_orthologs("P69905", client)
+
+        assert result["mouse"] == ["110257", "15122"]
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_omits_a_species_with_no_ortholog_found(self, mock_get):
+        def _get_side_effect(url, **kwargs):
+            if "search" in url:
+                return self._search_response(["4325642at2759"])
+            return self._orthologs_response([])
+
+        mock_get.side_effect = _get_side_effect
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_orthodb_orthologs("P69905", client)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_treats_an_invalid_id_fake_success_body_as_not_found(self, mock_get):
+        # Real, confirmed gotcha: an invalid OrthoDB id returns HTTP 200
+        # with a generic usage-help body (no "status"/"data" keys), not a
+        # 404 - must be checked for explicitly, not just the status code.
+        def _get_side_effect(url, **kwargs):
+            if "search" in url:
+                return self._search_response(["4325642at2759"])
+            return _mock_response(
+                json_data={"message": "id - is an ODB orthologous group or gene id..."}
+            )
+
+        mock_get.side_effect = _get_side_effect
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_orthodb_orthologs("P69905", client)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_when_search_has_no_group(self, mock_get):
+        mock_get.return_value = self._search_response([])
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_orthodb_orthologs("P00000", client)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_search_non_200(self, mock_get):
+        mock_get.return_value = _mock_response(status_code=404)
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_orthodb_orthologs("P00000", client)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
+    async def test_returns_none_on_http_error(self, mock_get):
+        mock_get.side_effect = httpx.ConnectError("no route")
+        aggregator = AnnotationAggregator()
+        async with httpx.AsyncClient() as client:
+            result = await aggregator.fetch_orthodb_orthologs("P69905", client)
+        assert result is None
+
+
 class TestFetchClinvarSignificance:
     @pytest.mark.asyncio
     @patch("src.backend.annotation_aggregator.httpx.AsyncClient.get")
@@ -2219,6 +2352,7 @@ class TestAggregateForStructure:
             "function_summary": None,
             "tissue_expression": None,
             "kegg_pathways": [],
+            "orthologs": None,
         }
 
     @pytest.mark.asyncio
@@ -2308,6 +2442,10 @@ class TestAggregateForStructure:
             aggregator,
             "fetch_kegg_pathways",
             AsyncMock(return_value=[{"id": "hsa05144", "name": "Malaria"}]),
+        ), patch.object(
+            aggregator,
+            "fetch_orthodb_orthologs",
+            AsyncMock(return_value={"mouse": ["Hba-x"]}),
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
@@ -2319,6 +2457,7 @@ class TestAggregateForStructure:
         assert result["go_terms"][0]["name"] == "oxygen carrier activity"
         assert result["reactome_pathways"][0]["name"] == "Erythrocytes take up oxygen"
         assert result["kegg_pathways"][0]["name"] == "Malaria"
+        assert result["orthologs"] == {"mouse": ["Hba-x"]}
         assert result["uniprot_features"][0]["type"] == "Binding site"
         assert result["catalytic_sites"][0]["enzyme_name"] == "test enzyme"
         assert result["function_summary"] == "Involved in oxygen transport"
@@ -2390,6 +2529,8 @@ class TestAggregateForStructure:
             aggregator, "fetch_protein_atlas_expression", AsyncMock(return_value=None)
         ), patch.object(
             aggregator, "fetch_kegg_pathways", AsyncMock(return_value=[])
+        ), patch.object(
+            aggregator, "fetch_orthodb_orthologs", AsyncMock(return_value=None)
         ):
             async with httpx.AsyncClient() as client:
                 result = await aggregator.aggregate_for_structure(
@@ -2461,6 +2602,8 @@ class TestAggregateForStructure:
             aggregator, "fetch_protein_atlas_expression", AsyncMock(return_value=None)
         ), patch.object(
             aggregator, "fetch_kegg_pathways", AsyncMock(return_value=[])
+        ), patch.object(
+            aggregator, "fetch_orthodb_orthologs", AsyncMock(return_value=None)
         ), patch.object(
             aggregator,
             "resolve_go_term_names",
