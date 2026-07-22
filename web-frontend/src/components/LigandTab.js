@@ -37,7 +37,7 @@ export class LigandTab {
 
             <div class="section-body flex flex-col gap-6">
                 <div id="ligand-pocket-desc" class="font-body-sm text-body-sm text-secondary leading-relaxed">
-                    Perform an alignment and select a ligand from the list to analyze atomic interactions in the binding pocket.
+                    Add a second structure and run alignment to analyze ligands here in Compare mode. For a single structure, use Discover mode's ligand inspector instead.
                 </div>
                 <div id="ligand-sasa-row" class="stat-row hidden max-w-[180px]">
                     <span class="stat-key">SASA</span>
@@ -573,7 +573,7 @@ export class LigandTab {
     clearTable() {
         if (!this.element) return;
         const desc = this.element.querySelector('#ligand-pocket-desc');
-        desc.innerText = "Perform an alignment and select a ligand from the list to analyze atomic interactions in the binding pocket.";
+        desc.innerText = "Add a second structure and run alignment to analyze ligands here in Compare mode. For a single structure, use Discover mode's ligand inspector instead.";
 
         this.element.querySelector('#ligand-sasa-row').classList.add('hidden');
         this.element.querySelector('#ligand-chemistry-info').classList.add('hidden');
