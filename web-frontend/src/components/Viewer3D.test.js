@@ -91,6 +91,42 @@ describe('Viewer3D', () => {
         });
     });
 
+    describe('3Dmol CDN failure fallback', () => {
+        it('does not throw and shows a clear inline message when $3Dmol is undefined (CDN unreachable)', () => {
+            const v = new Viewer3D();
+            v.render();
+            delete window.$3Dmol;
+
+            expect(() => v.init3Dmol()).not.toThrow();
+            expect(v.viewer).toBeNull();
+            expect(v.element.querySelector('#viewer-canvas-3dmol').textContent).toContain('3D viewer failed to load');
+        });
+
+        it('does not throw and shows the same fallback message when createViewer itself throws', () => {
+            window.$3Dmol.createViewer = vi.fn(() => { throw new Error('WebGL context creation failed'); });
+            const v = new Viewer3D();
+            v.render();
+
+            expect(() => v.init3Dmol()).not.toThrow();
+            expect(v.viewer).toBeNull();
+            expect(v.element.querySelector('#viewer-canvas-3dmol').textContent).toContain('3D viewer failed to load');
+        });
+
+        it('leaves every viewer control usable (no throw) after a failed init', () => {
+            delete window.$3Dmol;
+            const v = new Viewer3D();
+            v.render();
+            v.init3Dmol();
+
+            expect(() => v.setColorScheme('secondary')).not.toThrow();
+            expect(() => v.setStyleRepresentation('stick')).not.toThrow();
+            expect(() => v.toggleSpin()).not.toThrow();
+            expect(() => v.toggleMeasureMode()).not.toThrow();
+            expect(() => v.downloadScreenshot()).not.toThrow();
+            expect(() => v.stopMorph()).not.toThrow();
+        });
+    });
+
     it('init3Dmol passes preserveDrawingBuffer: true', () => {
         makeViewer();
         expect(window.$3Dmol.createViewer).toHaveBeenCalledWith(

@@ -213,20 +213,34 @@ export class Viewer3D {
         return div;
     }
 
+    // 3Dmol.js loads from a CDN script tag (index.html) with no bundled
+    // fallback - if that CDN is unreachable, $3Dmol is undefined here and
+    // createViewer() throws. Left uncaught, that exception used to
+    // propagate out of the app's synchronous startup render and blank the
+    // entire page, not just this viewer. Caught here so a CDN outage
+    // degrades to a clear inline message in the viewer pane instead -
+    // every other tab (Workspace, Sequence, Analytics, etc.) stays usable.
     init3Dmol() {
         const container = this.element.querySelector('#viewer-canvas-3dmol');
         if (!container) return;
 
         container.innerHTML = "";
-        this.viewer = $3Dmol.createViewer(container, {
-            defaultcolors: $3Dmol.rasmolElementColors,
-            // Needed for #btn-screenshot's pngURI() capture - without this,
-            // some browsers clear the WebGL drawing buffer between frames
-            // and a screenshot taken outside the render callback comes back
-            // blank.
-            preserveDrawingBuffer: true
-        });
-        this.viewer.setBackgroundColor("#050608");
+        try {
+            this.viewer = $3Dmol.createViewer(container, {
+                defaultcolors: $3Dmol.rasmolElementColors,
+                // Needed for #btn-screenshot's pngURI() capture - without this,
+                // some browsers clear the WebGL drawing buffer between frames
+                // and a screenshot taken outside the render callback comes back
+                // blank.
+                preserveDrawingBuffer: true
+            });
+            this.viewer.setBackgroundColor("#050608");
+        } catch (err) {
+            console.error("3D viewer failed to initialize (3Dmol.js may not have loaded):", err);
+            this.viewer = null;
+            container.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm text-center px-4">3D viewer failed to load — check your connection and reload the page.</div>`;
+            return;
+        }
 
         window.addEventListener('resize', () => {
             if (this.viewer) this.viewer.resize();
