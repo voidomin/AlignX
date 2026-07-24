@@ -162,6 +162,25 @@ describe('TopBar', () => {
         });
     });
 
+    describe('responsive layout', () => {
+        it('stacks the header vertically below the lg breakpoint instead of crushing the tab strip to zero width', () => {
+            const bar = makeBar();
+            bar.render();
+
+            const headerRow = bar.element.querySelector('.max-w-\\[1600px\\]');
+            expect(headerRow.className).toContain('flex-col');
+            expect(headerRow.className).toContain('lg:flex-row');
+
+            const tabsWrapper = bar.element.querySelector('#topbar-tabs-wrapper');
+            expect(tabsWrapper.className).toContain('w-full');
+            expect(tabsWrapper.className).toContain('lg:w-auto');
+
+            const actionsCluster = bar.element.querySelector('#topbar-free-ram-btn').closest('div');
+            expect(actionsCluster.className).toContain('flex-wrap');
+            expect(actionsCluster.className).toContain('lg:flex-nowrap');
+        });
+    });
+
     describe('tab strip keyboard navigation', () => {
         it('only the active tab is in the natural Tab order (roving tabindex)', () => {
             const bar = makeBar();

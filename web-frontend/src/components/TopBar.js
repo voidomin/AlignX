@@ -39,13 +39,13 @@ export class TopBar {
         const header = document.createElement('header');
         header.className = "sticky top-0 z-50 bg-surface border-b border-border shrink-0";
         header.innerHTML = `
-            <div class="max-w-[1600px] mx-auto px-6 py-3 flex items-center justify-between gap-6">
+            <div class="max-w-[1600px] mx-auto px-6 py-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 lg:gap-6">
                 <div class="flex items-center gap-3 shrink-0">
                     <span class="material-symbols-outlined text-[20px] text-accent">science</span>
                     <span class="font-headline-md text-headline-md font-bold text-primary">StructScope</span>
                 </div>
 
-                <div id="topbar-tabs-wrapper" class="flex items-center flex-1 min-w-0">
+                <div id="topbar-tabs-wrapper" class="flex items-center w-full lg:w-auto lg:flex-1 min-w-0">
                     <button id="topbar-scroll-left" class="hidden shrink-0 w-8 h-8 items-center justify-center rounded-md bg-surface border border-border-subtle text-secondary hover:text-primary transition-colors mr-1" title="Scroll tabs left" aria-label="Scroll tabs left">
                         <span class="material-symbols-outlined text-[16px]">chevron_left</span>
                     </button>
@@ -60,7 +60,7 @@ export class TopBar {
                     </button>
                 </div>
 
-                <div class="flex items-center gap-4 shrink-0 font-mono text-label-sm">
+                <div class="flex items-center flex-wrap lg:flex-nowrap gap-4 shrink-0 font-mono text-label-sm">
                     <button id="topbar-new-ws-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">New Workspace</button>
                     <button id="topbar-export-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Export</button>
                     <div class="h-5 w-px bg-border"></div>
