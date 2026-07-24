@@ -29,7 +29,7 @@ export class HistoryPanel {
                     <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">RMSD trend across runs</span>
                     <span class="font-body-sm text-body-sm text-secondary">Pick 2 or more past runs (Ctrl/Cmd-click for multiple) to see how their structural similarity has shifted over time.</span>
                     <div class="flex gap-2 items-center">
-                        <select id="trend-run-select" multiple size="4" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm"></select>
+                        <select id="trend-run-select" multiple size="4" aria-label="Past runs to compare RMSD trend across (select 2 or more)" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm"></select>
                         <button id="trend-load-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md self-start">Show trend</button>
                     </div>
                     <div id="trend-plotly" class="w-full h-[220px]">

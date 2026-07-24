@@ -442,6 +442,13 @@ describe('SequenceTab', () => {
             expect(options).toEqual(['4RLT', '3UG9']);
         });
 
+        it('gives the structure selector a real accessible name for screen readers', async () => {
+            const tab = new SequenceTab();
+            await setUpWithSequences(tab);
+
+            expect(tab.element.querySelector('#conservation-structure-select').getAttribute('aria-label')).toBeTruthy();
+        });
+
         it('strips gaps before submitting, then renders the real conservation profile', async () => {
             submitConservationJob.mockResolvedValue({ job_id: 'blast-1', status: 'queued' });
             pollJobUntilDone.mockResolvedValue({
