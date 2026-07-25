@@ -1586,4 +1586,38 @@ describe('AnalyticsTab', () => {
             tab.element.remove();
         });
     });
+
+    describe('sub-tab strip responsive wrapping', () => {
+        it('lets the sub-tab strip wrap onto a second row instead of squeezing labels at narrow widths', () => {
+            const tab = makeTab();
+            tab.render();
+
+            expect(tab.element.querySelector('#analytics-subtab-strip').className).toContain('flex-wrap');
+            const rmsdBtn = tab.element.querySelector('.analytics-subtab-btn[data-subtab="rmsd"]');
+            expect(rmsdBtn.className).toContain('min-w-[84px]');
+            expect(rmsdBtn.className).toContain('whitespace-nowrap');
+        });
+    });
+
+    describe('structure-selector accessible names', () => {
+        it('gives every plain structure-selector <select> a real aria-label, not just the annotations one', () => {
+            const tab = makeTab();
+            tab.render();
+
+            const idsAndExpectedSubstrings = [
+                ['#pae-pdb-select', 'PAE'],
+                ['#flexibility-pdb-select', 'flexibility'],
+                ['#contact-map-pdb-select', 'contact map'],
+                ['#diff-distance-pdb-a-select', 'First structure'],
+                ['#diff-distance-pdb-b-select', 'Second structure'],
+                ['#diff-narrative-pdb-a-select', 'First structure'],
+                ['#diff-narrative-pdb-b-select', 'Second structure'],
+            ];
+            idsAndExpectedSubstrings.forEach(([id, substring]) => {
+                const label = tab.element.querySelector(id).getAttribute('aria-label');
+                expect(label).toBeTruthy();
+                expect(label).toContain(substring);
+            });
+        });
+    });
 });

@@ -844,7 +844,10 @@ export class WorkspaceTab {
         });
 
         table.appendChild(tbody);
-        summary.appendChild(table);
+        const tableWrapper = document.createElement('div');
+        tableWrapper.className = "overflow-x-auto";
+        tableWrapper.appendChild(table);
+        summary.appendChild(tableWrapper);
     }
 
     getParameters() {

@@ -121,9 +121,9 @@ export class AnalyticsTab {
 
             <div class="section-body flex flex-col gap-6">
                 <!-- Sub-tab strip -->
-                <div id="analytics-subtab-strip" role="tablist" class="flex gap-1 border border-border rounded-md p-1 shrink-0">
+                <div id="analytics-subtab-strip" role="tablist" class="flex flex-wrap gap-1 border border-border rounded-md p-1 shrink-0">
                     ${SUB_TABS.map(t => `
-                        <button data-subtab="${t.key}" id="analytics-subtab-tab-${t.key}" role="tab" aria-controls="analytics-subtab-panel-${t.key}" class="analytics-subtab-btn flex-1 py-1.5 rounded-md font-label-md text-label-md transition-colors" aria-selected="${t.key === 'quality'}" tabindex="${t.key === 'quality' ? '0' : '-1'}">${t.label}</button>
+                        <button data-subtab="${t.key}" id="analytics-subtab-tab-${t.key}" role="tab" aria-controls="analytics-subtab-panel-${t.key}" class="analytics-subtab-btn flex-1 min-w-[84px] py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors" aria-selected="${t.key === 'quality'}" tabindex="${t.key === 'quality' ? '0' : '-1'}">${t.label}</button>
                     `).join('')}
                 </div>
 
@@ -181,7 +181,7 @@ export class AnalyticsTab {
                     <div class="flex flex-col gap-2 border-t border-border-subtle pt-4">
                         <span class="font-label-sm text-label-sm text-secondary uppercase">Predicted aligned error (AlphaFold structures only - AlphaFold's own confidence in each residue pair's relative position, lower is better)</span>
                         <div class="flex gap-2 items-center">
-                            <select id="pae-pdb-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
+                            <select id="pae-pdb-select" aria-label="Structure for PAE view" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
                                 <option value="">Select a structure</option>
                             </select>
                             <button id="pae-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
@@ -195,7 +195,7 @@ export class AnalyticsTab {
                     <div class="flex flex-col gap-2 border-t border-border-subtle pt-4">
                         <span class="font-label-sm text-label-sm text-secondary uppercase">Predicted flexibility (Gaussian Network Model - a computational prediction from geometry alone, not a measurement)</span>
                         <div class="flex gap-2 items-center">
-                            <select id="flexibility-pdb-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
+                            <select id="flexibility-pdb-select" aria-label="Structure for predicted flexibility view" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
                                 <option value="">Select a structure</option>
                             </select>
                             <button id="flexibility-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
@@ -228,7 +228,7 @@ export class AnalyticsTab {
                     <div class="flex flex-col gap-2 border-t border-border-subtle pt-4">
                         <span class="font-label-sm text-label-sm text-secondary uppercase">Contact map (CA-CA, 8&Aring; default)</span>
                         <div class="flex gap-2 items-center">
-                            <select id="contact-map-pdb-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
+                            <select id="contact-map-pdb-select" aria-label="Structure for contact map" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
                                 <option value="">Select a structure</option>
                             </select>
                             <button id="contact-map-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
@@ -243,10 +243,10 @@ export class AnalyticsTab {
                     <div class="flex flex-col gap-2 border-t border-border-subtle pt-4">
                         <span class="font-label-sm text-label-sm text-secondary uppercase">Difference-distance matrix</span>
                         <div class="flex gap-2 items-center">
-                            <select id="diff-distance-pdb-a-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
+                            <select id="diff-distance-pdb-a-select" aria-label="First structure to compare distances between" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
                                 <option value="">Select a structure</option>
                             </select>
-                            <select id="diff-distance-pdb-b-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
+                            <select id="diff-distance-pdb-b-select" aria-label="Second structure to compare distances between" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
                                 <option value="">Select a structure</option>
                             </select>
                             <button id="diff-distance-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
@@ -278,10 +278,10 @@ export class AnalyticsTab {
                     <div class="flex flex-col gap-2 border-t border-border-subtle pt-4">
                         <span class="font-label-sm text-label-sm text-secondary uppercase">Describe the difference between two structures</span>
                         <div class="flex gap-2 items-center">
-                            <select id="diff-narrative-pdb-a-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
+                            <select id="diff-narrative-pdb-a-select" aria-label="First structure for narrative diff" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
                                 <option value="">Select a structure</option>
                             </select>
-                            <select id="diff-narrative-pdb-b-select" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
+                            <select id="diff-narrative-pdb-b-select" aria-label="Second structure for narrative diff" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
                                 <option value="">Select a structure</option>
                             </select>
                             <button id="diff-narrative-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Describe</button>
@@ -430,7 +430,7 @@ export class AnalyticsTab {
     updateSubTabView() {
         this.element.querySelectorAll('.analytics-subtab-btn').forEach(btn => {
             const isActive = btn.dataset.subtab === this.activeSubTab;
-            btn.className = `analytics-subtab-btn flex-1 py-1.5 rounded-md font-label-md text-label-md transition-colors ${isActive ? 'bg-accent-muted text-accent' : 'text-secondary hover:text-primary'}`;
+            btn.className = `analytics-subtab-btn flex-1 min-w-[84px] py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors ${isActive ? 'bg-accent-muted text-accent' : 'text-secondary hover:text-primary'}`;
             btn.setAttribute('aria-selected', String(isActive));
             btn.tabIndex = isActive ? 0 : -1;
         });

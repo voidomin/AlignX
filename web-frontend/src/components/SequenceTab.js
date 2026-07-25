@@ -102,7 +102,7 @@ export class SequenceTab {
                     <div class="flex items-center justify-between">
                         <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Real evolutionary conservation (NCBI BLAST)</span>
                         <div class="flex items-center gap-2">
-                            <select id="conservation-structure-select" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[160px]"></select>
+                            <select id="conservation-structure-select" aria-label="Structure to show conservation mapping for" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[160px]"></select>
                             <button id="conservation-run-btn" class="btn-secondary py-1.5 px-3 rounded-md font-label-md text-label-md" disabled>Find real homologs</button>
                         </div>
                     </div>

@@ -372,6 +372,7 @@ describe('HistoryPanel', () => {
 
             const select = panel.element.querySelector('#trend-run-select');
             expect([...select.options].map(o => o.value)).toEqual(['run_1', 'run_2']);
+            expect(select.getAttribute('aria-label')).toBeTruthy();
         });
 
         it('shows a message instead of fetching when fewer than 2 runs are selected', async () => {

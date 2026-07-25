@@ -1100,6 +1100,27 @@ describe('WorkspaceTab', () => {
             expect(rows[0].textContent).toContain('3.4');
         });
 
+        it('wraps the summary table in a horizontally-scrollable container so narrow viewports can reach every column', async () => {
+            fetchQc.mockResolvedValue({
+                pdb_id: '4HHB',
+                ramachandran_stats: { favored_percent: 92.5, outlier_count: 2 },
+                secondary_structure_stats: { helix_percent: 80.3 },
+                validation: { clashscore: { value: 1.2 } },
+            });
+            fetchClashScore.mockResolvedValue({ clashes: { clashscore: 3.4, clash_count: 1, atom_count: 294, clashing_pairs: [] } });
+
+            const tab = makeTab({ selectedPDBs: ['4HHB'] });
+            tab.render();
+
+            tab.element.querySelector('#workspace-run-qc-btn').click();
+            await flushAsync();
+
+            const summary = tab.element.querySelector('#workspace-qc-summary');
+            const table = summary.querySelector('table');
+            expect(table.parentElement).not.toBe(summary);
+            expect(table.parentElement.className).toContain('overflow-x-auto');
+        });
+
         it('still renders the rest of the row when the self-computed clash score fails', async () => {
             fetchQc.mockResolvedValue({
                 pdb_id: 'AF-P69905-F1',
