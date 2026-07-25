@@ -280,6 +280,12 @@ class PDBManager:
         forced to .pdb) so mmCIF uploads still get parsed with MMCIFParser -
         see _get_structure(). download_pdb()'s cache-hit check knows to look
         for either extension for IDs it doesn't recognize a source for.
+
+        Registers the saved file with cache_manager, same as download_pdb()
+        does for fetched IDs - without this, an uploaded/predicted file was
+        invisible to the LRU size-cap entirely (never counted, never
+        evicted), so uploads would accumulate on disk unbounded regardless
+        of the configured cache.max_cache_size_mb.
         """
         size_mb = len(content) / (1024 * 1024)
         if size_mb > self.max_size_mb:
@@ -309,6 +315,9 @@ class PDBManager:
                 f"Couldn't parse '{original_filename}' as a structure: {e}",
                 None,
             )
+
+        if self.cache_manager:
+            self.cache_manager.register_item(structure_id, output_file)
 
         logger.info(f"Saved and validated uploaded structure: {output_file}")
         return True, "ok", output_file

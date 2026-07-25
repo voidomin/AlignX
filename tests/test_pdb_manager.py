@@ -617,6 +617,40 @@ class TestPDBManager:
         assert path == temp_workspace["raw"] / "upload-ciftest.cif"
         assert path.exists()
 
+    def test_save_uploaded_bytes_registers_with_cache_manager_on_success(
+        self, mock_config, temp_workspace, dummy_pdb_content
+    ):
+        """Without this, an uploaded/predicted file was invisible to the
+        LRU size-cap entirely (never counted, never evicted) - uploads
+        would accumulate on disk unbounded regardless of
+        cache.max_cache_size_mb, unlike every fetched ID via download_pdb()."""
+        cache_manager = MagicMock()
+        manager = PDBManager(mock_config, cache_manager=cache_manager)
+        manager.raw_dir = temp_workspace["raw"]
+
+        success, _, path = manager.save_uploaded_bytes(
+            "my_structure.pdb", dummy_pdb_content.encode(), "UPLOAD-ABCD1234"
+        )
+
+        assert success is True
+        cache_manager.register_item.assert_called_once_with("UPLOAD-ABCD1234", path)
+
+    def test_save_uploaded_bytes_does_not_register_on_validation_failure(
+        self, mock_config, temp_workspace
+    ):
+        cache_manager = MagicMock()
+        manager = PDBManager(mock_config, cache_manager=cache_manager)
+        manager.raw_dir = temp_workspace["raw"]
+
+        success, _, _ = manager.save_uploaded_bytes(
+            "not_a_structure.pdb",
+            b"this is just a text file, not a PDB",
+            "UPLOAD-BADCONTENT",
+        )
+
+        assert success is False
+        cache_manager.register_item.assert_not_called()
+
     def test_download_pdb_finds_an_uploaded_file_under_its_real_extension(
         self, mock_config, temp_workspace
     ):
