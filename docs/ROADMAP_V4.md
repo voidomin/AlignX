@@ -187,12 +187,23 @@ can hand back out, without touching the core Mustang/RMSD pipeline underneath. A
 
 ## 6. Open questions
 
-- Should uploaded structures be cached/deduplicated like fetched ones are
-  (`pdb_cache` table, `database.py:59`), or always treated as one-off/session-only since
-  there's no stable public ID to key a cache on? Still open - not needed for Phase 3
-  to work correctly, just a possible future efficiency win.
-
 **Resolved:**
+
+- ~~Should uploaded structures be cached/deduplicated like fetched ones are
+  (`pdb_cache` table, `database.py:59`), or always treated as one-off/session-only since
+  there's no stable public ID to key a cache on?~~ → Registered with the same
+  cache_manager every fetched ID already uses (`PDBManager.save_uploaded_bytes()`,
+  now calling `cache_manager.register_item()` on success, mirroring `download_pdb()`).
+  This was actually a real gap, not just a hypothetical efficiency question: uploaded/
+  ESMFold-predicted files were previously invisible to the LRU size-cap entirely
+  (never counted, never evicted), so they accumulated on disk unbounded regardless of
+  `cache.max_cache_size_mb` - unlike fetched structures, which were already correctly
+  capped. Content-hash deduplication (two byte-identical uploads sharing one file)
+  was considered and deliberately not built - it would need real content-addressing
+  infrastructure this cache manager doesn't have, for benefit that's speculative
+  without evidence users re-upload identical files often; the concrete, load-bearing
+  half of this question (uploads must participate in the size cap at all) is now
+  fixed on its own.
 
 - ~~**`/api/history`'s payload size** (found while building Phase 4, above).~~ →
   Fixed in v3.20.0: `GET /api/history` now strips each run's heavy
