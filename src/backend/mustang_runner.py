@@ -1,10 +1,10 @@
-import subprocess
-import shutil
-import sys
 import os
+import shutil
+import subprocess
+import sys
 import time
 from pathlib import Path
-from typing import List, Tuple, Optional, Dict, Any
+from typing import Any
 
 from src.utils.logger import get_logger
 
@@ -33,7 +33,7 @@ class MustangRunner:
     # can't change during the server's lifetime, so check once and reuse.
     _cached_installation = None
 
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """Initialize Mustang Runner."""
         self.config = config
         self.backend = config.get("mustang", {}).get("backend", "auto")
@@ -61,8 +61,9 @@ class MustangRunner:
         output is later executed as a subprocess, so a MITM'd download here
         is a real code-execution risk - always uses a fully verified TLS
         context (certificate + hostname), never a bypass."""
-        import urllib.request
         import ssl
+        import urllib.request
+
         import certifi
 
         try:
@@ -90,7 +91,7 @@ class MustangRunner:
 
     def _prepare_compilation_dir(
         self, build_dir: Path, bundled_tarball: Path
-    ) -> Optional[Path]:
+    ) -> Path | None:
         """Clear and prepare the build directory for compilation."""
         if build_dir.exists():
             try:
@@ -172,7 +173,7 @@ class MustangRunner:
             logger.exception("Compilation process error")
             return False
 
-    def _check_native_installation(self) -> Tuple[bool, str]:
+    def _check_native_installation(self) -> tuple[bool, str]:
         """Check if Mustang is available as a native binary."""
         path_check = (
             self.mustang_path
@@ -182,7 +183,10 @@ class MustangRunner:
         if path_check and path_check.exists():
             try:
                 subprocess.run(
-                    [str(path_check), "--help"], capture_output=True, timeout=2
+                    [str(path_check), "--help"],
+                    capture_output=True,
+                    timeout=2,
+                    check=False,
                 )
                 self.use_wsl = False
                 return True, f"Mustang binary found (Native {sys.platform})"
@@ -190,7 +194,7 @@ class MustangRunner:
                 logger.debug(f"Native check failed at {path_check}: {e}")
         return False, ""
 
-    def _check_wsl_system_installation(self) -> Tuple[bool, str]:
+    def _check_wsl_system_installation(self) -> tuple[bool, str]:
         """Check if Mustang is installed within the WSL environment."""
         if not self.is_windows:
             return False, ""
@@ -202,6 +206,7 @@ class MustangRunner:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                check=False,
             )
             if res.returncode == 0:
                 self.use_wsl = True
@@ -213,7 +218,7 @@ class MustangRunner:
             logger.debug(f"WSL check at {wsl_path} failed: {e}")
         return False, ""
 
-    def _check_compiled_binary(self) -> Tuple[bool, str]:
+    def _check_compiled_binary(self) -> tuple[bool, str]:
         """Search for a previously compiled binary in the build directory."""
         build_dir = self.base_dir / MUSTANG_BUILD_DIR
         if not build_dir.exists():
@@ -229,12 +234,15 @@ class MustangRunner:
 
         return self._verify_native_linux_binary(bin_path)
 
-    def _verify_wsl_binary(self, bin_path: Path) -> Tuple[bool, str]:
+    def _verify_wsl_binary(self, bin_path: Path) -> tuple[bool, str]:
         """Verify if a Linux binary can be run via WSL."""
         try:
             wsl_str = self._convert_to_wsl_path(bin_path)
             res = subprocess.run(
-                ["wsl", wsl_str, "--help"], capture_output=True, timeout=5
+                ["wsl", wsl_str, "--help"],
+                capture_output=True,
+                timeout=5,
+                check=False,
             )
             if res.returncode != 127:
                 self.use_wsl = True
@@ -249,13 +257,18 @@ class MustangRunner:
             logger.debug(f"WSL compiled binary check failed: {e}")
         return False, ""
 
-    def _verify_native_linux_binary(self, bin_path: Path) -> Tuple[bool, str]:
+    def _verify_native_linux_binary(self, bin_path: Path) -> tuple[bool, str]:
         """Verify if a binary can be run natively on Linux."""
         try:
             # rwx------: owner-only - same reasoning as
             # _locate_compiled_binary() above, no world/group access needed.
             os.chmod(bin_path, 0o700)
-            subprocess.run([str(bin_path), "--help"], capture_output=True, timeout=2)
+            subprocess.run(
+                [str(bin_path), "--help"],
+                capture_output=True,
+                timeout=2,
+                check=False,
+            )
             self.use_wsl = False
             self.mustang_path = bin_path
             self.executable = str(bin_path.absolute())
@@ -264,7 +277,7 @@ class MustangRunner:
             logger.debug(f"Native compiled binary check failed: {e}")
         return False, ""
 
-    def _check_mustang(self) -> Tuple[bool, str]:
+    def _check_mustang(self) -> tuple[bool, str]:
         """Aggregated check for Mustang availability."""
         success, msg = self._check_native_installation()
         if success:
@@ -280,7 +293,7 @@ class MustangRunner:
 
         return False, "Mustang binary not found"
 
-    def check_installation(self) -> Tuple[bool, str]:
+    def check_installation(self) -> tuple[bool, str]:
         """Check if Mustang is properly installed, cached after the first
         check in this process (see _cached_installation for why)."""
         if MustangRunner._cached_installation is not None:
@@ -304,7 +317,7 @@ class MustangRunner:
         )
         return success, msg
 
-    def _perform_installation_check(self) -> Tuple[bool, str]:
+    def _perform_installation_check(self) -> tuple[bool, str]:
         """Multi-platform Mustang installation check (PATH, WSL, local build,
         compile-from-source fallback). Expensive - see check_installation()."""
         # 1. PATH Check
@@ -338,12 +351,15 @@ class MustangRunner:
         logger.error("Mustang binary found neither in PATH nor in WSL")
         return False, "Mustang binary found neither in PATH nor in WSL"
 
-    def _deep_wsl_check(self) -> Tuple[bool, str]:
+    def _deep_wsl_check(self) -> tuple[bool, str]:
         """Perform a robust check for Mustang in WSL on Windows."""
         wsl_path = shutil.which("wsl") or WSL_EXE
         try:
             res = subprocess.run(
-                [wsl_path, "which", "mustang"], capture_output=True, timeout=30
+                [wsl_path, "which", "mustang"],
+                capture_output=True,
+                timeout=30,
+                check=False,
             )
             stdout_str = (
                 res.stdout.decode("utf-8", errors="ignore").replace("\x00", "").strip()
@@ -378,8 +394,8 @@ class MustangRunner:
         )
 
     def run_alignment(
-        self, pdb_files: List[Path], output_dir: Path
-    ) -> Tuple[bool, str, Optional[Path]]:
+        self, pdb_files: list[Path], output_dir: Path
+    ) -> tuple[bool, str, Path | None]:
         """Run Mustang alignment on multiple PDB files."""
         if len(pdb_files) < 2:
             return False, "Need at least 2 structures for alignment", None
@@ -395,8 +411,8 @@ class MustangRunner:
         return self._run_native_mustang(local_pdb_files, output_dir)
 
     def _construct_command(
-        self, pdb_files: List[Path], output_dir: Path
-    ) -> Tuple[List[str], Path]:
+        self, pdb_files: list[Path], output_dir: Path
+    ) -> tuple[list[str], Path]:
         """Construct the command line arguments for Mustang."""
         run_cwd = output_dir.absolute()
         input_filenames = [p.name for p in pdb_files]
@@ -428,8 +444,8 @@ class MustangRunner:
             self.executable = "mustang"
 
     def _run_native_mustang(
-        self, pdb_files: List[Path], output_dir: Path
-    ) -> Tuple[bool, str, Optional[Path]]:
+        self, pdb_files: list[Path], output_dir: Path
+    ) -> tuple[bool, str, Path | None]:
         """Run native Mustang binary with live telemetry."""
         try:
             cmd, run_cwd = self._construct_command(pdb_files, output_dir)
@@ -462,7 +478,7 @@ class MustangRunner:
             logger.exception("Mustang execution error")
             return False, f"Mustang error: {e}", None
 
-    def _stream_process_output(self, process, timeout) -> Tuple[str, str]:
+    def _stream_process_output(self, process, timeout) -> tuple[str, str]:
         """Stream output from the process and handle timeout."""
         stdout_lines, start_time = [], time.time()
 
@@ -482,7 +498,7 @@ class MustangRunner:
 
     def _finalize_alignment_output(
         self, output_dir: Path, return_code: int
-    ) -> Tuple[bool, str, Optional[Path]]:
+    ) -> tuple[bool, str, Path | None]:
         """Verify results and calculate RMSD matrix."""
         pdb_file = output_dir / ALIGN_PDB
         fasta_file = output_dir / ALIGN_FASTA

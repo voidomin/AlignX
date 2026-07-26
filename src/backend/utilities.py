@@ -3,7 +3,8 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any
+
 from src.utils.logger import get_logger
 
 logger = get_logger()
@@ -14,12 +15,12 @@ class SystemManager:
     Manages system-level tasks like diagnostics and housekeeping.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
         self.results_dir = Path("results")
         self.temp_dir = Path("temp")
 
-    def run_diagnostics(self, mustang_executable: str = "mustang") -> Dict[str, Any]:
+    def run_diagnostics(self, mustang_executable: str = "mustang") -> dict[str, Any]:
         """
         Check for required system dependencies.
 
@@ -41,7 +42,11 @@ class SystemManager:
             # Try to run mustang --version or just mustang
             # Mustang usually prints help to stderr if no args
             proc = subprocess.run(
-                [mustang_executable], capture_output=True, text=True, timeout=5
+                [mustang_executable],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
             )
             # Mustang doesn't have a --version flag but help text contains version
             if "MUSTANG" in proc.stderr or "MUSTANG" in proc.stdout:
@@ -57,7 +62,7 @@ class SystemManager:
 
         return results
 
-    def cleanup_old_runs(self, days: int = 7) -> List[str]:
+    def cleanup_old_runs(self, days: int = 7) -> list[str]:
         """
         Delete results directories older than specified days.
 
@@ -87,7 +92,7 @@ class SystemManager:
 
     def _cleanup_session_runs(
         self, session_dir: Path, now: float, threshold: float
-    ) -> List[str]:
+    ) -> list[str]:
         """Deletes every run directory under `session_dir` older than
         `threshold` seconds, returning the ones actually deleted."""
         deleted = []
@@ -111,9 +116,9 @@ class SystemManager:
         try:
             shutil.rmtree(session_dir)
         except Exception:
-            pass
+            logger.debug(f"Failed to remove empty session dir {session_dir}")
 
-    def get_aggregate_stats(self, db: Any) -> Dict[str, Any]:
+    def get_aggregate_stats(self, db: Any) -> dict[str, Any]:
         """
         Calculate aggregate statistics from the history database.
 

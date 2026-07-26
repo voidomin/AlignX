@@ -1,11 +1,12 @@
-import streamlit as st
+from typing import Any
+
 import pandas as pd
-from src.frontend.tabs.common import render_learning_card, render_help_expander
+import streamlit as st
 
-from typing import Dict, Any, Tuple
+from src.frontend.tabs.common import render_help_expander, render_learning_card
 
 
-def _render_tree_visualization(results: Dict[str, Any]) -> None:
+def _render_tree_visualization(results: dict[str, Any]) -> None:
     st.markdown("#### 1. Evolutionary Relationship (UPGMA)")
     if results.get("tree_fig"):
         st.plotly_chart(results["tree_fig"], use_container_width=True)
@@ -15,7 +16,7 @@ def _render_tree_visualization(results: Dict[str, Any]) -> None:
         st.warning("Phylogenetic tree not available")
 
 
-def _prepare_ramachandran_data(torsion_data: Dict[str, Any], pdb_ids: list) -> Any:
+def _prepare_ramachandran_data(torsion_data: dict[str, Any], pdb_ids: list) -> Any:
     """Combines every chain's torsion DataFrame into one, mapping Mustang's
     chain letters (A, B, C... assigned in input order) back to the
     protein's real ID/name."""
@@ -32,7 +33,7 @@ def _prepare_ramachandran_data(torsion_data: Dict[str, Any], pdb_ids: list) -> A
     return all_data
 
 
-def _render_ramachandran_controls(protein_names: list) -> Tuple[list, bool, bool]:
+def _render_ramachandran_controls(protein_names: list) -> tuple[list, bool, bool]:
     col_ctrl1, col_ctrl2, col_ctrl3 = st.columns([2, 1, 1])
     with col_ctrl1:
         selected_proteins = st.multiselect(
@@ -164,7 +165,7 @@ def _build_ramachandran_figure(all_data: Any, show_all: bool, show_regions: bool
     return fig
 
 
-def _render_ramachandran_plot(torsion_data: Dict[str, Any], pdb_ids: list) -> None:
+def _render_ramachandran_plot(torsion_data: dict[str, Any], pdb_ids: list) -> None:
     all_data = _prepare_ramachandran_data(torsion_data, pdb_ids)
     protein_names = sorted(all_data["protein_name"].unique())
 
@@ -178,7 +179,7 @@ def _render_ramachandran_plot(torsion_data: Dict[str, Any], pdb_ids: list) -> No
 
 
 def _render_ramachandran_summary_metrics(
-    results: Dict[str, Any], has_torsion_data: bool
+    results: dict[str, Any], has_torsion_data: bool
 ) -> None:
     if not results.get("ramachandran_stats"):
         if not has_torsion_data:
@@ -204,7 +205,7 @@ def _render_ramachandran_summary_metrics(
             st.write(", ".join(stats["outliers_list"]))
 
 
-def render_phylo_tree_tab(results: Dict[str, Any]) -> None:
+def render_phylo_tree_tab(results: dict[str, Any]) -> None:
     """
     Render the Phylogenetic Tree tab.
 

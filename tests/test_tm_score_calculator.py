@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 
 from src.backend.tm_score_calculator import (
-    calculate_tm_score_matrix,
     calculate_pairwise_tm_score,
+    calculate_tm_score_matrix,
 )
 
 

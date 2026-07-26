@@ -39,6 +39,7 @@ sys.exit(0)
         text=True,
         cwd=project_root,
         env=env,
+        check=False,
     )
     assert result.returncode == 0, (
         f"Lazy loading check failed: {result.stdout.strip()} | "
