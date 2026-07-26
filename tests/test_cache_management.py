@@ -24,8 +24,8 @@ def test_lru_logic():
     if os.path.exists(test_db_path):
         try:
             os.remove(test_db_path)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Failed to remove leftover {test_db_path}: {e}")
 
     test_raw_dir = os.path.abspath("test_raw_pdb")
     if os.path.exists(test_raw_dir):

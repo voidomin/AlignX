@@ -183,7 +183,10 @@ class MustangRunner:
         if path_check and path_check.exists():
             try:
                 subprocess.run(
-                    [str(path_check), "--help"], capture_output=True, timeout=2
+                    [str(path_check), "--help"],
+                    capture_output=True,
+                    timeout=2,
+                    check=False,
                 )
                 self.use_wsl = False
                 return True, f"Mustang binary found (Native {sys.platform})"
@@ -203,6 +206,7 @@ class MustangRunner:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                check=False,
             )
             if res.returncode == 0:
                 self.use_wsl = True
@@ -235,7 +239,10 @@ class MustangRunner:
         try:
             wsl_str = self._convert_to_wsl_path(bin_path)
             res = subprocess.run(
-                ["wsl", wsl_str, "--help"], capture_output=True, timeout=5
+                ["wsl", wsl_str, "--help"],
+                capture_output=True,
+                timeout=5,
+                check=False,
             )
             if res.returncode != 127:
                 self.use_wsl = True
@@ -256,7 +263,12 @@ class MustangRunner:
             # rwx------: owner-only - same reasoning as
             # _locate_compiled_binary() above, no world/group access needed.
             os.chmod(bin_path, 0o700)
-            subprocess.run([str(bin_path), "--help"], capture_output=True, timeout=2)
+            subprocess.run(
+                [str(bin_path), "--help"],
+                capture_output=True,
+                timeout=2,
+                check=False,
+            )
             self.use_wsl = False
             self.mustang_path = bin_path
             self.executable = str(bin_path.absolute())
@@ -344,7 +356,10 @@ class MustangRunner:
         wsl_path = shutil.which("wsl") or WSL_EXE
         try:
             res = subprocess.run(
-                [wsl_path, "which", "mustang"], capture_output=True, timeout=30
+                [wsl_path, "which", "mustang"],
+                capture_output=True,
+                timeout=30,
+                check=False,
             )
             stdout_str = (
                 res.stdout.decode("utf-8", errors="ignore").replace("\x00", "").strip()

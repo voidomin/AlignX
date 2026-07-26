@@ -12,6 +12,9 @@ from src.frontend.tabs import (
     sequence,
     structure,
 )
+from src.utils.logger import get_logger
+
+logger = get_logger()
 
 
 def display_results(results: dict[str, Any] | None = None) -> None:
@@ -211,7 +214,7 @@ def _render_results_banner(results: dict[str, Any]) -> None:
                 else:
                     homogeneity, homogeneity_color = "High Diversity", "#ff6060"
     except Exception:
-        pass
+        logger.debug("Failed to compute RMSD homogeneity summary", exc_info=True)
 
     rmsd_str = f"{avg_rmsd:.2f} Å" if avg_rmsd is not None else "—"
 

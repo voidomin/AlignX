@@ -4,6 +4,10 @@ from pathlib import Path
 
 import streamlit as st
 
+from src.utils.logger import get_logger
+
+logger = get_logger()
+
 # ---------------------------------------------------------------------------
 # Helper: reset session (#4)
 # ---------------------------------------------------------------------------
@@ -64,7 +68,7 @@ def _do_deep_clean():
     try:
         st.cache_resource.clear()
     except Exception:
-        pass
+        logger.debug("st.cache_resource.clear() failed", exc_info=True)
     _do_soft_reset()
     import gc
 
@@ -111,7 +115,7 @@ def _render_free_ram_button(initial_mem: float) -> None:
     try:
         st.cache_resource.clear()
     except Exception:
-        pass
+        logger.debug("st.cache_resource.clear() failed", exc_info=True)
     gc.collect()
     try:
         new_mem = psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024)

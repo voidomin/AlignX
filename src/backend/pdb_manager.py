@@ -1,6 +1,7 @@
 """PDB file management: download, validation, and preprocessing."""
 
 import asyncio
+import itertools
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -11,7 +12,6 @@ from tqdm import tqdm
 
 from src.utils.cache_manager import CacheManager
 from src.utils.logger import get_logger
-import itertools
 
 logger = get_logger()
 

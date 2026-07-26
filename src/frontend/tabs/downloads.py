@@ -4,6 +4,10 @@ from typing import Any
 
 import streamlit as st
 
+from src.utils.logger import get_logger
+
+logger = get_logger()
+
 
 @st.cache_data(max_entries=3, ttl=300, show_spinner=False)
 def generate_zip_package(results: dict[str, Any], run_id: str) -> bytes:
@@ -41,7 +45,10 @@ def generate_zip_package(results: dict[str, Any], run_id: str) -> bytes:
             if nb_path and nb_path.exists():
                 zip_file.write(nb_path, arcname=f"lab_notebook_{run_id}.html")
         except Exception:
-            pass
+            logger.debug(
+                f"Failed to include lab notebook in ZIP for run {run_id}",
+                exc_info=True,
+            )
     return zip_buffer.getvalue()
 
 

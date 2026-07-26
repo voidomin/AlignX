@@ -105,6 +105,7 @@ class FoldseekRunner:
                     capture_output=True,
                     timeout=10,
                     text=True,
+                    check=False,
                 )
                 if res.returncode == 0 and res.stdout.strip():
                     self.use_wsl = True
@@ -121,7 +122,7 @@ class FoldseekRunner:
         machine (running the WSL backend for local testing) would silently
         rewrite its separators to backslashes."""
         try:
-            subprocess.run([path_str], capture_output=True, timeout=5)
+            subprocess.run([path_str], capture_output=True, timeout=5, check=False)
             self.use_wsl = False
             self.executable = path_str
             return True, f"Native Foldseek verified at {path_str}"
@@ -132,7 +133,9 @@ class FoldseekRunner:
         wsl_str = self._convert_to_wsl_path(path)
         wsl_path = shutil.which("wsl") or WSL_EXE
         try:
-            res = subprocess.run([wsl_path, wsl_str], capture_output=True, timeout=5)
+            res = subprocess.run(
+                [wsl_path, wsl_str], capture_output=True, timeout=5, check=False
+            )
             if res.returncode != 127:
                 self.use_wsl = True
                 self.executable = wsl_str
@@ -194,7 +197,11 @@ class FoldseekRunner:
 
         try:
             result = subprocess.run(
-                cmd, capture_output=True, timeout=self.timeout, text=True
+                cmd,
+                capture_output=True,
+                timeout=self.timeout,
+                text=True,
+                check=False,
             )
             if result.returncode != 0:
                 return False, f"Foldseek search failed: {result.stderr[-500:]}", []

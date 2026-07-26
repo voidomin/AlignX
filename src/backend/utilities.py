@@ -42,7 +42,11 @@ class SystemManager:
             # Try to run mustang --version or just mustang
             # Mustang usually prints help to stderr if no args
             proc = subprocess.run(
-                [mustang_executable], capture_output=True, text=True, timeout=5
+                [mustang_executable],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
             )
             # Mustang doesn't have a --version flag but help text contains version
             if "MUSTANG" in proc.stderr or "MUSTANG" in proc.stdout:
@@ -112,7 +116,7 @@ class SystemManager:
         try:
             shutil.rmtree(session_dir)
         except Exception:
-            pass
+            logger.debug(f"Failed to remove empty session dir {session_dir}")
 
     def get_aggregate_stats(self, db: Any) -> dict[str, Any]:
         """
