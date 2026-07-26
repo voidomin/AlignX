@@ -167,8 +167,8 @@ class ReportGenerator:
     def generate_full_report(
         self,
         results: dict[str, Any],
-        pdb_ids: list[str] = None,
-        sections: list[str] = None,
+        pdb_ids: list[str] | None = None,
+        sections: list[str] | None = None,
     ) -> Path:
         """
         Generate PDF report from analysis results.
@@ -220,6 +220,6 @@ class ReportGenerator:
             logger.info(f"Report generated at {self.report_path}")
             return self.report_path
 
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to generate report")
-            raise e
+            raise

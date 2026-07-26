@@ -240,7 +240,7 @@ def _render_conserved_selection_buttons(conserved_cols: list[int]) -> None:
             # Clear text input widget states (reassigns existing
             # keys only, never inserts/deletes, so no defensive
             # copy is needed here unlike sidebar.py's soft reset).
-            for k in st.session_state.keys():
+            for k in st.session_state:
                 if k.startswith("text_input_"):
                     st.session_state[k] = ""
             # Also clear 3D viewer highlights if active

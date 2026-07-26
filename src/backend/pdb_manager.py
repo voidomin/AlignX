@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 from src.utils.cache_manager import CacheManager
 from src.utils.logger import get_logger
+import itertools
 
 logger = get_logger()
 
@@ -70,7 +71,7 @@ def _detect_residue_gaps(residues: list[Any]) -> list[dict[str, int]]:
     residue IDs, before any cleaning happens."""
     resseqs = sorted(r.get_id()[1] for r in residues)
     gaps = []
-    for prev, curr in zip(resseqs, resseqs[1:]):
+    for prev, curr in itertools.pairwise(resseqs):
         if curr - prev > 1:
             gaps.append({"after": prev, "before": curr})
     return gaps
@@ -232,9 +233,7 @@ class PDBManager:
         if re.match(r"^SM-[A-Z0-9]+$", pdb_id):
             return True
         # ESM Metagenomic Atlas ID (ESM-MGYPxxxxxxxxxx)
-        if re.match(r"^ESM-MGYP\d+$", pdb_id):
-            return True
-        return False
+        return bool(re.match(r"^ESM-MGYP\d+$", pdb_id))
 
     def save_uploaded_file(self, uploaded_file: Any) -> tuple[bool, str, Path | None]:
         """

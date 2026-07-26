@@ -197,11 +197,11 @@ async def require_api_key(request: Request, call_next):
 # ceiling than alignment jobs since they compete for Foldseek's own strict
 # rate limit across every StructScope user (see FoldseekClient's rate limiter).
 # Applies even when ALIGNX_API_KEY is unset, since that's the default/open state.
-_JOB_RATE_LIMIT_MAX = int(os.environ.get("ALIGNX_JOB_RATE_LIMIT_MAX", 5))
+_JOB_RATE_LIMIT_MAX = int(os.environ.get("ALIGNX_JOB_RATE_LIMIT_MAX", "5"))
 _JOB_RATE_LIMIT_WINDOW_SECONDS = int(
-    os.environ.get("ALIGNX_JOB_RATE_LIMIT_WINDOW_SECONDS", 60)
+    os.environ.get("ALIGNX_JOB_RATE_LIMIT_WINDOW_SECONDS", "60")
 )
-_DISCOVERY_RATE_LIMIT_MAX = int(os.environ.get("ALIGNX_DISCOVERY_RATE_LIMIT_MAX", 3))
+_DISCOVERY_RATE_LIMIT_MAX = int(os.environ.get("ALIGNX_DISCOVERY_RATE_LIMIT_MAX", "3"))
 _job_submission_timestamps: dict[str, list[float]] = {}
 
 
@@ -822,7 +822,7 @@ async def _notify_webhook(url: str, payload: dict[str, Any]) -> None:
 # Jobs are swept periodically (see _sweep_alignment_jobs) so a long-lived server
 # doesn't accumulate unbounded memory from old job records.
 alignment_jobs: dict[str, dict[str, Any]] = {}
-_JOB_TTL_SECONDS = int(os.environ.get("ALIGNX_JOB_TTL_SECONDS", 3600))
+_JOB_TTL_SECONDS = int(os.environ.get("ALIGNX_JOB_TTL_SECONDS", "3600"))
 _JOB_SWEEP_INTERVAL_SECONDS = 300
 
 
@@ -904,7 +904,7 @@ async def _execute_alignment_job(
 )
 async def submit_alignment_job(
     pdb_ids: Annotated[list[str], Body(..., embed=True)],
-    chain_selection: Annotated[dict[str, str], Body(embed=True)] = {},
+    chain_selection: Annotated[dict[str, str] | None, Body(embed=True)] = None,
     remove_water: Annotated[bool, Body(embed=True)] = True,
     remove_heteroatoms: Annotated[bool, Body(embed=True)] = True,
     webhook_url: Annotated[str | None, Body(embed=True)] = None,
@@ -916,6 +916,8 @@ async def submit_alignment_job(
     status - or, if webhook_url is given, receive a POST there instead
     ({job_id, status, run_id}) once the job finishes.
     """
+    if chain_selection is None:
+        chain_selection = {}
     if not pdb_ids or len(pdb_ids) < 2:
         raise HTTPException(
             status_code=400, detail="At least 2 PDB IDs are required for alignment."

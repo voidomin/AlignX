@@ -3,7 +3,7 @@ import logging
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from src.utils.logger import sanitize_for_log
 
@@ -26,7 +26,7 @@ class HistoryDatabase:
     # instead of seconds). Once a given db_path has been migrated in this
     # process, every later HistoryDatabase() for that same path can skip
     # straight through without re-running the migration attempt.
-    _migrated_db_paths: set = set()
+    _migrated_db_paths: ClassVar[set] = set()
 
     def __init__(self, db_path: str = "run_history.db"):
         """
@@ -90,8 +90,8 @@ class HistoryDatabase:
         pdb_ids: list[str],
         result_path: Path,
         status: str = "completed",
-        metadata: dict = None,
-        session_id: str = None,
+        metadata: dict | None = None,
+        session_id: str | None = None,
     ) -> bool:
         """
         Save a new run to the database.
@@ -144,8 +144,8 @@ class HistoryDatabase:
 
     def get_all_runs(
         self,
-        limit: int = None,
-        session_id: str = None,
+        limit: int | None = None,
+        session_id: str | None = None,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
         """
@@ -191,7 +191,7 @@ class HistoryDatabase:
             logger.exception("Failed to retrieve runs")
             return []
 
-    def count_runs(self, session_id: str = None) -> int:
+    def count_runs(self, session_id: str | None = None) -> int:
         """
         Count total saved runs, optionally scoped to a session. Used for
         pagination metadata alongside get_all_runs.
@@ -211,7 +211,7 @@ class HistoryDatabase:
             logger.exception("Failed to count runs")
             return 0
 
-    def get_aggregate_stats(self, session_id: str = None) -> dict[str, Any]:
+    def get_aggregate_stats(self, session_id: str | None = None) -> dict[str, Any]:
         """
         Compute dashboard-level totals across all runs: total run count and
         total proteins analyzed (summed pdb_ids length per run). Computed in
@@ -303,7 +303,7 @@ class HistoryDatabase:
             logger.exception(f"Failed to delete run {sanitize_for_log(run_id)}")
             return False
 
-    def get_latest_run(self, session_id: str = None) -> dict[str, Any] | None:
+    def get_latest_run(self, session_id: str | None = None) -> dict[str, Any] | None:
         """
         Retrieve the most recent successful run.
 

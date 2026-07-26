@@ -2,7 +2,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import quote
 
 import httpx
@@ -54,7 +54,9 @@ class LigandAnalyzer:
     Identifies ligands (HETATM) and finds interacting residues.
     """
 
-    def __init__(self, config: dict[str, Any] = None, cache_db: Any | None = None):
+    def __init__(
+        self, config: dict[str, Any] | None = None, cache_db: Any | None = None
+    ):
         """
         Initialize the LigandAnalyzer.
 
@@ -347,7 +349,7 @@ class LigandAnalyzer:
     # separate from HYDROPHOBIC_RESIDUES in interaction_geometry.py (that
     # set serves a different purpose - H-bond/salt-bridge classification -
     # and deliberately excludes aromatic-but-polar TYR).
-    _POCKET_LINING_RESIDUES = {
+    _POCKET_LINING_RESIDUES: ClassVar[set] = {
         "ALA",
         "VAL",
         "LEU",

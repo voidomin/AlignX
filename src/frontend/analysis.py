@@ -248,7 +248,7 @@ def load_run_from_history(run_id: str, is_auto: bool = False) -> None:
 
     st.session_state.pdb_ids = run["pdb_ids"]
     st.session_state.metadata = run.get("metadata", {})
-    st.session_state.metadata_fetched = True if st.session_state.metadata else False
+    st.session_state.metadata_fetched = bool(st.session_state.metadata)
     _sync_input_widgets_to_run(run)
 
     if is_auto:

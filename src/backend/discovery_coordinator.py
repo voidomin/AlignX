@@ -163,8 +163,10 @@ class DiscoveryCoordinator:
         if not database_dir:
             return (
                 False,
-                "Local Foldseek backend selected but foldseek.local.database_dir "
-                "is not configured.",
+                (
+                    "Local Foldseek backend selected but foldseek.local.database_dir "
+                    "is not configured."
+                ),
                 None,
             )
 

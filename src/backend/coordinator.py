@@ -81,7 +81,7 @@ class AnalysisCoordinator:
     Decouples UI from backend implementation logic.
     """
 
-    def __init__(self, config: dict[str, Any], session_id: str = None):
+    def __init__(self, config: dict[str, Any], session_id: str | None = None):
         self.config = config
         self.session_id = session_id
         self.history_db = HistoryDatabase()
