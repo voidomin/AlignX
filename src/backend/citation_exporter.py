@@ -14,7 +14,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 from tempfile import gettempdir
-from typing import Any, Dict, List
+from typing import Any
 
 from src.backend.pdb_manager import PDBManager
 
@@ -29,7 +29,7 @@ _SAFE_RUN_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 # Each entry is the citation for one underlying tool/database/algorithm.
 # `bibtex` keys are unique but otherwise arbitrary - they only need to be
 # stable and collision-free within a single export.
-BIBLIOGRAPHY: Dict[str, Dict[str, str]] = {
+BIBLIOGRAPHY: dict[str, dict[str, str]] = {
     "structscope": {
         "text": "StructScope v{VERSION} (https://github.com/voidomin/AlignX).",
         "bibtex": (
@@ -306,7 +306,7 @@ def _structure_source_citation(pdb_id: str) -> str:
     }.get(source, "pdb")
 
 
-def citations_for_compare_run(pdb_ids: List[str]) -> List[str]:
+def citations_for_compare_run(pdb_ids: list[str]) -> list[str]:
     """Citation ids for a Compare run: Mustang plus one entry per distinct
     structure source database actually referenced by the input IDs."""
     ids = ["mustang"]
@@ -328,12 +328,12 @@ _ANNOTATION_FIELD_SOURCE = [
 ]
 
 
-def citations_for_discover_run(results: Dict[str, Any]) -> List[str]:
+def citations_for_discover_run(results: dict[str, Any]) -> list[str]:
     """Citation ids for a Discover run: Foldseek, the query structure's own
     source database, every Foldseek database actually searched, and every
     annotation source that actually contributed data to at least one
     neighbor - not every source Discover mode is capable of querying."""
-    ids: List[str] = []
+    ids: list[str] = []
     seen = set()
 
     def add(citation_id: str) -> None:
@@ -364,7 +364,7 @@ class CitationExporter:
     """Renders a citation-id list into a combined plain-text + BibTeX file."""
 
     def export(
-        self, citation_ids: List[str], run_id: str, version: str = "0.0.0"
+        self, citation_ids: list[str], run_id: str, version: str = "0.0.0"
     ) -> Path:
         if not _SAFE_RUN_ID.match(run_id):
             raise ValueError(f"Invalid run_id: {run_id!r}")

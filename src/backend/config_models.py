@@ -3,8 +3,9 @@ Configuration models for the Mustang pipeline using Pydantic V2.
 """
 
 import logging
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, field_validator, model_validator, ValidationError
+from typing import Any
+
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ class PDBConfig(BaseModel):
 class FilteringConfig(BaseModel):
     auto_filter_large_files: bool = True
     size_threshold_mb: int = Field(50, ge=1)
-    default_chain: Optional[str] = None
+    default_chain: str | None = None
     remove_heteroatoms: bool = True
     remove_water: bool = True
     remove_ligands: bool = False
@@ -41,7 +42,7 @@ class FilteringConfig(BaseModel):
 
 class MustangConfig(BaseModel):
     backend: str = Field("auto")
-    executable_path: Optional[str] = None  # None = auto-detect at runtime
+    executable_path: str | None = None  # None = auto-detect at runtime
     timeout: int = Field(600, ge=1)
 
     @field_validator("backend")
@@ -70,7 +71,7 @@ class PyMolConfig(BaseModel):
 class OutputConfig(BaseModel):
     base_dir: str = "results"
     keep_intermediates: bool = True
-    formats: List[str] = Field(default_factory=lambda: ["html"])
+    formats: list[str] = Field(default_factory=lambda: ["html"])
 
 
 class VisualizationConfig(BaseModel):
@@ -95,8 +96,8 @@ class FoldseekLocalConfig(BaseModel):
     shared rate limit. Provisioning a real database is a deployment-time
     step; these fields just point at wherever that ends up living."""
 
-    binary_path: Optional[str] = None
-    database_dir: Optional[str] = None
+    binary_path: str | None = None
+    database_dir: str | None = None
     timeout: int = Field(300, ge=1)
 
 
@@ -106,7 +107,7 @@ class FoldseekConfig(BaseModel):
     timeout: int = Field(30, ge=1)
     poll_interval_seconds: int = Field(10, ge=1)
     max_poll_attempts: int = Field(60, ge=1)
-    default_databases: List[str] = Field(default_factory=lambda: ["pdb100", "afdb50"])
+    default_databases: list[str] = Field(default_factory=lambda: ["pdb100", "afdb50"])
     local: FoldseekLocalConfig = Field(default_factory=FoldseekLocalConfig)
 
     @field_validator("backend")
@@ -140,7 +141,7 @@ class AnnotationConfig(BaseModel):
 # almost happened for real: the commit that tightened FoldseekConfig/
 # AnnotationConfig's validation would have done exactly this for anyone
 # with a malformed foldseek:/annotation: block.
-_SOFT_VALIDATED_SECTIONS: Dict[str, type] = {
+_SOFT_VALIDATED_SECTIONS: dict[str, type] = {
     "cache": CacheConfig,
     "foldseek": FoldseekConfig,
     "annotation": AnnotationConfig,
@@ -161,9 +162,9 @@ class PipelineConfig(BaseModel):
     visualization: VisualizationConfig
     performance: PerformanceConfig
     debug: DebugConfig
-    cache: Optional[CacheConfig] = Field(default_factory=CacheConfig)
-    foldseek: Optional[FoldseekConfig] = Field(default_factory=FoldseekConfig)
-    annotation: Optional[AnnotationConfig] = Field(default_factory=AnnotationConfig)
+    cache: CacheConfig | None = Field(default_factory=CacheConfig)
+    foldseek: FoldseekConfig | None = Field(default_factory=FoldseekConfig)
+    annotation: AnnotationConfig | None = Field(default_factory=AnnotationConfig)
 
     @model_validator(mode="before")
     @classmethod
@@ -194,6 +195,6 @@ class PipelineConfig(BaseModel):
                     del data[key]
         return data
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to raw dictionary for backward compatibility."""
         return self.model_dump()

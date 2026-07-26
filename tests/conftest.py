@@ -1,4 +1,5 @@
 import pytest
+
 from src.utils.logger import get_logger
 
 # Disable logging during tests to keep output clean

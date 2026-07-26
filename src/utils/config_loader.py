@@ -1,18 +1,20 @@
 """Configuration loader for the Mustang pipeline."""
 
-import yaml
-import os
 import logging
+import os
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
+
+import yaml
 from dotenv import load_dotenv
-from src.backend.config_models import PipelineConfig
 from pydantic import ValidationError
+
+from src.backend.config_models import PipelineConfig
 
 logger = logging.getLogger(__name__)
 
 
-def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
+def load_config(config_path: str = "config.yaml") -> dict[str, Any]:
     """
     Load configuration from YAML file and environment variables.
 
@@ -52,7 +54,7 @@ def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
     return config
 
 
-def save_config(config: Dict[str, Any], config_path: str = "config.yaml") -> None:
+def save_config(config: dict[str, Any], config_path: str = "config.yaml") -> None:
     """
     Save configuration dictionary back to the YAML file.
 
@@ -65,7 +67,7 @@ def save_config(config: Dict[str, Any], config_path: str = "config.yaml") -> Non
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
 
-def _override_from_env(config: Dict[str, Any]) -> None:
+def _override_from_env(config: dict[str, Any]) -> None:
     """Override config values with environment variables."""
     env_mappings = {
         "MUSTANG_BACKEND": ["mustang", "backend"],
@@ -83,7 +85,7 @@ def _override_from_env(config: Dict[str, Any]) -> None:
             _set_nested_value(config, config_path, value)
 
 
-def _set_nested_value(config: Dict[str, Any], path: list, value: Any) -> None:
+def _set_nested_value(config: dict[str, Any], path: list, value: Any) -> None:
     """Set a value in a nested dictionary using a path list."""
     current = config
     for key in path[:-1]:
@@ -93,7 +95,7 @@ def _set_nested_value(config: Dict[str, Any], path: list, value: Any) -> None:
     current[path[-1]] = value
 
 
-def _create_directories(config: Dict[str, Any]) -> None:
+def _create_directories(config: dict[str, Any]) -> None:
     """Create necessary directories for pipeline operation."""
     directories = [
         config.get("output", {}).get("base_dir", "results"),
@@ -107,7 +109,7 @@ def _create_directories(config: Dict[str, Any]) -> None:
         Path(directory).mkdir(parents=True, exist_ok=True)
 
 
-def get_config_value(config: Dict[str, Any], *keys, default=None) -> Any:
+def get_config_value(config: dict[str, Any], *keys, default=None) -> Any:
     """
     Safely get a nested configuration value.
 

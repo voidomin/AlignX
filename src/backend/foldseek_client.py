@@ -11,7 +11,7 @@ import asyncio
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -92,7 +92,7 @@ class FoldseekClient:
 
     _rate_limiter = _RateLimiter(min_interval_seconds=10.0)
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, timeout: float = 30.0):
+    def __init__(self, config: dict[str, Any] | None = None, timeout: float = 30.0):
         config = config or {}
         foldseek_cfg = config.get("foldseek", {})
         self.base_url = foldseek_cfg.get("base_url", FOLDSEEK_BASE_URL)
@@ -105,7 +105,7 @@ class FoldseekClient:
         )
 
     @staticmethod
-    def validate_databases(databases: List[str]) -> List[str]:
+    def validate_databases(databases: list[str]) -> list[str]:
         invalid = [db for db in databases if db not in ALLOWED_DATABASES]
         if invalid:
             raise FoldseekError(
@@ -117,8 +117,8 @@ class FoldseekClient:
     async def submit_search(
         self,
         structure_path: Path,
-        databases: Optional[List[str]] = None,
-        client: Optional[httpx.AsyncClient] = None,
+        databases: list[str] | None = None,
+        client: httpx.AsyncClient | None = None,
     ) -> str:
         """Uploads a structure file and returns a Foldseek ticket ID."""
         databases = self.validate_databases(databases or DEFAULT_DATABASES)
@@ -153,7 +153,7 @@ class FoldseekClient:
                 await client.aclose()
 
     async def poll_until_complete(
-        self, ticket_id: str, client: Optional[httpx.AsyncClient] = None
+        self, ticket_id: str, client: httpx.AsyncClient | None = None
     ) -> None:
         """Polls a ticket until it completes, raising FoldseekError on failure/timeout."""
         own_client = client is None
@@ -187,8 +187,8 @@ class FoldseekClient:
                 await client.aclose()
 
     async def fetch_results(
-        self, ticket_id: str, client: Optional[httpx.AsyncClient] = None
-    ) -> Dict[str, Any]:
+        self, ticket_id: str, client: httpx.AsyncClient | None = None
+    ) -> dict[str, Any]:
         """Fetches the raw result payload for a completed ticket."""
         own_client = client is None
         if own_client:
@@ -206,8 +206,8 @@ class FoldseekClient:
                 await client.aclose()
 
     async def search(
-        self, structure_path: Path, databases: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+        self, structure_path: Path, databases: list[str] | None = None
+    ) -> dict[str, Any]:
         """End-to-end: submit a structure, wait for completion, return raw hits."""
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             ticket_id = await self.submit_search(
@@ -217,7 +217,7 @@ class FoldseekClient:
             return await self.fetch_results(ticket_id, client=client)
 
     @staticmethod
-    def _flatten_alignments(db_alignments: Any) -> List[Dict[str, Any]]:
+    def _flatten_alignments(db_alignments: Any) -> list[dict[str, Any]]:
         if isinstance(db_alignments, list):
             return db_alignments
         if isinstance(db_alignments, dict):
@@ -225,7 +225,7 @@ class FoldseekClient:
         return []
 
     @staticmethod
-    def parse_hits(raw_result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def parse_hits(raw_result: dict[str, Any]) -> list[dict[str, Any]]:
         """Flattens a raw Foldseek result payload into a list of hit dicts."""
         if isinstance(raw_result, list):
             return raw_result
@@ -233,7 +233,7 @@ class FoldseekClient:
             return []
 
         if "results" in raw_result:
-            hits: List[Dict[str, Any]] = []
+            hits: list[dict[str, Any]] = []
             for result_group in raw_result.get("results", []):
                 for db_alignments in result_group.get("alignments", []):
                     hits.extend(FoldseekClient._flatten_alignments(db_alignments))

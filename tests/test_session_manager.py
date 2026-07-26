@@ -5,9 +5,9 @@ from pathlib import Path
 from streamlit.testing.v1 import AppTest
 
 from src.utils.session_manager import (
+    cleanup_stale_sessions,
     get_session_id,
     get_session_paths,
-    cleanup_stale_sessions,
 )
 
 

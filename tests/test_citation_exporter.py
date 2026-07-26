@@ -2,9 +2,9 @@ import pytest
 
 from src.backend.citation_exporter import (
     CitationExporter,
+    _structure_source_citation,
     citations_for_compare_run,
     citations_for_discover_run,
-    _structure_source_citation,
 )
 
 

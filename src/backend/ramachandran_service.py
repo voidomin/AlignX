@@ -1,7 +1,9 @@
+from pathlib import Path
+from typing import Any
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from typing import Dict, Any, Optional
+
 from src.backend.pdb_manager import parse_structure_file
 from src.utils.logger import get_logger
 
@@ -13,7 +15,7 @@ class RamachandranService:
     Service for calculating Ramachandran phi/psi angles and identifying outliers.
     """
 
-    def calculate_torsion_angles(self, pdb_file: Path) -> Dict[str, pd.DataFrame]:
+    def calculate_torsion_angles(self, pdb_file: Path) -> dict[str, pd.DataFrame]:
         """
         Calculate phi/psi angles for all chains in a structure file (PDB or
         mmCIF - see parse_structure_file). Every caller so far
@@ -55,8 +57,8 @@ class RamachandranService:
         return angles
 
     def _torsion_row(
-        self, res, phi: Optional[float], psi: Optional[float]
-    ) -> Optional[Dict[str, Any]]:
+        self, res, phi: float | None, psi: float | None
+    ) -> dict[str, Any] | None:
         # Convert radians to degrees, handle None for termini
         phi_deg = np.degrees(phi) if phi is not None else None
         psi_deg = np.degrees(psi) if psi is not None else None
@@ -71,7 +73,7 @@ class RamachandranService:
             "secondary_structure": self._classify_secondary_structure(phi_deg, psi_deg),
         }
 
-    def _classify_region(self, phi: Optional[float], psi: Optional[float]) -> str:
+    def _classify_region(self, phi: float | None, psi: float | None) -> str:
         """
         Very basic classification of Ramachandran regions.
         In a production app, this would use precise polygon boundaries (e.g. from Top8000).
@@ -98,7 +100,7 @@ class RamachandranService:
         return "Outlier"
 
     def _classify_secondary_structure(
-        self, phi: Optional[float], psi: Optional[float]
+        self, phi: float | None, psi: float | None
     ) -> str:
         """
         Approximate per-residue secondary structure (Helix/Sheet/Coil) from
@@ -126,15 +128,15 @@ class RamachandranService:
         return "Coil"
 
     def aggregate_secondary_structure(
-        self, torsion_data: Dict[str, pd.DataFrame]
-    ) -> Dict[str, Any]:
+        self, torsion_data: dict[str, pd.DataFrame]
+    ) -> dict[str, Any]:
         """
         Summarize %helix/%sheet/%coil across all chains, plus a per-chain
         breakdown. Terminal residues (only one resolvable angle) are
         excluded from every percentage's denominator, same as
         aggregate_metrics() excludes them from its own quality_score.
         """
-        per_chain: Dict[str, Any] = {}
+        per_chain: dict[str, Any] = {}
         total_helix = total_sheet = total_coil = total_residues = 0
 
         for chain_id, df in torsion_data.items():
@@ -171,8 +173,8 @@ class RamachandranService:
         }
 
     def aggregate_metrics(
-        self, torsion_data: Dict[str, pd.DataFrame]
-    ) -> Dict[str, Any]:
+        self, torsion_data: dict[str, pd.DataFrame]
+    ) -> dict[str, Any]:
         """
         Summarize quality metrics across all chains.
         """

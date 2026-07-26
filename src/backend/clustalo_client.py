@@ -18,7 +18,7 @@ already is elsewhere in this app).
 import asyncio
 import threading
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 
@@ -70,7 +70,7 @@ class ClustalOmegaClient:
 
     _rate_limiter = _RateLimiter(min_interval_seconds=3.0)
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, timeout: float = 30.0):
+    def __init__(self, config: dict[str, Any] | None = None, timeout: float = 30.0):
         config = config or {}
         cfg = config.get("clustalo", {})
         self.base_url = cfg.get("base_url", CLUSTALO_BASE_URL)
@@ -80,11 +80,11 @@ class ClustalOmegaClient:
         self.max_poll_attempts = cfg.get("max_poll_attempts", MAX_POLL_ATTEMPTS)
 
     @staticmethod
-    def _to_fasta(sequences: Dict[str, str]) -> str:
+    def _to_fasta(sequences: dict[str, str]) -> str:
         return "\n".join(f">{seq_id}\n{seq}" for seq_id, seq in sequences.items())
 
     async def submit_alignment(
-        self, sequences: Dict[str, str], client: Optional[httpx.AsyncClient] = None
+        self, sequences: dict[str, str], client: httpx.AsyncClient | None = None
     ) -> str:
         """Submits a {id: raw_sequence} dict for a true sequence-only MSA
         and returns EBI's job ID. `sequences` should carry each
@@ -122,7 +122,7 @@ class ClustalOmegaClient:
                 await client.aclose()
 
     async def poll_until_complete(
-        self, job_id: str, client: Optional[httpx.AsyncClient] = None
+        self, job_id: str, client: httpx.AsyncClient | None = None
     ) -> None:
         """Polls a job until it finishes, raising ClustalOmegaError on
         failure/timeout."""
@@ -157,7 +157,7 @@ class ClustalOmegaClient:
                 await client.aclose()
 
     async def fetch_alignment(
-        self, job_id: str, client: Optional[httpx.AsyncClient] = None
+        self, job_id: str, client: httpx.AsyncClient | None = None
     ) -> str:
         """Fetches the completed job's aligned FASTA text (result type
         "fa" - gap-padded, directly parseable by Bio.SeqIO)."""
@@ -176,7 +176,7 @@ class ClustalOmegaClient:
             if own_client:
                 await client.aclose()
 
-    async def align(self, sequences: Dict[str, str]) -> str:
+    async def align(self, sequences: dict[str, str]) -> str:
         """End-to-end: submit sequences, wait for completion, return the
         aligned FASTA text."""
         async with httpx.AsyncClient(timeout=self.timeout) as client:

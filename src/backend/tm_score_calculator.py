@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -13,7 +12,7 @@ logger = get_logger()
 
 def calculate_tm_score_matrix(
     alignment_pdb: Path, fasta_file: Path
-) -> Optional[pd.DataFrame]:
+) -> pd.DataFrame | None:
     """
     Computes a real, independent pairwise TM-score matrix from Mustang's
     aligned structure file.

@@ -12,13 +12,12 @@ matplotlib.use("Agg")
 
 import streamlit as st
 
-# Backend Imports (for initialization)
+# Frontend Modules
+from src.frontend import analysis, sidebar, utils
 
+# Backend Imports (for initialization)
 # Utility Imports
 from src.utils.session_manager import SessionInitializer
-
-# Frontend Modules
-from src.frontend import utils, sidebar, analysis
 
 # Page configuration
 st.set_page_config(

@@ -4,7 +4,7 @@ import secrets
 from datetime import datetime
 
 
-def generate_run_id(prefix: str, now: datetime = None) -> str:
+def generate_run_id(prefix: str, now: datetime | None = None) -> str:
     """
     Build a run ID as "{prefix}_{unix_timestamp}_{random_suffix}".
 

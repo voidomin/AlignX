@@ -20,7 +20,7 @@ import re
 import threading
 import time
 from collections import Counter
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import httpx
 
@@ -307,9 +307,9 @@ class AnnotationAggregator:
 
     def __init__(
         self,
-        config: Optional[Dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
         timeout: float = 15.0,
-        cache_db: Optional[Any] = None,
+        cache_db: Any | None = None,
     ):
         config = config or {}
         annotation_cfg = config.get("annotation", {})
@@ -368,14 +368,14 @@ class AnnotationAggregator:
         return result
 
     @staticmethod
-    def extract_uniprot_accession(target: str) -> Optional[str]:
+    def extract_uniprot_accession(target: str) -> str | None:
         """Pulls a UniProt accession out of a Foldseek AFDB target string,
         e.g. "AF-P01541-F1-model_v6 Denclatoxin-B" -> "P01541"."""
         match = _AFDB_TARGET_PATTERN.match((target or "").strip())
         return match.group(1).upper() if match else None
 
     @staticmethod
-    def extract_pdb_chain(target: str) -> Optional[Tuple[str, str]]:
+    def extract_pdb_chain(target: str) -> tuple[str, str] | None:
         """Pulls (pdb_id, chain_id) out of a Foldseek pdb100 target string,
         e.g. "1ab1-assembly1.cif.gz_A SI FORM CRAMBIN" -> ("1AB1", "A"). Any
         trailing "-{n}" assembly-copy suffix on the chain (e.g. "A-2") is
@@ -388,7 +388,7 @@ class AnnotationAggregator:
         return pdb_id.upper(), chain_id
 
     @staticmethod
-    def extract_cath_pdb_chain(target: str) -> Optional[Tuple[str, str]]:
+    def extract_cath_pdb_chain(target: str) -> tuple[str, str] | None:
         """Pulls (pdb_id, chain_id) out of a Foldseek cath50 target string
         (a CATH domain ID), e.g. "1cbnA00" -> ("1CBN", "A")."""
         match = _CATH_DOMAIN_PATTERN.match((target or "").strip())
@@ -398,7 +398,7 @@ class AnnotationAggregator:
         return pdb_id.upper(), chain_id
 
     @staticmethod
-    def extract_embedded_uniprot_accession(target: str) -> Optional[str]:
+    def extract_embedded_uniprot_accession(target: str) -> str | None:
         """Finds a UniProt-accession-shaped token embedded in a Foldseek
         target string (BFVD/bfmd), e.g.
         "LevyLab_Q8U2A3_V1_4_relaxed_B" -> "Q8U2A3". Returns the first
@@ -411,7 +411,7 @@ class AnnotationAggregator:
         return None
 
     @staticmethod
-    def extract_gmgc_gene_id(target: str) -> Optional[str]:
+    def extract_gmgc_gene_id(target: str) -> str | None:
         """Pulls the real GMGC gene ID out of a Foldseek gmgcl_id target
         string, e.g. "GMGC10.040_893_565.PILY1_trun_2.pdb" ->
         "GMGC10.040_893_565.PILY1". Unlike every other resolvable database,
@@ -421,10 +421,10 @@ class AnnotationAggregator:
         return match.group(1) if match else None
 
     @staticmethod
-    def _parse_sifts_chain_accessions(entry: Dict[str, Any]) -> Dict[str, str]:
+    def _parse_sifts_chain_accessions(entry: dict[str, Any]) -> dict[str, str]:
         """Flattens a SIFTS `/mappings/{pdb_id}` entry's per-accession chain
         mappings into a single {chain_id: accession} dict."""
-        chain_accessions: Dict[str, str] = {}
+        chain_accessions: dict[str, str] = {}
         for accession, info in (entry.get("UniProt") or {}).items():
             for mapping in info.get("mappings", []):
                 mapped_chain = mapping.get("chain_id")
@@ -437,8 +437,8 @@ class AnnotationAggregator:
         pdb_id: str,
         chain_id: str,
         client: httpx.AsyncClient,
-        cache: Optional[Dict[str, Dict[str, Optional[str]]]] = None,
-    ) -> Optional[str]:
+        cache: dict[str, dict[str, str | None]] | None = None,
+    ) -> str | None:
         """Resolves a (PDB entry, chain) pair to a UniProt accession via
         PDBe's SIFTS mapping API. `cache` (keyed by pdb_id -> {chain_id:
         accession}) lets one aggregate_for_hits() call avoid re-fetching the
@@ -447,7 +447,7 @@ class AnnotationAggregator:
         if cache is not None and pdb_id in cache:
             return cache[pdb_id].get(chain_id)
 
-        async def _fetch() -> Dict[str, Optional[str]]:
+        async def _fetch() -> dict[str, str | None]:
             try:
                 response = await client.get(
                     f"{SIFTS_BASE_URL}/{pdb_id.lower()}",
@@ -470,7 +470,7 @@ class AnnotationAggregator:
         return chain_accessions.get(chain_id)
 
     @staticmethod
-    def _residue_map_from_segment(segment: Dict[str, Any]) -> Dict[int, int]:
+    def _residue_map_from_segment(segment: dict[str, Any]) -> dict[int, int]:
         """One SIFTS segment's UniProt<->author-numbering range, walked in
         lockstep - standard SIFTS convention is no internal gaps within a
         single segment (a real gap/insertion shows up as a separate
@@ -489,7 +489,7 @@ class AnnotationAggregator:
 
     async def resolve_uniprot_residue_mapping(
         self, pdb_id: str, chain_id: str, client: httpx.AsyncClient
-    ) -> Dict[int, int]:
+    ) -> dict[int, int]:
         """Real per-residue {uniprot_position: author_residue_number} map
         for one chain of a PDB entry, via PDBe's unfiltered
         /mappings/{pdb_id} endpoint - distinct from
@@ -501,7 +501,7 @@ class AnnotationAggregator:
         _attach_feature_highlight_chains() used to flag as PDB-unsupported.
         Returns {} if nothing resolves for this chain."""
 
-        async def _fetch() -> Dict[str, Any]:
+        async def _fetch() -> dict[str, Any]:
             try:
                 response = await client.get(
                     f"{PDBE_ALL_MAPPINGS_BASE_URL}/{pdb_id.lower()}",
@@ -520,7 +520,7 @@ class AnnotationAggregator:
             f"pdbe_mappings:{pdb_id}", "pdbe_mappings", _fetch
         )
 
-        residue_map: Dict[int, int] = {}
+        residue_map: dict[int, int] = {}
         for accession_info in (entry.get("UniProt") or {}).values():
             for segment in accession_info.get("mappings", []):
                 if segment.get("chain_id") != chain_id:
@@ -531,11 +531,11 @@ class AnnotationAggregator:
     async def resolve_structure_uniprot_position(
         self,
         pdb_id: str,
-        chain: Optional[str],
+        chain: str | None,
         author_resi: int,
         source: str,
         client: httpx.AsyncClient,
-    ) -> Optional[Tuple[str, int]]:
+    ) -> tuple[str, int] | None:
         """Resolves one of a structure's own author-numbered residues to
         (uniprot_accession, uniprot_position) - the inverse direction of
         resolve_uniprot_residue_mapping()'s UniProt->author translation,
@@ -563,13 +563,13 @@ class AnnotationAggregator:
 
     async def fetch_uniprot_gene_and_sequence(
         self, accession: str, client: httpx.AsyncClient
-    ) -> Dict[str, Optional[str]]:
+    ) -> dict[str, str | None]:
         """Fetches a protein's gene symbol (ClinVar's own gene-based search
         term) and full sequence (to read off the real wild-type residue at
         a resolved UniProt position) from the same UniProt entry
         fetch_uniprot_features() already targets."""
 
-        async def _fetch() -> Dict[str, Optional[str]]:
+        async def _fetch() -> dict[str, str | None]:
             try:
                 response = await client.get(
                     f"{UNIPROT_BASE_URL}/{accession}.json",
@@ -594,7 +594,7 @@ class AnnotationAggregator:
 
     async def fetch_uniprot_function_summary(
         self, accession: str, client: httpx.AsyncClient
-    ) -> Optional[str]:
+    ) -> str | None:
         """Real plain-English "what does this protein do" text from
         UniProt's own curated FUNCTION comment - the single most useful
         sentence for a non-specialist, distinct from the structured
@@ -602,7 +602,7 @@ class AnnotationAggregator:
         None if UniProt has no FUNCTION comment for this accession (common
         for less-characterized proteins) or the request fails."""
 
-        async def _fetch() -> Optional[str]:
+        async def _fetch() -> str | None:
             try:
                 response = await client.get(
                     f"{UNIPROT_BASE_URL}/{accession}.json",
@@ -637,7 +637,7 @@ class AnnotationAggregator:
 
     async def fetch_protein_atlas_expression(
         self, accession: str, client: httpx.AsyncClient
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Real tissue/subcellular expression data from the Human Protein
         Atlas - genuinely different information from every other source
         this class fetches, none of which answer "where in the body is
@@ -649,7 +649,7 @@ class AnnotationAggregator:
         doesn't resolve to a Human Protein Atlas gene (e.g. non-human
         proteins, which HPA doesn't cover) or the request fails."""
 
-        async def _fetch() -> Optional[Dict[str, Any]]:
+        async def _fetch() -> dict[str, Any] | None:
             try:
                 search_response = await client.get(
                     PROTEIN_ATLAS_SEARCH_URL,
@@ -693,7 +693,7 @@ class AnnotationAggregator:
 
     async def fetch_kegg_pathways(
         self, accession: str, client: httpx.AsyncClient
-    ) -> List[Dict[str, str]]:
+    ) -> list[dict[str, str]]:
         """Real KEGG pathway membership - a second, independently-curated
         pathway database alongside Reactome (fetch_reactome_pathways
         above), which can legitimately disagree on scope/naming. Two
@@ -705,7 +705,7 @@ class AnnotationAggregator:
         only the first mapped gene id is used, a deliberate scope
         decision. Returns [] if nothing maps or on any request failure."""
 
-        async def _fetch() -> List[Dict[str, str]]:
+        async def _fetch() -> list[dict[str, str]]:
             try:
                 conv_response = await client.get(f"{KEGG_CONV_URL}:{accession}")
                 if conv_response.status_code != 200 or not conv_response.text.strip():
@@ -727,7 +727,7 @@ class AnnotationAggregator:
         )
 
     @staticmethod
-    def _parse_kegg_pathways(flat_record: str) -> List[Dict[str, str]]:
+    def _parse_kegg_pathways(flat_record: str) -> list[dict[str, str]]:
         """KEGG's flat-record format has no delimiters a JSON parser could
         use - a field starts at a fixed-width, all-caps header at the
         start of a line, and continues on every following line that
@@ -751,7 +751,7 @@ class AnnotationAggregator:
 
     async def fetch_orthodb_orthologs(
         self, accession: str, client: httpx.AsyncClient
-    ) -> Optional[Dict[str, List[str]]]:
+    ) -> dict[str, list[str]] | None:
         """Real cross-species ortholog gene symbols from OrthoDB - "what's
         the equivalent gene in mouse/zebrafish/fly/yeast," genuinely
         different from BLAST conservation's unstructured homolog search
@@ -805,7 +805,7 @@ class AnnotationAggregator:
                 )
                 return species_name, []
 
-        async def _fetch() -> Optional[Dict[str, List[str]]]:
+        async def _fetch() -> dict[str, list[str]] | None:
             try:
                 search_response = await client.get(
                     f"{ORTHODB_BASE_URL}/search",
@@ -836,7 +836,7 @@ class AnnotationAggregator:
 
     async def fetch_disprot_regions(
         self, accession: str, client: httpx.AsyncClient
-    ) -> Optional[List[List[int]]]:
+    ) -> list[list[int]] | None:
         """Real literature-curated, experimentally-demonstrated disorder
         regions from DisProt - see DISPROT_BASE_URL's comment for why
         this is a fundamentally different signal from MobiDB's
@@ -849,7 +849,7 @@ class AnnotationAggregator:
         a curated subset, same scope M-CSA already has) or the request
         fails."""
 
-        async def _fetch() -> Optional[List[List[int]]]:
+        async def _fetch() -> list[list[int]] | None:
             try:
                 response = await client.get(f"{DISPROT_BASE_URL}/{accession}")
                 if response.status_code != 200:
@@ -874,7 +874,7 @@ class AnnotationAggregator:
 
     async def fetch_intact_interactions(
         self, accession: str, client: httpx.AsyncClient
-    ) -> List[str]:
+    ) -> list[str]:
         """Real, purely curated PubMed-backed physical interaction
         partners from IntAct - see INTACT_INTERACTIONS_URL's comment for
         why this complements STRING's already-shipped mixed-evidence
@@ -887,7 +887,7 @@ class AnnotationAggregator:
         INTACT_MAX_PARTNERS), or [] on no curated interactions/failure -
         a real, common negative for less-studied proteins."""
 
-        async def _fetch() -> List[str]:
+        async def _fetch() -> list[str]:
             try:
                 response = await client.get(
                     f"{INTACT_INTERACTIONS_URL}/{accession}",
@@ -916,7 +916,7 @@ class AnnotationAggregator:
 
     async def fetch_rhea_reactions(
         self, accession: str, client: httpx.AsyncClient
-    ) -> List[Dict[str, str]]:
+    ) -> list[dict[str, str]]:
         """Real biochemical reactions this protein catalyzes, from Rhea -
         see RHEA_BASE_URL's comment for how this differs from M-CSA's
         catalytic residues. Returns a list of {"id": ..., "equation": ...}
@@ -924,7 +924,7 @@ class AnnotationAggregator:
         (a real, correct negative for the majority of non-enzyme
         proteins) or any request failure."""
 
-        async def _fetch() -> List[Dict[str, str]]:
+        async def _fetch() -> list[dict[str, str]]:
             try:
                 response = await client.get(
                     RHEA_BASE_URL,
@@ -951,7 +951,7 @@ class AnnotationAggregator:
 
     async def fetch_open_targets_tractability(
         self, accession: str, client: httpx.AsyncClient
-    ) -> Optional[Dict[str, List[str]]]:
+    ) -> dict[str, list[str]] | None:
         """Real target druggability/tractability data from the Open
         Targets Platform - see OPEN_TARGETS_GRAPHQL_URL's comment for why
         this is a different question from ChEMBL/PubChem (which are both
@@ -964,7 +964,7 @@ class AnnotationAggregator:
         accession has no target hit, an ambiguous (not exactly one) hit,
         every bucket is false, or the request fails."""
 
-        async def _fetch() -> Optional[Dict[str, List[str]]]:
+        async def _fetch() -> dict[str, list[str]] | None:
             try:
                 search_response = await client.post(
                     OPEN_TARGETS_GRAPHQL_URL,
@@ -1003,7 +1003,7 @@ class AnnotationAggregator:
                     (tractability_response.json().get("data") or {}).get("target") or {}
                 ).get("tractability") or []
 
-                by_modality: Dict[str, List[str]] = {}
+                by_modality: dict[str, list[str]] = {}
                 for bucket in buckets:
                     if not bucket.get("value"):
                         continue
@@ -1024,7 +1024,7 @@ class AnnotationAggregator:
 
     async def fetch_clinvar_significance(
         self, gene: str, variant_notation: str, client: httpx.AsyncClient
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Looks up a gene+variant's real clinical significance via NCBI's
         keyless ClinVar E-utilities: esearch (find matching variant
         records) then esummary (fetch the top match's real classification).
@@ -1032,7 +1032,7 @@ class AnnotationAggregator:
         indexed fields, so either short form ("E7V") or HGVS protein
         notation ("p.Glu7Val") works. Returns None if nothing resolves."""
 
-        async def _fetch() -> Optional[Dict[str, Any]]:
+        async def _fetch() -> dict[str, Any] | None:
             try:
                 search_response = await client.get(
                     CLINVAR_ESEARCH_URL,
@@ -1086,7 +1086,7 @@ class AnnotationAggregator:
         position: int,
         mutant_residue: str,
         client: httpx.AsyncClient,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Real gnomAD population allele frequency plus REVEL pathogenicity
         score for a specific protein substitution, via myvariant.info's
         keyless query API - both are independent signals from ClinVar/
@@ -1109,7 +1109,7 @@ class AnnotationAggregator:
         data not existing for a given substitution is common and expected,
         not an error."""
 
-        async def _fetch() -> Optional[Dict[str, Any]]:
+        async def _fetch() -> dict[str, Any] | None:
             try:
                 response = await client.get(
                     MYVARIANT_QUERY_URL,
@@ -1163,10 +1163,10 @@ class AnnotationAggregator:
 
     async def resolve_accession(
         self,
-        hit: Dict[str, Any],
+        hit: dict[str, Any],
         client: httpx.AsyncClient,
-        pdb_cache: Optional[Dict[str, Dict[str, Optional[str]]]] = None,
-    ) -> Optional[str]:
+        pdb_cache: dict[str, dict[str, str | None]] | None = None,
+    ) -> str | None:
         """Resolves a Foldseek hit to a UniProt accession via whichever
         method applies to its target format: the free AFDB regex first,
         then an embedded-accession token (BFVD/bfmd), then a live SIFTS
@@ -1190,12 +1190,12 @@ class AnnotationAggregator:
 
     async def fetch_interpro_entries(
         self, accession: str, client: httpx.AsyncClient
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Returns InterPro entries (domains/families/sites) matching a
         UniProt protein, each with any GO terms InterPro itself associates
         with that entry."""
 
-        async def _fetch() -> List[Dict[str, Any]]:
+        async def _fetch() -> list[dict[str, Any]]:
             url = f"{INTERPRO_BASE_URL}/entry/interpro/protein/uniprot/{accession}"
             try:
                 response = await client.get(
@@ -1248,11 +1248,11 @@ class AnnotationAggregator:
 
     async def fetch_quickgo_annotations(
         self, accession: str, client: httpx.AsyncClient
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Returns this protein's own GO annotations from QuickGO (broader
         and evidence-coded, unlike InterPro's generic per-domain GO terms)."""
 
-        async def _fetch() -> List[Dict[str, Any]]:
+        async def _fetch() -> list[dict[str, Any]]:
             url = f"{QUICKGO_BASE_URL}/annotation/search"
             try:
                 response = await client.get(
@@ -1283,10 +1283,10 @@ class AnnotationAggregator:
     async def fetch_string_partners(
         self,
         accession: str,
-        taxon_id: Optional[int],
+        taxon_id: int | None,
         client: httpx.AsyncClient,
         limit: int = DEFAULT_TOP_N_PARTNERS,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Returns this protein's top STRING interaction partners.
 
         STRING requires an NCBI taxon ID and only covers organisms with a
@@ -1299,7 +1299,7 @@ class AnnotationAggregator:
         if not taxon_id:
             return []
 
-        async def _fetch() -> List[Dict[str, Any]]:
+        async def _fetch() -> list[dict[str, Any]]:
             url = f"{STRING_BASE_URL}/interaction_partners"
             try:
                 await self._string_rate_limiter.wait()
@@ -1341,10 +1341,10 @@ class AnnotationAggregator:
         accession: str,
         client: httpx.AsyncClient,
         limit: int = DEFAULT_TOP_N_PATHWAYS,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Returns pathways this protein participates in, per Reactome."""
 
-        async def _fetch() -> List[Dict[str, Any]]:
+        async def _fetch() -> list[dict[str, Any]]:
             url = f"{REACTOME_BASE_URL}/data/mapping/UniProt/{accession}/pathways"
             try:
                 response = await client.get(url, headers=_JSON_ACCEPT_HEADERS)
@@ -1365,7 +1365,7 @@ class AnnotationAggregator:
 
     async def fetch_gmgc_features(
         self, gene_id: str, client: httpx.AsyncClient
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Returns Pfam domain hits for a GMGC unigene via GMGC's own
         /unigene/{id}/features endpoint. gmgcl_id hits have no UniProt
         accession at all (unlike every other resolvable database), so this
@@ -1374,7 +1374,7 @@ class AnnotationAggregator:
         Confirmed live: real hits do carry named Pfam domains, not just the
         "UNKNOWN" placeholder some gene IDs show."""
 
-        async def _fetch() -> List[Dict[str, Any]]:
+        async def _fetch() -> list[dict[str, Any]]:
             url = f"{GMGC_BASE_URL}/unigene/{gene_id}/features"
             try:
                 response = await client.get(url, headers=_JSON_ACCEPT_HEADERS)
@@ -1403,7 +1403,7 @@ class AnnotationAggregator:
         return await self._get_or_fetch(f"gmgc:{gene_id}", "gmgc", _fetch)
 
     @staticmethod
-    def _parse_uniprot_feature(f: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _parse_uniprot_feature(f: dict[str, Any]) -> dict[str, Any] | None:
         """One raw UniProt feature entry, flattened to this app's shape -
         or None if it's not a type this app cares about (see
         _UNIPROT_FEATURE_TYPES) or has no resolvable start/end location."""
@@ -1423,7 +1423,7 @@ class AnnotationAggregator:
 
     async def fetch_uniprot_features(
         self, accession: str, client: httpx.AsyncClient
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Returns this protein's own curated sequence features straight
         from UniProt (active/binding sites, PTMs, disulfide bonds, natural
         variants) - a different signal than InterPro's domain/family
@@ -1432,7 +1432,7 @@ class AnnotationAggregator:
         more feature types than that, most already covered by other
         signals in this app (see that set's docstring)."""
 
-        async def _fetch() -> List[Dict[str, Any]]:
+        async def _fetch() -> list[dict[str, Any]]:
             url = f"{UNIPROT_BASE_URL}/{accession}.json"
             try:
                 response = await client.get(url, headers=_JSON_ACCEPT_HEADERS)
@@ -1453,13 +1453,13 @@ class AnnotationAggregator:
 
     async def _fetch_mcsa_entries(
         self, client: httpx.AsyncClient
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """The full M-CSA curated catalytic-site database, fetched page by
         page and cached once under one fixed key - see MCSA_ENTRIES_URL's
         docstring for why (no server-side accession filter exists)."""
 
-        async def _fetch() -> List[Dict[str, Any]]:
-            entries: List[Dict[str, Any]] = []
+        async def _fetch() -> list[dict[str, Any]]:
+            entries: list[dict[str, Any]] = []
             url = f"{MCSA_ENTRIES_URL}?format=json"
             try:
                 while url:
@@ -1477,7 +1477,7 @@ class AnnotationAggregator:
 
     async def fetch_catalytic_site_residues(
         self, accession: str, client: httpx.AsyncClient
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Real curated catalytic/active-site residues for this protein
         from M-CSA (Mechanism and Catalytic Site Atlas) - coverage is
         curated and partial (~1000 entries total), so most accessions
@@ -1524,7 +1524,7 @@ class AnnotationAggregator:
         return results
 
     @staticmethod
-    def _parse_alphafold_id(pdb_id: str) -> Optional[Tuple[str, str]]:
+    def _parse_alphafold_id(pdb_id: str) -> tuple[str, str] | None:
         """Pulls (uniprot_id, fragment) out of a Compare-mode AlphaFold
         workspace ID, e.g. "AF-P69905-F1" -> ("P69905", "F1"). None for
         anything that isn't AlphaFold-sourced."""
@@ -1535,7 +1535,7 @@ class AnnotationAggregator:
 
     async def fetch_predicted_aligned_error(
         self, pdb_id: str, client: httpx.AsyncClient
-    ) -> Optional[List[List[float]]]:
+    ) -> list[list[float]] | None:
         """Real per-residue-pair confidence matrix for an AlphaFold model -
         a different signal than per-residue pLDDT (which says how
         confident AlphaFold is in *one* residue's own position, not how
@@ -1551,7 +1551,7 @@ class AnnotationAggregator:
             return None
         uniprot_id, fragment = parsed
 
-        async def _fetch() -> Optional[List[List[float]]]:
+        async def _fetch() -> list[list[float]] | None:
             for v in ("6", "5", "4", "3", "2", "1"):
                 url = (
                     f"{ALPHAFOLD_FILES_BASE_URL}/AF-{uniprot_id}-{fragment}"
@@ -1574,7 +1574,7 @@ class AnnotationAggregator:
 
     async def fetch_alphamissense_scores(
         self, accession: str, client: httpx.AsyncClient
-    ) -> Dict[str, Dict[str, Any]]:
+    ) -> dict[str, dict[str, Any]]:
         """Real per-substitution pathogenicity scores from AlphaMissense,
         keyed by UniProt position (as a string, since a JSON round-trip
         through the annotation cache would silently coerce int keys to
@@ -1588,7 +1588,7 @@ class AnnotationAggregator:
         accession (see _resolve_structure_accession), not just an
         AlphaFold-sourced one the way fetch_predicted_aligned_error is."""
 
-        async def _fetch() -> Dict[str, Dict[str, Any]]:
+        async def _fetch() -> dict[str, dict[str, Any]]:
             url = f"{ALPHAFOLD_FILES_BASE_URL}/AF-{accession}-F1-aa-substitutions.csv"
             try:
                 response = await client.get(url)
@@ -1600,7 +1600,7 @@ class AnnotationAggregator:
             if response.status_code != 200:
                 return {}
 
-            by_position: Dict[str, Dict[str, Any]] = {}
+            by_position: dict[str, dict[str, Any]] = {}
             for line in response.text.splitlines()[1:]:  # skip the header row
                 parts = line.split(",")
                 if len(parts) != 3:
@@ -1629,7 +1629,7 @@ class AnnotationAggregator:
 
     async def fetch_disorder_prediction(
         self, accession: str, client: httpx.AsyncClient
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Real sequence-based intrinsic-disorder prediction from MobiDB,
         keyed by UniProt accession alone. Returns
         {"per_residue_score": {"1": 0.43, "2": 0.41, ...}, "consensus_regions":
@@ -1642,7 +1642,7 @@ class AnnotationAggregator:
         uncommon ones) genuinely have no MobiDB record, same honest-fallback
         shape as M-CSA/CATH coverage elsewhere in this class."""
 
-        async def _fetch() -> Optional[Dict[str, Any]]:
+        async def _fetch() -> dict[str, Any] | None:
             try:
                 response = await client.get(
                     MOBIDB_DOWNLOAD_URL, params={"acc": accession, "format": "json"}
@@ -1680,10 +1680,10 @@ class AnnotationAggregator:
     async def aggregate_disorder_prediction(
         self,
         pdb_id: str,
-        chain: Optional[str],
+        chain: str | None,
         source: str,
         client: httpx.AsyncClient,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Real per-residue intrinsic-disorder overlay for one Compare-mode
         structure, translated onto this structure's own residue numbering -
         same accession resolution and AlphaFold-1:1-vs-real-SIFTS-mapping
@@ -1693,7 +1693,7 @@ class AnnotationAggregator:
         accession = await self._resolve_structure_accession(
             pdb_id, chain, source, client, None
         )
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "accession": accession,
             "per_residue_score": {},
             "consensus_regions": [],
@@ -1729,7 +1729,7 @@ class AnnotationAggregator:
 
     async def fetch_cath_classification(
         self, pdb_id: str, client: httpx.AsyncClient
-    ) -> List[Dict[str, str]]:
+    ) -> list[dict[str, str]]:
         """Real CATH fold classifications for a real PDB entry, via PDBe's
         cath_b mappings endpoint - a standardized fold-family label
         independent of Foldseek's own structural-similarity search.
@@ -1740,7 +1740,7 @@ class AnnotationAggregator:
         all (CATH only classifies real experimentally-solved structures) -
         callers should only invoke this for source == "pdb"."""
 
-        async def _fetch() -> List[Dict[str, str]]:
+        async def _fetch() -> list[dict[str, str]]:
             try:
                 response = await client.get(
                     f"{PDBE_CATH_MAPPINGS_BASE_URL}/{pdb_id.lower()}",
@@ -1770,7 +1770,7 @@ class AnnotationAggregator:
 
     async def fetch_assembly_info(
         self, pdb_id: str, client: httpx.AsyncClient
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Real oligomeric-state metadata for a real PDB entry's first
         biological assembly, via RCSB's assembly API - e.g. {"oligomeric_
         count": 4, "oligomeric_details": "tetrameric"} for 4HHB. Deliberately
@@ -1778,7 +1778,7 @@ class AnnotationAggregator:
         InterfaceAnalyzer's job, see calculate_interface()). Only meaningful
         for source == "pdb"; returns None if nothing resolves."""
 
-        async def _fetch() -> Optional[Dict[str, Any]]:
+        async def _fetch() -> dict[str, Any] | None:
             try:
                 response = await client.get(
                     f"{RCSB_ASSEMBLY_BASE_URL}/{pdb_id.lower()}/1",
@@ -1803,7 +1803,7 @@ class AnnotationAggregator:
 
         return await self._get_or_fetch(f"assembly:{pdb_id}", "assembly", _fetch)
 
-    def _try_get_cached_go_name(self, gid: str) -> Optional[str]:
+    def _try_get_cached_go_name(self, gid: str) -> str | None:
         if not self.cache_db:
             return None
         try:
@@ -1826,9 +1826,9 @@ class AnnotationAggregator:
             logger.warning(f"GO term cache write failed for {gid}: {e}")
 
     async def _fetch_go_term_names_chunk(
-        self, chunk: List[str], client: httpx.AsyncClient
-    ) -> Dict[str, str]:
-        names: Dict[str, str] = {}
+        self, chunk: list[str], client: httpx.AsyncClient
+    ) -> dict[str, str]:
+        names: dict[str, str] = {}
         url = f"{QUICKGO_BASE_URL}/ontology/go/terms/{','.join(chunk)}"
         try:
             response = await client.get(url, headers=_JSON_ACCEPT_HEADERS)
@@ -1843,15 +1843,15 @@ class AnnotationAggregator:
         return names
 
     async def resolve_go_term_names(
-        self, go_ids: List[str], client: httpx.AsyncClient
-    ) -> Dict[str, str]:
+        self, go_ids: list[str], client: httpx.AsyncClient
+    ) -> dict[str, str]:
         """Batch-resolves GO IDs to human-readable names (QuickGO's
         annotation search endpoint returns IDs but not names). GO term names
         are essentially static, so each ID is cached individually - a
         request for 50 IDs where 45 are already cached only needs to fetch
         the remaining 5 from QuickGO."""
         unique_ids = sorted({gid for gid in go_ids if gid})
-        names: Dict[str, str] = {}
+        names: dict[str, str] = {}
         uncached_ids = []
         for gid in unique_ids:
             cached_name = self._try_get_cached_go_name(gid)
@@ -1869,11 +1869,11 @@ class AnnotationAggregator:
     async def _resolve_structure_accession(
         self,
         pdb_id: str,
-        chain: Optional[str],
+        chain: str | None,
         source: str,
         client: httpx.AsyncClient,
-        pdb_cache: Optional[Dict[str, Dict[str, Optional[str]]]],
-    ) -> Optional[str]:
+        pdb_cache: dict[str, dict[str, str | None]] | None,
+    ) -> str | None:
         """Resolves a Compare-mode structure ID (not a Foldseek hit) to a
         UniProt accession, by source database (see
         PDBManager.detect_source()). "alphafold" IDs are the exact same
@@ -1898,8 +1898,8 @@ class AnnotationAggregator:
 
     @staticmethod
     def _domain_residues(
-        domain: Dict[str, Any], residue_map: Optional[Dict[int, int]]
-    ) -> List[int]:
+        domain: dict[str, Any], residue_map: dict[int, int] | None
+    ) -> list[int]:
         """Residues a domain's locations cover, translated through
         residue_map if given - an unmapped UniProt position (no entry in
         residue_map) is silently dropped rather than mismapped. `None`
@@ -1916,8 +1916,8 @@ class AnnotationAggregator:
 
     async def _attach_domain_highlight_chains(
         self,
-        domains: List[Dict[str, Any]],
-        chain: Optional[str],
+        domains: list[dict[str, Any]],
+        chain: str | None,
         source: str,
         pdb_id: str,
         client: httpx.AsyncClient,
@@ -1932,7 +1932,7 @@ class AnnotationAggregator:
         numbering (crystallization constructs, non-1-start numbering,
         tags) - resolve_uniprot_residue_mapping()'s real SIFTS segment
         mapping translates through that for source == "pdb" too."""
-        residue_map: Optional[Dict[int, int]] = None
+        residue_map: dict[int, int] | None = None
         if source == "alphafold" and chain:
             pass  # residue_map stays None - AlphaFold's 1:1 shortcut
         elif source == "pdb" and chain and domains:
@@ -1950,8 +1950,8 @@ class AnnotationAggregator:
 
     async def _attach_feature_highlight_chains(
         self,
-        features: List[Dict[str, Any]],
-        chain: Optional[str],
+        features: list[dict[str, Any]],
+        chain: str | None,
         source: str,
         pdb_id: str,
         client: httpx.AsyncClient,
@@ -1984,11 +1984,11 @@ class AnnotationAggregator:
     async def aggregate_for_structure(
         self,
         pdb_id: str,
-        chain: Optional[str],
+        chain: str | None,
         source: str,
         client: httpx.AsyncClient,
-        pdb_cache: Optional[Dict[str, Dict[str, Optional[str]]]] = None,
-    ) -> Dict[str, Any]:
+        pdb_cache: dict[str, dict[str, str | None]] | None = None,
+    ) -> dict[str, Any]:
         """Fetches functional annotation (InterPro domains, QuickGO terms,
         Reactome pathways) for one Compare-mode structure. Unlike
         aggregate_for_hits(), there is no Foldseek-style confidence gating
@@ -2002,7 +2002,7 @@ class AnnotationAggregator:
             pdb_id, chain, source, client, pdb_cache
         )
 
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "pdb_id": pdb_id,
             "chain": chain,
             "accession": accession,
@@ -2100,10 +2100,10 @@ class AnnotationAggregator:
     async def aggregate_mutation_tolerance(
         self,
         pdb_id: str,
-        chain: Optional[str],
+        chain: str | None,
         source: str,
         client: httpx.AsyncClient,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Real per-residue mutation-tolerance overlay for one Compare-mode
         structure - the mean AlphaMissense pathogenicity across all 19
         possible substitutions at each position, translated onto this
@@ -2114,7 +2114,7 @@ class AnnotationAggregator:
         accession = await self._resolve_structure_accession(
             pdb_id, chain, source, client, None
         )
-        result: Dict[str, Any] = {"accession": accession, "per_residue_average": {}}
+        result: dict[str, Any] = {"accession": accession, "per_residue_average": {}}
         if not accession:
             return result
 
@@ -2143,7 +2143,7 @@ class AnnotationAggregator:
         return result
 
     @staticmethod
-    def _hit_sort_key(hit: Dict[str, Any]) -> float:
+    def _hit_sort_key(hit: dict[str, Any]) -> float:
         try:
             return float(hit.get("eval", hit.get("eValue", hit.get("evalue", 1e9))))
         except (TypeError, ValueError):
@@ -2151,11 +2151,11 @@ class AnnotationAggregator:
 
     async def _annotate_neighbor(
         self,
-        hit: Dict[str, Any],
-        accession: Optional[str],
+        hit: dict[str, Any],
+        accession: str | None,
         client: httpx.AsyncClient,
-        gmgc_gene_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        gmgc_gene_id: str | None = None,
+    ) -> dict[str, Any]:
         """Fetches the full annotation set for a hit that's already been
         resolved - either to a UniProt accession (see resolve_accession()),
         routing through InterPro/QuickGO/STRING/Reactome, or to a GMGC gene
@@ -2164,7 +2164,7 @@ class AnnotationAggregator:
         all. Kept separate from resolution so aggregate_for_hits can resolve
         a larger, cheap candidate pool before paying for the full annotation
         calls only on the neighbors it actually keeps."""
-        neighbor: Dict[str, Any] = {
+        neighbor: dict[str, Any] = {
             "target": hit.get("target", ""),
             "accession": accession or gmgc_gene_id,
             # Foldseek's own structural-match confidence for this hit,
@@ -2204,14 +2204,14 @@ class AnnotationAggregator:
 
     async def _resolve_candidates(
         self,
-        hits: List[Dict[str, Any]],
+        hits: list[dict[str, Any]],
         candidate_pool_size: int,
         client: httpx.AsyncClient,
-    ) -> Tuple[List[Dict[str, Any]], List[Optional[str]], List[Optional[str]], int]:
+    ) -> tuple[list[dict[str, Any]], list[str | None], list[str | None], int]:
         """Resolves the oversampled candidate pool to (accession, gmgc_gene_id)
         pairs. Returns (candidates, accessions, gmgc_gene_ids, resolved_count)."""
         candidates = sorted(hits, key=self._hit_sort_key)[:candidate_pool_size]
-        pdb_cache: Dict[str, Dict[str, Optional[str]]] = {}
+        pdb_cache: dict[str, dict[str, str | None]] = {}
         accessions = await asyncio.gather(
             *(self.resolve_accession(hit, client, pdb_cache) for hit in candidates)
         )
@@ -2230,11 +2230,11 @@ class AnnotationAggregator:
 
     def _collect_neighbor_keys(
         self,
-        neighbor: Dict[str, Any],
-        resolved_names: Dict[str, str],
-        domain_meta: Dict[Tuple[str, str], Dict[str, Any]],
-        go_meta: Dict[str, Dict[str, Any]],
-    ) -> Tuple[set, set]:
+        neighbor: dict[str, Any],
+        resolved_names: dict[str, str],
+        domain_meta: dict[tuple[str, str], dict[str, Any]],
+        go_meta: dict[str, dict[str, Any]],
+    ) -> tuple[set, set]:
         """One neighbor's distinct domain keys and GO ids, updating the
         shared `domain_meta`/`go_meta` lookups as a side effect (a domain's
         or GO term's metadata is the same regardless of which neighbor's
@@ -2264,17 +2264,17 @@ class AnnotationAggregator:
         return domain_keys, go_ids
 
     def _count_neighbor_annotations(
-        self, per_neighbor: List[Dict[str, Any]], resolved_names: Dict[str, str]
-    ) -> Tuple[Counter, Dict, Counter, Dict, Counter, Counter]:
+        self, per_neighbor: list[dict[str, Any]], resolved_names: dict[str, str]
+    ) -> tuple[Counter, dict, Counter, dict, Counter, Counter]:
         """Tallies domain/GO-term frequency across all neighbors, plus a
         parallel "confident" tally restricted to neighbors whose own
         structural match probability clears min_confident_probability -
         Public/Student should only state a function hypothesis from that
         filtered set, while Researcher gets the unfiltered counts."""
         domain_counter: Counter = Counter()
-        domain_meta: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        domain_meta: dict[tuple[str, str], dict[str, Any]] = {}
         go_counter: Counter = Counter()
-        go_meta: Dict[str, Dict[str, Any]] = {}
+        go_meta: dict[str, dict[str, Any]] = {}
         confident_domain_counter: Counter = Counter()
         confident_go_counter: Counter = Counter()
 
@@ -2307,9 +2307,9 @@ class AnnotationAggregator:
     @staticmethod
     def _top_domains(
         counter: Counter,
-        domain_meta: Dict[Tuple[str, str], Dict[str, Any]],
+        domain_meta: dict[tuple[str, str], dict[str, Any]],
         top_n: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         return [
             {
                 "name": name,
@@ -2322,8 +2322,8 @@ class AnnotationAggregator:
 
     @staticmethod
     def _top_go_terms(
-        counter: Counter, go_meta: Dict[str, Dict[str, Any]], top_n: int
-    ) -> List[Dict[str, Any]]:
+        counter: Counter, go_meta: dict[str, dict[str, Any]], top_n: int
+    ) -> list[dict[str, Any]]:
         return [
             {
                 "id": gid,
@@ -2335,8 +2335,8 @@ class AnnotationAggregator:
         ]
 
     def _neighbor_summary_counts(
-        self, per_neighbor: List[Dict[str, Any]]
-    ) -> Dict[str, int]:
+        self, per_neighbor: list[dict[str, Any]]
+    ) -> dict[str, int]:
         # All neighbors here already have a resolved accession; "annotated"
         # distinguishes those where InterPro/QuickGO actually returned data
         # from those where the accession resolved but lookups came back
@@ -2370,10 +2370,10 @@ class AnnotationAggregator:
 
     async def aggregate_for_hits(
         self,
-        hits: List[Dict[str, Any]],
+        hits: list[dict[str, Any]],
         top_n_neighbors: int = DEFAULT_TOP_N_NEIGHBORS,
         top_n_summary: int = DEFAULT_TOP_N_SUMMARY,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Fetches annotations for the most confident *resolvable* Foldseek
         hits (lowest E-value first among hits that resolve to a UniProt

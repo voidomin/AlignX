@@ -3,27 +3,28 @@ Analysis Coordinator Module.
 Orchestrates the structural alignment pipeline (PDB -> Mustang -> RMSD -> Report).
 """
 
-import shutil
 import asyncio
-from pathlib import Path
-from typing import List, Dict, Tuple, Optional, Any, Callable
+import shutil
+from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
-from src.utils.logger import get_logger
-from src.backend.pdb_manager import PDBManager
-from src.backend.mustang_runner import MustangRunner
-from src.backend.ligand_analyzer import LigandAnalyzer
-from src.backend.rmsd_analyzer import RMSDAnalyzer
-from src.backend.phylo_tree import PhyloTreeGenerator
-from src.backend.rmsd_calculator import (
-    parse_rmsd_matrix,
-    calculate_alignment_quality_metrics,
-)
-from src.backend.tm_score_calculator import calculate_tm_score_matrix
-from src.backend.ramachandran_service import RamachandranService
 from src.backend.database import HistoryDatabase
+from src.backend.ligand_analyzer import LigandAnalyzer
+from src.backend.mustang_runner import MustangRunner
+from src.backend.pdb_manager import PDBManager
+from src.backend.phylo_tree import PhyloTreeGenerator
+from src.backend.ramachandran_service import RamachandranService
+from src.backend.rmsd_analyzer import RMSDAnalyzer
+from src.backend.rmsd_calculator import (
+    calculate_alignment_quality_metrics,
+    parse_rmsd_matrix,
+)
 from src.backend.sequence_viewer import SequenceViewer
+from src.backend.tm_score_calculator import calculate_tm_score_matrix
 from src.utils.cache_manager import CacheManager
+from src.utils.logger import get_logger
 from src.utils.run_id import generate_run_id
 
 logger = get_logger()
@@ -32,8 +33,9 @@ logger = get_logger()
 def _sanitize_json_key(k: Any) -> Any:
     """A dict key must itself be JSON-serializable, which np.integer/
     np.floating/Path (and anything else non-primitive) aren't."""
-    import numpy as np
     from pathlib import Path
+
+    import numpy as np
 
     if isinstance(k, (np.integer, np.floating)):
         return k.item()
@@ -46,9 +48,10 @@ def _sanitize_json_key(k: Any) -> Any:
 
 def sanitize_for_json(val: Any) -> Any:
     """Recursively convert custom objects (Path, np.ndarray, DataFrame, etc) to JSON-serializable types."""
+    from pathlib import Path
+
     import numpy as np
     import pandas as pd
-    from pathlib import Path
 
     if isinstance(val, dict):
         return {_sanitize_json_key(k): sanitize_for_json(v) for k, v in val.items()}
@@ -78,7 +81,7 @@ class AnalysisCoordinator:
     Decouples UI from backend implementation logic.
     """
 
-    def __init__(self, config: Dict[str, Any], session_id: str = None):
+    def __init__(self, config: dict[str, Any], session_id: str | None = None):
         self.config = config
         self.session_id = session_id
         self.history_db = HistoryDatabase()
@@ -98,8 +101,8 @@ class AnalysisCoordinator:
             logger.info(f"Mustang installation verified: {msg}")
 
     def _resolve_run_identity(
-        self, output_dir: Optional[Path], pdb_ids: List[str]
-    ) -> Tuple[Path, str, str, datetime]:
+        self, output_dir: Path | None, pdb_ids: list[str]
+    ) -> tuple[Path, str, str, datetime]:
         """Derives (output_dir, run_id, run_name, now) - either fresh, or
         from a caller-supplied output_dir whose name IS the run_id."""
         now = datetime.now()
@@ -117,7 +120,7 @@ class AnalysisCoordinator:
         base = Path("results") / self.session_id if self.session_id else Path("results")
         return base / run_id, run_id, run_name, now
 
-    def _download_structures(self, pdb_ids: List[str]) -> Tuple[bool, str, List[Path]]:
+    def _download_structures(self, pdb_ids: list[str]) -> tuple[bool, str, list[Path]]:
         # Run async batch download from sync context
         download_results = asyncio.run(self.pdb_manager.batch_download(pdb_ids))
         failed = [
@@ -132,10 +135,10 @@ class AnalysisCoordinator:
     def _clean_structure(
         self,
         pdb_file: Path,
-        chain_selection: Optional[Dict[str, str]],
+        chain_selection: dict[str, str] | None,
         remove_water: bool,
         remove_heteroatoms: bool,
-    ) -> Tuple[Optional[Path], Optional[str]]:
+    ) -> tuple[Path | None, str | None]:
         """Cleans one downloaded structure, returning (cleaned_path, None)
         on success or (None, failure_description) on failure."""
         pdb_id = pdb_file.stem.split("_")[0].upper()
@@ -164,11 +167,11 @@ class AnalysisCoordinator:
 
     def _clean_structures(
         self,
-        pdb_files: List[Path],
-        chain_selection: Optional[Dict[str, str]],
+        pdb_files: list[Path],
+        chain_selection: dict[str, str] | None,
         remove_water: bool,
         remove_heteroatoms: bool,
-    ) -> Tuple[bool, str, List[Path]]:
+    ) -> tuple[bool, str, list[Path]]:
         cleaned_files = []
         failed_cleaning = []
         for pdb_file in pdb_files:
@@ -194,8 +197,8 @@ class AnalysisCoordinator:
         return True, "", cleaned_files
 
     def _analyze_ligands(
-        self, pdb_files: List[Path]
-    ) -> Tuple[Dict[str, List[Dict[str, Any]]], List[Dict[str, Any]]]:
+        self, pdb_files: list[Path]
+    ) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
         """Runs ligand detection on the RAW downloaded structures - cleaning
         strips HETATM records by default, so this must run against
         `pdb_files` from `_download_structures`, never `cleaned_files`.
@@ -216,8 +219,8 @@ class AnalysisCoordinator:
         came from, so two different structures with identically-shaped
         ligand IDs would otherwise be indistinguishable in the result.
         """
-        ligand_analysis: Dict[str, List[Dict[str, Any]]] = {}
-        all_interactions: List[Dict[str, Any]] = []
+        ligand_analysis: dict[str, list[dict[str, Any]]] = {}
+        all_interactions: list[dict[str, Any]] = []
 
         for pdb_file in pdb_files:
             pdb_id = pdb_file.stem.split("_")[0].upper()
@@ -245,7 +248,7 @@ class AnalysisCoordinator:
         return ligand_analysis, all_interactions
 
     def _attach_ligand_analysis(
-        self, pdb_files: List[Path], results: Dict[str, Any]
+        self, pdb_files: list[Path], results: dict[str, Any]
     ) -> None:
         """Mutates `results` with `ligand_analysis` and (when there's
         enough data to compare) `ligand_pocket_similarity`. Best-effort,
@@ -265,8 +268,8 @@ class AnalysisCoordinator:
             results["ligand_analysis"] = {}
 
     def _run_mustang_alignment(
-        self, cleaned_files: List[Path], output_dir: Path
-    ) -> Tuple[bool, str, Optional[Path]]:
+        self, cleaned_files: list[Path], output_dir: Path
+    ) -> tuple[bool, str, Path | None]:
         if output_dir.exists():
             shutil.rmtree(output_dir, ignore_errors=True)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -285,7 +288,7 @@ class AnalysisCoordinator:
         return True, "", result_dir
 
     @staticmethod
-    def _generate_insights(config: Dict[str, Any], results: Dict[str, Any]) -> None:
+    def _generate_insights(config: dict[str, Any], results: dict[str, Any]) -> None:
         """Mutates `results["insights"]` in place - a failure here shouldn't
         fail the whole pipeline, since insights are a nice-to-have summary
         of results that were already computed successfully."""
@@ -303,12 +306,12 @@ class AnalysisCoordinator:
         self,
         run_id: str,
         run_name: str,
-        pdb_ids: List[str],
+        pdb_ids: list[str],
         result_dir: Path,
-        chain_selection: Optional[Dict[str, str]],
+        chain_selection: dict[str, str] | None,
         remove_water: bool,
         remove_heteroatoms: bool,
-        results: Dict[str, Any],
+        results: dict[str, Any],
         now: datetime,
     ) -> None:
         """Saves the run to the history DB, writes metadata.json alongside
@@ -350,13 +353,13 @@ class AnalysisCoordinator:
 
     def run_full_pipeline(
         self,
-        pdb_ids: List[str],
-        output_dir: Optional[Path] = None,
-        progress_callback: Optional[Callable[[float, str, int], None]] = None,
-        chain_selection: Optional[Dict[str, str]] = None,
+        pdb_ids: list[str],
+        output_dir: Path | None = None,
+        progress_callback: Callable[[float, str, int], None] | None = None,
+        chain_selection: dict[str, str] | None = None,
         remove_water: bool = True,
         remove_heteroatoms: bool = True,
-    ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+    ) -> tuple[bool, str, dict[str, Any] | None]:
         """
         Execute the full analysis pipeline.
 
@@ -425,8 +428,8 @@ class AnalysisCoordinator:
             return False, str(e), None
 
     def process_result_directory(
-        self, result_dir: Path, pdb_ids: List[str]
-    ) -> Optional[Dict[str, Any]]:
+        self, result_dir: Path, pdb_ids: list[str]
+    ) -> dict[str, Any] | None:
         """
         Process a completed Mustang run directory into a results dictionary.
         """

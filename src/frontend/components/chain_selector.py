@@ -1,8 +1,9 @@
+from typing import Any
+
 import streamlit as st
-from typing import Dict, Any
 
 
-def render_chain_selector(chain_info: Dict[str, Any]):
+def render_chain_selector(chain_info: dict[str, Any]):
     """
     Render the chain information and selection UI.
     """
@@ -37,9 +38,7 @@ def render_chain_selector(chain_info: Dict[str, Any]):
                 st.session_state.manual_chain_selections[pdb_id] = new_sel
 
             with c2:
-                cols = st.columns(
-                    len(info["chains"]) if len(info["chains"]) <= 4 else 4
-                )
+                cols = st.columns(min(len(info["chains"]), 4))
                 for idx, chain in enumerate(info["chains"]):
                     with cols[idx % 4]:
                         # Highlight the selected chain

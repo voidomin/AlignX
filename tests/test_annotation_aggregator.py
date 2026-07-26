@@ -1,7 +1,7 @@
 import asyncio
 import threading
 import time
-from unittest.mock import patch, AsyncMock, MagicMock, ANY
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import httpx
 import pytest

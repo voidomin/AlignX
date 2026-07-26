@@ -1,8 +1,8 @@
 """Tests for RMSDAnalyzer module."""
 
-import pytest
 import numpy as np
 import pandas as pd
+import pytest
 
 from src.backend.rmsd_analyzer import RMSDAnalyzer
 

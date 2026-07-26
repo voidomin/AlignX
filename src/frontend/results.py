@@ -1,18 +1,23 @@
+from typing import Any
+
 import streamlit as st
-from typing import Optional, Dict, Any, List
+
 from src.frontend.tabs import (
+    clusters,
+    comparison,
+    downloads,
+    ligand,
+    phylo,
     rmsd,
     sequence,
-    phylo,
-    clusters,
     structure,
-    ligand,
-    downloads,
-    comparison,
 )
+from src.utils.logger import get_logger
+
+logger = get_logger()
 
 
-def display_results(results: Optional[Dict[str, Any]] = None) -> None:
+def display_results(results: dict[str, Any] | None = None) -> None:
     """
     Main results display logic with tabs.
 
@@ -133,7 +138,7 @@ def display_results(results: Optional[Dict[str, Any]] = None) -> None:
             st.caption(f"Details: {e}")
 
 
-def render_compact_summary(results: Optional[Dict[str, Any]] = None) -> None:
+def render_compact_summary(results: dict[str, Any] | None = None) -> None:
     """
     Render a high-level summary of results for the dashboard.
 
@@ -181,7 +186,7 @@ def render_compact_summary(results: Optional[Dict[str, Any]] = None) -> None:
         st.rerun()
 
 
-def _render_results_banner(results: Dict[str, Any]) -> None:
+def _render_results_banner(results: dict[str, Any]) -> None:
     """Render a rich summary banner at the top of the results view (#8)."""
     import numpy as np
 
@@ -209,7 +214,7 @@ def _render_results_banner(results: Dict[str, Any]) -> None:
                 else:
                     homogeneity, homogeneity_color = "High Diversity", "#ff6060"
     except Exception:
-        pass
+        logger.debug("Failed to compute RMSD homogeneity summary", exc_info=True)
 
     rmsd_str = f"{avg_rmsd:.2f} Å" if avg_rmsd is not None else "—"
 
@@ -253,7 +258,7 @@ def _render_results_banner(results: Dict[str, Any]) -> None:
     )
 
 
-def _render_structural_insights(insights: List[str]) -> None:
+def _render_structural_insights(insights: list[str]) -> None:
     """Helper to render structural insights with formatting."""
     if not insights:
         return

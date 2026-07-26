@@ -159,9 +159,8 @@ def test_export_reraises_after_logging_on_render_failure():
     with patch(
         "src.backend.discovery_report_exporter.Template.render",
         side_effect=RuntimeError("boom"),
-    ):
-        with pytest.raises(RuntimeError, match="boom"):
-            exporter.export(results)
+    ), pytest.raises(RuntimeError, match="boom"):
+        exporter.export(results)
 
 
 class TestFmt:
