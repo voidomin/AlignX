@@ -14,16 +14,16 @@ import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
-from src.utils.logger import get_logger
-from src.backend.pdb_manager import PDBManager
-from src.backend.foldseek_client import FoldseekClient, FoldseekError
-from src.backend.foldseek_runner import FoldseekRunner
 from src.backend.annotation_aggregator import AnnotationAggregator
 from src.backend.coordinator import sanitize_for_json
-from src.utils.cache_manager import CacheManager
 from src.backend.database import HistoryDatabase
+from src.backend.foldseek_client import FoldseekClient, FoldseekError
+from src.backend.foldseek_runner import FoldseekRunner
+from src.backend.pdb_manager import PDBManager
+from src.utils.cache_manager import CacheManager
+from src.utils.logger import get_logger
 from src.utils.run_id import generate_run_id
 
 logger = get_logger()
@@ -32,7 +32,7 @@ logger = get_logger()
 class DiscoveryCoordinator:
     """Orchestrates the single-structure Foldseek discovery pipeline."""
 
-    def __init__(self, config: Dict[str, Any], session_id: Optional[str] = None):
+    def __init__(self, config: dict[str, Any], session_id: str | None = None):
         self.config = config
         self.session_id = session_id
         self.history_db = HistoryDatabase()
@@ -47,8 +47,8 @@ class DiscoveryCoordinator:
     def run_discovery_pipeline(
         self,
         pdb_id: str,
-        databases: Optional[List[str]] = None,
-    ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+        databases: list[str] | None = None,
+    ) -> tuple[bool, str, dict[str, Any] | None]:
         """
         Execute the single-structure discovery pipeline.
 
@@ -151,7 +151,7 @@ class DiscoveryCoordinator:
 
     def _search_local(
         self, structure_path: Path
-    ) -> Tuple[bool, str, Optional[List[Dict[str, Any]]]]:
+    ) -> tuple[bool, str, list[dict[str, Any]] | None]:
         """Runs the search via a locally-installed Foldseek binary against
         `foldseek.local.database_dir` instead of the public API. See
         FoldseekRunner's module docstring for what "local" does and doesn't

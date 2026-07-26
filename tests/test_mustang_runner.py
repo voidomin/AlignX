@@ -1,6 +1,7 @@
 import subprocess
-from unittest.mock import patch, MagicMock
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
 from src.backend.mustang_runner import MustangRunner
 
 

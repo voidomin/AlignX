@@ -1,7 +1,7 @@
 import copy
 import logging
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from src.backend.interaction_geometry import classify_contact
 from src.backend.pdb_manager import parse_structure_file
@@ -20,7 +20,7 @@ class InterfaceAnalyzer:
 
     def calculate_interface(
         self, pdb_file: Path, chain_a: str, chain_b: str, cutoff: float = 5.0
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         if chain_a == chain_b:
             return {"error": "chain_a and chain_b must be different chains"}
 
@@ -70,14 +70,14 @@ class InterfaceAnalyzer:
         }
 
     @staticmethod
-    def _standard_residue_atoms(chain) -> List:
+    def _standard_residue_atoms(chain) -> list:
         return [atom for res in chain if res.get_id()[0] == " " for atom in res]
 
     @staticmethod
     def _min_distance(atoms_a, atoms_b) -> float:
         return min((a - b for a in atoms_a for b in atoms_b), default=999.9)
 
-    def _contact_records(self, residues, target_atoms) -> List[Dict[str, Any]]:
+    def _contact_records(self, residues, target_atoms) -> list[dict[str, Any]]:
         records = []
         for res in residues:
             resname = res.get_resname()

@@ -18,7 +18,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from src.utils.logger import get_logger
 
@@ -58,7 +58,7 @@ class FoldseekRunner:
     # slow subprocess call and installation status can't change mid-run.
     _cached_installation = None
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         self.config = config
         local_cfg = config.get("foldseek", {}).get("local", {})
         self.binary_path = local_cfg.get("binary_path")
@@ -67,9 +67,9 @@ class FoldseekRunner:
         self.is_linux = sys.platform.startswith("linux")
         self.is_windows = sys.platform.startswith("win")
         self.use_wsl = False
-        self.executable: Optional[str] = None
+        self.executable: str | None = None
 
-    def check_installation(self) -> Tuple[bool, str]:
+    def check_installation(self) -> tuple[bool, str]:
         if FoldseekRunner._cached_installation is not None:
             success, msg, use_wsl, executable = FoldseekRunner._cached_installation
             self.use_wsl, self.executable = use_wsl, executable
@@ -84,7 +84,7 @@ class FoldseekRunner:
         )
         return success, msg
 
-    def _perform_installation_check(self) -> Tuple[bool, str]:
+    def _perform_installation_check(self) -> tuple[bool, str]:
         if self.binary_path:
             if self.is_windows:
                 return self._verify_wsl_binary(Path(self.binary_path))
@@ -115,7 +115,7 @@ class FoldseekRunner:
 
         return False, "Foldseek binary not found (set foldseek.local.binary_path)"
 
-    def _verify_native_binary(self, path_str: str) -> Tuple[bool, str]:
+    def _verify_native_binary(self, path_str: str) -> tuple[bool, str]:
         """Takes a plain string, not a Path, since wrapping a POSIX-style
         native path in pathlib.Path and back to str() on a Windows dev
         machine (running the WSL backend for local testing) would silently
@@ -128,7 +128,7 @@ class FoldseekRunner:
         except Exception as e:
             return False, f"Native Foldseek binary check failed: {e}"
 
-    def _verify_wsl_binary(self, path: Path) -> Tuple[bool, str]:
+    def _verify_wsl_binary(self, path: Path) -> tuple[bool, str]:
         wsl_str = self._convert_to_wsl_path(path)
         wsl_path = shutil.which("wsl") or WSL_EXE
         try:
@@ -149,7 +149,7 @@ class FoldseekRunner:
 
     def search_against_directory(
         self, query_path: Path, target_dir: Path, tmp_dir: Path
-    ) -> Tuple[bool, str, List[Dict[str, Any]]]:
+    ) -> tuple[bool, str, list[dict[str, Any]]]:
         """
         Runs `foldseek easy-search` with the query file against every
         structure in target_dir (or a pre-built Foldseek database at that
@@ -210,7 +210,7 @@ class FoldseekRunner:
         return True, "Local Foldseek search completed successfully", hits
 
     @staticmethod
-    def _parse_tsv(result_path: Path) -> List[Dict[str, Any]]:
+    def _parse_tsv(result_path: Path) -> list[dict[str, Any]]:
         hits = []
         for line in result_path.read_text().splitlines():
             if not line.strip():

@@ -1,7 +1,8 @@
 import shutil
-import streamlit as st
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
+
+import streamlit as st
 
 # ---------------------------------------------------------------------------
 # Helper: reset session (#4)
@@ -86,6 +87,7 @@ def _render_mustang_status() -> None:
 
 def _get_current_mem_mb() -> float:
     import os
+
     import psutil
 
     try:
@@ -95,8 +97,9 @@ def _get_current_mem_mb() -> float:
 
 
 def _render_free_ram_button(initial_mem: float) -> None:
-    import os
     import gc
+    import os
+
     import psutil
 
     if not st.button(

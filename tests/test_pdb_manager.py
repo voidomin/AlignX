@@ -1,8 +1,10 @@
 import asyncio
 from pathlib import Path
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import httpx
 import pytest
+
 from src.backend.pdb_manager import PDBManager
 from tests.conftest import MINIMAL_CIF_HEADER
 

@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 
 # Ensure UTF-8 stdout encoding for Windows console environments
 if hasattr(sys.stdout, "reconfigure"):
@@ -9,8 +9,8 @@ if hasattr(sys.stdout, "reconfigure"):
 sys.path.append(os.getcwd())
 
 try:
-    from src.utils.config_loader import load_config
     from src.backend.coordinator import AnalysisCoordinator
+    from src.utils.config_loader import load_config
 
     print("🔍 Checking Pipeline Setup...")
 

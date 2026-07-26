@@ -2,14 +2,14 @@ import shutil
 
 from streamlit.testing.v1 import AppTest
 
-from src.frontend.tabs.sequence import (
-    _build_projection_mapping,
-    _parse_range_str,
-)
 from src.backend.sequence_viewer import (
     _aligned_cols_to_raw_residues,
     _build_chain_mapping_from_matches,
     find_motif_matches,
+)
+from src.frontend.tabs.sequence import (
+    _build_projection_mapping,
+    _parse_range_str,
 )
 
 

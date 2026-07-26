@@ -1,28 +1,28 @@
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-from pathlib import Path
 
 from src.backend.rmsd_calculator import (
-    calculate_tm_score,
+    _common_ca_coords,
+    _parse_matrix_value,
+    _select_structures,
+    _try_parse_rmsd_row,
+    calculate_alignment_quality_metrics,
+    calculate_contact_map,
+    calculate_difference_distance_matrix,
     calculate_gdt_ts,
+    calculate_pairwise_distance_matrix,
     calculate_rmsd_from_superposition,
+    calculate_structure_rmsd,
+    calculate_tm_score,
+    get_difference_distance_matrix,
+    get_morph_frames,
+    get_structure_contact_map,
     parse_mustang_log_for_rmsd,
     parse_rms_rot_file,
     parse_rmsd_matrix,
-    calculate_structure_rmsd,
-    calculate_alignment_quality_metrics,
-    calculate_pairwise_distance_matrix,
-    calculate_contact_map,
-    calculate_difference_distance_matrix,
-    get_structure_contact_map,
-    get_difference_distance_matrix,
-    get_morph_frames,
-    _try_parse_rmsd_row,
-    _parse_matrix_value,
-    _select_structures,
-    _common_ca_coords,
 )
 
 

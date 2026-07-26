@@ -1,9 +1,10 @@
-import streamlit as st
 from pathlib import Path
-from src.backend.structure_viewer import show_structure_in_streamlit
-from src.frontend.tabs.common import render_learning_card, render_help_expander
+from typing import Any
 
-from typing import Dict, Any, Optional, Tuple
+import streamlit as st
+
+from src.backend.structure_viewer import show_structure_in_streamlit
+from src.frontend.tabs.common import render_help_expander, render_learning_card
 
 
 def get_conservation_color(val: float) -> str:
@@ -42,8 +43,8 @@ def get_rmsf_color(val: float, max_val: float = 5.0) -> str:
 
 
 def _build_residue_colors_from_scores(
-    sequences: Dict[str, str], scores: list, color_fn
-) -> Dict[str, Dict[int, str]]:
+    sequences: dict[str, str], scores: list, color_fn
+) -> dict[str, dict[int, str]]:
     """Maps each sequence's non-gap residues to a color derived from
     `scores` (aligned-column-indexed) via `color_fn` - shared by the
     Conservation Density and RMSF Flexibility themes, which differ only in
@@ -62,8 +63,8 @@ def _build_residue_colors_from_scores(
 
 
 def _build_residue_colors(
-    style_mode: str, results: Dict[str, Any]
-) -> Optional[Dict[str, Dict[int, str]]]:
+    style_mode: str, results: dict[str, Any]
+) -> dict[str, dict[int, str]] | None:
     """Custom per-residue colors for the themes that need them, or None
     for themes 3Dmol's built-in coloring already handles."""
     sequences = results.get("sequences", {})
@@ -90,7 +91,7 @@ def _build_residue_colors(
     return None
 
 
-def _render_cluster_filter_banner(results: Dict[str, Any]):
+def _render_cluster_filter_banner(results: dict[str, Any]):
     """Handles cluster-family isolation; returns the visible-chains filter
     (or None) for the viewer to apply."""
     visible_chains, members = _get_visible_chains_from_cluster(results)
@@ -102,7 +103,7 @@ def _render_cluster_filter_banner(results: Dict[str, Any]):
     return visible_chains
 
 
-def _render_viewer_style_controls() -> Tuple[str, str]:
+def _render_viewer_style_controls() -> tuple[str, str]:
     col_styl1, col_styl2, col_styl3 = st.columns([2, 2, 1])
     with col_styl1:
         style_mode = st.selectbox(
@@ -206,7 +207,7 @@ def _render_active_highlights_info(hl_chains: dict) -> None:
     st.info(f"🔥 Highlighting: {chain_summary}")
 
 
-def _render_viewer_body(results: Dict[str, Any]) -> None:
+def _render_viewer_body(results: dict[str, Any]) -> None:
     with st.spinner("Rendering 3D structures..."):
         pdb_path = results["alignment_pdb"]
 
@@ -235,7 +236,7 @@ def _render_viewer_body(results: Dict[str, Any]) -> None:
     _render_active_highlights_info(hl_chains)
 
 
-def _render_active_viewer(results: Dict[str, Any]) -> None:
+def _render_active_viewer(results: dict[str, Any]) -> None:
     if st.button("❌ Close Viewers"):
         st.session_state.show_3d_viewer = False
         # Also clear cluster selection when closing
@@ -246,7 +247,7 @@ def _render_active_viewer(results: Dict[str, Any]) -> None:
     try:
         _render_viewer_body(results)
     except Exception as e:
-        st.error(f"Failed to load 3D viewer: {str(e)}")
+        st.error(f"Failed to load 3D viewer: {e!s}")
 
 
 def _render_lazy_load_prompt() -> None:
@@ -256,7 +257,7 @@ def _render_lazy_load_prompt() -> None:
         st.rerun()
 
 
-def render_3d_viewer_tab(results: Dict[str, Any]) -> None:
+def render_3d_viewer_tab(results: dict[str, Any]) -> None:
     """
     Render the 3D Visualization tab.
 
@@ -284,7 +285,7 @@ def render_3d_viewer_tab(results: Dict[str, Any]) -> None:
         _render_active_viewer(results)
 
 
-def _get_visible_chains_from_cluster(results: Dict[str, Any]):
+def _get_visible_chains_from_cluster(results: dict[str, Any]):
     """Helper to determine which chains should be visible based on cluster selection."""
     visible_chains = None
     members = st.session_state.get("selected_cluster_members")
@@ -367,8 +368,9 @@ def _render_side_by_side_grid(
         "Each model from the alignment is displayed in its own viewport below. (Interactions and cameras are synchronized!)"
     )
 
-    from src.backend.structure_viewer import show_synced_grid_in_streamlit
     from pathlib import Path
+
+    from src.backend.structure_viewer import show_synced_grid_in_streamlit
 
     show_synced_grid_in_streamlit(
         pdb_file=Path(pdb_path),

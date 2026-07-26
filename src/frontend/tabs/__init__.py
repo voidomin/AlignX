@@ -1,12 +1,12 @@
-from . import rmsd, phylo, structure, sequence, clusters, ligand, downloads, comparison
+from . import clusters, comparison, downloads, ligand, phylo, rmsd, sequence, structure
 
 __all__ = [
-    "rmsd",
-    "phylo",
-    "structure",
-    "sequence",
     "clusters",
-    "ligand",
-    "downloads",
     "comparison",
+    "downloads",
+    "ligand",
+    "phylo",
+    "rmsd",
+    "sequence",
+    "structure",
 ]

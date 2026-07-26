@@ -3,10 +3,12 @@ Report Generator Module.
 Generates comprehensive PDF reports for Mustang analysis results.
 """
 
-from pathlib import Path
-from typing import Dict, Any, List
 from datetime import datetime
+from pathlib import Path
+from typing import Any
+
 from fpdf import FPDF
+
 from src.utils.logger import get_logger
 
 logger = get_logger()
@@ -49,7 +51,7 @@ class ReportGenerator:
 
     @staticmethod
     def _write_summary_section(
-        pdf: FPDF, results: Dict[str, Any], pdb_ids: List[str]
+        pdf: FPDF, results: dict[str, Any], pdb_ids: list[str]
     ) -> None:
         pdf.set_font("Arial", "B", 14)
         pdf.cell(0, 10, _clean_text("1. Analysis Summary"), 0, 1)
@@ -92,7 +94,7 @@ class ReportGenerator:
         pdf.ln(5)
 
     @staticmethod
-    def _write_insights_section(pdf: FPDF, results: Dict[str, Any]) -> None:
+    def _write_insights_section(pdf: FPDF, results: dict[str, Any]) -> None:
         # Reuse insights already computed (and persisted) during the
         # original pipeline run when available. Regenerating here requires
         # results["rmsd_df"] to be a live pandas DataFrame, which it no
@@ -153,7 +155,7 @@ class ReportGenerator:
             pdf.ln(10)
 
     @staticmethod
-    def _write_matrix_section(pdf: FPDF, results: Dict[str, Any]) -> None:
+    def _write_matrix_section(pdf: FPDF, results: dict[str, Any]) -> None:
         pdf.set_font("Arial", "B", 14)
         pdf.cell(0, 10, _clean_text("Pairwise RMSD Matrix (Snippet)"), 0, 1)
 
@@ -164,9 +166,9 @@ class ReportGenerator:
 
     def generate_full_report(
         self,
-        results: Dict[str, Any],
-        pdb_ids: List[str] = None,
-        sections: List[str] = None,
+        results: dict[str, Any],
+        pdb_ids: list[str] = None,
+        sections: list[str] = None,
     ) -> Path:
         """
         Generate PDF report from analysis results.

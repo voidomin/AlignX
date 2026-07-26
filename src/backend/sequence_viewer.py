@@ -4,8 +4,9 @@ Parses Mustang .afasta files and generates interactive HTML views.
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+
 import numpy as np
+
 from src.utils.logger import get_logger
 
 logger = get_logger()
@@ -22,7 +23,7 @@ class SequenceViewer:
             "default": "var(--seq-default, transparent)",
         }
 
-    def parse_afasta(self, file_path: Path) -> Optional[Dict[str, str]]:
+    def parse_afasta(self, file_path: Path) -> dict[str, str] | None:
         """
         Parse Mustang AFASTA alignment file.
 
@@ -61,7 +62,7 @@ class SequenceViewer:
             logger.exception("Failed to parse AFASTA file")
             return None
 
-    def calculate_conservation(self, sequences: Dict[str, str]) -> List[float]:
+    def calculate_conservation(self, sequences: dict[str, str]) -> list[float]:
         """
         Calculate conservation score (0.0-1.0) for each position.
         Simple identity based score.
@@ -116,7 +117,7 @@ class SequenceViewer:
         return "&nbsp;"
 
     def generate_html(
-        self, sequences: Dict[str, str], conservation: List[float]
+        self, sequences: dict[str, str], conservation: list[float]
     ) -> str:
         """
         Generate HTML/CSS for scrollable alignment view.
@@ -193,7 +194,7 @@ class SequenceViewer:
         """
         return html
 
-    def calculate_identity(self, sequences: Dict[str, str]) -> float:
+    def calculate_identity(self, sequences: dict[str, str]) -> float:
         """
         Calculate average pairwise sequence identity (0-100%).
         Ignores gap-gap matches.
@@ -229,7 +230,7 @@ class SequenceViewer:
 # query param. Pure functions, no Streamlit/FastAPI dependency.
 
 
-def _raw_to_aligned_map(aligned_seq: str) -> Tuple[str, Dict[int, int]]:
+def _raw_to_aligned_map(aligned_seq: str) -> tuple[str, dict[int, int]]:
     """Strips gaps from an aligned sequence, returning the raw (ungapped)
     sequence and a map from raw (0-indexed) position to aligned (1-indexed)
     column - lets a match found in the raw sequence be reported at its real
@@ -245,7 +246,7 @@ def _raw_to_aligned_map(aligned_seq: str) -> Tuple[str, Dict[int, int]]:
     return "".join(raw_chars).upper(), raw_to_aligned
 
 
-def _motif_matches_for_sequence(aligned_seq: str, pattern) -> List[int]:
+def _motif_matches_for_sequence(aligned_seq: str, pattern) -> list[int]:
     raw_seq, raw_to_aligned = _raw_to_aligned_map(aligned_seq)
     aligned_positions = []
     for match in pattern.finditer(raw_seq):
@@ -256,7 +257,7 @@ def _motif_matches_for_sequence(aligned_seq: str, pattern) -> List[int]:
     return aligned_positions
 
 
-def find_motif_matches(sequences: Dict[str, str], query: str) -> Dict[str, List[int]]:
+def find_motif_matches(sequences: dict[str, str], query: str) -> dict[str, list[int]]:
     """
     Find columns in the alignment matching a motif query.
     Supports wildcards like 'X', '.', or '-' in the query.
@@ -287,7 +288,7 @@ def find_motif_matches(sequences: Dict[str, str], query: str) -> Dict[str, List[
     return matches_map
 
 
-def _aligned_cols_to_raw_residues(seq: str, aligned_cols) -> List[int]:
+def _aligned_cols_to_raw_residues(seq: str, aligned_cols) -> list[int]:
     """Maps a set/list of 1-indexed aligned column numbers back to the
     1-indexed raw (gap-stripped) residue numbers they correspond to in
     this particular sequence."""
@@ -302,13 +303,13 @@ def _aligned_cols_to_raw_residues(seq: str, aligned_cols) -> List[int]:
     return raw_nums
 
 
-def _empty_chain_mapping(sequences: Dict[str, str]) -> Dict[str, List[int]]:
+def _empty_chain_mapping(sequences: dict[str, str]) -> dict[str, list[int]]:
     return {chr(ord("A") + i): [] for i in range(len(sequences))}
 
 
 def _build_chain_mapping_from_matches(
-    sequences: Dict[str, str], matches: Dict[str, list]
-) -> Dict[str, List[int]]:
+    sequences: dict[str, str], matches: dict[str, list]
+) -> dict[str, list[int]]:
     all_headers = list(sequences.keys())
     final_mapping = _empty_chain_mapping(sequences)
     for name, cols in matches.items():

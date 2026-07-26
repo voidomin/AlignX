@@ -1,15 +1,16 @@
+import asyncio
 import base64
 import socket
 import tempfile
 import time
-import asyncio
+from pathlib import Path
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
+
 import numpy as np
-import pytest
 import pandas as pd
+import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock, AsyncMock, ANY
-from pathlib import Path
 
 import src.backend.api as api_module
 from src.backend.api import app
@@ -2927,8 +2928,8 @@ def test_morph_endpoint_400s_when_num_frames_out_of_range():
 
 
 def test_report_zip_endpoint_bundles_every_available_artifact(tmp_path):
-    import zipfile
     import io
+    import zipfile
 
     (tmp_path / "alignment.pdb").write_text("ATOM dummy pdb")
     (tmp_path / "alignment.afasta").write_text(">a\nAAA\n")
@@ -2980,8 +2981,8 @@ def test_report_zip_endpoint_skips_missing_pieces_without_failing(tmp_path):
     """A run with no heatmap (e.g. it failed before that stage) or no
     lab-notebook-exportable data still produces a ZIP with whatever is
     actually available, not a 500."""
-    import zipfile
     import io
+    import zipfile
 
     with patch("src.backend.api.history_db.get_run") as mock_get_run, patch(
         "src.backend.notebook_exporter.NotebookExporter.export",
@@ -3108,7 +3109,9 @@ def test_sanitize_for_json_decodes_plotly_binary_typed_arrays():
     Plotly.js CDN version cannot decode. sanitize_for_json must convert this
     back into plain (possibly nested) JSON arrays."""
     import base64
+
     import numpy as np
+
     from src.backend.api import sanitize_for_json
 
     # 1D array (no "shape" key, matches ff.create_dendrogram's trace x/y)

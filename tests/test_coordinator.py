@@ -1,5 +1,5 @@
 from pathlib import Path
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import numpy as np
 import pandas as pd
@@ -7,8 +7,8 @@ import pytest
 
 from src.backend.coordinator import (
     AnalysisCoordinator,
-    sanitize_for_json,
     _sanitize_json_key,
+    sanitize_for_json,
 )
 
 

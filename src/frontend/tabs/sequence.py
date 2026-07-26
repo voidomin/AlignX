@@ -1,18 +1,20 @@
-import streamlit as st
+from typing import Any
+
 import pandas as pd
-from typing import List, Dict, Any
-from src.frontend.tabs.common import render_learning_card
+import streamlit as st
+
 from src.backend.sequence_viewer import (
-    find_motif_matches,
     _aligned_cols_to_raw_residues,
-    _empty_chain_mapping,
     _build_chain_mapping_from_matches,
+    _empty_chain_mapping,
+    find_motif_matches,
 )
+from src.frontend.tabs.common import render_learning_card
 
 _ALL_PROTEINS_LABEL = "All Proteins (Alignment Columns)"
 
 
-def _parse_range_part(part: str, max_val: int) -> List[int]:
+def _parse_range_part(part: str, max_val: int) -> list[int]:
     """One comma-separated token of a range string ('1-20' or '30') into
     the residue indices it names, clamped to [1, max_val] - or [] if the
     token is empty, malformed, or out of range."""
@@ -36,7 +38,7 @@ def _parse_range_part(part: str, max_val: int) -> List[int]:
         return []
 
 
-def _parse_range_str(range_str: str, max_val: int) -> List[int]:
+def _parse_range_str(range_str: str, max_val: int) -> list[int]:
     """
     Parse a range string like '1-20, 23-25, 30' into a sorted list of ints.
 
@@ -56,7 +58,7 @@ def _parse_range_str(range_str: str, max_val: int) -> List[int]:
     return sorted(result)
 
 
-def _gaps_to_ranges_str(gaps: List[int]) -> str:
+def _gaps_to_ranges_str(gaps: list[int]) -> str:
     """
     Convert a list of gap positions to a compact range string like '21-22, 26-29'.
 
@@ -86,7 +88,7 @@ def _gaps_to_ranges_str(gaps: List[int]) -> str:
     return ", ".join(ranges)
 
 
-def _selection_to_range_str(residues: List[int]) -> str:
+def _selection_to_range_str(residues: list[int]) -> str:
     """
     Convert a list of residue numbers to a compact range string.
 
@@ -138,7 +140,7 @@ def _render_conservation_legend() -> None:
 
 
 def _render_alignment_visualization(
-    sequences: Dict[str, str], conservation: list
+    sequences: dict[str, str], conservation: list
 ) -> None:
     html_view = st.session_state.sequence_viewer.generate_html(sequences, conservation)
     # Dynamic Height Calculation to fix UI gap
@@ -147,7 +149,7 @@ def _render_alignment_visualization(
     st.components.v1.html(html_view, height=viz_height, scrolling=True)
 
 
-def _render_alignment_details_table(sequences: Dict[str, str]) -> None:
+def _render_alignment_details_table(sequences: dict[str, str]) -> None:
     st.markdown("#### Alignment Details & Gaps")
     table_data = []
     for name, seq in sequences.items():
@@ -164,7 +166,7 @@ def _render_alignment_details_table(sequences: Dict[str, str]) -> None:
 
 
 def _build_motif_match_summary(
-    sequences: Dict[str, str], matches: Dict[str, list]
+    sequences: dict[str, str], matches: dict[str, list]
 ) -> pd.DataFrame:
     match_summary = [
         {
@@ -178,7 +180,7 @@ def _build_motif_match_summary(
     return pd.DataFrame(match_summary)
 
 
-def _render_motif_matches(sequences: Dict[str, str], matches: Dict[str, list]) -> None:
+def _render_motif_matches(sequences: dict[str, str], matches: dict[str, list]) -> None:
     total_hits = sum(len(cols) for cols in matches.values())
     st.success(
         f"✨ Found {total_hits} matching residue positions across {len(matches)} proteins!"
@@ -198,7 +200,7 @@ def _render_motif_matches(sequences: Dict[str, str], matches: Dict[str, list]) -
         st.rerun()
 
 
-def _render_motif_search_section(sequences: Dict[str, str]) -> None:
+def _render_motif_search_section(sequences: dict[str, str]) -> None:
     st.divider()
     st.markdown("#### 🔍 Sequence Motif Search & 3D Mapping")
     st.caption(
@@ -222,7 +224,7 @@ def _render_motif_search_section(sequences: Dict[str, str]) -> None:
         st.warning("No matches found for this motif pattern.")
 
 
-def _render_conserved_selection_buttons(conserved_cols: List[int]) -> None:
+def _render_conserved_selection_buttons(conserved_cols: list[int]) -> None:
     col1_btn, col2_btn = st.columns(2)
     with col1_btn:
         if st.button(
@@ -264,8 +266,8 @@ def _render_manual_selection_input(target_protein: str, n_total: int) -> None:
 
 
 def _build_projection_mapping(
-    sequences: Dict[str, str], residue_selections: Dict[str, str], n_total: int
-) -> Dict[str, List[int]]:
+    sequences: dict[str, str], residue_selections: dict[str, str], n_total: int
+) -> dict[str, list[int]]:
     all_headers = list(sequences.keys())
     final_mapping = _empty_chain_mapping(sequences)
 
@@ -290,7 +292,7 @@ def _build_projection_mapping(
 
 
 def _render_selective_extraction_summary(
-    sequences: Dict[str, str], n_total: int
+    sequences: dict[str, str], n_total: int
 ) -> None:
     active_entries = {
         k: v for k, v in st.session_state.residue_selections.items() if v.strip()
@@ -321,7 +323,7 @@ def _render_selective_extraction_summary(
 
 
 def _render_conserved_residue_section(
-    sequences: Dict[str, str], conservation: list
+    sequences: dict[str, str], conservation: list
 ) -> None:
     st.divider()
     st.markdown("#### 🎯 Selective Extraction & Pocket Analysis")
@@ -356,7 +358,7 @@ def _render_conserved_residue_section(
     _render_selective_extraction_summary(sequences, n_total)
 
 
-def render_sequences_tab(results: Dict[str, Any]) -> None:
+def render_sequences_tab(results: dict[str, Any]) -> None:
     """
     Render the Sequence Analysis tab.
 

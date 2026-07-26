@@ -1,8 +1,9 @@
 import re
+from collections import Counter
+from typing import Any
+
 import numpy as np
 import pandas as pd
-from collections import Counter
-from typing import List, Dict, Any
 
 _ICON_MARKER = re.compile(r"^\[\[[a-z0-9_]+\]\]\s*")
 
@@ -20,7 +21,7 @@ class InsightsGenerator:
     stripping the marker from the displayed text.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         self.config = config
         self._analyzer = None
 
@@ -42,7 +43,7 @@ class InsightsGenerator:
             self._analyzer = RMSDAnalyzer(self.config)
         return self._analyzer
 
-    def generate_insights(self, results: Dict[str, Any]) -> List[str]:
+    def generate_insights(self, results: dict[str, Any]) -> list[str]:
         """
         Analyze results and return a list of textual insights.
         """
@@ -66,7 +67,7 @@ class InsightsGenerator:
 
         return insights
 
-    def _get_rmsd_summary(self, rmsd_df) -> List[str]:
+    def _get_rmsd_summary(self, rmsd_df) -> list[str]:
         """Analyze dataset homogeneity and best/worst matches."""
         insights = []
         vals = rmsd_df.values
@@ -115,7 +116,7 @@ class InsightsGenerator:
 
         return insights
 
-    def _get_outlier_insights(self, rmsd_df) -> List[str]:
+    def _get_outlier_insights(self, rmsd_df) -> list[str]:
         """Detect structural outliers using Z-score logic."""
         insights = []
         mean_rmsds = rmsd_df.mean()
@@ -131,7 +132,7 @@ class InsightsGenerator:
             )
         return insights
 
-    def _get_ligand_insights(self, results: Dict[str, Any]) -> List[str]:
+    def _get_ligand_insights(self, results: dict[str, Any]) -> list[str]:
         """Analyze ligand distribution."""
         insights = []
         if "ligand_analysis" in results:
@@ -147,7 +148,7 @@ class InsightsGenerator:
                 )
         return insights
 
-    def _get_binding_pocket_insights(self, results: Dict[str, Any]) -> List[str]:
+    def _get_binding_pocket_insights(self, results: dict[str, Any]) -> list[str]:
         """Analyze binding-pocket residue-composition similarity (Jaccard
         index) across every ligand found anywhere in the run. Deliberately
         silent when nothing crosses a threshold, matching
@@ -189,7 +190,7 @@ class InsightsGenerator:
             )
         return insights
 
-    def _get_clustering_insights(self, rmsd_df) -> List[str]:
+    def _get_clustering_insights(self, rmsd_df) -> list[str]:
         """Identify structural families."""
         insights = []
         clusters = self.analyzer.identify_clusters(rmsd_df, threshold=2.0)
@@ -199,7 +200,7 @@ class InsightsGenerator:
             )
         return insights
 
-    def _get_quality_metrics_insights(self, results: Dict[str, Any]) -> List[str]:
+    def _get_quality_metrics_insights(self, results: dict[str, Any]) -> list[str]:
         """Analyze TM-score and GDT-TS."""
         insights = []
         q_metrics = results.get("quality_metrics")
@@ -233,7 +234,7 @@ class InsightsGenerator:
                 )
         return insights
 
-    def _get_ramachandran_insights(self, results: Dict[str, Any]) -> List[str]:
+    def _get_ramachandran_insights(self, results: dict[str, Any]) -> list[str]:
         """Analyze protein geometry via Ramachandran plots."""
         insights = []
         r_stats = results.get("ramachandran_stats")
