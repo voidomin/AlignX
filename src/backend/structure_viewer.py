@@ -1,7 +1,8 @@
 """3D structure visualization using py3Dmol."""
 
 from pathlib import Path
-from typing import Optional, Any
+from typing import Any
+
 import streamlit.components.v1 as components
 
 from src.utils.logger import get_logger
@@ -22,7 +23,7 @@ def render_3d_structure(
     color_by_plddt: bool = False,
     style_mode: str = DEFAULT_STYLE_MODE,
     residue_colors=None,
-) -> Optional[str]:
+) -> str | None:
     """
     Render 3D structure using py3Dmol in Streamlit.
 
@@ -259,8 +260,8 @@ def render_ligand_view(
     width: int = 800,
     height: int = 600,
     unique_id: str = "ligand",
-    highlight_indices: Optional[list] = None,
-) -> Optional[str]:
+    highlight_indices: list | None = None,
+) -> str | None:
     """
     Render 3D view focused on ligand and interactions.
 
@@ -439,7 +440,7 @@ def render_synced_grid(
     style_mode: str = DEFAULT_STYLE_MODE,
     residue_colors=None,
     height: int = 250,
-) -> Optional[str]:
+) -> str | None:
     """
     Render all aligned models in a single synchronized 3D grid.
     """
@@ -729,7 +730,7 @@ def show_ligand_view_in_streamlit(
     width: Any = "100%",
     height: int = 600,
     key: str = "ligand",
-    highlight_indices: Optional[list] = None,
+    highlight_indices: list | None = None,
 ):
     """Wrapper for displaying ligand view in Streamlit"""
     html = render_ligand_view(

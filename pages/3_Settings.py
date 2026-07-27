@@ -1,6 +1,7 @@
 import streamlit as st
-from src.utils.config_loader import load_config, save_config
+
 from src.frontend.utils import load_css
+from src.utils.config_loader import load_config, save_config
 
 st.set_page_config(
     page_title="Settings | Mustang Holo-Lab", page_icon="⚙️", layout="wide"

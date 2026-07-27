@@ -5,4 +5,17 @@ exclude = [".venv", "web-frontend", "static", "data", "results", ".agents"]
 # importing project code — that ordering is required, not a mistake.
 # E701: single-line if/colon statements throughout mustang_runner.py are a
 # pre-existing style choice, not a correctness issue.
-ignore = ["E402", "E701"]
+# BLE001: this codebase's established, consistent convention around external
+# calls (network/DB/cache/subprocess) is "catch broadly, log, and continue or
+# re-raise" — not narrower exception types, which most of these call sites
+# (httpx, sqlite3, Bio.PDB parsing) don't have a single meaningful narrower
+# type for anyway. Reviewed every occurrence when ruff 0.16.0 first enabled
+# this rule by default (v3.99.0) — all were already correctly handled, none
+# were a silently-swallowed bug.
+# DTZ005/DTZ001/DTZ007: StructScope runs as a single local/self-hosted server
+# process — every naive datetime.now()/datetime() usage (run IDs, DB
+# last_accessed, log timestamps) is generated and compared only within that
+# one process's own local clock, never against a timestamp from a different
+# timezone or a different server. Naive local time is correct here, not an
+# accidental omission of tzinfo.
+ignore = ["E402", "E701", "BLE001", "DTZ001", "DTZ005", "DTZ007"]

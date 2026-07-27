@@ -5,12 +5,11 @@ try:
 except ImportError:
     psutil = None
 import platform
-from pathlib import Path
-from typing import Optional
 from datetime import datetime
+from pathlib import Path
 
 
-def render_console(log_file_path: Optional[Path] = None) -> None:
+def render_console(log_file_path: Path | None = None) -> None:
     """
     Render an immersive, scifi-styled command console with live system metrics.
     """

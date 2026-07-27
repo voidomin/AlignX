@@ -15,8 +15,6 @@ at the ~400 first assumed, so real usage stays inside what's been
 empirically verified to finish reliably rather than guessed.
 """
 
-from typing import Optional
-
 import httpx
 
 from src.utils.logger import get_logger
@@ -38,9 +36,7 @@ class ESMFoldError(Exception):
     """Raised when ESMFold rejects a sequence, is unreachable, or times out."""
 
 
-async def fold_sequence(
-    sequence: str, client: Optional[httpx.AsyncClient] = None
-) -> str:
+async def fold_sequence(sequence: str, client: httpx.AsyncClient | None = None) -> str:
     """
     Predicts a 3D structure directly from `sequence` via ESM Atlas's
     public ESMFold API and returns the raw PDB text. Raises ESMFoldError

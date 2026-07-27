@@ -31,7 +31,7 @@ radii below match MolProbity/wwPDB convention as closely as practical.
 """
 
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from Bio.PDB import NeighborSearch
 
@@ -81,7 +81,7 @@ def _heavy_atoms(model):
     return atoms
 
 
-def calculate_clash_score(pdb_path: Path) -> Optional[Dict[str, Any]]:
+def calculate_clash_score(pdb_path: Path) -> dict[str, Any] | None:
     """
     Real-time all-atom steric-clash detection for one structure's first
     model. Returns {"clash_count": ..., "atom_count": ..., "clashscore":

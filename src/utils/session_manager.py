@@ -5,30 +5,30 @@ Provides per-session file namespacing so multiple users on Streamlit Cloud
 don't interfere with each other's data.
 """
 
-import uuid
-import time
-import shutil
 import logging
+import shutil
+import sqlite3
+import time
+import uuid
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 import streamlit as st
-import sqlite3
+
+from src.backend.coordinator import AnalysisCoordinator
+from src.backend.database import HistoryDatabase
+from src.backend.ligand_analyzer import LigandAnalyzer
+from src.backend.mustang_runner import MustangRunner
 
 # Backend Imports (needed for initialization)
 from src.backend.pdb_manager import PDBManager
-from src.backend.mustang_runner import MustangRunner
+from src.backend.report_generator import ReportGenerator
 from src.backend.rmsd_analyzer import RMSDAnalyzer
 from src.backend.sequence_viewer import SequenceViewer
-from src.backend.report_generator import ReportGenerator
-from src.backend.ligand_analyzer import LigandAnalyzer
-from src.backend.database import HistoryDatabase
 from src.backend.utilities import SystemManager
-from src.backend.coordinator import AnalysisCoordinator
+from src.utils.config_loader import load_config
 
 # Utility Imports
 from src.utils.logger import setup_logger
-from src.utils.config_loader import load_config
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +166,7 @@ def get_session_id() -> str:
     return str(uuid.uuid4())[:8]  # Short ID for readable directory names
 
 
-def get_session_paths(session_id: str) -> Dict[str, Path]:
+def get_session_paths(session_id: str) -> dict[str, Path]:
     """
     Get namespaced directory paths for a given session.
 
@@ -189,7 +189,7 @@ def get_session_paths(session_id: str) -> Dict[str, Path]:
     return paths
 
 
-def _collect_session_ids(session_roots: List[Path]) -> set:
+def _collect_session_ids(session_roots: list[Path]) -> set:
     """Every session subdirectory name (UUID-based) seen across all roots -
     "run_*" dirs are the legacy non-session format and are skipped."""
     seen_sessions = set()
@@ -203,8 +203,8 @@ def _collect_session_ids(session_roots: List[Path]) -> set:
 
 
 def _newest_session_mtime(
-    session_roots: List[Path], session_id: str
-) -> Tuple[float, List[Path]]:
+    session_roots: list[Path], session_id: str
+) -> tuple[float, list[Path]]:
     """The most recent mtime across a session's directories (one per root
     that has it), plus the list of dirs found - a session counts as active
     as long as ANY of its directories was touched recently."""
@@ -218,7 +218,7 @@ def _newest_session_mtime(
     return newest_mtime, session_dirs
 
 
-def _purge_session_dirs(session_dirs: List[Path], age_seconds: float) -> None:
+def _purge_session_dirs(session_dirs: list[Path], age_seconds: float) -> None:
     for d in session_dirs:
         try:
             shutil.rmtree(d)
@@ -239,7 +239,7 @@ def _purge_session_db_records(db_conn, session_id: str) -> None:
         logger.warning(f"TTL DB cleanup failed for session {session_id}: {e}")
 
 
-def cleanup_stale_sessions(max_age_hours: int = 24, db_conn=None) -> List[str]:
+def cleanup_stale_sessions(max_age_hours: int = 24, db_conn=None) -> list[str]:
     """
     Remove session directories older than max_age_hours and cleanup DB.
 

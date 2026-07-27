@@ -24,7 +24,7 @@ error.
 import asyncio
 import threading
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import httpx
 
@@ -90,7 +90,7 @@ class InterProScanClient:
         self.max_poll_attempts = max_poll_attempts
 
     async def submit_sequence(
-        self, sequence: str, client: Optional[httpx.AsyncClient] = None
+        self, sequence: str, client: httpx.AsyncClient | None = None
     ) -> str:
         """Submits a raw amino-acid sequence for annotation, returning
         EBI's job ID."""
@@ -121,7 +121,7 @@ class InterProScanClient:
                 await client.aclose()
 
     async def poll_until_complete(
-        self, job_id: str, client: Optional[httpx.AsyncClient] = None
+        self, job_id: str, client: httpx.AsyncClient | None = None
     ) -> None:
         """Polls a job until it finishes, raising InterProScanError on
         failure/timeout."""
@@ -156,8 +156,8 @@ class InterProScanClient:
                 await client.aclose()
 
     async def fetch_result(
-        self, job_id: str, client: Optional[httpx.AsyncClient] = None
-    ) -> Dict[str, Any]:
+        self, job_id: str, client: httpx.AsyncClient | None = None
+    ) -> dict[str, Any]:
         """Fetches the completed job's real result JSON."""
         own_client = client is None
         if own_client:
@@ -174,7 +174,7 @@ class InterProScanClient:
             if own_client:
                 await client.aclose()
 
-    async def annotate(self, sequence: str) -> Dict[str, Any]:
+    async def annotate(self, sequence: str) -> dict[str, Any]:
         """End-to-end: submit a sequence, wait for completion, return the
         real completed result JSON."""
         async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -184,8 +184,8 @@ class InterProScanClient:
 
     @staticmethod
     def parse_domains_and_go_terms(
-        result: Dict[str, Any],
-    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        result: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """Flattens InterProScan5's real result JSON into the same
         {name, type, locations}-shaped domain list and {id, name, aspect}
         -shaped GO-term list AnnotationAggregator's InterPro-accession
@@ -194,9 +194,9 @@ class InterProScanClient:
         one adapter. Real duplicate GO-term rows (the same term backed by
         two different signature matches) are deduplicated by id, matching
         aggregate_for_structure's own existing dedup convention."""
-        domains: List[Dict[str, Any]] = []
+        domains: list[dict[str, Any]] = []
         seen_go_ids = set()
-        go_terms: List[Dict[str, Any]] = []
+        go_terms: list[dict[str, Any]] = []
 
         for hit in result.get("results") or []:
             for match in hit.get("matches") or []:

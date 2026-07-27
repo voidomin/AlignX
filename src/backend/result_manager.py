@@ -3,9 +3,11 @@ Result management and indexing for batch comparisons.
 """
 
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any
+
 import numpy as np
 import pandas as pd
+
 from src.utils.logger import get_logger, sanitize_for_log
 
 logger = get_logger()
@@ -19,7 +21,7 @@ class ResultManager:
 
         self.db = HistoryDatabase()
 
-    def list_runs(self, session_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_runs(self, session_id: str | None = None) -> list[dict[str, Any]]:
         """
         Retrieve valid past runs from the database.
         """
@@ -43,7 +45,7 @@ class ResultManager:
 
         return runs
 
-    def get_run_rmsd(self, run_id: str) -> Optional[pd.DataFrame]:
+    def get_run_rmsd(self, run_id: str) -> pd.DataFrame | None:
         """
         Load the RMSD matrix for a specific run.
         """
@@ -62,9 +64,7 @@ class ResultManager:
 
         return None
 
-    def calculate_difference(
-        self, run_id_1: str, run_id_2: str
-    ) -> Optional[pd.DataFrame]:
+    def calculate_difference(self, run_id_1: str, run_id_2: str) -> pd.DataFrame | None:
         """
         Calculate the difference between two RMSD matrices (run1 - run2).
         Aligns dataframes automatically and returns the difference for the overlapping proteins.
@@ -88,7 +88,7 @@ class ResultManager:
 
         return rmsd1_aligned - rmsd2_aligned
 
-    def get_run_trend(self, run_ids: List[str]) -> List[Dict[str, Any]]:
+    def get_run_trend(self, run_ids: list[str]) -> list[dict[str, Any]]:
         """
         Builds a chronological RMSD trend across a user-selected *set* of
         past runs - e.g. "did this protein family's structural similarity

@@ -19,14 +19,12 @@ than the salt-bridge/H-bond cutoffs below, which are tuned for ionic/
 hydrogen-bond geometry, not a coordinate covalent bond.
 """
 
-from typing import Dict, List, Set
-
 # Present on every standard residue.
 BACKBONE_DONOR_ATOMS = {"N"}
 BACKBONE_ACCEPTOR_ATOMS = {"O"}
 
 # Sidechain atoms capable of donating/accepting a hydrogen bond, per residue.
-SIDECHAIN_DONOR_ACCEPTOR_ATOMS: Dict[str, Set[str]] = {
+SIDECHAIN_DONOR_ACCEPTOR_ATOMS: dict[str, set[str]] = {
     "SER": {"OG"},
     "THR": {"OG1"},
     "TYR": {"OH"},
@@ -43,7 +41,7 @@ SIDECHAIN_DONOR_ACCEPTOR_ATOMS: Dict[str, Set[str]] = {
 
 # Charged sidechain atoms - the subset of the above capable of a salt bridge
 # (ionic interaction), as opposed to a neutral hydrogen bond.
-CHARGED_ATOMS: Dict[str, Set[str]] = {
+CHARGED_ATOMS: dict[str, set[str]] = {
     "ASP": {"OD1", "OD2"},
     "GLU": {"OE1", "OE2"},
     "LYS": {"NZ"},
@@ -70,11 +68,11 @@ METAL_ELEMENTS = {"ZN", "MG", "CA", "MN", "FE", "CU", "NI", "CO", "CD", "MO"}
 METAL_COORDINATION_CUTOFF = 2.8
 
 
-def _is_single_metal_ion(atoms: List) -> bool:
+def _is_single_metal_ion(atoms: list) -> bool:
     return len(atoms) == 1 and atoms[0].element in METAL_ELEMENTS
 
 
-def _donor_acceptor_atoms(resname: str) -> Set[str]:
+def _donor_acceptor_atoms(resname: str) -> set[str]:
     return (
         BACKBONE_DONOR_ATOMS
         | BACKBONE_ACCEPTOR_ATOMS
@@ -82,11 +80,11 @@ def _donor_acceptor_atoms(resname: str) -> Set[str]:
     )
 
 
-def _heteroatoms(atoms) -> List:
+def _heteroatoms(atoms) -> list:
     return [a for a in atoms if a.element in HETEROATOM_ELEMENTS]
 
 
-def classify_contact(resname: str, res_atoms: List, target_atoms: List) -> str:
+def classify_contact(resname: str, res_atoms: list, target_atoms: list) -> str:
     """Classifies one residue's contact with a target atom group (a ligand's
     atoms, or another chain's atoms) as "Metal Coordination" (a bare metal-
     ion target only), "Salt Bridge", "Hydrogen Bond", "Van der Waals", or
@@ -121,7 +119,7 @@ def classify_contact(resname: str, res_atoms: List, target_atoms: List) -> str:
     return "Polar Contact"
 
 
-def _min_pair_distance(atoms_a: List, atoms_b: List) -> float:
+def _min_pair_distance(atoms_a: list, atoms_b: list) -> float:
     if not atoms_a or not atoms_b:
         return float("inf")
     return min(a - b for a in atoms_a for b in atoms_b)

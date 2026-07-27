@@ -1,5 +1,7 @@
-import streamlit as st
 import logging
+
+import streamlit as st
+
 from examples.protein_sets import EXAMPLES
 
 logger = logging.getLogger(__name__)

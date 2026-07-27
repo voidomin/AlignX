@@ -1,8 +1,10 @@
 import asyncio
 from pathlib import Path
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import httpx
 import pytest
+
 from src.backend.pdb_manager import PDBManager
 from tests.conftest import MINIMAL_CIF_HEADER
 
@@ -673,7 +675,7 @@ class TestPDBManager:
         manager = PDBManager(mock_config)
         manager.raw_dir = temp_workspace["raw"]
 
-        success, msg, path = asyncio.run(manager.download_pdb("not_a_valid_id!!"))
+        success, _msg, path = asyncio.run(manager.download_pdb("not_a_valid_id!!"))
 
         assert success is False
         assert path is None
@@ -686,7 +688,7 @@ class TestPDBManager:
         (temp_workspace["raw"] / "4rlt.pdb").write_text("ATOM")
 
         with patch("httpx.AsyncClient.get") as mock_get:
-            success, msg, path = asyncio.run(manager.download_pdb("4RLT"))
+            success, msg, _path = asyncio.run(manager.download_pdb("4RLT"))
 
         assert success is True
         assert "local file" in msg.lower()
@@ -704,7 +706,7 @@ class TestPDBManager:
         mock_response.content = b"ATOM real pdb content"
         mock_get.return_value = mock_response
 
-        success, msg, path = asyncio.run(manager.download_pdb("4RLT"))
+        success, _msg, path = asyncio.run(manager.download_pdb("4RLT"))
 
         assert success is True
         assert path.exists()
@@ -721,7 +723,7 @@ class TestPDBManager:
         mock_response.status_code = 404
         mock_get.return_value = mock_response
 
-        success, msg, path = asyncio.run(manager.download_pdb("9ZZZ"))
+        success, _msg, path = asyncio.run(manager.download_pdb("9ZZZ"))
 
         assert success is False
         assert path is None
@@ -746,7 +748,7 @@ class TestPDBManager:
         responses.append(success_response)
         mock_get.side_effect = responses
 
-        success, msg, path = asyncio.run(manager.download_pdb("AF-P69905-F1"))
+        success, _msg, path = asyncio.run(manager.download_pdb("AF-P69905-F1"))
 
         assert success is True
         assert path.suffix == ".cif"
@@ -780,7 +782,7 @@ class TestPDBManager:
         mock_response.content = b"swiss model pdb"
         mock_get.return_value = mock_response
 
-        success, msg, path = asyncio.run(manager.download_pdb("SM-P69905"))
+        success, _msg, path = asyncio.run(manager.download_pdb("SM-P69905"))
 
         assert success is True
         assert path.exists()
@@ -795,7 +797,7 @@ class TestPDBManager:
         mock_response.content = b"esm predicted structure"
         mock_get.return_value = mock_response
 
-        success, msg, path = asyncio.run(manager.download_pdb("ESM-MGYP002537940442"))
+        success, _msg, path = asyncio.run(manager.download_pdb("ESM-MGYP002537940442"))
 
         assert success is True
         assert path.exists()
@@ -807,7 +809,7 @@ class TestPDBManager:
         manager = PDBManager(mock_config)
         manager.raw_dir = temp_workspace["raw"]
 
-        success, msg, path = asyncio.run(manager.download_pdb("4RLT"))
+        success, _msg, path = asyncio.run(manager.download_pdb("4RLT"))
 
         assert success is False
         assert path is None
@@ -825,7 +827,7 @@ class TestSaveUploadedFile:
         fake_upload.name = "my structure.pdb"
         fake_upload.getbuffer.return_value = b"ATOM uploaded content"
 
-        success, msg, path = manager.save_uploaded_file(fake_upload)
+        success, _msg, path = manager.save_uploaded_file(fake_upload)
 
         assert success is True
         assert path.name == "my_structure.pdb"
@@ -839,7 +841,7 @@ class TestSaveUploadedFile:
         fake_upload.name = "test.pdb"
         fake_upload.getbuffer.side_effect = OSError("disk full")
 
-        success, msg, path = manager.save_uploaded_file(fake_upload)
+        success, _msg, path = manager.save_uploaded_file(fake_upload)
 
         assert success is False
         assert path is None
@@ -1117,7 +1119,7 @@ class TestFetchEsmfoldResponse:
         manager = PDBManager(mock_config)
 
         async with httpx.AsyncClient() as client:
-            success, msg, response = await manager._fetch_esmfold_response(
+            success, msg, _response = await manager._fetch_esmfold_response(
                 "ESM-MGYP001", client, manage_client=False
             )
 
@@ -1165,7 +1167,7 @@ class TestFetchAlphafoldExplicitVersion:
         manager = PDBManager(mock_config)
 
         async with httpx.AsyncClient() as client:
-            success, msg, response = await manager._fetch_alphafold_response(
+            success, _msg, _response = await manager._fetch_alphafold_response(
                 "AF-P69905-F1-V4", client, manage_client=False
             )
 
@@ -1189,7 +1191,7 @@ class TestCachedLocalFileHit:
         existing = temp_workspace["raw"] / "1a0j.pdb"
         existing.write_bytes(b"ATOM cached")
 
-        success, msg, path = await manager.download_pdb("1A0J")
+        success, msg, _path = await manager.download_pdb("1A0J")
 
         assert success is True
         assert "Using local file" in msg

@@ -1,15 +1,17 @@
 """PDB file management: download, validation, and preprocessing."""
 
-import httpx
 import asyncio
+import itertools
 import re
-from pathlib import Path
-from typing import List, Tuple, Optional, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import Any
+
+import httpx
 from tqdm import tqdm
 
-from src.utils.logger import get_logger
 from src.utils.cache_manager import CacheManager
+from src.utils.logger import get_logger
 
 logger = get_logger()
 
@@ -47,6 +49,7 @@ def parse_structure_file(file_path: Path) -> Any:
     this exact parse call) so callers only need their own try/except for
     what to return on a genuine parse failure."""
     import warnings
+
     from Bio.PDB import MMCIFParser, PDBParser
     from Bio.PDB.PDBExceptions import PDBConstructionWarning
 
@@ -59,7 +62,7 @@ def parse_structure_file(file_path: Path) -> Any:
         return parser.get_structure("protein", str(file_path))
 
 
-def _detect_residue_gaps(residues: List[Any]) -> List[Dict[str, int]]:
+def _detect_residue_gaps(residues: list[Any]) -> list[dict[str, int]]:
     """Flags jumps in a chain's original author residue numbering (e.g.
     ...,10,11,12,45,46,...) - the standard signature of a disordered/missing
     region never resolved in the deposited structure. This has nothing to do
@@ -68,7 +71,7 @@ def _detect_residue_gaps(residues: List[Any]) -> List[Dict[str, int]]:
     residue IDs, before any cleaning happens."""
     resseqs = sorted(r.get_id()[1] for r in residues)
     gaps = []
-    for prev, curr in zip(resseqs, resseqs[1:]):
+    for prev, curr in itertools.pairwise(resseqs):
         if curr - prev > 1:
             gaps.append({"after": prev, "before": curr})
     return gaps
@@ -156,9 +159,9 @@ class PDBManager:
 
     def __init__(
         self,
-        config: Dict[str, Any],
-        cache_manager: Optional[CacheManager] = None,
-        session_id: Optional[str] = None,
+        config: dict[str, Any],
+        cache_manager: CacheManager | None = None,
+        session_id: str | None = None,
     ):
         """
         Initialize PDB Manager.
@@ -230,13 +233,9 @@ class PDBManager:
         if re.match(r"^SM-[A-Z0-9]+$", pdb_id):
             return True
         # ESM Metagenomic Atlas ID (ESM-MGYPxxxxxxxxxx)
-        if re.match(r"^ESM-MGYP\d+$", pdb_id):
-            return True
-        return False
+        return bool(re.match(r"^ESM-MGYP\d+$", pdb_id))
 
-    def save_uploaded_file(
-        self, uploaded_file: Any
-    ) -> Tuple[bool, str, Optional[Path]]:
+    def save_uploaded_file(self, uploaded_file: Any) -> tuple[bool, str, Path | None]:
         """
         Save an uploaded file to the raw directory.
 
@@ -265,7 +264,7 @@ class PDBManager:
 
     def save_uploaded_bytes(
         self, original_filename: str, content: bytes, structure_id: str
-    ) -> Tuple[bool, str, Optional[Path]]:
+    ) -> tuple[bool, str, Path | None]:
         """
         Save and validate an SPA-uploaded structure (see POST /api/upload).
 
@@ -324,7 +323,7 @@ class PDBManager:
 
     async def _fetch_alphafold_response(
         self, pdb_id: str, client: httpx.AsyncClient, manage_client: bool
-    ) -> Tuple[bool, str, Optional[httpx.Response]]:
+    ) -> tuple[bool, str, httpx.Response | None]:
         # AlphaFold DB URL support
         parts = pdb_id.upper().split("-")
         uniprot_id = parts[1]
@@ -377,11 +376,11 @@ class PDBManager:
             return False, "Download failed: Connection timeout", None
         except Exception as e:
             logger.exception("AlphaFold download crash")
-            return False, f"Error: {str(e)}", None
+            return False, f"Error: {e!s}", None
 
     async def _fetch_swissmodel_response(
         self, pdb_id: str, client: httpx.AsyncClient, manage_client: bool
-    ) -> Tuple[bool, str, Optional[httpx.Response]]:
+    ) -> tuple[bool, str, httpx.Response | None]:
         # SWISS-MODEL Repository (homology models, keyed by UniProt ID)
         uniprot_id = pdb_id.upper().split("-", 1)[1]
         url = f"https://swissmodel.expasy.org/repository/uniprot/{uniprot_id}.pdb"
@@ -405,7 +404,7 @@ class PDBManager:
 
     async def _fetch_esmfold_response(
         self, pdb_id: str, client: httpx.AsyncClient, manage_client: bool
-    ) -> Tuple[bool, str, Optional[httpx.Response]]:
+    ) -> tuple[bool, str, httpx.Response | None]:
         # ESM Metagenomic Atlas (predictions for MGnify metagenomic sequences)
         mgyp_id = pdb_id.upper().split("-", 1)[1]
         url = f"https://api.esmatlas.com/fetchPredictedStructure/{mgyp_id}"
@@ -429,7 +428,7 @@ class PDBManager:
 
     async def _fetch_pdb_response(
         self, pdb_id: str, client: httpx.AsyncClient, manage_client: bool
-    ) -> Tuple[bool, str, Optional[httpx.Response]]:
+    ) -> tuple[bool, str, httpx.Response | None]:
         """`pdb_id` is expected already-uppercased by the caller - matches
         the original branch's own `pdb_id = pdb_id.upper()`, which also
         affected the outer function's later cache-registration/log-message
@@ -468,7 +467,7 @@ class PDBManager:
 
     def _try_local_cache_hit(
         self, output_file: Path, force: bool, pdb_id: str
-    ) -> Optional[Tuple[bool, str, Path]]:
+    ) -> tuple[bool, str, Path] | None:
         if not (output_file.exists() and not force):
             return None
         file_size_mb = output_file.stat().st_size / (1024 * 1024)
@@ -482,7 +481,7 @@ class PDBManager:
         pdb_id: str,
         client: httpx.AsyncClient,
         manage_client: bool,
-    ) -> Tuple[bool, str, Optional[httpx.Response], str]:
+    ) -> tuple[bool, str, httpx.Response | None, str]:
         """Returns (success, msg, response, effective_pdb_id) - only the
         standard-PDB branch uppercases pdb_id, which then also affects the
         caller's later cache-registration/log messages, so the (possibly
@@ -507,8 +506,8 @@ class PDBManager:
         self,
         pdb_id: str,
         force: bool = False,
-        client: Optional[httpx.AsyncClient] = None,
-    ) -> Tuple[bool, str, Optional[Path]]:
+        client: httpx.AsyncClient | None = None,
+    ) -> tuple[bool, str, Path | None]:
         """
         Download a structural file from RCSB PDB, AlphaFold DB, SWISS-MODEL
         Repository, or the ESM Metagenomic Atlas (Asynchronous), based on the
@@ -558,11 +557,11 @@ class PDBManager:
 
         except Exception as e:
             logger.exception(f"Failed to save {pdb_id}")
-            return False, f"Save failed: {str(e)}", None
+            return False, f"Save failed: {e!s}", None
 
     async def batch_download(
-        self, pdb_ids: List[str]
-    ) -> Dict[str, Tuple[bool, str, Optional[Path]]]:
+        self, pdb_ids: list[str]
+    ) -> dict[str, tuple[bool, str, Path | None]]:
         """
         Download multiple PDB files in parallel using AsyncIO.
         """
@@ -580,7 +579,7 @@ class PDBManager:
         """Hybrid parser for PDB and mmCIF formats."""
         return parse_structure_file(file_path)
 
-    def analyze_structure(self, pdb_file: Path) -> Dict:
+    def analyze_structure(self, pdb_file: Path) -> dict:
         """
         Analyze structural file and return information.
         """
@@ -640,7 +639,7 @@ class PDBManager:
             return 1.0
 
     @staticmethod
-    def _find_target_chain(model, chain: Optional[str]):
+    def _find_target_chain(model, chain: str | None):
         for ch in model:
             if chain is None or ch.id == chain:
                 return ch
@@ -685,10 +684,10 @@ class PDBManager:
     def clean_pdb(
         self,
         pdb_file: Path,
-        chain: Optional[str] = None,
+        chain: str | None = None,
         remove_heteroatoms: bool = True,
         remove_water: bool = True,
-    ) -> Tuple[bool, str, Optional[Path]]:
+    ) -> tuple[bool, str, Path | None]:
         """
         Clean structural file (PDB/CIF) and sanitize into standard PDB.
         """
@@ -762,15 +761,15 @@ class PDBManager:
 
         except Exception as e:
             logger.exception(f"Failed to clean {pdb_file.name}")
-            return False, f"Cleaning failed: {str(e)}", None
+            return False, f"Cleaning failed: {e!s}", None
 
     def build_residue_renumber_map(
         self,
         pdb_file: Path,
-        chain: Optional[str] = None,
+        chain: str | None = None,
         remove_heteroatoms: bool = True,
         remove_water: bool = True,
-    ) -> Dict[int, int]:
+    ) -> dict[int, int]:
         """
         Map original residue numbers to the 1-based sequential numbers
         clean_pdb() assigns, without writing a file.
@@ -801,7 +800,7 @@ class PDBManager:
         if not target_chain_obj:
             return {}
 
-        mapping: Dict[int, int] = {}
+        mapping: dict[int, int] = {}
         res_count = 1
         for residue in target_chain_obj:
             if not clean_select.accept_residue(residue):
@@ -812,8 +811,8 @@ class PDBManager:
         return mapping
 
     def batch_clean(
-        self, pdb_files: List[Path], max_workers: int = 4
-    ) -> Dict[str, Tuple[bool, str, Optional[Path]]]:
+        self, pdb_files: list[Path], max_workers: int = 4
+    ) -> dict[str, tuple[bool, str, Path | None]]:
         """
         Clean multiple PDB files in parallel.
 
@@ -836,13 +835,13 @@ class PDBManager:
                         results[pdb_file.name] = future.result()
                     except Exception as e:
                         logger.exception(f"Error cleaning {pdb_file.name}")
-                        results[pdb_file.name] = (False, f"Error: {str(e)}", None)
+                        results[pdb_file.name] = (False, f"Error: {e!s}", None)
                     pbar.update(1)
 
         return results
 
     @staticmethod
-    def _empty_metadata() -> Dict[str, Any]:
+    def _empty_metadata() -> dict[str, Any]:
         return {
             "title": "N/A",
             "method": "N/A",
@@ -853,14 +852,14 @@ class PDBManager:
 
     @staticmethod
     def _classify_pdb_ids(
-        pdb_ids: List[str],
-    ) -> Tuple[Dict[str, str], List[str], List[str], List[str], List[str]]:
+        pdb_ids: list[str],
+    ) -> tuple[dict[str, str], list[str], list[str], list[str], list[str]]:
         """Splits a mixed batch of PDB/AlphaFold/SWISS-MODEL/ESM Atlas IDs
         into their per-source id lists, deduplicated, plus a mapping from
         each original (as-passed) id to the base id its metadata is keyed
         under - multiple original IDs can share one base id (e.g. two chain
         variants of the same PDB entry)."""
-        original_to_base: Dict[str, str] = {}
+        original_to_base: dict[str, str] = {}
         unique_base_ids, af_ids, sm_ids, esm_ids = [], [], [], []
 
         for pid in pdb_ids:
@@ -891,7 +890,7 @@ class PDBManager:
     @staticmethod
     async def _fetch_uniprot_name_organism(
         client: httpx.AsyncClient, uniprot_id: str, fallback_name: str
-    ) -> Tuple[str, str]:
+    ) -> tuple[str, str]:
         """Best-effort UniProt lookup for a protein's name and organism,
         shared by the AlphaFold and SWISS-MODEL metadata fetchers below
         (both are keyed by UniProt accession)."""
@@ -933,8 +932,8 @@ class PDBManager:
 
     @staticmethod
     async def _fetch_rcsb_metadata(
-        client: httpx.AsyncClient, unique_base_ids: List[str]
-    ) -> Dict[str, Dict[str, str]]:
+        client: httpx.AsyncClient, unique_base_ids: list[str]
+    ) -> dict[str, dict[str, str]]:
         if not unique_base_ids:
             return {}
 
@@ -975,7 +974,7 @@ class PDBManager:
         return results
 
     @staticmethod
-    def _parse_rcsb_entry(entry: Dict[str, Any]) -> Dict[str, str]:
+    def _parse_rcsb_entry(entry: dict[str, Any]) -> dict[str, str]:
         struct = entry.get("struct") or {}
         exptl_list = entry.get("exptl") or []
         res_list = (entry.get("rcsb_entry_info") or {}).get("resolution_combined") or []
@@ -999,8 +998,8 @@ class PDBManager:
 
     @staticmethod
     def _parse_rcsb_citation(
-        citation: Optional[Dict[str, Any]],
-    ) -> Optional[Dict[str, Any]]:
+        citation: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
         """Real primary-citation metadata for this entry's original
         publication (PubMed ID, DOI, authors, title) - None if RCSB has no
         primary citation on file for it (rare, but happens for some
@@ -1019,8 +1018,8 @@ class PDBManager:
         }
 
     async def _fetch_alphafold_metadata(
-        self, client: httpx.AsyncClient, af_ids: List[str]
-    ) -> Dict[str, Dict[str, str]]:
+        self, client: httpx.AsyncClient, af_ids: list[str]
+    ) -> dict[str, dict[str, str]]:
         results = {}
         for af_id in af_ids:
             # Extract UniProt ID (AF-P12345-F1 -> P12345)
@@ -1041,7 +1040,7 @@ class PDBManager:
     @staticmethod
     async def _fetch_swissmodel_repository_info(
         client: httpx.AsyncClient, up_id: str, sm_id: str
-    ) -> Tuple[str, str]:
+    ) -> tuple[str, str]:
         """(method, resolution) from SWISS-MODEL's own repository API -
         it aggregates both true homology models and experimental PDB
         structures already covering that UniProt entry, so "method"
@@ -1071,8 +1070,8 @@ class PDBManager:
         return method, resolution
 
     async def _fetch_swissmodel_metadata(
-        self, client: httpx.AsyncClient, sm_ids: List[str]
-    ) -> Dict[str, Dict[str, str]]:
+        self, client: httpx.AsyncClient, sm_ids: list[str]
+    ) -> dict[str, dict[str, str]]:
         results = {}
         for sm_id in sm_ids:
             up_id = sm_id.split("-", 1)[1]
@@ -1091,7 +1090,7 @@ class PDBManager:
         return results
 
     @staticmethod
-    def _esm_metadata(esm_ids: List[str]) -> Dict[str, Dict[str, str]]:
+    def _esm_metadata(esm_ids: list[str]) -> dict[str, dict[str, str]]:
         # No per-structure metadata API exists for these anonymous
         # metagenomic predictions - fields are fixed.
         return {
@@ -1105,8 +1104,8 @@ class PDBManager:
         }
 
     def _remap_metadata_to_original_ids(
-        self, original_to_base: Dict[str, str], base_results: Dict[str, Dict[str, str]]
-    ) -> Dict[str, Dict[str, str]]:
+        self, original_to_base: dict[str, str], base_results: dict[str, dict[str, str]]
+    ) -> dict[str, dict[str, str]]:
         final_results = {}
         for orig_id, b_id in original_to_base.items():
             # Try uppercase match first, then exact
@@ -1115,8 +1114,8 @@ class PDBManager:
         return final_results
 
     async def fetch_metadata(
-        self, pdb_ids: List[str], client: Optional[httpx.AsyncClient] = None
-    ) -> Dict[str, Dict]:
+        self, pdb_ids: list[str], client: httpx.AsyncClient | None = None
+    ) -> dict[str, dict]:
         """
         Fetch metadata for multiple PDB IDs from RCSB GraphQL API (Asynchronous).
         """

@@ -1,11 +1,12 @@
+from pathlib import Path
+from typing import Any
+
 import streamlit as st
 import yaml
-from pathlib import Path
-from typing import Dict, Any
 
 
 @st.cache_data
-def load_guided_data() -> Dict[str, Any]:
+def load_guided_data() -> dict[str, Any]:
     """Load learning and help content from YAML file."""
     path = Path(__file__).parent.parent.parent / "resources" / "guided_data.yaml"
     if path.exists():

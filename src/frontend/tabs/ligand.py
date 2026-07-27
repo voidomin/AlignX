@@ -1,12 +1,14 @@
-import streamlit as st
-import pandas as pd
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any
+
+import pandas as pd
+import streamlit as st
+
 from src.backend.structure_viewer import show_ligand_view_in_streamlit
-from src.frontend.tabs.common import render_learning_card, render_help_expander
+from src.frontend.tabs.common import render_help_expander, render_learning_card
 
 
-def _find_structure_pdb_path(pdb_id: str, result_dir: Path) -> Optional[Path]:
+def _find_structure_pdb_path(pdb_id: str, result_dir: Path) -> Path | None:
     """Ligand analysis requires the ORIGINAL (uncleaned) PDB file because
     the cleaning pipeline strips all HETATM records - checks data/raw/
     first, falls back to the (cleaned, may lack ligands) result directory,
@@ -24,7 +26,7 @@ def _find_structure_pdb_path(pdb_id: str, result_dir: Path) -> Optional[Path]:
 
 
 def _record_pocket_history(
-    interactions: Dict[str, Any], pdb_path: Path, pdb_id: str
+    interactions: dict[str, Any], pdb_path: Path, pdb_id: str
 ) -> None:
     entry = interactions.copy()
     entry["pdb_path"] = str(pdb_path)
@@ -62,7 +64,7 @@ def _render_ligand_picker_and_analysis(
         _record_pocket_history(interactions, pdb_path, selected_pdb_ligand)
 
 
-def _get_dataframe_selection_indices(df_key: str) -> List[int]:
+def _get_dataframe_selection_indices(df_key: str) -> list[int]:
     """Streamlit's dataframe selection state has shifted shape across
     versions (an object with `.selection.rows`, or a plain dict with
     `["selection"]["rows"]`) - handles either."""
@@ -86,7 +88,7 @@ def _get_dataframe_selection_indices(df_key: str) -> List[int]:
 
 
 def _render_interacting_residues_table(
-    interactions: Dict[str, Any], df_key: str
+    interactions: dict[str, Any], df_key: str
 ) -> None:
     st.markdown("#### Interacting Residues (< 5Å)")
     st.caption("💡 Select one or more rows to highlight residues in 3D.")
@@ -135,7 +137,7 @@ def _render_binding_site_results(selected_pdb_ligand: str) -> None:
         _render_interacting_residues_table(interactions, df_key)
 
 
-def _render_single_ligand_tab(results: Dict[str, Any]) -> None:
+def _render_single_ligand_tab(results: dict[str, Any]) -> None:
     sel_col1, sel_col2 = st.columns(2)
     with sel_col1:
         selected_pdb_ligand = st.selectbox(
@@ -157,7 +159,7 @@ def _render_single_ligand_tab(results: Dict[str, Any]) -> None:
         _render_binding_site_results(selected_pdb_ligand)
 
 
-def _render_pocket_similarity_matrix(history: List[Dict[str, Any]]) -> None:
+def _render_pocket_similarity_matrix(history: list[dict[str, Any]]) -> None:
     st.subheader("Chemical Environment Similarity Matrix")
     st.caption("Jaccard Index based on shared residue types in the binding pocket.")
 
@@ -168,7 +170,7 @@ def _render_pocket_similarity_matrix(history: List[Dict[str, Any]]) -> None:
 
 
 def _render_pocket_comparison_details(
-    d1: Dict[str, Any], d2: Dict[str, Any], l1_id: str, l2_id: str
+    d1: dict[str, Any], d2: dict[str, Any], l1_id: str, l2_id: str
 ) -> None:
     row1_c1, row1_c2 = st.columns(2)
     with row1_c1:
@@ -193,7 +195,7 @@ def _render_pocket_comparison_details(
     delta_col3.metric(f"Unique to {l2_id}", len(unique2), help=f"{', '.join(unique2)}")
 
 
-def _render_side_by_side_pocket_view(history: List[Dict[str, Any]]) -> None:
+def _render_side_by_side_pocket_view(history: list[dict[str, Any]]) -> None:
     st.subheader("⚔️ Side-by-Side Pocket View")
 
     c_sel1, c_sel2 = st.columns(2)
@@ -233,7 +235,7 @@ def _render_pocket_comparison_tab() -> None:
     _render_side_by_side_pocket_view(history)
 
 
-def _find_sasa_pdb_path(pdb_id: str, result_dir: Path) -> Optional[Path]:
+def _find_sasa_pdb_path(pdb_id: str, result_dir: Path) -> Path | None:
     for name in [f"{pdb_id}.pdb", f"{pdb_id.lower()}.pdb", f"{pdb_id.upper()}.pdb"]:
         p = result_dir / name
         if p.exists():
@@ -241,7 +243,7 @@ def _find_sasa_pdb_path(pdb_id: str, result_dir: Path) -> Optional[Path]:
     return None
 
 
-def _render_sasa_chart(sasa: Dict[str, Any], selected_sasa_pdb: str) -> None:
+def _render_sasa_chart(sasa: dict[str, Any], selected_sasa_pdb: str) -> None:
     if not sasa.get("residues"):
         return
     import plotly.express as px
@@ -262,7 +264,7 @@ def _render_sasa_chart(sasa: Dict[str, Any], selected_sasa_pdb: str) -> None:
     st.plotly_chart(fig, use_container_width=True)
 
 
-def _render_sasa_results(sasa: Dict[str, Any], selected_sasa_pdb: str) -> None:
+def _render_sasa_results(sasa: dict[str, Any], selected_sasa_pdb: str) -> None:
     if "error" in sasa:
         st.error(sasa["error"])
         return
@@ -276,7 +278,7 @@ def _render_sasa_results(sasa: Dict[str, Any], selected_sasa_pdb: str) -> None:
     _render_sasa_chart(sasa, selected_sasa_pdb)
 
 
-def _render_sasa_tab(results: Dict[str, Any]) -> None:
+def _render_sasa_tab(results: dict[str, Any]) -> None:
     st.caption(
         "Compute Solvent Accessible Surface Area (SASA) using the Shrake-Rupley algorithm."
     )
@@ -306,7 +308,7 @@ def _render_sasa_tab(results: Dict[str, Any]) -> None:
         _render_sasa_results(st.session_state.sasa_result, selected_sasa_pdb)
 
 
-def render_ligand_tab(results: Dict[str, Any]) -> None:
+def render_ligand_tab(results: dict[str, Any]) -> None:
     """
     Render the Ligand & Interaction Analysis tab.
 

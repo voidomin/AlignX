@@ -1,7 +1,9 @@
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from src.backend.pdb_manager import PDBManager
+
 from src.backend.mustang_runner import MustangRunner
+from src.backend.pdb_manager import PDBManager
 
 
 class TestPipelineIntegration:
