@@ -1,11 +1,12 @@
-import streamlit as st
+from typing import Any
+
 import pandas as pd
-from src.frontend.tabs.common import render_learning_card, render_help_expander
+import streamlit as st
 
-from typing import Dict, Any
+from src.frontend.tabs.common import render_help_expander, render_learning_card
 
 
-def render_rmsd_tab(results: Dict[str, Any]) -> None:
+def render_rmsd_tab(results: dict[str, Any]) -> None:
     """
     Render the RMSD Analysis tab.
 

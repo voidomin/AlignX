@@ -4,8 +4,8 @@ from unittest.mock import patch
 from src.backend import structure_viewer as sv
 from src.backend.structure_viewer import (
     render_3d_structure,
-    render_synced_grid,
     render_ligand_view,
+    render_synced_grid,
 )
 
 

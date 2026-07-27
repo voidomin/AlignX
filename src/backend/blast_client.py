@@ -34,7 +34,7 @@ import re
 import threading
 import time
 from collections import Counter
-from typing import Any, Dict, List, Optional
+from typing import Any
 from xml.etree import ElementTree
 
 import httpx
@@ -89,7 +89,7 @@ class BlastClient:
 
     _rate_limiter = _RateLimiter(min_interval_seconds=3.0)
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, timeout: float = 30.0):
+    def __init__(self, config: dict[str, Any] | None = None, timeout: float = 30.0):
         config = config or {}
         cfg = config.get("blast", {})
         self.base_url = cfg.get("base_url", BLAST_BASE_URL)
@@ -101,8 +101,8 @@ class BlastClient:
         self.max_poll_attempts = cfg.get("max_poll_attempts", MAX_POLL_ATTEMPTS)
 
     async def submit_search(
-        self, sequence: str, client: Optional[httpx.AsyncClient] = None
-    ) -> Dict[str, Any]:
+        self, sequence: str, client: httpx.AsyncClient | None = None
+    ) -> dict[str, Any]:
         """Submits a protein sequence and returns {"rid": ..., "rtoe": ...}
         - `rtoe` is NCBI's own estimated seconds-to-completion, used as the
         minimum delay before the first status poll."""
@@ -139,7 +139,7 @@ class BlastClient:
         self,
         rid: str,
         initial_wait_seconds: float = 0,
-        client: Optional[httpx.AsyncClient] = None,
+        client: httpx.AsyncClient | None = None,
     ) -> None:
         """Polls a submitted job until it's ready, raising BlastError on
         failure/timeout. `initial_wait_seconds` should be the RTOE value
@@ -183,8 +183,8 @@ class BlastClient:
                 await client.aclose()
 
     async def fetch_hits(
-        self, rid: str, client: Optional[httpx.AsyncClient] = None
-    ) -> List[Dict[str, Any]]:
+        self, rid: str, client: httpx.AsyncClient | None = None
+    ) -> list[dict[str, Any]]:
         """Fetches the completed job's results as XML and parses out one
         entry per hit's best HSP - see parse_hits_xml()."""
         own_client = client is None
@@ -206,7 +206,7 @@ class BlastClient:
                 await client.aclose()
 
     @staticmethod
-    def parse_hits_xml(xml_text: str) -> List[Dict[str, Any]]:
+    def parse_hits_xml(xml_text: str) -> list[dict[str, Any]]:
         """Parses real BLAST XML into a list of
         {accession, title, qseq, hseq, query_from} - one per hit's first
         (highest-scoring) HSP, since that's all build_conservation_profile()
@@ -243,8 +243,8 @@ class BlastClient:
 
     @staticmethod
     def build_conservation_profile(
-        query_length: int, hits: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        query_length: int, hits: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Real per-query-position evolutionary conservation from a homolog
         panel, via Shannon entropy over each column's observed residues
         (normalized against log2(20), the maximum possible entropy for the
@@ -254,7 +254,7 @@ class BlastClient:
         (insertions relative to the query) are skipped since they don't
         correspond to any query column. Positions no hit covers get
         conservation: None rather than a misleading 0.0 or 1.0."""
-        column_residues: Dict[int, List[str]] = {
+        column_residues: dict[int, list[str]] = {
             i: [] for i in range(1, query_length + 1)
         }
 
@@ -305,7 +305,7 @@ class BlastClient:
 
     async def find_homologs_and_score_conservation(
         self, sequence: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """End-to-end: submit the query, wait for completion, fetch hits,
         and build the real conservation profile."""
         async with httpx.AsyncClient(timeout=self.timeout) as client:

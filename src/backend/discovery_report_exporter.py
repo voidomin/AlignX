@@ -12,7 +12,7 @@ import logging
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from jinja2 import Template
 
@@ -50,7 +50,7 @@ class DiscoveryReportExporter:
                 )
         return self._template_str
 
-    def export(self, results: Dict[str, Any]) -> Path:
+    def export(self, results: dict[str, Any]) -> Path:
         """
         Renders `results` (the dict produced by
         DiscoveryCoordinator.run_discovery_pipeline, or the equivalent
@@ -127,7 +127,7 @@ class DiscoveryReportExporter:
         return value
 
     @staticmethod
-    def _sort_key(hit: Dict[str, Any]) -> float:
+    def _sort_key(hit: dict[str, Any]) -> float:
         try:
             return float(hit.get("eval", hit.get("eValue", hit.get("evalue", 1e9))))
         except (TypeError, ValueError):

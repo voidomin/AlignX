@@ -1,19 +1,20 @@
 import asyncio
 import time
+from pathlib import Path
+from typing import Any
 
 import streamlit as st
-from pathlib import Path
-from typing import List, Dict, Tuple, Optional, Any
-from src.utils.logger import get_logger
+
 from examples.protein_sets import EXAMPLES
+from src.frontend.components.chain_selector import render_chain_selector
+from src.frontend.components.input_section import render_input_section
+from src.frontend.components.metadata_viewer import render_metadata_viewer
 from src.frontend.console import render_console
 from src.frontend.results import display_results
 
 # Backend Imports
 from src.frontend.tabs.common import render_progress_stepper
-from src.frontend.components.input_section import render_input_section
-from src.frontend.components.metadata_viewer import render_metadata_viewer
-from src.frontend.components.chain_selector import render_chain_selector
+from src.utils.logger import get_logger
 
 logger = get_logger()
 
@@ -120,7 +121,7 @@ def _render_get_started_card() -> None:
     )
 
 
-def _render_protein_pill_bar(pdb_ids: List[str]) -> None:
+def _render_protein_pill_bar(pdb_ids: list[str]) -> None:
     """Render a slim horizontal bar of protein ID pills (#7)."""
     pill_html = (
         '<div style="display:flex; flex-wrap:wrap; gap:6px; margin:0.5rem 0 1rem;">'
@@ -144,8 +145,8 @@ def _render_protein_pill_bar(pdb_ids: List[str]) -> None:
 
 @st.cache_data(show_spinner=False, ttl=600, max_entries=50)
 def cached_batch_download(
-    _pdb_manager: Any, pdb_ids: List[str]
-) -> Dict[str, Tuple[bool, str, Optional[Path]]]:
+    _pdb_manager: Any, pdb_ids: list[str]
+) -> dict[str, tuple[bool, str, Path | None]]:
     """
     Cached wrapper for batch PDB download.
 
@@ -160,7 +161,7 @@ def cached_batch_download(
 
 
 @st.cache_data(show_spinner=False, ttl=600, max_entries=50)
-def cached_analyze_structure(_pdb_manager: Any, file_path: Path) -> Dict[str, Any]:
+def cached_analyze_structure(_pdb_manager: Any, file_path: Path) -> dict[str, Any]:
     """
     Cached wrapper for structure analysis.
 
@@ -176,8 +177,8 @@ def cached_analyze_structure(_pdb_manager: Any, file_path: Path) -> Dict[str, An
 
 @st.cache_data(show_spinner=False, ttl=600, max_entries=50)
 def cached_fetch_metadata(
-    _pdb_manager: Any, pdb_ids: List[str]
-) -> Dict[str, Dict[str, str]]:
+    _pdb_manager: Any, pdb_ids: list[str]
+) -> dict[str, dict[str, str]]:
     """
     Cached wrapper for metadata fetching.
 
@@ -196,7 +197,7 @@ def cached_fetch_metadata(
 # -----------------------------------------------------------------------------
 
 
-def _sync_input_widgets_to_run(run: Dict[str, Any]) -> None:
+def _sync_input_widgets_to_run(run: dict[str, Any]) -> None:
     meta = run.get("metadata", {})
     input_method = meta.get("input_method", "Manual Entry")
     st.session_state.input_method_radio = input_method
@@ -209,9 +210,7 @@ def _sync_input_widgets_to_run(run: Dict[str, Any]) -> None:
         )
 
 
-def _restore_results(
-    result_path: Path, run: Dict[str, Any]
-) -> Optional[Dict[str, Any]]:
+def _restore_results(result_path: Path, run: dict[str, Any]) -> dict[str, Any] | None:
     """Runs process_result_directory() and, if it produced anything,
     attaches the run's id/name/timestamp - shared by both the silent
     (auto-recovery) and interactive load paths below, which only differ in
@@ -249,7 +248,7 @@ def load_run_from_history(run_id: str, is_auto: bool = False) -> None:
 
     st.session_state.pdb_ids = run["pdb_ids"]
     st.session_state.metadata = run.get("metadata", {})
-    st.session_state.metadata_fetched = True if st.session_state.metadata else False
+    st.session_state.metadata_fetched = bool(st.session_state.metadata)
     _sync_input_widgets_to_run(run)
 
     if is_auto:
@@ -391,7 +390,7 @@ def _render_first_visit_banner() -> None:
                 st.rerun()
 
 
-def _render_avg_rmsd_metric(results: Dict[str, Any]) -> None:
+def _render_avg_rmsd_metric(results: dict[str, Any]) -> None:
     try:
         import numpy as np
 
@@ -407,7 +406,7 @@ def _render_avg_rmsd_metric(results: Dict[str, Any]) -> None:
         st.metric("Alignment", "Done")
 
 
-def _render_metrics_row(results: Optional[Dict[str, Any]], pdb_ids: List[str]) -> None:
+def _render_metrics_row(results: dict[str, Any] | None, pdb_ids: list[str]) -> None:
     """Slim metrics row - 3 columns, no destructive buttons here (#4)."""
     col_m1, col_m2, col_m3 = st.columns(3)
     with col_m1:
@@ -424,7 +423,7 @@ def _render_metrics_row(results: Optional[Dict[str, Any]], pdb_ids: List[str]) -
             st.metric("Mode", "Analysis")
 
 
-def _ensure_chain_info_loaded(pdb_ids: List[str]) -> None:
+def _ensure_chain_info_loaded(pdb_ids: list[str]) -> None:
     """Automatic Chain Analysis - fetches/analyzes any of `pdb_ids` not
     already in `chain_info`, so a newly-added structure gets its chain
     options without a separate manual step."""
@@ -448,13 +447,13 @@ def _ensure_chain_info_loaded(pdb_ids: List[str]) -> None:
                             st.session_state.pdb_manager, path
                         )
                     except Exception as e:
-                        st.error(f"Error analyzing {pdb_id}: {str(e)}")
+                        st.error(f"Error analyzing {pdb_id}: {e!s}")
             st.session_state.chain_info = chain_info
         except Exception as e:
-            st.error(f"Failed to analyze chains: {str(e)}")
+            st.error(f"Failed to analyze chains: {e!s}")
 
 
-def _render_metadata_expander(pdb_ids: List[str]) -> None:
+def _render_metadata_expander(pdb_ids: list[str]) -> None:
     with st.expander("📋 Protein Metadata", expanded=True):
         if not st.session_state.metadata_fetched:
             with st.spinner("Fetching protein metadata…"):
@@ -465,11 +464,11 @@ def _render_metadata_expander(pdb_ids: List[str]) -> None:
                     st.session_state.metadata = metadata
                     st.session_state.metadata_fetched = True
                 except Exception as e:
-                    st.error(f"Metadata fetch failed: {str(e)}")
+                    st.error(f"Metadata fetch failed: {e!s}")
         render_metadata_viewer(pdb_ids, st.session_state.metadata)
 
 
-def _render_run_and_metadata_controls(pdb_ids: List[str]) -> None:
+def _render_run_and_metadata_controls(pdb_ids: list[str]) -> None:
     """Lazy metadata (#7) - only show on demand."""
     col_a, col_b = st.columns([3, 1])
     with col_a:
@@ -496,7 +495,7 @@ def _render_run_and_metadata_controls(pdb_ids: List[str]) -> None:
         _render_metadata_expander(pdb_ids)
 
 
-def _render_pre_analysis_tools(pdb_ids: List[str]) -> None:
+def _render_pre_analysis_tools(pdb_ids: list[str]) -> None:
     """CASE B: IDs loaded, no results -> pre-analysis tools (#6, #7)."""
     st.subheader(f"Selected: {len(pdb_ids)} Proteins")
     _render_protein_pill_bar(pdb_ids)

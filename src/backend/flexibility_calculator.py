@@ -18,7 +18,7 @@ already treats the heuristic pocket finder and M-CSA's partial coverage.
 """
 
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import numpy as np
 from Bio.PDB import PDBParser
@@ -39,7 +39,7 @@ _ZERO_EIGENVALUE_THRESHOLD = 1e-6
 
 def calculate_gnm_flexibility(
     pdb_path: Path, cutoff_angstrom: float = DEFAULT_CUTOFF_ANGSTROM
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Real-time GNM flexibility prediction for one structure's first model.
     Returns {"residue_numbers": [...], "flexibility": [...normalized to

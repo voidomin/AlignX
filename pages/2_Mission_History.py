@@ -1,8 +1,9 @@
-import streamlit as st
 import pandas as pd
+import streamlit as st
+
 from src.backend.database import HistoryDatabase
-from src.frontend.utils import load_css
 from src.frontend.analysis import load_run_from_history
+from src.frontend.utils import load_css
 
 # Page Config
 st.set_page_config(

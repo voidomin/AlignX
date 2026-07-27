@@ -1,7 +1,8 @@
-import os
 import logging
+import os
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
+
 from src.backend.database import HistoryDatabase
 
 logger = logging.getLogger(__name__)
@@ -12,7 +13,7 @@ class CacheManager:
     Manages local storage for PDB files with Least Recently Used (LRU) eviction.
     """
 
-    def __init__(self, config: Dict[str, Any], database: HistoryDatabase):
+    def __init__(self, config: dict[str, Any], database: HistoryDatabase):
         """
         Initialize the Cache Manager.
 
@@ -95,7 +96,7 @@ class CacheManager:
             f"Cache cleanup complete. Current size: {total_size / (1024*1024):.2f} MB"
         )
 
-    def get_cache_status(self) -> Dict[str, Any]:
+    def get_cache_status(self) -> dict[str, Any]:
         """Get current cache metrics for reporting."""
         total_size = self.db.get_total_cache_size()
         return {

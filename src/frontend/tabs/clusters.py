@@ -1,11 +1,13 @@
-import streamlit as st
-import pandas as pd
+from typing import Any
+
 import numpy as np
+import pandas as pd
+import streamlit as st
+
 from src.frontend.tabs.common import render_help_expander
-from typing import Dict, Any
 
 
-def render_clusters_tab(results: Dict[str, Any]) -> None:
+def render_clusters_tab(results: dict[str, Any]) -> None:
     """
     Render the Structural Clusters tab.
 

@@ -2,7 +2,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, ClassVar
 from urllib.parse import quote
 
 import httpx
@@ -54,7 +54,9 @@ class LigandAnalyzer:
     Identifies ligands (HETATM) and finds interacting residues.
     """
 
-    def __init__(self, config: Dict[str, Any] = None, cache_db: Optional[Any] = None):
+    def __init__(
+        self, config: dict[str, Any] | None = None, cache_db: Any | None = None
+    ):
         """
         Initialize the LigandAnalyzer.
 
@@ -97,7 +99,7 @@ class LigandAnalyzer:
             "DMS",  # Common crystallization additives
         }
 
-    def get_ligands(self, pdb_file: Path) -> List[Dict[str, Any]]:
+    def get_ligands(self, pdb_file: Path) -> list[dict[str, Any]]:
         """
         Identify potential ligands in a PDB file.
 
@@ -135,7 +137,7 @@ class LigandAnalyzer:
         logger.info(f"Found {len(ligands)} ligands in {pdb_file.name}")
         return ligands
 
-    def _ligand_info_from_residue(self, residue, chain) -> Optional[Dict[str, Any]]:
+    def _ligand_info_from_residue(self, residue, chain) -> dict[str, Any] | None:
         """Builds a ligand-info dict for one residue if it's a HETATM that
         isn't water/a common ion/crystallization additive, else None.
         BioPython uses keys like ('H_NAG', 123, ' ') for HETATMs - standard
@@ -163,7 +165,7 @@ class LigandAnalyzer:
 
     def calculate_interactions(
         self, pdb_file: Path, ligand_id: str, cutoff: float = 5.0
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Find residues interacting with a specific ligand.
 
@@ -267,7 +269,7 @@ class LigandAnalyzer:
     def _min_distance(target_atoms, res_atoms) -> float:
         return min((la - ra for la in target_atoms for ra in res_atoms), default=999.9)
 
-    def _interaction_record(self, res, target_atoms) -> Dict[str, Any]:
+    def _interaction_record(self, res, target_atoms) -> dict[str, Any]:
         resname = res.get_resname()
         res_atoms = list(res.get_atoms())
         return {
@@ -279,7 +281,7 @@ class LigandAnalyzer:
             "type": classify_contact(resname, res_atoms, target_atoms),
         }
 
-    def calculate_sasa(self, pdb_file: Path) -> Dict[str, Any]:
+    def calculate_sasa(self, pdb_file: Path) -> dict[str, Any]:
         """
         Calculate Solvent Accessible Surface Area (SASA) for a PDB structure.
 
@@ -307,8 +309,8 @@ class LigandAnalyzer:
         sr.compute(structure[0], level="R")  # Compute at residue level
 
         total_sasa = 0.0
-        chain_sasa: Dict[str, float] = {}
-        residue_data: List[Dict[str, Any]] = []
+        chain_sasa: dict[str, float] = {}
+        residue_data: list[dict[str, Any]] = []
 
         for chain in structure[0]:
             chain_id = chain.get_id()
@@ -347,7 +349,7 @@ class LigandAnalyzer:
     # separate from HYDROPHOBIC_RESIDUES in interaction_geometry.py (that
     # set serves a different purpose - H-bond/salt-bridge classification -
     # and deliberately excludes aromatic-but-polar TYR).
-    _POCKET_LINING_RESIDUES = {
+    _POCKET_LINING_RESIDUES: ClassVar[set] = {
         "ALA",
         "VAL",
         "LEU",
@@ -366,7 +368,7 @@ class LigandAnalyzer:
 
     def find_candidate_pockets(
         self, pdb_file: Path, top_n: int = 3
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Heuristic candidate binding-pocket finder for a ligand-free
         structure (e.g. most AlphaFold/ESM Atlas Discover-mode queries,
         which essentially never have a co-crystallized ligand). This is
@@ -471,7 +473,7 @@ class LigandAnalyzer:
         ]
 
     @staticmethod
-    def _cluster_convex_hull_volume(residues: list) -> Optional[float]:
+    def _cluster_convex_hull_volume(residues: list) -> float | None:
         """Convex-hull volume (Angstrom^3) over a pocket candidate's own CA
         coordinates - a rough size signal, not a validated cavity volume: a
         convex hull always over-estimates a true concave binding cavity
@@ -480,8 +482,7 @@ class LigandAnalyzer:
         to compare against. Returns None if the cluster is too small or too
         close to coplanar for scipy to construct a hull from (needs >=4
         non-coplanar points in 3D)."""
-        from scipy.spatial import ConvexHull
-        from scipy.spatial import QhullError
+        from scipy.spatial import ConvexHull, QhullError
 
         coords = np.array([r["CA"].get_coord() for r in residues])
         if len(coords) < 4:
@@ -492,7 +493,7 @@ class LigandAnalyzer:
             return None
 
     def calculate_interaction_similarity(
-        self, all_interactions: List[Dict[str, Any]]
+        self, all_interactions: list[dict[str, Any]]
     ) -> pd.DataFrame:
         """
         Calculate pairwise similarity of ligand interaction fingerprints (Jaccard Index).
@@ -560,7 +561,7 @@ class LigandAnalyzer:
 
     async def fetch_ligand_chemistry(
         self, ligand_code: str, client: httpx.AsyncClient
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Resolves a 3-letter ligand/HETATM code (e.g. "HEM", "STI") to real
         chemistry - name, formula, SMILES - via RCSB's Chemical Component
@@ -611,7 +612,7 @@ class LigandAnalyzer:
     @staticmethod
     async def _fetch_ligand_chemistry_live(
         ligand_code: str, client: httpx.AsyncClient
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         safe_code = quote(ligand_code.upper(), safe="")
         try:
             response = await client.get(
@@ -650,7 +651,7 @@ class LigandAnalyzer:
 
     async def fetch_pubchem_analogs(
         self, smiles: str, client: httpx.AsyncClient
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Real structurally-similar known compounds for a bound ligand's
         SMILES, via PubChem's keyless 2D similarity search - useful for
@@ -690,7 +691,7 @@ class LigandAnalyzer:
     @staticmethod
     async def _fetch_pubchem_analogs_live(
         smiles: str, client: httpx.AsyncClient
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         try:
             response = await client.get(
                 PUBCHEM_SIMILARITY_BASE_URL,
@@ -716,7 +717,7 @@ class LigandAnalyzer:
 
     async def fetch_chembl_bioactivity(
         self, inchi_key: str, client: httpx.AsyncClient
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Real bioactivity/potency data for a bound ligand, via ChEMBL -
         resolves the ligand's own InChIKey to a ChEMBL molecule id, then
@@ -757,7 +758,7 @@ class LigandAnalyzer:
     @staticmethod
     async def _fetch_chembl_bioactivity_live(
         inchi_key: str, client: httpx.AsyncClient
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         try:
             molecule_response = await client.get(
                 CHEMBL_MOLECULE_URL,

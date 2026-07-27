@@ -1,4 +1,4 @@
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -18,7 +18,7 @@ class TestClassifyPdbIds:
         result = PDBManager._classify_pdb_ids(
             ["4rlt", "4RLT", "AF-P12345-F1", "SM-P67890", "ESM-MGYP001"]
         )
-        original_to_base, unique_base_ids, af_ids, sm_ids, esm_ids = result
+        _original_to_base, unique_base_ids, af_ids, sm_ids, esm_ids = result
 
         assert set(unique_base_ids) == {"4RLT"}
         assert af_ids == ["AF-P12345-F1"]
@@ -154,7 +154,7 @@ class TestFetchUniprotNameOrganism:
             }
         )
 
-        name, organism = await manager._fetch_uniprot_name_organism(
+        name, _organism = await manager._fetch_uniprot_name_organism(
             client, "P12345", "fallback"
         )
 

@@ -1,9 +1,8 @@
-import streamlit as st
 import pandas as pd
-from typing import List, Dict
+import streamlit as st
 
 
-def render_metadata_viewer(pdb_ids: List[str], metadata: Dict[str, Dict[str, str]]):
+def render_metadata_viewer(pdb_ids: list[str], metadata: dict[str, dict[str, str]]):
     """
     Render the protein metadata table.
     """
