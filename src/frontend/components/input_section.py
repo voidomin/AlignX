@@ -1,14 +1,16 @@
-import streamlit as st
-from typing import Any, List, Tuple
-from examples.protein_sets import EXAMPLES
-import urllib.request
-import urllib.parse
 import json
 import re
+import urllib.parse
+import urllib.request
+from typing import Any
+
+import streamlit as st
+
+from examples.protein_sets import EXAMPLES
 
 
 @st.cache_data(ttl=600, show_spinner=False, max_entries=50)
-def cached_rcsb_suggestions(query_text: str) -> List[str]:
+def cached_rcsb_suggestions(query_text: str) -> list[str]:
     """Fetch matching PDB IDs from RCSB Suggest API."""
     if not query_text or len(query_text) < 1:
         return []
@@ -35,7 +37,7 @@ def cached_rcsb_suggestions(query_text: str) -> List[str]:
         return []
 
 
-def _clean_id_list(raw_ids: List[str]) -> List[str]:
+def _clean_id_list(raw_ids: list[str]) -> list[str]:
     """Uppercases each ID except AlphaFold ones (AF- prefix), whose
     embedded UniProt accession is case-sensitive."""
     return [pid if pid.upper().startswith("AF-") else pid.upper() for pid in raw_ids]
@@ -62,7 +64,7 @@ def _on_pdb_input_change() -> None:
         _reset_structure_dependent_state()
 
 
-def _make_select_suggestion_callback(sug: str, parts: List[str]):
+def _make_select_suggestion_callback(sug: str, parts: list[str]):
     def select_suggestion():
         p_list = list(parts)
         p_list[-1] = sug
@@ -76,7 +78,7 @@ def _make_select_suggestion_callback(sug: str, parts: List[str]):
     return select_suggestion
 
 
-def _render_suggestion_pills(parts: List[str], last_item: str) -> None:
+def _render_suggestion_pills(parts: list[str], last_item: str) -> None:
     if not (
         last_item
         and 1 <= len(last_item) < 4
@@ -94,7 +96,7 @@ def _render_suggestion_pills(parts: List[str], last_item: str) -> None:
         "<div style='font-size:0.82rem; color:#ff7e42; font-weight:600; margin:0.3rem 0 0.1rem;'>💡 Suggested PDB IDs:</div>",
         unsafe_allow_html=True,
     )
-    cols = st.columns(len(sugs) if len(sugs) <= 6 else 6)
+    cols = st.columns(min(len(sugs), 6))
     for idx, sug in enumerate(sugs[:6]):
         with cols[idx]:
             st.button(
@@ -105,7 +107,7 @@ def _render_suggestion_pills(parts: List[str], last_item: str) -> None:
             )
 
 
-def _badge_style_for_id(p: str) -> Tuple[str, str, str, str, str, bool]:
+def _badge_style_for_id(p: str) -> tuple[str, str, str, str, str, bool]:
     """(bg_color, border_color, text_color, icon, tooltip, is_valid) for
     one raw ID token, to render as a validation badge."""
     if p.upper().startswith("AF-"):

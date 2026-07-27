@@ -1,6 +1,7 @@
 import subprocess
-from unittest.mock import patch, MagicMock
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
 from src.backend.mustang_runner import MustangRunner
 
 
@@ -300,7 +301,7 @@ class TestEnsureFastaExists:
 class TestCheckNativeInstallation:
     def test_returns_false_when_no_mustang_path_set(self, mock_config):
         runner = MustangRunner(mock_config)
-        found, msg = runner._check_native_installation()
+        found, _msg = runner._check_native_installation()
         assert found is False
 
     @patch("subprocess.run")
@@ -312,7 +313,7 @@ class TestCheckNativeInstallation:
         fake_binary.write_text("fake")
         runner.mustang_path = fake_binary
 
-        found, msg = runner._check_native_installation()
+        found, _msg = runner._check_native_installation()
 
         assert found is True
         assert runner.use_wsl is False
@@ -321,7 +322,7 @@ class TestCheckNativeInstallation:
         runner = MustangRunner(mock_config)
         runner.mustang_path = tmp_path / "does_not_exist"
 
-        found, msg = runner._check_native_installation()
+        found, _msg = runner._check_native_installation()
 
         assert found is False
 
@@ -335,7 +336,7 @@ class TestCheckNativeInstallation:
         runner.mustang_path = fake_binary
         mock_run.side_effect = OSError("permission denied")
 
-        found, msg = runner._check_native_installation()
+        found, _msg = runner._check_native_installation()
 
         assert found is False
 
@@ -344,7 +345,7 @@ class TestCheckWslSystemInstallation:
     def test_returns_false_on_non_windows(self, mock_config):
         runner = MustangRunner(mock_config)
         runner.is_windows = False
-        found, msg = runner._check_wsl_system_installation()
+        found, _msg = runner._check_wsl_system_installation()
         assert found is False
 
     @patch("subprocess.run")
@@ -353,7 +354,7 @@ class TestCheckWslSystemInstallation:
         runner.is_windows = True
         mock_run.return_value = MagicMock(returncode=0)
 
-        found, msg = runner._check_wsl_system_installation()
+        found, _msg = runner._check_wsl_system_installation()
 
         assert found is True
         assert runner.use_wsl is True
@@ -365,7 +366,7 @@ class TestCheckWslSystemInstallation:
         runner.is_windows = True
         mock_run.return_value = MagicMock(returncode=1)
 
-        found, msg = runner._check_wsl_system_installation()
+        found, _msg = runner._check_wsl_system_installation()
 
         assert found is False
 
@@ -379,7 +380,7 @@ class TestVerifyWslBinary:
         mock_run.return_value = MagicMock(returncode=0)
         bin_path = tmp_path / "mustang"
 
-        found, msg = runner._verify_wsl_binary(bin_path)
+        found, _msg = runner._verify_wsl_binary(bin_path)
 
         assert found is True
         assert runner.use_wsl is True
@@ -391,7 +392,7 @@ class TestVerifyWslBinary:
         runner = MustangRunner(mock_config)
         mock_run.return_value = MagicMock(returncode=127)
 
-        found, msg = runner._verify_wsl_binary(tmp_path / "mustang")
+        found, _msg = runner._verify_wsl_binary(tmp_path / "mustang")
 
         assert found is False
 
@@ -401,7 +402,7 @@ class TestCheckCompiledBinary:
         runner = MustangRunner(mock_config)
         runner._base_dir = tmp_path
 
-        found, msg = runner._check_compiled_binary()
+        found, _msg = runner._check_compiled_binary()
 
         assert found is False
 
@@ -410,7 +411,7 @@ class TestCheckCompiledBinary:
         runner._base_dir = tmp_path
         (tmp_path / "mustang_build").mkdir()
 
-        found, msg = runner._check_compiled_binary()
+        found, _msg = runner._check_compiled_binary()
 
         assert found is False
 
@@ -529,7 +530,7 @@ class TestDeepWslCheck:
         runner.backend = "auto"
         mock_run.return_value = MagicMock(returncode=0, stdout=b"/usr/bin/mustang\n")
 
-        found, msg = runner._deep_wsl_check()
+        found, _msg = runner._deep_wsl_check()
 
         assert found is True
         assert runner.use_wsl is True
@@ -540,7 +541,7 @@ class TestDeepWslCheck:
         runner = MustangRunner(mock_config)
         mock_run.return_value = MagicMock(returncode=1, stdout=b"")
 
-        found, msg = runner._deep_wsl_check()
+        found, _msg = runner._deep_wsl_check()
 
         assert found is False
 
@@ -549,7 +550,7 @@ class TestDeepWslCheck:
         runner = MustangRunner(mock_config)
         mock_run.side_effect = OSError("wsl not available")
 
-        found, msg = runner._deep_wsl_check()
+        found, _msg = runner._deep_wsl_check()
 
         assert found is False
 
@@ -560,7 +561,7 @@ class TestPerformInstallationCheck:
         runner = MustangRunner(mock_config)
         mock_which.return_value = "/usr/bin/mustang"
 
-        found, msg = runner._perform_installation_check()
+        found, _msg = runner._perform_installation_check()
 
         assert found is True
         assert runner.backend == "native"
@@ -587,21 +588,19 @@ class TestPerformInstallationCheck:
         runner.is_windows = False
         mock_which.return_value = None
 
-        with patch.object(
-            runner, "_check_mustang", return_value=(False, "")
-        ), patch.object(
-            runner, "_compile_from_source", return_value=True
-        ), patch.object(
-            runner, "_update_executable_from_check"
-        ):
+        with (
+            patch.object(runner, "_check_mustang", return_value=(False, "")),
+            patch.object(runner, "_compile_from_source", return_value=True),
+            patch.object(runner, "_update_executable_from_check"),
             # _check_mustang is called twice: once before compiling (fails),
             # once after (succeeds) - side_effect models that sequence.
-            with patch.object(
+            patch.object(
                 runner,
                 "_check_mustang",
                 side_effect=[(False, ""), (True, "compiled ok")],
-            ):
-                found, msg = runner._perform_installation_check()
+            ),
+        ):
+            found, msg = runner._perform_installation_check()
 
         assert found is True
         assert "Compiled Mustang binary" in msg
@@ -673,7 +672,7 @@ class TestFinalizeAlignmentOutput:
         (tmp_path / "alignment.pdb").write_text("ATOM")
         (tmp_path / "alignment.fasta").write_text(">a\nACDEF\n")
 
-        success, msg, result_dir = runner._finalize_alignment_output(tmp_path, 0)
+        success, _msg, result_dir = runner._finalize_alignment_output(tmp_path, 0)
 
         assert success is True
         assert result_dir == tmp_path
@@ -681,7 +680,7 @@ class TestFinalizeAlignmentOutput:
     def test_failure_when_alignment_pdb_missing(self, mock_config, tmp_path):
         runner = MustangRunner(mock_config)
 
-        success, msg, result_dir = runner._finalize_alignment_output(tmp_path, 1)
+        success, _msg, result_dir = runner._finalize_alignment_output(tmp_path, 1)
 
         assert success is False
         assert result_dir is None
@@ -689,7 +688,7 @@ class TestFinalizeAlignmentOutput:
     def test_exit_code_139_mentions_structural_divergence(self, mock_config, tmp_path):
         runner = MustangRunner(mock_config)
 
-        success, msg, result_dir = runner._finalize_alignment_output(tmp_path, 139)
+        success, msg, _result_dir = runner._finalize_alignment_output(tmp_path, 139)
 
         assert success is False
         assert "divergence" in msg.lower()

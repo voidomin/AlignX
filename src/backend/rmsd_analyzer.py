@@ -1,9 +1,10 @@
 """RMSD analysis and visualization module."""
 
-import pandas as pd
-import numpy as np
 from pathlib import Path
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Any
+
+import numpy as np
+import pandas as pd
 
 from src.utils.logger import get_logger
 
@@ -13,7 +14,7 @@ logger = get_logger()
 class RMSDAnalyzer:
     """Analyze and visualize RMSD matrices."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """Initialize RMSD Analyzer."""
         self.config = config
         self.colormap = config.get("visualization", {}).get(
@@ -123,7 +124,7 @@ class RMSDAnalyzer:
             logger.exception("Failed to generate Plotly heatmap")
             return None
 
-    def calculate_statistics(self, rmsd_df: pd.DataFrame) -> Dict:
+    def calculate_statistics(self, rmsd_df: pd.DataFrame) -> dict:
         """
         Calculate RMSD statistics.
 
@@ -150,7 +151,7 @@ class RMSDAnalyzer:
 
     def identify_clusters(
         self, rmsd_df: pd.DataFrame, threshold: float = 3.0
-    ) -> Dict[int, List[str]]:
+    ) -> dict[int, list[str]]:
         """
         Identify structural clusters based on RMSD threshold.
 
@@ -161,7 +162,7 @@ class RMSDAnalyzer:
         Returns:
             Dictionary mapping cluster ID to list of protein IDs
         """
-        from scipy.cluster.hierarchy import linkage, fcluster
+        from scipy.cluster.hierarchy import fcluster, linkage
 
         # Convert to distance matrix (upper triangle)
         condensed = []
@@ -216,7 +217,7 @@ class RMSDAnalyzer:
             return False
 
     @staticmethod
-    def _parse_afasta_sequences(alignment_afasta: Path) -> Dict[str, str]:
+    def _parse_afasta_sequences(alignment_afasta: Path) -> dict[str, str]:
         sequences = {}
         current_header = None
         current_seq = []
@@ -237,7 +238,7 @@ class RMSDAnalyzer:
         return sequences
 
     @staticmethod
-    def _build_structure_maps(sequences: Dict[str, str]) -> List[Dict[int, int]]:
+    def _build_structure_maps(sequences: dict[str, str]) -> list[dict[int, int]]:
         """structure_maps[struct_idx][seq_idx] = alignment_idx - maps each
         structure's ungapped residue index to its alignment column, so a
         PDB residue (indexed by sequence position) can be placed in the
@@ -256,10 +257,10 @@ class RMSDAnalyzer:
     @staticmethod
     def _parse_ca_coords(
         alignment_pdb: Path,
-        structure_maps: List[Dict[int, int]],
+        structure_maps: list[dict[int, int]],
         alignment_length: int,
         num_structures: int,
-    ) -> List[List[Optional[np.ndarray]]]:
+    ) -> list[list[np.ndarray | None]]:
         """[alignment_pos][structure_idx] = CA coordinate, or None for a gap.
         Assumes PDB chains correspond to sequences in order - Mustang
         outputs Chain A, B, C... in the same order structures were input."""
@@ -297,7 +298,7 @@ class RMSDAnalyzer:
         return coords
 
     @staticmethod
-    def _rmsf_for_column(col_coords: List[np.ndarray]) -> float:
+    def _rmsf_for_column(col_coords: list[np.ndarray]) -> float:
         if len(col_coords) < 2:
             return 0.0  # Not enough data for variance
         mean_pos = np.mean(col_coords, axis=0)
@@ -307,7 +308,7 @@ class RMSDAnalyzer:
 
     def calculate_residue_rmsf(
         self, alignment_pdb: Path, alignment_afasta: Path
-    ) -> Tuple[List[float], List[str]]:
+    ) -> tuple[list[float], list[str]]:
         """
         Calculate Root Mean Square Fluctuation (RMSF) per residue/column.
 

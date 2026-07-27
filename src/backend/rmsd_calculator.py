@@ -1,8 +1,10 @@
+from pathlib import Path
+from typing import Any
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from typing import List, Dict, Optional, Any, Tuple
 from Bio.PDB import PDBParser
+
 from src.utils.logger import get_logger, sanitize_for_log
 
 logger = get_logger()
@@ -10,7 +12,7 @@ logger = get_logger()
 
 def calculate_rmsd_from_superposition(
     pdb_file: Path, num_expected: int
-) -> Optional[pd.DataFrame]:
+) -> pd.DataFrame | None:
     """
     Fallback: Calculate pairwise RMSD matrix directly from superimposed PDB coordinates
     assuming sequential atom matching (only for structures with identical residue/atom counts).
@@ -58,7 +60,7 @@ def calculate_rmsd_from_superposition(
         return None
 
 
-def _try_parse_rmsd_row(line: str) -> Optional[List[float]]:
+def _try_parse_rmsd_row(line: str) -> list[float] | None:
     """Parses one Mustang log line as an RMSD-matrix row - a numeric row
     index (1, 2, 3...) followed by RMSD values (float or '---') - or
     returns None if the line doesn't match that shape."""
@@ -85,7 +87,7 @@ def _try_parse_rmsd_row(line: str) -> Optional[List[float]]:
     return row or None
 
 
-def parse_mustang_log_for_rmsd(log_file: Path) -> Optional[pd.DataFrame]:
+def parse_mustang_log_for_rmsd(log_file: Path) -> pd.DataFrame | None:
     """
     Parse Mustang's log file (stdout) to extract the pairwise RMSD table.
     Mustang outputs a table like:
@@ -127,7 +129,7 @@ def parse_mustang_log_for_rmsd(log_file: Path) -> Optional[pd.DataFrame]:
         return None
 
 
-def parse_rmsd_matrix(output_dir: Path, pdb_ids: List[str]) -> Optional[pd.DataFrame]:
+def parse_rmsd_matrix(output_dir: Path, pdb_ids: list[str]) -> pd.DataFrame | None:
     """
     Unified entry point for extracting structural similarity data.
     Strategies:
@@ -172,7 +174,7 @@ def _parse_matrix_value(val: str) -> float:
         return 0.0
 
 
-def _matrix_row(raw_row: List[str], n: int) -> List[float]:
+def _matrix_row(raw_row: list[str], n: int) -> list[float]:
     """Parses up to `n` values from a raw row, padding with 0.0 if the row
     (or the whole matrix, via the caller) came up short - a truncated
     .rms_rot file shouldn't crash the whole parse."""
@@ -181,7 +183,7 @@ def _matrix_row(raw_row: List[str], n: int) -> List[float]:
     return row
 
 
-def _extract_rms_rot_data_rows(lines: List[str], matrix_start: int) -> List[List[str]]:
+def _extract_rms_rot_data_rows(lines: list[str], matrix_start: int) -> list[list[str]]:
     data_rows = []
     for line in lines[matrix_start:]:
         if "|" not in line:
@@ -192,9 +194,7 @@ def _extract_rms_rot_data_rows(lines: List[str], matrix_start: int) -> List[List
     return data_rows
 
 
-def parse_rms_rot_file(
-    rms_rot_file: Path, pdb_ids: List[str]
-) -> Optional[pd.DataFrame]:
+def parse_rms_rot_file(rms_rot_file: Path, pdb_ids: list[str]) -> pd.DataFrame | None:
     """
     Parse RMSD matrix from Mustang's .rms_rot file with robust line-based detection.
     """
@@ -229,7 +229,7 @@ def parse_rms_rot_file(
 
 
 # Re-implementing robust RMSD using aligned FASTA + Superimposed PDB
-def _build_residue_mapping(alignment: list, seq_len: int) -> List[List[Optional[int]]]:
+def _build_residue_mapping(alignment: list, seq_len: int) -> list[list[int | None]]:
     """mapping[struct_idx][col_idx] = 0-based residue index in that
     structure's source sequence, or None for a gap column."""
     mapping = [[None] * seq_len for _ in alignment]
@@ -264,12 +264,12 @@ def _select_structures(structure, num_structures: int) -> list:
 
 
 def _common_ca_coords(
-    mapping: List[List[Optional[int]]],
-    structure_cas: List[list],
+    mapping: list[list[int | None]],
+    structure_cas: list[list],
     i: int,
     j: int,
     seq_len: int,
-) -> Tuple[List[Any], List[Any]]:
+) -> tuple[list[Any], list[Any]]:
     """CA coordinate pairs for aligned columns where both structures have a
     residue (no gap) and the mapped residue index is in bounds."""
     coords_i, coords_j = [], []
@@ -285,9 +285,7 @@ def _common_ca_coords(
     return coords_i, coords_j
 
 
-def calculate_structure_rmsd(
-    pdb_file: Path, fasta_file: Path
-) -> Optional[pd.DataFrame]:
+def calculate_structure_rmsd(pdb_file: Path, fasta_file: Path) -> pd.DataFrame | None:
     """
     Calculate RMSD using the aligned FASTA to map residues between superimposed structures.
     """
@@ -383,11 +381,11 @@ def calculate_difference_distance_matrix(
 
 def get_structure_contact_map(
     alignment_pdb: Path,
-    pdb_ids: List[str],
+    pdb_ids: list[str],
     pdb_id: str,
     threshold: float = DEFAULT_CONTACT_THRESHOLD_A,
     max_residues: int = MAX_DENSE_MATRIX_RESIDUES,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     A single structure's own CA-CA contact map, keyed to its real residue
     order (not the alignment's gapped columns - a contact map describes
@@ -451,12 +449,12 @@ def get_structure_contact_map(
 def get_difference_distance_matrix(
     alignment_pdb: Path,
     alignment_fasta: Path,
-    pdb_ids: List[str],
+    pdb_ids: list[str],
     pdb_id_a: str,
     pdb_id_b: str,
     max_residues: int = MAX_DENSE_MATRIX_RESIDUES,
     notable_shift_a: float = DEFAULT_NOTABLE_SHIFT_A,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Difference-distance matrix between two structures in the same
     alignment, over their commonly-aligned columns (reuses
@@ -580,7 +578,7 @@ def calculate_gdt_ts(coords1: np.ndarray, coords2: np.ndarray, l_target: int) ->
 
 def _build_structure_data(
     alignment: list, entities: list, seq_len: int
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Maps each aligned sequence's non-gap columns to that structure's
     actual CA coordinates, for later pairwise TM-score/GDT-TS comparison."""
     structure_data = []
@@ -604,8 +602,8 @@ def _build_structure_data(
 
 
 def _common_aligned_coords(
-    target: Dict[str, Any], other: Dict[str, Any], seq_len: int
-) -> Tuple[List[Any], List[Any]]:
+    target: dict[str, Any], other: dict[str, Any], seq_len: int
+) -> tuple[list[Any], list[Any]]:
     """Coordinate pairs present (non-gap) in both structures at the same
     aligned column - the basis for a pairwise TM-score/GDT-TS comparison."""
     c1, c2 = [], []
@@ -619,8 +617,8 @@ def _common_aligned_coords(
 
 
 def _average_quality_scores(
-    target: Dict[str, Any], structure_data: List[Dict[str, Any]], seq_len: int
-) -> Dict[str, float]:
+    target: dict[str, Any], structure_data: list[dict[str, Any]], seq_len: int
+) -> dict[str, float]:
     """Average TM-score/GDT-TS of `target` against every other structure in
     the alignment (Mustang gives a global superposition, so this is a
     reasonable proxy for "how consistent is this structure with the rest of
@@ -646,7 +644,7 @@ def _average_quality_scores(
 
 def calculate_alignment_quality_metrics(
     pdb_file: Path, fasta_file: Path
-) -> Optional[Dict[str, Dict[str, float]]]:
+) -> dict[str, dict[str, float]] | None:
     """
     Calculate scientific quality metrics for each structure in the alignment.
     Returns: { 'pdb_id': {'tm_score': 0.85, 'gdt_ts': 0.92, 'rmsd': 1.2} }
@@ -703,11 +701,11 @@ def _interpolate_frame_pdb(coords: np.ndarray, model_num: int) -> str:
 def get_morph_frames(
     alignment_pdb: Path,
     alignment_fasta: Path,
-    pdb_ids: List[str],
+    pdb_ids: list[str],
     pdb_id_a: str,
     pdb_id_b: str,
     num_frames: int = 20,
-) -> Optional[str]:
+) -> str | None:
     """
     Synthetic multi-model PDB text morphing structure A into structure B,
     over their commonly-aligned CA columns (same basis as

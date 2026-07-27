@@ -9,7 +9,7 @@ whatever coordinates are in the specific file downloaded/cleaned here.
 """
 
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 from urllib.parse import quote
 
 import httpx
@@ -40,7 +40,7 @@ _METRIC_KEYS = ("clashscore", "percent-rama-outliers", "percent-rota-outliers")
 
 async def fetch_pdbe_validation(
     pdb_id: str, client: httpx.AsyncClient
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Fetches wwPDB validation metrics for one experimentally-solved PDB
     entry via PDBe's global-percentiles API. Only meaningful for real PDB

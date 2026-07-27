@@ -36,7 +36,7 @@ import asyncio
 import json
 import threading
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 
@@ -103,7 +103,7 @@ class PrankWebClient:
         self.max_poll_attempts = max_poll_attempts
 
     async def submit_structure(
-        self, pdb_file_content: str, client: Optional[httpx.AsyncClient] = None
+        self, pdb_file_content: str, client: httpx.AsyncClient | None = None
     ) -> str:
         """Submits a real structure file for geometric pocket detection,
         returning PrankWeb's own job id. Retries once on a transient
@@ -159,8 +159,8 @@ class PrankWebClient:
                 await client.aclose()
 
     async def poll_until_complete(
-        self, job_id: str, client: Optional[httpx.AsyncClient] = None
-    ) -> Dict[str, Any]:
+        self, job_id: str, client: httpx.AsyncClient | None = None
+    ) -> dict[str, Any]:
         """Polls PrankWeb's own status endpoint until the job reaches a
         terminal state, then fetches and returns the real completed
         prediction.json payload - status and result are two separate
@@ -221,7 +221,7 @@ class PrankWebClient:
             if own_client:
                 await client.aclose()
 
-    async def detect_pockets(self, pdb_file_content: str) -> Dict[str, Any]:
+    async def detect_pockets(self, pdb_file_content: str) -> dict[str, Any]:
         """End-to-end: submit a structure, wait for completion, return the
         real completed prediction payload."""
         async with httpx.AsyncClient(timeout=self.timeout) as client:

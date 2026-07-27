@@ -30,8 +30,6 @@ supported by genuine long-range (tertiary-structure) confidence, not just
 an unbroken run of confident local peptide bonds.
 """
 
-from typing import List, Optional
-
 import numpy as np
 from scipy.sparse.csgraph import connected_components
 
@@ -45,11 +43,11 @@ DEFAULT_MIN_SEQUENCE_GAP = 5
 
 
 def calculate_pae_domains(
-    pae_matrix: List[List[float]],
+    pae_matrix: list[list[float]],
     threshold_angstrom: float = DEFAULT_PAE_THRESHOLD_ANGSTROM,
     min_domain_size: int = DEFAULT_MIN_DOMAIN_SIZE,
     min_sequence_gap: int = DEFAULT_MIN_SEQUENCE_GAP,
-) -> Optional[List[List[int]]]:
+) -> list[list[int]] | None:
     """
     Splits a structure into rigid domains by connectivity in its own real
     PAE matrix. Returns a list of domains, each a list of 1-based residue

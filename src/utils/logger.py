@@ -2,15 +2,14 @@
 
 import logging
 import sys
-from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from pathlib import Path
 
 
 def setup_logger(
     name: str = "mustang_pipeline",
     level: str = "INFO",
-    log_file: Optional[str] = None,
+    log_file: str | None = None,
     console_output: bool = True,
 ) -> logging.Logger:
     """

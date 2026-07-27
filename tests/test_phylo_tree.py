@@ -43,7 +43,7 @@ def sample_rmsd_df():
 class TestGenerateTree:
     def test_creates_a_real_image_file(self, generator, sample_rmsd_df, tmp_path):
         output = tmp_path / "tree.png"
-        success, msg, path = generator.generate_tree(sample_rmsd_df, output)
+        success, _msg, path = generator.generate_tree(sample_rmsd_df, output)
 
         assert success is True
         assert path == output
@@ -71,7 +71,7 @@ class TestGenerateTree:
 class TestExportNewick:
     def test_writes_a_valid_newick_file(self, generator, sample_rmsd_df, tmp_path):
         output = tmp_path / "tree.nwk"
-        success, msg, path = generator.export_newick(sample_rmsd_df, output)
+        success, _msg, path = generator.export_newick(sample_rmsd_df, output)
 
         assert success is True
         assert path == output
@@ -92,7 +92,7 @@ class TestExportNewick:
 
     def test_returns_failure_on_malformed_input(self, generator, tmp_path):
         bad_df = pd.DataFrame([[1, 2], [3, 4]])
-        success, msg, path = generator.export_newick(bad_df, tmp_path / "tree.nwk")
+        success, _msg, path = generator.export_newick(bad_df, tmp_path / "tree.nwk")
 
         assert success is False
         assert path is None

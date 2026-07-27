@@ -1,9 +1,9 @@
 """Phylogenetic tree generation from RMSD matrices."""
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from typing import Optional, Tuple
 from scipy.cluster.hierarchy import linkage
 
 from src.utils.logger import get_logger
@@ -25,7 +25,7 @@ class PhyloTreeGenerator:
 
     def generate_tree(
         self, rmsd_df: pd.DataFrame, output_path: Path
-    ) -> Tuple[bool, str, Optional[Path]]:
+    ) -> tuple[bool, str, Path | None]:
         """
         Generate phylogenetic tree from RMSD matrix.
 
@@ -76,11 +76,11 @@ class PhyloTreeGenerator:
 
         except Exception as e:
             logger.exception("Failed to generate phylogenetic tree")
-            return False, f"Tree generation failed: {str(e)}", None
+            return False, f"Tree generation failed: {e!s}", None
 
     def export_newick(
         self, rmsd_df: pd.DataFrame, output_path: Path
-    ) -> Tuple[bool, str, Optional[Path]]:
+    ) -> tuple[bool, str, Path | None]:
         """
         Export phylogenetic tree in Newick format.
 
@@ -115,7 +115,7 @@ class PhyloTreeGenerator:
 
         except Exception as e:
             logger.exception("Failed to export Newick")
-            return False, f"Newick export failed: {str(e)}", None
+            return False, f"Newick export failed: {e!s}", None
 
     def _linkage_to_newick(self, linkage_matrix: np.ndarray, labels: list) -> str:
         """

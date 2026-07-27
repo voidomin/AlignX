@@ -1,9 +1,9 @@
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
-from src.backend.esmfold_client import fold_sequence, ESMFoldError
+from src.backend.esmfold_client import ESMFoldError, fold_sequence
 
 
 def _mock_response(status_code=200, text=""):

@@ -29,7 +29,7 @@ was verified end-to-end, not assumed from the docs alone):
 import asyncio
 import threading
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 
@@ -92,7 +92,7 @@ class DDMutClient:
         pdb_file_content: str,
         chain: str,
         mutation: str,
-        client: Optional[httpx.AsyncClient] = None,
+        client: httpx.AsyncClient | None = None,
     ) -> str:
         """Submits a real structure file + point-mutation code
         (aaFrom+residueNumber+aaTo, e.g. "H461D") for a ddG stability
@@ -120,8 +120,8 @@ class DDMutClient:
                 await client.aclose()
 
     async def poll_until_complete(
-        self, job_id: str, client: Optional[httpx.AsyncClient] = None
-    ) -> Dict[str, Any]:
+        self, job_id: str, client: httpx.AsyncClient | None = None
+    ) -> dict[str, Any]:
         """Polls DDMut's own submission URL (status and result share one
         endpoint) until the job reaches a terminal state, returning the
         real completed prediction payload."""
@@ -163,7 +163,7 @@ class DDMutClient:
 
     async def predict_stability(
         self, pdb_file_content: str, chain: str, mutation: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """End-to-end: submit a structure + mutation, wait for completion,
         return the real completed prediction payload."""
         async with httpx.AsyncClient(timeout=self.timeout) as client:

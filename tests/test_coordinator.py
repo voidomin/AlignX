@@ -1,5 +1,5 @@
 from pathlib import Path
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import numpy as np
 import pandas as pd
@@ -7,8 +7,8 @@ import pytest
 
 from src.backend.coordinator import (
     AnalysisCoordinator,
-    sanitize_for_json,
     _sanitize_json_key,
+    sanitize_for_json,
 )
 
 
@@ -281,7 +281,7 @@ class TestResolveRunIdentity:
             coordinator = AnalysisCoordinator(mock_config)
             output_dir = tmp_path / "my_run"
 
-            resolved_dir, run_id, run_name, now = coordinator._resolve_run_identity(
+            resolved_dir, run_id, run_name, _now = coordinator._resolve_run_identity(
                 output_dir, ["4RLT"]
             )
 
@@ -296,7 +296,7 @@ class TestResolveRunIdentity:
         ):
             coordinator = AnalysisCoordinator(mock_config, session_id="sess-1")
 
-            resolved_dir, run_id, run_name, now = coordinator._resolve_run_identity(
+            resolved_dir, run_id, run_name, _now = coordinator._resolve_run_identity(
                 None, ["4RLT", "3UG9"]
             )
 
@@ -629,7 +629,7 @@ def test_run_full_pipeline_succeeds_end_to_end(mock_config, tmp_path):
         mock_align.side_effect = fake_run_alignment
 
         coordinator = AnalysisCoordinator(mock_config)
-        success, msg, results = coordinator.run_full_pipeline(
+        success, _msg, results = coordinator.run_full_pipeline(
             ["4RLT", "3UG9"],
             output_dir=output_dir,
             progress_callback=lambda frac, text, step: progress_calls.append(

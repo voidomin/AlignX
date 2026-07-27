@@ -2,8 +2,10 @@
 Batch comparison tab for comparing multiple Mustang runs.
 """
 
-import streamlit as st
 from pathlib import Path
+
+import streamlit as st
+
 from src.backend.result_manager import ResultManager
 
 

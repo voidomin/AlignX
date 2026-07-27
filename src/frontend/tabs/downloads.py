@@ -1,11 +1,16 @@
-import streamlit as st
-from typing import Dict, Any
-import zipfile
 import io
+import zipfile
+from typing import Any
+
+import streamlit as st
+
+from src.utils.logger import get_logger
+
+logger = get_logger()
 
 
 @st.cache_data(max_entries=3, ttl=300, show_spinner=False)
-def generate_zip_package(results: Dict[str, Any], run_id: str) -> bytes:
+def generate_zip_package(results: dict[str, Any], run_id: str) -> bytes:
     """Generate and cache the complete package ZIP file bytes."""
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
@@ -40,7 +45,10 @@ def generate_zip_package(results: Dict[str, Any], run_id: str) -> bytes:
             if nb_path and nb_path.exists():
                 zip_file.write(nb_path, arcname=f"lab_notebook_{run_id}.html")
         except Exception:
-            pass
+            logger.debug(
+                f"Failed to include lab notebook in ZIP for run {run_id}",
+                exc_info=True,
+            )
     return zip_buffer.getvalue()
 
 
@@ -60,7 +68,7 @@ def _render_report_section_checkboxes() -> list:
     return report_sections
 
 
-def _render_pdf_report_generator(results: Dict[str, Any], run_id: str) -> None:
+def _render_pdf_report_generator(results: dict[str, Any], run_id: str) -> None:
     st.markdown("### 📄 Analysis Report")
     st.write("Customize your report:")
     report_sections = _render_report_section_checkboxes()
@@ -87,7 +95,7 @@ def _render_pdf_report_generator(results: Dict[str, Any], run_id: str) -> None:
             st.error(f"Failed to generate PDF: {e}")
 
 
-def _render_lab_notebook_exporter(results: Dict[str, Any], run_id: str) -> None:
+def _render_lab_notebook_exporter(results: dict[str, Any], run_id: str) -> None:
     st.divider()
     st.markdown("### 📒 Lab Notebook (HTML)")
     st.write("Generate a standalone HTML notebook with embedded 3D structures.")
@@ -112,7 +120,7 @@ def _render_lab_notebook_exporter(results: Dict[str, Any], run_id: str) -> None:
             st.error(f"Failed to export notebook: {e}")
 
 
-def _render_raw_files_column(results: Dict[str, Any], run_id: str) -> None:
+def _render_raw_files_column(results: dict[str, Any], run_id: str) -> None:
     st.markdown("### 📊 Raw Data & Files")
     st.write("Download individual analysis files:")
 
@@ -155,7 +163,7 @@ def _render_raw_files_column(results: Dict[str, Any], run_id: str) -> None:
             )
 
 
-def _render_complete_package_download(results: Dict[str, Any], run_id: str) -> None:
+def _render_complete_package_download(results: dict[str, Any], run_id: str) -> None:
     st.divider()
     st.markdown("### 📦 Complete Package")
     st.write(
@@ -172,7 +180,7 @@ def _render_complete_package_download(results: Dict[str, Any], run_id: str) -> N
     )
 
 
-def render_downloads_tab(results: Dict[str, Any]) -> None:
+def render_downloads_tab(results: dict[str, Any]) -> None:
     """
     Render the Data Downloads tab.
 

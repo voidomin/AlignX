@@ -1,6 +1,7 @@
 import pytest
-from src.utils.config_loader import load_config
 import yaml
+
+from src.utils.config_loader import load_config
 
 
 def test_valid_config_loading():

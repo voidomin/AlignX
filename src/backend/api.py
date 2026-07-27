@@ -1,12 +1,12 @@
+import asyncio
 import os
+import secrets
 import sys
 import time
 import uuid
-import secrets
-import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, List, Dict, Any, Optional, Tuple
+from typing import Annotated, Any
 
 import matplotlib
 
@@ -17,48 +17,49 @@ import json
 import re
 import socket
 from urllib.parse import urlparse
+
 import httpx
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query, Body, Request, UploadFile, File
+from fastapi import Body, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from starlette.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
+from starlette.responses import JSONResponse
 
 # Ensure working directory is set to project root if run from subdirectories
 project_root = Path(__file__).parent.parent.parent.resolve()
 sys.path.insert(0, str(project_root))
 
-from src.utils.config_loader import load_config, save_config
-from src.utils.logger import get_logger, sanitize_for_log
-from src.backend.coordinator import AnalysisCoordinator
-from src.backend.discovery_coordinator import DiscoveryCoordinator
 from src.backend.annotation_aggregator import AnnotationAggregator
-from src.backend.validation_service import fetch_pdbe_validation
-from src.backend.foldseek_client import FoldseekClient, FoldseekError
-from src.backend.clustalo_client import ClustalOmegaClient
 from src.backend.blast_client import BlastClient
-from src.backend.ddmut_client import DDMutClient
-from src.backend.prankweb_client import PrankWebClient
-from src.backend.interproscan_client import InterProScanClient
-from src.backend.esmfold_client import fold_sequence, ESMFoldError, MAX_SEQUENCE_LENGTH
+from src.backend.clash_calculator import calculate_clash_score
+from src.backend.clustalo_client import ClustalOmegaClient
+from src.backend.coordinator import AnalysisCoordinator
 from src.backend.database import HistoryDatabase
-from src.backend.ligand_analyzer import LigandAnalyzer
+from src.backend.ddmut_client import DDMutClient
+from src.backend.discovery_coordinator import DiscoveryCoordinator
+from src.backend.esmfold_client import MAX_SEQUENCE_LENGTH, ESMFoldError, fold_sequence
+from src.backend.flexibility_calculator import calculate_gnm_flexibility
+from src.backend.foldseek_client import FoldseekClient, FoldseekError
 from src.backend.interface_analyzer import InterfaceAnalyzer
+from src.backend.interproscan_client import InterProScanClient
+from src.backend.ligand_analyzer import LigandAnalyzer
+from src.backend.pae_domain_calculator import calculate_pae_domains
 from src.backend.pdb_manager import PDBManager, parse_structure_file
-from src.backend.rmsd_analyzer import RMSDAnalyzer
+from src.backend.prankweb_client import PrankWebClient
 from src.backend.ramachandran_service import RamachandranService
 from src.backend.result_manager import ResultManager
+from src.backend.rmsd_analyzer import RMSDAnalyzer
 from src.backend.rmsd_calculator import (
-    get_structure_contact_map,
     get_difference_distance_matrix,
     get_morph_frames,
+    get_structure_contact_map,
 )
 from src.backend.tm_score_calculator import calculate_pairwise_tm_score
-from src.backend.flexibility_calculator import calculate_gnm_flexibility
-from src.backend.pae_domain_calculator import calculate_pae_domains
-from src.backend.clash_calculator import calculate_clash_score
+from src.backend.validation_service import fetch_pdbe_validation
+from src.utils.config_loader import load_config, save_config
+from src.utils.logger import get_logger, sanitize_for_log
 
 logger = get_logger()
 
@@ -128,8 +129,8 @@ _ALIGNX_API_KEY = os.environ.get("ALIGNX_API_KEY")
 
 
 def _cors_misconfiguration_warning(
-    api_key: Optional[str], cors_origins_env: str
-) -> Optional[str]:
+    api_key: str | None, cors_origins_env: str
+) -> str | None:
     """A configured API key is the signal that this is a real deployment,
     not local development - if CORS is still wide-open in that case, this
     returns a warning to log at startup rather than silently shipping
@@ -196,12 +197,12 @@ async def require_api_key(request: Request, call_next):
 # ceiling than alignment jobs since they compete for Foldseek's own strict
 # rate limit across every StructScope user (see FoldseekClient's rate limiter).
 # Applies even when ALIGNX_API_KEY is unset, since that's the default/open state.
-_JOB_RATE_LIMIT_MAX = int(os.environ.get("ALIGNX_JOB_RATE_LIMIT_MAX", 5))
+_JOB_RATE_LIMIT_MAX = int(os.environ.get("ALIGNX_JOB_RATE_LIMIT_MAX", "5"))
 _JOB_RATE_LIMIT_WINDOW_SECONDS = int(
-    os.environ.get("ALIGNX_JOB_RATE_LIMIT_WINDOW_SECONDS", 60)
+    os.environ.get("ALIGNX_JOB_RATE_LIMIT_WINDOW_SECONDS", "60")
 )
-_DISCOVERY_RATE_LIMIT_MAX = int(os.environ.get("ALIGNX_DISCOVERY_RATE_LIMIT_MAX", 3))
-_job_submission_timestamps: Dict[str, List[float]] = {}
+_DISCOVERY_RATE_LIMIT_MAX = int(os.environ.get("ALIGNX_DISCOVERY_RATE_LIMIT_MAX", "3"))
+_job_submission_timestamps: dict[str, list[float]] = {}
 
 
 def _rate_limit_client_key(request: Request) -> str:
@@ -211,7 +212,7 @@ def _rate_limit_client_key(request: Request) -> str:
     return f"ip:{request.client.host if request.client else 'unknown'}"
 
 
-def _job_rate_limit_max(path: str) -> Optional[int]:
+def _job_rate_limit_max(path: str) -> int | None:
     """Resolved per-request (not baked into a dict at import time) so tests
     can patch _JOB_RATE_LIMIT_MAX / _DISCOVERY_RATE_LIMIT_MAX directly."""
     if path == "/api/jobs/align":
@@ -259,7 +260,7 @@ _ALIGNMENT_PDB_FILENAME = "alignment.pdb"
 _ALIGNMENT_FASTA_FILENAME = "alignment.fasta"
 
 
-def _safe_segment(value: Optional[str], field_name: str) -> Optional[str]:
+def _safe_segment(value: str | None, field_name: str) -> str | None:
     """
     Validate a value that will be concatenated into a filesystem path
     (session_id, run_id, pdb_id, etc). Only alnum/underscore/hyphen are
@@ -294,7 +295,7 @@ def health_check():
     }
 
 
-def _current_settings() -> Dict[str, Any]:
+def _current_settings() -> dict[str, Any]:
     """The runtime-editable subset of `config` - mirrors the Streamlit
     Settings page's exact field set (pages/3_Settings.py)."""
     return {
@@ -372,9 +373,7 @@ def update_settings(update: SettingsUpdate):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.warning(f"Failed to persist settings to config.yaml: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save settings: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to save settings: {e!s}")
 
     return _current_settings()
 
@@ -392,9 +391,9 @@ def get_rcsb_suggestions(q: Annotated[str, Query(..., min_length=1)]):
     """
     Fetch matching PDB IDs from RCSB Suggest API.
     """
-    import urllib.request
-    import urllib.parse
     import re
+    import urllib.parse
+    import urllib.request
 
     query_struct = {"type": "basic", "suggest": {"text": q, "size": 6}}
     try:
@@ -429,8 +428,8 @@ def get_rcsb_suggestions(q: Annotated[str, Query(..., min_length=1)]):
     },
 )
 async def analyze_chains(
-    pdb_ids: Annotated[List[str], Body(..., embed=True)],
-    session_id: Annotated[Optional[str], Query()] = None,
+    pdb_ids: Annotated[list[str], Body(..., embed=True)],
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     Download PDB files and analyze their structural chains.
@@ -495,7 +494,7 @@ async def analyze_chains(
 )
 async def upload_structure(
     file: Annotated[UploadFile, File(...)],
-    session_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     Accept a user-uploaded .pdb/.ent/.cif structure file (rather than
@@ -549,7 +548,7 @@ async def upload_structure(
 )
 async def fold_sequence_endpoint(
     sequence: Annotated[str, Body(..., embed=True)],
-    session_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     Predicts a real 3D structure directly from a raw amino-acid sequence
@@ -627,7 +626,7 @@ def _is_plotly_bdata(val: Any) -> bool:
     )
 
 
-def _decode_plotly_bdata(val: Dict[str, Any]) -> Any:
+def _decode_plotly_bdata(val: dict[str, Any]) -> Any:
     """Plotly 6.x's compact binary typed-array format for numeric trace data
     (emitted for figure_factory dendrograms and some Heatmap traces,
     regardless of whether the original value was a numpy array or a plain
@@ -637,6 +636,7 @@ def _decode_plotly_bdata(val: Dict[str, Any]) -> Any:
     frontend Plotly.js CDN version can't decode either form, so decode it
     back into a plain (possibly nested) list here."""
     import base64
+
     import numpy as np
 
     try:
@@ -664,7 +664,7 @@ def _is_floatlike(val: Any) -> bool:
     )
 
 
-def _coerce_float(val: Any) -> Optional[float]:
+def _coerce_float(val: Any) -> float | None:
     import math
 
     try:
@@ -762,7 +762,7 @@ def _resolve_webhook_hostname(hostname: str) -> None:
             )
 
 
-async def _validate_webhook_url(url: Optional[str]) -> Optional[str]:
+async def _validate_webhook_url(url: str | None) -> str | None:
     """A webhook is an outbound server-side POST triggered by user input -
     unlike this app's existing external GETs (ClinVar/PubMed links, PDBe/
     RCSB lookups), the URL itself is fully user-supplied, so it gets its
@@ -790,7 +790,7 @@ async def _validate_webhook_url(url: Optional[str]) -> Optional[str]:
     return url
 
 
-async def _notify_webhook(url: str, payload: Dict[str, Any]) -> None:
+async def _notify_webhook(url: str, payload: dict[str, Any]) -> None:
     """Fire-and-forget job-completion notification - a bad/unreachable
     webhook URL must never fail the underlying job, so failures are
     logged, not raised. Short timeout since this is just a notification,
@@ -821,8 +821,8 @@ async def _notify_webhook(url: str, payload: Dict[str, Any]) -> None:
 #
 # Jobs are swept periodically (see _sweep_alignment_jobs) so a long-lived server
 # doesn't accumulate unbounded memory from old job records.
-alignment_jobs: Dict[str, Dict[str, Any]] = {}
-_JOB_TTL_SECONDS = int(os.environ.get("ALIGNX_JOB_TTL_SECONDS", 3600))
+alignment_jobs: dict[str, dict[str, Any]] = {}
+_JOB_TTL_SECONDS = int(os.environ.get("ALIGNX_JOB_TTL_SECONDS", "3600"))
 _JOB_SWEEP_INTERVAL_SECONDS = 300
 
 
@@ -842,12 +842,12 @@ async def _sweep_alignment_jobs():
 
 
 def _run_alignment_pipeline(
-    pdb_ids: List[str],
-    chain_selection: Dict[str, str],
+    pdb_ids: list[str],
+    chain_selection: dict[str, str],
     remove_water: bool,
     remove_heteroatoms: bool,
-    session_id: Optional[str],
-) -> Dict[str, Any]:
+    session_id: str | None,
+) -> dict[str, Any]:
     """Blocking pipeline execution, run on a worker thread by the job runner."""
     coordinator = AnalysisCoordinator(config, session_id=session_id)
     success, msg, results = coordinator.run_full_pipeline(
@@ -862,7 +862,7 @@ def _run_alignment_pipeline(
 
 
 async def _execute_alignment_job(
-    job_id: str, webhook_url: Optional[str] = None, **pipeline_kwargs
+    job_id: str, webhook_url: str | None = None, **pipeline_kwargs
 ):
     alignment_jobs[job_id]["status"] = "running"
     created_at = alignment_jobs[job_id].get("created_at", time.time())
@@ -903,12 +903,12 @@ async def _execute_alignment_job(
     },
 )
 async def submit_alignment_job(
-    pdb_ids: Annotated[List[str], Body(..., embed=True)],
-    chain_selection: Annotated[Dict[str, str], Body(embed=True)] = {},
+    pdb_ids: Annotated[list[str], Body(..., embed=True)],
+    chain_selection: Annotated[dict[str, str] | None, Body(embed=True)] = None,
     remove_water: Annotated[bool, Body(embed=True)] = True,
     remove_heteroatoms: Annotated[bool, Body(embed=True)] = True,
-    webhook_url: Annotated[Optional[str], Body(embed=True)] = None,
-    session_id: Annotated[Optional[str], Query()] = None,
+    webhook_url: Annotated[str | None, Body(embed=True)] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     Submit a Mustang multiple structural alignment run as a background job.
@@ -916,6 +916,8 @@ async def submit_alignment_job(
     status - or, if webhook_url is given, receive a POST there instead
     ({job_id, status, run_id}) once the job finishes.
     """
+    if chain_selection is None:
+        chain_selection = {}
     if not pdb_ids or len(pdb_ids) < 2:
         raise HTTPException(
             status_code=400, detail="At least 2 PDB IDs are required for alignment."
@@ -976,7 +978,7 @@ def get_alignment_job(job_id: str):
 # can take a while (upload + poll + fetch, plus the shared rate limiter -
 # see FoldseekClient), so they run on a background thread and are polled via
 # job_id rather than blocking the HTTP request.
-discovery_jobs: Dict[str, Dict[str, Any]] = {}
+discovery_jobs: dict[str, dict[str, Any]] = {}
 
 
 async def _sweep_discovery_jobs():
@@ -996,9 +998,9 @@ async def _sweep_discovery_jobs():
 
 def _run_discovery_pipeline(
     pdb_id: str,
-    databases: Optional[List[str]],
-    session_id: Optional[str],
-) -> Dict[str, Any]:
+    databases: list[str] | None,
+    session_id: str | None,
+) -> dict[str, Any]:
     """Blocking pipeline execution, run on a worker thread by the job runner."""
     coordinator = DiscoveryCoordinator(config, session_id=session_id)
     success, msg, results = coordinator.run_discovery_pipeline(
@@ -1010,7 +1012,7 @@ def _run_discovery_pipeline(
 
 
 async def _execute_discovery_job(
-    job_id: str, webhook_url: Optional[str] = None, **pipeline_kwargs
+    job_id: str, webhook_url: str | None = None, **pipeline_kwargs
 ):
     discovery_jobs[job_id]["status"] = "running"
     created_at = discovery_jobs[job_id].get("created_at", time.time())
@@ -1054,9 +1056,9 @@ async def _execute_discovery_job(
 )
 async def submit_discovery_job(
     pdb_id: Annotated[str, Body(..., embed=True)],
-    databases: Annotated[Optional[List[str]], Body(embed=True)] = None,
-    webhook_url: Annotated[Optional[str], Body(embed=True)] = None,
-    session_id: Annotated[Optional[str], Query()] = None,
+    databases: Annotated[list[str] | None, Body(embed=True)] = None,
+    webhook_url: Annotated[str | None, Body(embed=True)] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     Submit a single-structure Foldseek discovery run as a background job:
@@ -1103,7 +1105,7 @@ async def submit_discovery_job(
 # submit/poll/fetch here are all async network I/O with no CPU-bound or
 # blocking-file-I/O step, so the pipeline runs directly on the event loop
 # inside its own background task.
-clustalo_jobs: Dict[str, Dict[str, Any]] = {}
+clustalo_jobs: dict[str, dict[str, Any]] = {}
 
 
 async def _sweep_clustalo_jobs():
@@ -1121,14 +1123,14 @@ async def _sweep_clustalo_jobs():
             clustalo_jobs.pop(jid, None)
 
 
-async def _run_clustalo_pipeline(sequences: Dict[str, str]) -> Dict[str, Any]:
+async def _run_clustalo_pipeline(sequences: dict[str, str]) -> dict[str, Any]:
     client = ClustalOmegaClient(config)
     aligned_fasta = await client.align(sequences)
     return {"aligned_fasta": aligned_fasta}
 
 
 async def _execute_clustalo_job(
-    job_id: str, sequences: Dict[str, str], webhook_url: Optional[str] = None
+    job_id: str, sequences: dict[str, str], webhook_url: str | None = None
 ):
     clustalo_jobs[job_id]["status"] = "running"
     created_at = clustalo_jobs[job_id].get("created_at", time.time())
@@ -1170,8 +1172,8 @@ async def _execute_clustalo_job(
     },
 )
 async def submit_clustalo_job(
-    sequences: Annotated[Dict[str, str], Body(..., embed=True)],
-    webhook_url: Annotated[Optional[str], Body(embed=True)] = None,
+    sequences: Annotated[dict[str, str], Body(..., embed=True)],
+    webhook_url: Annotated[str | None, Body(embed=True)] = None,
 ):
     """
     Submit a true sequence-only multiple alignment as a background job via
@@ -1206,7 +1208,7 @@ async def submit_clustalo_job(
 # NCBI policy forbids polling more than once/minute, so this is by far the
 # longest-running job type in this app - the same background-job/poll
 # pattern still applies, just with a much longer realistic wait.
-blast_jobs: Dict[str, Dict[str, Any]] = {}
+blast_jobs: dict[str, dict[str, Any]] = {}
 _SAFE_PROTEIN_SEQUENCE = re.compile(r"^[A-Za-z]{10,}$")
 
 
@@ -1225,13 +1227,13 @@ async def _sweep_blast_jobs():
             blast_jobs.pop(jid, None)
 
 
-async def _run_blast_pipeline(sequence: str) -> Dict[str, Any]:
+async def _run_blast_pipeline(sequence: str) -> dict[str, Any]:
     client = BlastClient(config)
     return await client.find_homologs_and_score_conservation(sequence)
 
 
 async def _execute_blast_job(
-    job_id: str, sequence: str, webhook_url: Optional[str] = None
+    job_id: str, sequence: str, webhook_url: str | None = None
 ):
     blast_jobs[job_id]["status"] = "running"
     created_at = blast_jobs[job_id].get("created_at", time.time())
@@ -1271,7 +1273,7 @@ async def _execute_blast_job(
 )
 async def submit_conservation_job(
     sequence: Annotated[str, Body(..., embed=True)],
-    webhook_url: Annotated[Optional[str], Body(embed=True)] = None,
+    webhook_url: Annotated[str | None, Body(embed=True)] = None,
 ):
     """
     Submit a real per-column evolutionary conservation search as a
@@ -1308,7 +1310,7 @@ async def submit_conservation_job(
 # asyncio.to_thread needed). Kept separate from /api/mutation-impact's
 # fast, synchronous ClinVar/AlphaMissense lookups since DDMut's own
 # submit-then-poll workflow against an external server is itself slow.
-ddmut_jobs: Dict[str, Dict[str, Any]] = {}
+ddmut_jobs: dict[str, dict[str, Any]] = {}
 
 
 async def _sweep_ddmut_jobs():
@@ -1326,9 +1328,7 @@ async def _sweep_ddmut_jobs():
             ddmut_jobs.pop(jid, None)
 
 
-def _get_wildtype_residue_letter(
-    pdb_path: Path, chain: str, resi: int
-) -> Optional[str]:
+def _get_wildtype_residue_letter(pdb_path: Path, chain: str, resi: int) -> str | None:
     """Reads the real residue at (chain, resi) directly from the
     structure's own file (first model only) - unlike /api/mutation-
     impact's wildtype_residue (resolved via a UniProt sequence lookup),
@@ -1353,9 +1353,7 @@ def _get_wildtype_residue_letter(
     return None
 
 
-def _extract_structure_sequence(
-    pdb_path: Path, chain: Optional[str] = None
-) -> Optional[str]:
+def _extract_structure_sequence(pdb_path: Path, chain: str | None = None) -> str | None:
     """Reads a structure's own real amino-acid sequence directly from its
     file (first model, first chain unless one is given) - the input
     InterProScan5 needs, since it works from a raw sequence rather than a
@@ -1396,7 +1394,7 @@ def _extract_structure_sequence(
 
 async def _run_ddmut_pipeline(
     pdb_file_content: str, chain: str, mutation: str
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     client = DDMutClient()
     prediction = await client.predict_stability(pdb_file_content, chain, mutation)
     return {"prediction": prediction}
@@ -1407,7 +1405,7 @@ async def _execute_ddmut_job(
     pdb_file_content: str,
     chain: str,
     mutation: str,
-    webhook_url: Optional[str] = None,
+    webhook_url: str | None = None,
 ):
     ddmut_jobs[job_id]["status"] = "running"
     created_at = ddmut_jobs[job_id].get("created_at", time.time())
@@ -1449,9 +1447,9 @@ async def submit_ddmut_job(
     chain: Annotated[str, Body(..., embed=True)],
     resi: Annotated[int, Body(..., embed=True)],
     mutant: Annotated[str, Body(..., embed=True)],
-    run_id: Annotated[Optional[str], Body(embed=True)] = None,
-    session_id: Annotated[Optional[str], Body(embed=True)] = None,
-    webhook_url: Annotated[Optional[str], Body(embed=True)] = None,
+    run_id: Annotated[str | None, Body(embed=True)] = None,
+    session_id: Annotated[str | None, Body(embed=True)] = None,
+    webhook_url: Annotated[str | None, Body(embed=True)] = None,
 ):
     """
     Submit a real mutation-stability (ddG) prediction as a background job
@@ -1512,7 +1510,7 @@ async def submit_ddmut_job(
 # geometric detection" action alongside it, not a replacement, since
 # PrankWeb availability/rate limits shouldn't regress the always-available
 # heuristic.
-prankweb_jobs: Dict[str, Dict[str, Any]] = {}
+prankweb_jobs: dict[str, dict[str, Any]] = {}
 
 
 async def _sweep_prankweb_jobs():
@@ -1530,14 +1528,14 @@ async def _sweep_prankweb_jobs():
             prankweb_jobs.pop(jid, None)
 
 
-async def _run_prankweb_pipeline(pdb_file_content: str) -> Dict[str, Any]:
+async def _run_prankweb_pipeline(pdb_file_content: str) -> dict[str, Any]:
     client = PrankWebClient()
     prediction = await client.detect_pockets(pdb_file_content)
     return {"prediction": prediction}
 
 
 async def _execute_prankweb_job(
-    job_id: str, pdb_file_content: str, webhook_url: Optional[str] = None
+    job_id: str, pdb_file_content: str, webhook_url: str | None = None
 ):
     prankweb_jobs[job_id]["status"] = "running"
     created_at = prankweb_jobs[job_id].get("created_at", time.time())
@@ -1578,9 +1576,9 @@ async def _execute_prankweb_job(
 )
 async def submit_prankweb_job(
     pdb_id: Annotated[str, Body(..., embed=True)],
-    run_id: Annotated[Optional[str], Body(embed=True)] = None,
-    session_id: Annotated[Optional[str], Body(embed=True)] = None,
-    webhook_url: Annotated[Optional[str], Body(embed=True)] = None,
+    run_id: Annotated[str | None, Body(embed=True)] = None,
+    session_id: Annotated[str | None, Body(embed=True)] = None,
+    webhook_url: Annotated[str | None, Body(embed=True)] = None,
 ):
     """
     Submit a real geometric pocket-detection job via PrankWeb (P2Rank) -
@@ -1621,7 +1619,7 @@ async def submit_prankweb_job(
 # structures with no resolvable UniProt accession at all (ESM Atlas/
 # uploaded/ESMFold-predicted structures), which otherwise get "no
 # annotation available" from the existing accession-resolution pipeline.
-interproscan_jobs: Dict[str, Dict[str, Any]] = {}
+interproscan_jobs: dict[str, dict[str, Any]] = {}
 
 
 async def _sweep_interproscan_jobs():
@@ -1639,7 +1637,7 @@ async def _sweep_interproscan_jobs():
             interproscan_jobs.pop(jid, None)
 
 
-async def _run_interproscan_pipeline(sequence: str) -> Dict[str, Any]:
+async def _run_interproscan_pipeline(sequence: str) -> dict[str, Any]:
     client = InterProScanClient()
     result = await client.annotate(sequence)
     domains, go_terms = InterProScanClient.parse_domains_and_go_terms(result)
@@ -1647,7 +1645,7 @@ async def _run_interproscan_pipeline(sequence: str) -> Dict[str, Any]:
 
 
 async def _execute_interproscan_job(
-    job_id: str, sequence: str, webhook_url: Optional[str] = None
+    job_id: str, sequence: str, webhook_url: str | None = None
 ):
     interproscan_jobs[job_id]["status"] = "running"
     created_at = interproscan_jobs[job_id].get("created_at", time.time())
@@ -1690,10 +1688,10 @@ async def _execute_interproscan_job(
 )
 async def submit_interproscan_job(
     pdb_id: Annotated[str, Body(..., embed=True)],
-    chain: Annotated[Optional[str], Body(embed=True)] = None,
-    run_id: Annotated[Optional[str], Body(embed=True)] = None,
-    session_id: Annotated[Optional[str], Body(embed=True)] = None,
-    webhook_url: Annotated[Optional[str], Body(embed=True)] = None,
+    chain: Annotated[str | None, Body(embed=True)] = None,
+    run_id: Annotated[str | None, Body(embed=True)] = None,
+    session_id: Annotated[str | None, Body(embed=True)] = None,
+    webhook_url: Annotated[str | None, Body(embed=True)] = None,
 ):
     """
     Submit a real domain/GO-term annotation job via InterProScan5 (see
@@ -1742,7 +1740,7 @@ async def submit_interproscan_job(
     },
 )
 def get_clusters(
-    rmsd_df: Annotated[Dict[str, Any], Body(..., embed=True)],
+    rmsd_df: Annotated[dict[str, Any], Body(..., embed=True)],
     threshold: Annotated[float, Body(embed=True)] = 3.0,
 ):
     """
@@ -1792,8 +1790,8 @@ def get_clusters(
     responses={400: {"description": "Invalid exclude_run_id or session_id"}},
 )
 def list_comparison_runs(
-    exclude_run_id: Annotated[Optional[str], Query()] = None,
-    session_id: Annotated[Optional[str], Query()] = None,
+    exclude_run_id: Annotated[str | None, Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     List past runs available as batch-comparison targets.
@@ -1816,7 +1814,7 @@ def list_comparison_runs(
 
 
 class RunTrendRequest(BaseModel):
-    run_ids: List[str] = Field(..., min_length=1, max_length=50)
+    run_ids: list[str] = Field(..., min_length=1, max_length=50)
 
 
 @app.post(
@@ -1830,7 +1828,7 @@ class RunTrendRequest(BaseModel):
 )
 def get_runs_trend(
     body: RunTrendRequest,
-    session_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     Chronological RMSD trend across a user-selected set of past runs (see
@@ -1866,7 +1864,7 @@ def get_runs_trend(
 def compare_runs(
     current_run_id: Annotated[str, Query(...)],
     target_run_id: Annotated[str, Query(...)],
-    session_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     Compute the RMSD difference matrix between two past runs.
@@ -1938,8 +1936,8 @@ _MAX_SCREEN_TARGETS = 50
 )
 async def screen_structures(
     reference_pdb_id: Annotated[str, Body(..., embed=True)],
-    target_pdb_ids: Annotated[List[str], Body(..., embed=True)],
-    session_id: Annotated[Optional[str], Query()] = None,
+    target_pdb_ids: Annotated[list[str], Body(..., embed=True)],
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     A "reference vs many" pairwise structural screen: the reference
@@ -2020,7 +2018,7 @@ async def screen_structures(
 def get_contact_map(
     run_id: Annotated[str, Query(...)],
     pdb_id: Annotated[str, Query(...)],
-    session_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
     threshold: Annotated[float, Query()] = 8.0,
 ):
     """CA-CA contact map for one structure in a completed run - see
@@ -2061,7 +2059,7 @@ def get_difference_distance(
     run_id: Annotated[str, Query(...)],
     pdb_id_a: Annotated[str, Query(...)],
     pdb_id_b: Annotated[str, Query(...)],
-    session_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """Difference-distance matrix between two structures in a completed
     run's alignment - see rmsd_calculator.get_difference_distance_matrix()."""
@@ -2115,7 +2113,7 @@ def get_morph(
     run_id: Annotated[str, Query(...)],
     pdb_id_a: Annotated[str, Query(...)],
     pdb_id_b: Annotated[str, Query(...)],
-    session_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
     num_frames: Annotated[int, Query()] = 20,
 ):
     """A synthetic multi-model PDB morphing structure A into structure B
@@ -2169,8 +2167,8 @@ def get_morph(
 )
 def get_ligands(
     pdb_id: Annotated[str, Query(...)],
-    run_id: Annotated[Optional[str], Query()] = None,
-    session_id: Annotated[Optional[str], Query()] = None,
+    run_id: Annotated[str | None, Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     Retrieve ligands present in the specified structure.
@@ -2241,8 +2239,8 @@ async def get_ligand_info(ligand_code: Annotated[str, Query(...)]):
 )
 def get_pockets(
     pdb_id: Annotated[str, Query(...)],
-    run_id: Annotated[Optional[str], Query()] = None,
-    session_id: Annotated[Optional[str], Query()] = None,
+    run_id: Annotated[str | None, Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     Heuristic candidate binding-pocket detection for a structure with no
@@ -2281,8 +2279,8 @@ def get_pockets(
 )
 def get_flexibility(
     pdb_id: Annotated[str, Query(...)],
-    run_id: Annotated[Optional[str], Query()] = None,
-    session_id: Annotated[Optional[str], Query()] = None,
+    run_id: Annotated[str | None, Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     Real-time Gaussian Network Model flexibility prediction for one
@@ -2326,8 +2324,8 @@ def get_flexibility(
 )
 def get_clash_score(
     pdb_id: Annotated[str, Query(...)],
-    run_id: Annotated[Optional[str], Query()] = None,
-    session_id: Annotated[Optional[str], Query()] = None,
+    run_id: Annotated[str | None, Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     Real-time all-atom steric-clash detection for one structure - see
@@ -2371,8 +2369,8 @@ def get_clash_score(
 )
 def get_structure_file(
     pdb_id: Annotated[str, Query(...)],
-    run_id: Annotated[Optional[str], Query()] = None,
-    session_id: Annotated[Optional[str], Query()] = None,
+    run_id: Annotated[str | None, Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     Download a structure's raw PDB file directly by id - unlike
@@ -2398,8 +2396,8 @@ def get_structure_file(
 
 
 def _find_structure_pdb_path(
-    pdb_id: str, run_id: Optional[str], session_id: Optional[str]
-) -> Optional[Path]:
+    pdb_id: str, run_id: str | None, session_id: str | None
+) -> Path | None:
     """Locates a previously-downloaded structure's file: first in the
     session's raw-download folder, then (if a run_id is given) that run's
     own results folder, trying the id's as-given/lowercase/uppercase
@@ -2447,8 +2445,8 @@ def _find_structure_pdb_path(
 def get_interactions(
     pdb_id: Annotated[str, Query(...)],
     ligand_id: Annotated[str, Query(...)],
-    run_id: Annotated[Optional[str], Query()] = None,
-    session_id: Annotated[Optional[str], Query()] = None,
+    run_id: Annotated[str | None, Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     Perform binding site analysis and return interaction details.
@@ -2475,7 +2473,7 @@ def get_interactions(
 
 
 def _add_aligned_resi(
-    interactions: Any, pdb_id: str, pdb_path: Path, run_id: Optional[str]
+    interactions: Any, pdb_id: str, pdb_path: Path, run_id: str | None
 ) -> None:
     """Mutates `interactions["interactions"]` in place, adding an
     "aligned_resi" to each contact - the residue number Mustang's
@@ -2521,8 +2519,8 @@ def get_interface(
     pdb_id: Annotated[str, Query(...)],
     chain_a: Annotated[str, Query(...)],
     chain_b: Annotated[str, Query(...)],
-    run_id: Annotated[Optional[str], Query()] = None,
-    session_id: Annotated[Optional[str], Query()] = None,
+    run_id: Annotated[str | None, Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     Find contact residues between two chains of the same raw structure
@@ -2553,7 +2551,7 @@ def get_interface(
 )
 async def get_annotations(
     pdb_id: Annotated[str, Query(...)],
-    chain: Annotated[Optional[str], Query()] = None,
+    chain: Annotated[str | None, Query()] = None,
 ):
     """
     Fetch functional annotation (InterPro domains, QuickGO terms, Reactome
@@ -2689,7 +2687,7 @@ async def get_mutation_impact(
 )
 async def get_mutation_tolerance(
     pdb_id: Annotated[str, Query(...)],
-    chain: Annotated[Optional[str], Query()] = None,
+    chain: Annotated[str | None, Query()] = None,
 ):
     """
     Real per-residue AlphaMissense mutation-tolerance overlay for one
@@ -2721,7 +2719,7 @@ async def get_mutation_tolerance(
 )
 async def get_disorder_prediction(
     pdb_id: Annotated[str, Query(...)],
-    chain: Annotated[Optional[str], Query()] = None,
+    chain: Annotated[str | None, Query()] = None,
 ):
     """
     Real sequence-based intrinsic-disorder prediction (MobiDB) for one
@@ -2886,8 +2884,8 @@ async def get_validation(pdb_id: Annotated[str, Query(...)]):
 )
 async def get_qc(
     pdb_id: Annotated[str, Query(...)],
-    run_id: Annotated[Optional[str], Query()] = None,
-    session_id: Annotated[Optional[str], Query()] = None,
+    run_id: Annotated[str | None, Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     Standalone per-structure QC: Ramachandran outliers + secondary
@@ -2941,8 +2939,9 @@ def get_memory_stats():
     Get backend process memory footprint (RSS) in MB.
     """
     try:
-        import psutil
         import os
+
+        import psutil
 
         process = psutil.Process(os.getpid())
         mem_rss_mb = process.memory_info().rss / (1024 * 1024)
@@ -2960,8 +2959,9 @@ def clear_memory():
 
     gc.collect()
     try:
-        import psutil
         import os
+
+        import psutil
 
         process = psutil.Process(os.getpid())
         mem_rss_mb = process.memory_info().rss / (1024 * 1024)
@@ -2970,7 +2970,7 @@ def clear_memory():
         return {"ram_mb": 120.0, "status": "cleared", "message": str(e)}
 
 
-def _lighten_run_for_list(run: Dict[str, Any]) -> Dict[str, Any]:
+def _lighten_run_for_list(run: dict[str, Any]) -> dict[str, Any]:
     """
     The History tab and Dashboard's recent-activity list only ever render a
     run's id/name/timestamp/pdb_ids/status and metadata's run_type - never
@@ -2989,7 +2989,7 @@ def _lighten_run_for_list(run: Dict[str, Any]) -> Dict[str, Any]:
 
 @app.get("/api/history", tags=["History"])
 def get_history(
-    session_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
@@ -3025,9 +3025,7 @@ def get_history(
         404: {"description": "Run not found in the history database"},
     },
 )
-def delete_history_run(
-    run_id: str, session_id: Annotated[Optional[str], Query()] = None
-):
+def delete_history_run(run_id: str, session_id: Annotated[str | None, Query()] = None):
     """
     Delete a single run's history record. Unlike every read endpoint keyed
     on run_id (get_run_by_id, get_pdf_report, etc.), which deliberately
@@ -3055,8 +3053,8 @@ def delete_history_run(
 
 
 class RunNotesUpdate(BaseModel):
-    notes: Optional[str] = None
-    tags: Optional[List[str]] = None
+    notes: str | None = None
+    tags: list[str] | None = None
 
 
 @app.put(
@@ -3071,7 +3069,7 @@ class RunNotesUpdate(BaseModel):
 def update_run_notes(
     run_id: str,
     body: RunNotesUpdate,
-    session_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     Add/update a run's free-text notes and/or tags, stored in the run's
@@ -3098,7 +3096,7 @@ def update_run_notes(
 
 
 @app.delete("/api/history", tags=["History"])
-def clear_history(session_id: Annotated[Optional[str], Query()] = None):
+def clear_history(session_id: Annotated[str | None, Query()] = None):
     """
     Clear run history. When session_id is given, scopes the wipe to that
     session only (`clear_runs_for_session`) - the safe choice for a
@@ -3151,7 +3149,7 @@ def get_run_by_id(run_id: str):
     tags=["History"],
     responses={400: {"description": "Invalid session_id"}},
 )
-def get_aggregate_stats(session_id: Annotated[Optional[str], Query()] = None):
+def get_aggregate_stats(session_id: Annotated[str | None, Query()] = None):
     """
     Dashboard-level aggregate totals across all runs (total run count,
     total proteins analyzed, cache size).
@@ -3171,9 +3169,9 @@ def get_aggregate_stats(session_id: Annotated[Optional[str], Query()] = None):
 )
 def get_sequence(
     run_id: Annotated[str, Query(...)],
-    session_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
     motif: Annotated[
-        Optional[str],
+        str | None,
         Query(
             description="Optional sequence motif query (e.g. 'RYY', 'G.G', 'G-X-P' - 'X'/'.'/'-' act as single-residue wildcards). When given, the response also includes motif_matches (per-structure matched alignment columns) and highlight_chains (a ready-to-use {chain_id: [residue_numbers]} map for the 3D viewer)."
         ),
@@ -3185,8 +3183,8 @@ def get_sequence(
     """
     from src.backend.sequence_viewer import (
         SequenceViewer,
-        find_motif_matches,
         _build_chain_mapping_from_matches,
+        find_motif_matches,
     )
 
     _safe_segment(run_id, "run_id")
@@ -3240,9 +3238,9 @@ def get_sequence(
 )
 def get_pdf_report(
     run_id: Annotated[str, Query(...)],
-    session_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
     sections: Annotated[
-        Optional[str],
+        str | None,
         Query(
             description="Comma-separated report sections to include (summary,insights,heatmap,tree,matrix). Omit for the full default report."
         ),
@@ -3251,8 +3249,9 @@ def get_pdf_report(
     """
     Generate and retrieve the PDF analysis report for a run.
     """
-    from src.backend.report_generator import ReportGenerator
     from fastapi.responses import FileResponse
+
+    from src.backend.report_generator import ReportGenerator
 
     _safe_segment(run_id, "run_id")
     _safe_segment(session_id, "session_id")
@@ -3330,7 +3329,7 @@ def get_pdf_report(
         logger = logging.getLogger("uvicorn")
         logger.exception("Failed to generate report PDF")
         raise HTTPException(
-            status_code=500, detail=f"Failed to generate report PDF: {str(e)}"
+            status_code=500, detail=f"Failed to generate report PDF: {e!s}"
         )
 
 
@@ -3345,13 +3344,14 @@ def get_pdf_report(
 )
 def get_lab_notebook(
     run_id: Annotated[str, Query(...)],
-    session_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     Generate and retrieve the standalone HTML lab notebook for a run.
     """
-    from src.backend.notebook_exporter import NotebookExporter
     from fastapi.responses import FileResponse
+
+    from src.backend.notebook_exporter import NotebookExporter
 
     _safe_segment(run_id, "run_id")
     _safe_segment(session_id, "session_id")
@@ -3403,7 +3403,7 @@ def get_lab_notebook(
         logger = logging.getLogger("uvicorn")
         logger.exception("Failed to generate lab notebook")
         raise HTTPException(
-            status_code=500, detail=f"Failed to generate lab notebook: {str(e)}"
+            status_code=500, detail=f"Failed to generate lab notebook: {e!s}"
         )
 
 
@@ -3419,7 +3419,7 @@ def get_lab_notebook(
 def get_lab_notebook_ipynb(
     request: Request,
     run_id: Annotated[str, Query(...)],
-    session_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     Generate and retrieve a real, runnable Jupyter notebook for a run -
@@ -3428,8 +3428,9 @@ def get_lab_notebook_ipynb(
     from this same deployment's own REST API (request.base_url), so it
     keeps working correctly regardless of which host actually served it.
     """
-    from src.backend.notebook_exporter import NotebookExporter
     from fastapi.responses import FileResponse
+
+    from src.backend.notebook_exporter import NotebookExporter
 
     _safe_segment(run_id, "run_id")
     _safe_segment(session_id, "session_id")
@@ -3477,13 +3478,13 @@ def get_lab_notebook_ipynb(
     except Exception as e:
         logger.exception("Failed to generate Jupyter notebook")
         raise HTTPException(
-            status_code=500, detail=f"Failed to generate Jupyter notebook: {str(e)}"
+            status_code=500, detail=f"Failed to generate Jupyter notebook: {e!s}"
         )
 
 
 def _lookup_run_and_result_dir(
-    run_id: str, session_id: Optional[str]
-) -> Tuple[Dict[str, Any], Path]:
+    run_id: str, session_id: str | None
+) -> tuple[dict[str, Any], Path]:
     """Shared lookup for the raw-export endpoints below (CSV/PNG/ZIP): finds
     the run, 404s if missing, and resolves its results/<run_id> directory -
     the same two steps get_pdf_report/get_lab_notebook each inline
@@ -3501,7 +3502,7 @@ def _lookup_run_and_result_dir(
     return run, res_dir
 
 
-def _reconstruct_rmsd_df(run: Dict[str, Any]) -> Optional[pd.DataFrame]:
+def _reconstruct_rmsd_df(run: dict[str, Any]) -> pd.DataFrame | None:
     """metadata.results.rmsd_df has been through sanitize_for_json
     ({index, columns, data} dict) - rebuild the real DataFrame, matching
     get_pdf_report's own reconstruction of the same field."""
@@ -3526,7 +3527,7 @@ def _reconstruct_rmsd_df(run: Dict[str, Any]) -> Optional[pd.DataFrame]:
 )
 def get_rmsd_csv(
     run_id: Annotated[str, Query(...)],
-    session_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """Download the run's pairwise RMSD matrix as a raw CSV file."""
     from fastapi.responses import PlainTextResponse
@@ -3563,7 +3564,7 @@ _SCRIPT_EXPORT_CHAIN_COLORS = [
 ]
 
 
-def _build_pymol_script(run_id: str, pdb_ids: List[str]) -> str:
+def _build_pymol_script(run_id: str, pdb_ids: list[str]) -> str:
     """Plain templated text, not the proprietary .pse binary (that would
     require bundling an actual PyMOL install server-side just to write a
     format only PyMOL can open). Assumes the user downloads this script
@@ -3588,7 +3589,7 @@ def _build_pymol_script(run_id: str, pdb_ids: List[str]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _build_chimerax_script(run_id: str, pdb_ids: List[str]) -> str:
+def _build_chimerax_script(run_id: str, pdb_ids: list[str]) -> str:
     """Same rationale as _build_pymol_script above."""
     lines = [
         f"# StructScope ChimeraX session script for run {run_id}",
@@ -3615,7 +3616,7 @@ def _build_chimerax_script(run_id: str, pdb_ids: List[str]) -> str:
 )
 def get_pymol_script(
     run_id: Annotated[str, Query(...)],
-    session_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """Download a PyMOL .pml command script reopening this run's alignment
     with the same per-structure coloring StructScope's own viewer uses."""
@@ -3648,7 +3649,7 @@ def get_pymol_script(
 )
 def get_chimerax_script(
     run_id: Annotated[str, Query(...)],
-    session_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """Download a ChimeraX .cxc command script - same rationale as
     get_pymol_script above."""
@@ -3681,7 +3682,7 @@ def get_chimerax_script(
 )
 def get_heatmap_png(
     run_id: Annotated[str, Query(...)],
-    session_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """Download the run's RMSD heatmap as a raw PNG file - already saved
     to disk during the pipeline run (process_result_directory), just
@@ -3717,7 +3718,7 @@ def get_heatmap_png(
 )
 def get_newick_tree(
     run_id: Annotated[str, Query(...)],
-    session_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """Download the run's phylogenetic tree in Newick format - already
     saved to disk during the pipeline run (process_result_directory), just
@@ -3748,7 +3749,7 @@ def get_newick_tree(
 )
 def get_report_zip(
     run_id: Annotated[str, Query(...)],
-    session_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """Bundle every generated artifact for a run into one ZIP: alignment
     PDB/FASTA, the RMSD matrix CSV, the heatmap PNG, and an auto-generated
@@ -3760,6 +3761,7 @@ def get_report_zip(
     import zipfile
 
     from fastapi.responses import StreamingResponse
+
     from src.backend.notebook_exporter import NotebookExporter
 
     _safe_segment(run_id, "run_id")
@@ -3824,17 +3826,18 @@ def get_report_zip(
 )
 def get_compare_citations(
     run_id: Annotated[str, Query(...)],
-    session_id: Annotated[Optional[str], Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
 ):
     """
     Generate and retrieve the Methods & Citations export (plain text +
     BibTeX) for a Compare run.
     """
+    from fastapi.responses import FileResponse
+
     from src.backend.citation_exporter import (
         CitationExporter,
         citations_for_compare_run,
     )
-    from fastapi.responses import FileResponse
 
     _safe_segment(run_id, "run_id")
     _safe_segment(session_id, "session_id")
@@ -3860,11 +3863,11 @@ def get_compare_citations(
     except Exception as e:
         logger.exception("Failed to generate citations export")
         raise HTTPException(
-            status_code=500, detail=f"Failed to generate citations export: {str(e)}"
+            status_code=500, detail=f"Failed to generate citations export: {e!s}"
         )
 
 
-def _get_discover_run_results(run_id: str) -> Dict[str, Any]:
+def _get_discover_run_results(run_id: str) -> dict[str, Any]:
     """Shared lookup for the two Discover export endpoints below: finds the
     saved run, confirms it's actually a Discover run (not a Compare run -
     the two have unrelated result shapes), and returns its results dict."""
@@ -3902,8 +3905,9 @@ def get_discovery_report(run_id: Annotated[str, Query(...)]):
     Generate and retrieve a standalone HTML report for a Discover run -
     the export/report parity Compare mode has always had.
     """
-    from src.backend.discovery_report_exporter import DiscoveryReportExporter
     from fastapi.responses import FileResponse
+
+    from src.backend.discovery_report_exporter import DiscoveryReportExporter
 
     results = _get_discover_run_results(run_id)
 
@@ -3924,7 +3928,7 @@ def get_discovery_report(run_id: Annotated[str, Query(...)]):
     except Exception as e:
         logger.exception("Failed to generate discovery report")
         raise HTTPException(
-            status_code=500, detail=f"Failed to generate discovery report: {str(e)}"
+            status_code=500, detail=f"Failed to generate discovery report: {e!s}"
         )
 
 
@@ -3964,11 +3968,12 @@ def get_discover_citations(run_id: Annotated[str, Query(...)]):
     Generate and retrieve the Methods & Citations export (plain text +
     BibTeX) for a Discover run.
     """
+    from fastapi.responses import FileResponse
+
     from src.backend.citation_exporter import (
         CitationExporter,
         citations_for_discover_run,
     )
-    from fastapi.responses import FileResponse
 
     results = _get_discover_run_results(run_id)
     version = config.get("app", {}).get("version", "0.0.0")
@@ -3987,7 +3992,7 @@ def get_discover_citations(run_id: Annotated[str, Query(...)]):
     except Exception as e:
         logger.exception("Failed to generate discovery citations export")
         raise HTTPException(
-            status_code=500, detail=f"Failed to generate citations export: {str(e)}"
+            status_code=500, detail=f"Failed to generate citations export: {e!s}"
         )
 
 
