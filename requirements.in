@@ -52,7 +52,7 @@ jinja2>=3.1.0
 psutil>=5.9.0
 
 # Progress & CLI
-tqdm>=4.69.1
+tqdm>=4.70.0
 rich>=13.5.0
 
 # Optional: R integration for Bio3D (Mustang alternative)
@@ -66,8 +66,8 @@ black==26.5.1
 ruff==0.16.0
 
 # API Web Server
-fastapi>=0.140.0
-uvicorn>=0.28.0
+fastapi>=0.140.13
+uvicorn>=0.52.0
 python-multipart>=0.0.9  # required by FastAPI's UploadFile (POST /api/upload)
 
 # Jupyter notebook export (notebook_exporter.py's export_ipynb) - pure
