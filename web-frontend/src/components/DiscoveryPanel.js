@@ -1,5 +1,6 @@
 import { submitDiscoveryJob, pollJobUntilDone, getDiscoveryReportUrl, getDiscoveryExportUrl, getDiscoveryCitationsUrl } from '../api';
 import { renderDomainList, renderGoTermList } from '../utils/annotationRenderers';
+import { escapeHtml } from '../escapeHtml';
 
 const SOURCE_LABELS = {
     pdb: 'PDB',
@@ -64,7 +65,7 @@ export class DiscoveryPanel {
             <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
                     <span class="material-symbols-outlined text-[18px] text-accent">travel_explore</span>
-                    <span class="font-label-md text-label-md">Discover: <span id="discovery-panel-pdbid" class="font-mono">${this.pdbId || ''}</span></span>
+                    <span class="font-label-md text-label-md">Discover: <span id="discovery-panel-pdbid" class="font-mono">${escapeHtml(this.pdbId || '')}</span></span>
                 </div>
                 <button id="discovery-panel-close-btn" class="text-secondary hover:text-primary" aria-label="Close">
                     <span class="material-symbols-outlined text-[18px]">close</span>
@@ -280,11 +281,18 @@ export class DiscoveryPanel {
         const r = this.results;
         const ann = r.annotations;
         const sourceLabel = SOURCE_LABELS[r.source] || 'PDB';
+        const safePdbId = escapeHtml(r.pdb_id);
+        const safeSourceLabel = escapeHtml(sourceLabel);
+        const safeHitCount = escapeHtml(r.hit_count);
+        const safeDbsSearched = escapeHtml((r.databases_searched || []).map(escapeHtml).join(', '));
+        const safeReportUrl = escapeHtml(getDiscoveryReportUrl(r.id));
+        const safeExportUrl = escapeHtml(getDiscoveryExportUrl(r.id));
+        const safeCitationsUrl = escapeHtml(getDiscoveryCitationsUrl(r.id));
 
         const detailToggleHTML = `
             <div class="flex gap-1 p-1 rounded-md bg-surface border border-border-subtle w-fit">
                 ${DETAIL_LEVELS.map(d => `
-                    <button data-level="${d.key}" class="detail-level-btn px-3 py-1 rounded-md font-label-sm text-label-sm transition-colors ${this.detailLevel === d.key ? 'bg-accent-muted text-accent' : 'text-secondary hover:text-primary'}">${d.label}</button>
+                    <button data-level="${escapeHtml(d.key)}" class="detail-level-btn px-3 py-1 rounded-md font-label-sm text-label-sm transition-colors ${this.detailLevel === d.key ? 'bg-accent-muted text-accent' : 'text-secondary hover:text-primary'}">${escapeHtml(d.label)}</button>
                 `).join('')}
             </div>
         `;
@@ -296,15 +304,15 @@ export class DiscoveryPanel {
         // case of an older/malformed result with no id to build a URL from.
         const downloadHTML = r.id ? `
             <div class="flex gap-4">
-                <a href="${getDiscoveryReportUrl(r.id)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 font-label-sm text-label-sm text-secondary hover:text-primary transition-colors">
+                <a href="${safeReportUrl}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 font-label-sm text-label-sm text-secondary hover:text-primary transition-colors">
                     <span class="material-symbols-outlined text-[16px]">description</span>
                     Download Report
                 </a>
-                <a href="${getDiscoveryExportUrl(r.id)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 font-label-sm text-label-sm text-secondary hover:text-primary transition-colors">
+                <a href="${safeExportUrl}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 font-label-sm text-label-sm text-secondary hover:text-primary transition-colors">
                     <span class="material-symbols-outlined text-[16px]">data_object</span>
                     Download JSON
                 </a>
-                <a href="${getDiscoveryCitationsUrl(r.id)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 font-label-sm text-label-sm text-secondary hover:text-primary transition-colors">
+                <a href="${safeCitationsUrl}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 font-label-sm text-label-sm text-secondary hover:text-primary transition-colors">
                     <span class="material-symbols-outlined text-[16px]">format_quote</span>
                     Export Citations
                 </a>
@@ -315,9 +323,9 @@ export class DiscoveryPanel {
             <div class="flex flex-col gap-4 border-t border-border pt-6">
                 <div class="flex items-center justify-between flex-wrap gap-3">
                     <div class="flex items-center gap-2">
-                        <span class="font-headline-sm text-body-md font-bold text-primary font-mono">${r.pdb_id}</span>
-                        <span class="px-1.5 py-0.5 rounded-md bg-surface border border-border-subtle font-mono text-[10px] text-secondary uppercase source-badge">${sourceLabel}</span>
-                        <span class="font-body-sm text-[11px] text-secondary">${r.hit_count} structural matches (${r.databases_searched.join(', ')})</span>
+                        <span class="font-headline-sm text-body-md font-bold text-primary font-mono">${safePdbId}</span>
+                        <span class="px-1.5 py-0.5 rounded-md bg-surface border border-border-subtle font-mono text-[10px] text-secondary uppercase source-badge">${safeSourceLabel}</span>
+                        <span class="font-body-sm text-[11px] text-secondary">${safeHitCount} structural matches (${safeDbsSearched})</span>
                     </div>
                     ${detailToggleHTML}
                 </div>
@@ -453,9 +461,9 @@ export class DiscoveryPanel {
                 <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Interactions &amp; pathways (per neighbor)</span>
                 ${rows.map(n => `
                     <div class="flex flex-col gap-1 py-1.5 border-b border-border-subtle">
-                        <span class="font-mono text-[11px] text-secondary">${(n.target || '').slice(0, 60)}</span>
-                        ${n.string_partners.length ? `<span class="font-body-sm text-[12px]">STRING partners: ${n.string_partners.map(p => p.partner_name).join(', ')}</span>` : ''}
-                        ${n.reactome_pathways.length ? `<span class="font-body-sm text-[12px]">Reactome pathways: ${n.reactome_pathways.map(p => p.name).join(', ')}</span>` : ''}
+                        <span class="font-mono text-[11px] text-secondary">${escapeHtml((n.target || '').slice(0, 60))}</span>
+                        ${n.string_partners.length ? `<span class="font-body-sm text-[12px]">STRING partners: ${escapeHtml(n.string_partners.map(p => p.partner_name).join(', '))}</span>` : ''}
+                        ${n.reactome_pathways.length ? `<span class="font-body-sm text-[12px]">Reactome pathways: ${escapeHtml(n.reactome_pathways.map(p => p.name).join(', '))}</span>` : ''}
                     </div>
                 `).join('')}
             </div>
@@ -482,10 +490,10 @@ export class DiscoveryPanel {
                         <tbody>
                             ${rows.map(h => `
                                 <tr class="border-b border-border-subtle">
-                                    <td class="py-1.5 pr-4 font-mono">${(h.target || '').slice(0, 60)}</td>
-                                    <td class="py-1.5 pr-4 font-mono">${typeof h.prob === 'number' ? h.prob.toFixed(3) : h.prob}</td>
-                                    <td class="py-1.5 pr-4 font-mono">${h.eval}</td>
-                                    <td class="py-1.5 pr-4 font-mono">${h.seqId}</td>
+                                    <td class="py-1.5 pr-4 font-mono">${escapeHtml((h.target || '').slice(0, 60))}</td>
+                                    <td class="py-1.5 pr-4 font-mono">${escapeHtml(typeof h.prob === 'number' ? h.prob.toFixed(3) : h.prob)}</td>
+                                    <td class="py-1.5 pr-4 font-mono">${escapeHtml(h.eval)}</td>
+                                    <td class="py-1.5 pr-4 font-mono">${escapeHtml(h.seqId)}</td>
                                 </tr>
                             `).join('')}
                         </tbody>

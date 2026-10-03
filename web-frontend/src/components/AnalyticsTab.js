@@ -343,7 +343,7 @@ export class AnalyticsTab {
     }
 
     setupDiffNarrativeControls() {
-        this.element.querySelector('#diff-narrative-load-btn').addEventListener('click', () => { void this.describeStructureDiff(); });
+        this.element.querySelector('#diff-narrative-load-btn').addEventListener('click', () => this.describeStructureDiff());
         ['#diff-narrative-pdb-a-select', '#diff-narrative-pdb-b-select'].forEach(sel => {
             this.element.querySelector(sel).addEventListener('change', () => {
                 const a = this.element.querySelector('#diff-narrative-pdb-a-select').value;
