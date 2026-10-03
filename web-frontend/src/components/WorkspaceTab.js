@@ -440,9 +440,12 @@ export class WorkspaceTab {
         container.innerHTML = "";
         if (this.selectedPDBs.length === 0) {
             container.innerHTML = `
-                <div class="flex flex-col items-center gap-3 py-4 text-center">
-                    <span class="text-secondary font-body-sm">Add a structure to analyze it on its own, or 2+ to align them - or try an example:</span>
-                    <div id="workspace-quick-start" class="flex flex-wrap justify-center gap-2"></div>
+                <div class="flex flex-col items-center gap-4 py-4 text-center max-w-3xl mx-auto">
+                    <div class="flex flex-col items-center gap-1">
+                        <span class="font-headline-sm text-headline-sm font-semibold text-primary">Explore Curated Showcase Demos</span>
+                        <span class="text-secondary font-body-sm">Add a structure to analyze it on its own, or 2+ to align them &mdash; or click an example below to instantly populate:</span>
+                    </div>
+                    <div id="workspace-quick-start" class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full text-left"></div>
                 </div>
             `;
             if (!this.isSharedView && localStorage.getItem(ONBOARDING_DISMISSED_KEY) !== 'true') {
@@ -471,8 +474,21 @@ export class WorkspaceTab {
                 QUICK_START_EXAMPLES.forEach(ex => {
                     const btn = document.createElement('button');
                     btn.type = 'button';
-                    btn.className = "quick-start-btn px-3 py-1.5 rounded-md bg-surface-raised border border-border-subtle font-label-sm text-label-sm text-secondary hover:text-primary transition-colors";
-                    btn.textContent = `${ex.label} (${ex.pdbIds.join(' + ')})`;
+                    btn.className = "quick-start-btn group text-left p-3.5 rounded-lg bg-surface border border-border-subtle hover:border-accent hover:bg-surface-raised transition-all duration-150 flex flex-col gap-1.5 shadow-sm";
+                    btn.innerHTML = `
+                        <div class="flex items-center justify-between w-full">
+                            <span class="inline-flex items-center gap-1.5 font-label-md text-label-md font-semibold text-primary group-hover:text-accent transition-colors">
+                                <span class="material-symbols-outlined text-[18px] text-accent">${ex.icon || 'science'}</span>
+                                ${ex.label}
+                            </span>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-mono tracking-wide bg-surface-raised border border-border-subtle text-secondary">${ex.tag || 'Demo'}</span>
+                        </div>
+                        <span class="font-body-sm text-body-sm text-secondary line-clamp-2">${ex.description || ''}</span>
+                        <span class="font-mono text-[11px] text-muted mt-1 flex items-center gap-1">
+                            <span class="material-symbols-outlined text-[13px]">dataset</span>
+                            ${ex.pdbIds.join(' + ')}
+                        </span>
+                    `;
                     btn.addEventListener('click', () => this.onQuickStart(ex.pdbIds));
                     quickStartContainer.appendChild(btn);
                 });

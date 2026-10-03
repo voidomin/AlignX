@@ -3,6 +3,7 @@ import { renderDomainList, renderGoTermList, renderFeatureList, renderCatalyticS
 import { createInsightIconSvg } from '../utils/insightIcons';
 import { wireArrowKeyNavigation } from '../utils/tabKeyboardNav';
 import { escapeHtml } from '../escapeHtml';
+import { renderRosettaTooltip } from '../utils/rosettaStone';
 
 // Renders one insight string's markdown-lite **bold** segments as real
 // <strong> DOM nodes, built via createElement/createTextNode rather than
@@ -131,7 +132,7 @@ export class AnalyticsTab {
                 <div data-panel="quality" class="flex flex-col gap-4 shrink-0">
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
                         <div class="stat-row stat-primary">
-                            <span class="stat-key">Ramachandran score</span>
+                            <span class="stat-key">${renderRosettaTooltip('ramachandran', 'Ramachandran score')}</span>
                             <span id="ramachandran-score" class="stat-value">--</span>
                         </div>
                         <div class="stat-row">
@@ -146,7 +147,7 @@ export class AnalyticsTab {
                         </div>
                     </div>
                     <div id="quality-metrics-table-card" class="flex flex-col gap-2 hidden border-t border-border-subtle pt-4">
-                        <span class="font-label-sm text-label-sm text-secondary uppercase">Alignment quality (TM-score / GDT-TS - fold-similarity scores from 0 to 1, higher is more similar)</span>
+                        <span class="font-label-sm text-label-sm text-secondary uppercase">${renderRosettaTooltip('tmScore', 'Alignment quality (TM-score / GDT-TS)')}</span>
                         <table class="w-full font-body-sm text-body-sm">
                             <thead>
                                 <tr class="text-secondary text-left border-b border-border-subtle">
@@ -167,7 +168,7 @@ export class AnalyticsTab {
                         </div>
                     </div>
                     <div id="pairwise-tm-score-card" class="flex flex-col gap-2 hidden border-t border-border-subtle pt-4">
-                        <span class="font-label-sm text-label-sm text-secondary uppercase">Pairwise TM-score (independent optimal superposition)</span>
+                        <span class="font-label-sm text-label-sm text-secondary uppercase">${renderRosettaTooltip('tmScore', 'Pairwise TM-score')}</span>
                         <table class="w-full font-body-sm text-body-sm">
                             <thead>
                                 <tr class="text-secondary text-left border-b border-border-subtle">

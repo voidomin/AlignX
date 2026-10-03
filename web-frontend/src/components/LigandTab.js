@@ -1,5 +1,6 @@
 import { fetchInteractions, fetchLigands, fetchChains, fetchInterface, fetchLigandInfo, fetchPockets, submitPrankwebJob, pollJobUntilDone } from '../api';
 import { buildContactRow } from '../utils/interactionRenderers';
+import { renderRosettaTooltip } from '../utils/rosettaStone';
 
 export class LigandTab {
     constructor(props) {
@@ -72,7 +73,7 @@ export class LigandTab {
 
                 <div id="pocket-similarity-section" class="hidden flex-col gap-2 mt-6 pt-4 border-t border-border">
                     <div class="flex items-baseline justify-between">
-                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Binding pocket similarity</span>
+                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">${renderRosettaTooltip('ligandPocket', 'Binding pocket similarity')}</span>
                         <span class="font-body-sm text-body-sm text-secondary">Jaccard index of pocket residue composition</span>
                     </div>
                     <div id="pocket-similarity-heatmap" class="w-full h-[320px]"></div>
@@ -80,7 +81,7 @@ export class LigandTab {
 
                 <div id="candidate-pockets-section" class="hidden flex-col gap-2 mt-6 pt-4 border-t border-border">
                     <div class="flex items-baseline justify-between">
-                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Candidate binding pockets</span>
+                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">${renderRosettaTooltip('ligandPocket', 'Candidate binding pockets')}</span>
                         <span class="font-body-sm text-body-sm text-secondary">Heuristic - no bound ligand to analyze directly</span>
                     </div>
                     <table class="w-full text-left border-collapse">
