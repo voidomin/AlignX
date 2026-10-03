@@ -424,7 +424,7 @@ export class AnalyticsTab {
         // click). Available whenever there's at least one structure, not
         // just after a completed alignment - fetchAnnotations needs no run.
         if (key === 'annotations' && this.structures.length > 0 && this.annotationsLoadedForKey !== this._structuresKey()) {
-            this.loadAllAnnotations();
+            void this.loadAllAnnotations();
         }
     }
 
@@ -1072,12 +1072,16 @@ export class AnalyticsTab {
                 rows.push({ a: index[i], b: index[j], value: data[i][j] });
             }
         }
-        body.innerHTML = rows.map(r => `
+        body.innerHTML = rows.map(r => {
+            const safeA = escapeHtml(r.a);
+            const safeB = escapeHtml(r.b);
+            return `
             <tr>
-                <td class="py-1 font-mono"><span class="block max-w-[220px] truncate" title="${r.a} &harr; ${r.b}">${r.a} &harr; ${r.b}</span></td>
+                <td class="py-1 font-mono"><span class="block max-w-[220px] truncate" title="${safeA} &harr; ${safeB}">${safeA} &harr; ${safeB}</span></td>
                 <td class="py-1 font-mono">${r.value.toFixed(3)}</td>
             </tr>
-        `).join('');
+        `;
+        }).join('');
     }
 
     renderQualityMetricsTable() {

@@ -58,7 +58,7 @@ export class DashboardTab {
         `;
         this.element = div;
         this.renderQuickStart();
-        this.loadDashboardData();
+        void this.loadDashboardData();
         return div;
     }
 

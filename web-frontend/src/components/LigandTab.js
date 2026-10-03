@@ -210,8 +210,8 @@ export class LigandTab {
         this.populateDropdown();
         this.clearTable();
         this.renderPocketSimilarity();
-        this.loadAvailableChains();
-        this.loadCandidatePockets();
+        void this.loadAvailableChains();
+        void this.loadCandidatePockets();
     }
 
     async loadAvailableChains() {
@@ -627,7 +627,7 @@ export class LigandTab {
             // Fire-and-forget - doesn't block interaction-table rendering,
             // and a slow/failed chemistry lookup shouldn't affect the rest
             // of this view.
-            this.loadLigandChemistry(ligandId);
+            void this.loadLigandChemistry(ligandId);
 
             if (metadata.pocket_sasa) {
                 sasaBadge.innerText = `${metadata.pocket_sasa.toFixed(1)} Å²`;
