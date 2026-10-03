@@ -343,7 +343,7 @@ export class AnalyticsTab {
     }
 
     setupDiffNarrativeControls() {
-        this.element.querySelector('#diff-narrative-load-btn').addEventListener('click', () => this.describeStructureDiff());
+        this.element.querySelector('#diff-narrative-load-btn').addEventListener('click', () => { void this.describeStructureDiff(); });
         ['#diff-narrative-pdb-a-select', '#diff-narrative-pdb-b-select'].forEach(sel => {
             this.element.querySelector(sel).addEventListener('change', () => {
                 const a = this.element.querySelector('#diff-narrative-pdb-a-select').value;
@@ -354,22 +354,22 @@ export class AnalyticsTab {
     }
 
     setupContactMapControls() {
-        this.element.querySelector('#contact-map-load-btn').addEventListener('click', () => this.loadContactMap());
-        this.element.querySelector('#diff-distance-load-btn').addEventListener('click', () => this.loadDifferenceDistance());
+        this.element.querySelector('#contact-map-load-btn').addEventListener('click', () => { void this.loadContactMap(); });
+        this.element.querySelector('#diff-distance-load-btn').addEventListener('click', () => { void this.loadDifferenceDistance(); });
         ['#contact-map-pdb-select', '#diff-distance-pdb-a-select', '#diff-distance-pdb-b-select'].forEach(sel => {
             this.element.querySelector(sel).addEventListener('change', () => this.updateContactMapButtonStates());
         });
     }
 
     setupPaeControls() {
-        this.element.querySelector('#pae-load-btn').addEventListener('click', () => this.loadPae());
+        this.element.querySelector('#pae-load-btn').addEventListener('click', () => { void this.loadPae(); });
         this.element.querySelector('#pae-pdb-select').addEventListener('change', (e) => {
             this.element.querySelector('#pae-load-btn').disabled = !e.target.value;
         });
     }
 
     setupFlexibilityControls() {
-        this.element.querySelector('#flexibility-load-btn').addEventListener('click', () => this.loadFlexibility());
+        this.element.querySelector('#flexibility-load-btn').addEventListener('click', () => { void this.loadFlexibility(); });
         this.element.querySelector('#flexibility-pdb-select').addEventListener('change', (e) => {
             this.element.querySelector('#flexibility-load-btn').disabled = !e.target.value;
         });
@@ -398,8 +398,8 @@ export class AnalyticsTab {
     setupAnnotationsPicker() {
         const select = this.element.querySelector('#annotations-structure-select');
         select.addEventListener('change', () => this.renderAnnotationsPanel());
-        this.element.querySelector('#mutation-map-btn').addEventListener('click', () => this.loadMutationImpact());
-        this.element.querySelector('#mutation-ddg-btn').addEventListener('click', () => this.loadDdgStability());
+        this.element.querySelector('#mutation-map-btn').addEventListener('click', () => { void this.loadMutationImpact(); });
+        this.element.querySelector('#mutation-ddg-btn').addEventListener('click', () => { void this.loadDdgStability(); });
     }
 
     switchSubTab(key) {
@@ -574,7 +574,7 @@ export class AnalyticsTab {
             `;
             const annotateBtn = content.querySelector('#interproscan-annotate-btn');
             if (annotateBtn) {
-                annotateBtn.addEventListener('click', () => this.loadInterproscanAnnotation(selectedPdbId));
+                annotateBtn.addEventListener('click', () => { void this.loadInterproscanAnnotation(selectedPdbId); });
             }
         } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.kegg_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length && !annotation.function_summary && !annotation.tissue_expression && !annotation.orthologs && !annotation.disprot_regions?.length && !annotation.intact_partners?.length && !annotation.rhea_reactions?.length && !annotation.tractability) {
             content.innerHTML = `<div class="font-body-sm text-secondary py-4">Resolved to UniProt ${annotation.accession}, but no curated domains, GO terms, pathways, or sequence features were found.</div>`;
