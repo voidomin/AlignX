@@ -126,7 +126,7 @@ export class DiscoveryPanel {
 
         this.element = div;
         this.element.querySelector('#discovery-panel-close-btn').addEventListener('click', () => this.onClose());
-        this.element.querySelector('#discover-rerun-btn').addEventListener('click', () => this.runFor(this.pdbId));
+        this.element.querySelector('#discover-rerun-btn').addEventListener('click', () => { void this.runFor(this.pdbId); });
         this.element.querySelectorAll('.discover-db-checkbox').forEach(cb => {
             cb.addEventListener('change', () => {
                 if (cb.checked) this.selectedDatabases.add(cb.dataset.db);

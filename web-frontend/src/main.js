@@ -154,9 +154,9 @@ class App {
             // The default demo structures (4RLT/3UG9) are about to be
             // replaced entirely by the shared run's own data - no point
             // fetching metadata for them first.
-            this.loadSharedRun();
+            void this.loadSharedRun();
         } else {
-            this.loadChainsMetadata();
+            void this.loadChainsMetadata();
         }
     }
 
@@ -483,7 +483,7 @@ class App {
             this.updateTabContentPane();
             this.syncViewerToStructureCount();
             this.workspaceTab.showSavedDiscoveryResults(metadata.results);
-            this.loadChainsMetadata();
+            void this.loadChainsMetadata();
             return;
         }
 
@@ -526,7 +526,7 @@ class App {
         );
 
         // Load metadata chains asynchronously
-        this.loadChainsMetadata();
+        void this.loadChainsMetadata();
 
         // Fetch Ligands for the first structure by default
         const refId = this.selectedPDBs[0];

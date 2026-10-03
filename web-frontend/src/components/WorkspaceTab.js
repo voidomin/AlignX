@@ -399,7 +399,7 @@ export class WorkspaceTab {
         slot.classList.remove('hidden');
         slot.innerHTML = '';
         slot.appendChild(this.discoveryPanel.render());
-        this.discoveryPanel.runFor(pdbId);
+        void this.discoveryPanel.runFor(pdbId);
     }
 
     // Reopens a Discover run loaded from the Dashboard/History tab - hands
