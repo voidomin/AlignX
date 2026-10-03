@@ -28,6 +28,12 @@ describe('rosettaStone utility', () => {
         expect(html).toContain('Shape Difference (RMSD)');
     });
 
+    it('renderRosettaTooltip handles customLabel being omitted', () => {
+        const html = renderRosettaTooltip('tmScore');
+        expect(html).toContain('Fold Match');
+        expect(html).not.toContain('undefined');
+    });
+
     it('renderRosettaTooltip handles unknown terms gracefully', () => {
         const html = renderRosettaTooltip('unknown_term', 'Fallback');
         expect(html).toBe('Fallback');

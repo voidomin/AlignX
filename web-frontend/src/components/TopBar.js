@@ -190,7 +190,8 @@ export class TopBar {
                 const healthEl = this.element.querySelector('#topbar-health-status');
                 if (healthEl && health) {
                     if (health.mustang_installed) {
-                        const mode = health.mustang_message?.toLowerCase().includes("wsl") ? "WSL" : "Native";
+                        const msg = health.mustang_message || '';
+                        const mode = msg.toLowerCase().includes("wsl") ? "WSL" : "Native";
                         healthEl.innerText = "Alignment engine: Ready";
                         healthEl.title = `Runs via Mustang, in ${mode} mode`;
                         healthEl.className = "text-success truncate max-w-[200px]";
@@ -216,8 +217,8 @@ export class TopBar {
         // the default structures over the browser's limited per-host
         // connection pool. Poll less aggressively thereafter (20s, was 10s)
         // to reduce ongoing background request volume.
-        this.initialPollTimeout = setTimeout(update, 3000);
-        this.memoryInterval = setInterval(update, 20000);
+        this.initialPollTimeout = setTimeout(() => { void update(); }, 3000);
+        this.memoryInterval = setInterval(() => { void update(); }, 20000);
     }
 
     updateMemoryDisplay(ramMb) {

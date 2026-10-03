@@ -233,7 +233,7 @@ export class WorkspaceTab {
             this.onRunAlignment();
         });
 
-        this.element.querySelector('#workspace-run-qc-btn').addEventListener('click', () => this.runQcOnAll());
+        this.element.querySelector('#workspace-run-qc-btn').addEventListener('click', () => { void this.runQcOnAll(); });
 
         const toggleBatchBtn = this.element.querySelector('#workspace-toggle-batch-add-btn');
         const batchContainer = this.element.querySelector('#workspace-batch-add-container');
@@ -317,7 +317,7 @@ export class WorkspaceTab {
         });
 
         const screenRunBtn = this.element.querySelector('#screen-run-btn');
-        screenRunBtn.addEventListener('click', () => this.runScreen());
+        screenRunBtn.addEventListener('click', () => { void this.runScreen(); });
 
         const togglePredictBtn = this.element.querySelector('#workspace-toggle-predict-btn');
         const predictContainer = this.element.querySelector('#workspace-predict-container');
@@ -656,9 +656,9 @@ export class WorkspaceTab {
         container.appendChild(div);
 
         if (meta?.source === 'pdb') {
-            this._loadValidation(pid);
-            this._loadCath(pid);
-            this._loadAssembly(pid);
+            void this._loadValidation(pid);
+            void this._loadCath(pid);
+            void this._loadAssembly(pid);
         }
     }
 
