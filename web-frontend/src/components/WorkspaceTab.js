@@ -19,6 +19,22 @@ const SOURCE_LABELS = {
 // would be wrong.
 const ONBOARDING_DISMISSED_KEY = 'structscope:onboarding-dismissed';
 
+function getOnboardingDismissed() {
+    try {
+        return localStorage.getItem(ONBOARDING_DISMISSED_KEY) === 'true';
+    } catch {
+        return false;
+    }
+}
+
+function setOnboardingDismissed() {
+    try {
+        localStorage.setItem(ONBOARDING_DISMISSED_KEY, 'true');
+    } catch {
+        // ignore
+    }
+}
+
 // The single merged "add structures, then see what you can do with them"
 // tab - replaces the old Overview (2+, Mustang alignment) and Discover
 // (exactly 1, Foldseek function inference) split. Add any number of
@@ -198,13 +214,12 @@ export class WorkspaceTab {
                 renderSuggestions([]);
                 return;
             }
-            this.suggestTimeout = setTimeout(async () => {
-                try {
-                    const data = await fetchSuggestions(q);
+            this.suggestTimeout = setTimeout(() => {
+                fetchSuggestions(q).then(data => {
                     renderSuggestions(data.suggestions);
-                } catch (err) {
+                }).catch(err => {
                     console.error("Autocomplete suggestions failed:", err);
-                }
+                });
             }, 300);
         });
 
@@ -448,7 +463,7 @@ export class WorkspaceTab {
                     <div id="workspace-quick-start" class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full text-left"></div>
                 </div>
             `;
-            if (!this.isSharedView && localStorage.getItem(ONBOARDING_DISMISSED_KEY) !== 'true') {
+            if (!this.isSharedView && !getOnboardingDismissed()) {
                 const hint = document.createElement('div');
                 hint.id = 'workspace-onboarding-hint';
                 hint.className = "flex items-start justify-between gap-3 bg-surface-raised border border-border-subtle rounded-md px-4 py-3 mt-1 max-w-md mx-auto text-left";
@@ -462,7 +477,7 @@ export class WorkspaceTab {
                 dismissBtn.setAttribute('aria-label', 'Dismiss');
                 dismissBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">close</span>';
                 dismissBtn.addEventListener('click', () => {
-                    localStorage.setItem(ONBOARDING_DISMISSED_KEY, 'true');
+                    setOnboardingDismissed();
                     hint.remove();
                 });
                 hint.appendChild(hintText);

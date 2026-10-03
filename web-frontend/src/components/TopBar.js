@@ -229,6 +229,9 @@ export class TopBar {
     }
 
     destroy() {
+        if (this._updateScrollArrows) {
+            window.removeEventListener('resize', this._updateScrollArrows);
+        }
         clearTimeout(this.initialPollTimeout);
         clearInterval(this.memoryInterval);
     }
