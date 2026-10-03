@@ -1073,12 +1073,13 @@ export class AnalyticsTab {
             }
         }
         body.innerHTML = rows.map(r => {
-            const safeA = escapeHtml(r.a);
-            const safeB = escapeHtml(r.b);
+            const safeA = escapeHtml(r.a || '');
+            const safeB = escapeHtml(r.b || '');
+            const valText = typeof r.value === 'number' ? r.value.toFixed(3) : '—';
             return `
             <tr>
                 <td class="py-1 font-mono"><span class="block max-w-[220px] truncate" title="${safeA} &harr; ${safeB}">${safeA} &harr; ${safeB}</span></td>
-                <td class="py-1 font-mono">${r.value.toFixed(3)}</td>
+                <td class="py-1 font-mono">${valText}</td>
             </tr>
         `;
         }).join('');

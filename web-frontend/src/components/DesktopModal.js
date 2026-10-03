@@ -95,8 +95,12 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
     document.body.appendChild(overlay);
 
     const closeModal = () => overlay.remove();
-    overlay.querySelector('#close-desktop-modal-btn').addEventListener('click', closeModal);
-    overlay.querySelector('#dismiss-desktop-modal-btn').addEventListener('click', closeModal);
+    const closeBtn = overlay.querySelector('#close-desktop-modal-btn');
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+
+    const dismissBtn = overlay.querySelector('#dismiss-desktop-modal-btn');
+    if (dismissBtn) dismissBtn.addEventListener('click', closeModal);
+
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay) closeModal();
     });
