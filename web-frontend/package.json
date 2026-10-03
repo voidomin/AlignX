@@ -12,6 +12,11 @@
     "test:coverage": "vitest run --coverage",
     "lint": "eslint ."
   },
+  "overrides": {
+    "brace-expansion": "^5.0.12",
+    "nanoid": "^3.3.19",
+    "undici": "^7.30.0"
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.3",

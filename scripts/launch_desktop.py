@@ -32,10 +32,6 @@ def print_banner():
 
 
 def main():
-    if sys.version_info < (3, 10):
-        print("ERROR: Python 3.10 or higher is required to run StructScope.")
-        sys.exit(1)
-
     static_index = PROJECT_ROOT / "static" / "index.html"
     if not static_index.exists():
         print("WARNING: static/index.html not found.")
