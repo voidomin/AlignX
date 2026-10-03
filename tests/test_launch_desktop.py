@@ -1,14 +1,13 @@
-from unittest.mock import patch, MagicMock
-import pytest
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 # Add project root to sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from scripts.launch_desktop import print_banner, main
+from scripts.launch_desktop import main, print_banner
 
 
 def test_print_banner(capsys):
