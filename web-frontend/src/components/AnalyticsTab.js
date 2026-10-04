@@ -354,16 +354,17 @@ export class AnalyticsTab {
         deepBtn?.addEventListener('click', () => this.setViewMode('deep'));
     }
 
+    _updateViewModeButtonUI(btn, isActive) {
+        if (!btn) return;
+        btn.className = `px-3 py-1 rounded-md font-label-sm text-label-sm transition-colors ${
+            isActive ? 'bg-surface text-primary shadow-xs font-semibold' : 'text-secondary hover:text-primary'
+        }`;
+    }
+
     setViewMode(mode) {
         this.viewMode = mode;
-        const simpleBtn = this.element?.querySelector('#viewmode-btn-simple');
-        const deepBtn = this.element?.querySelector('#viewmode-btn-deep');
-        if (simpleBtn) {
-            simpleBtn.className = `px-3 py-1 rounded-md font-label-sm text-label-sm transition-colors ${mode === 'simple' ? 'bg-surface text-primary shadow-xs font-semibold' : 'text-secondary hover:text-primary'}`;
-        }
-        if (deepBtn) {
-            deepBtn.className = `px-3 py-1 rounded-md font-label-sm text-label-sm transition-colors ${mode === 'deep' ? 'bg-surface text-primary shadow-xs font-semibold' : 'text-secondary hover:text-primary'}`;
-        }
+        this._updateViewModeButtonUI(this.element?.querySelector('#viewmode-btn-simple'), mode === 'simple');
+        this._updateViewModeButtonUI(this.element?.querySelector('#viewmode-btn-deep'), mode === 'deep');
         if (mode === 'simple' && this.activeSubTab === 'rmsd') {
             this.switchSubTab('quality');
         }
