@@ -1,4 +1,4 @@
-import { getAlignmentPdbUrl, getStructureFileUrl, getMorphFramesUrl, fetchMutationTolerance, fetchAnnotations, fetchDisorderPrediction, fetchFlexibility, fetchPaeDomains } from '../api';
+import { getAlignmentPdbUrl, getReportZipUrl, getStructureFileUrl, getMorphFramesUrl, fetchMutationTolerance, fetchAnnotations, fetchDisorderPrediction, fetchFlexibility, fetchPaeDomains } from '../api';
 
 // Qualitative palette for N-structure identity coloring. Deliberately avoids
 // amber/#F59E0B (reserved for the residue-selection highlight) and the
@@ -185,6 +185,12 @@ export class Viewer3D {
                     <button id="btn-screenshot" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Download Screenshot (PNG)" aria-label="Download Screenshot (PNG)">
                         <span class="material-symbols-outlined text-[18px]">photo_camera</span>
                     </button>
+                    <button id="btn-download-pdb" disabled class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-secondary" title="Download Superimposed Aligned PDB (1-Click)" aria-label="Download Superimposed Aligned PDB">
+                        <span class="material-symbols-outlined text-[18px]">download_for_offline</span>
+                    </button>
+                    <button id="btn-download-zip" disabled class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-secondary" title="Download Complete Alignment Bundle (ZIP)" aria-label="Download Complete Alignment Bundle (ZIP)">
+                        <span class="material-symbols-outlined text-[18px]">folder_zip</span>
+                    </button>
                 </div>
             </div>
 
@@ -332,6 +338,18 @@ export class Viewer3D {
 
         this.element.querySelector('#btn-screenshot').addEventListener('click', () => {
             this.downloadScreenshot();
+        });
+
+        this.element.querySelector('#btn-download-pdb').addEventListener('click', () => {
+            if (this.currentRunId) {
+                window.open(getAlignmentPdbUrl(this.currentRunId), '_blank');
+            }
+        });
+
+        this.element.querySelector('#btn-download-zip').addEventListener('click', () => {
+            if (this.currentRunId) {
+                window.open(getReportZipUrl(this.currentRunId), '_blank');
+            }
         });
     }
 
@@ -601,6 +619,14 @@ export class Viewer3D {
         btn.classList.toggle('text-primary', this.isMorphing);
     }
 
+    _updateDownloadButtonsUI() {
+        const pdbBtn = this.element?.querySelector('#btn-download-pdb');
+        const zipBtn = this.element?.querySelector('#btn-download-zip');
+        const hasRun = Boolean(this.currentRunId);
+        if (pdbBtn) pdbBtn.disabled = !hasRun;
+        if (zipBtn) zipBtn.disabled = !hasRun;
+    }
+
     // A genuinely new capability for this viewer: 3Dmol has no morph
     // primitive between two independently-numbered structures, only
     // multi-model frame playback (addModelsAsFrames/animate) - the backend
@@ -806,6 +832,8 @@ export class Viewer3D {
     _renderEmptyHUD() {
         const legend = this.element.querySelector('#hud-structure-legend');
         const rmsdBox = this.element.querySelector('#hud-rmsd-container');
+        this._updateMorphButtonUI();
+        this._updateDownloadButtonsUI();
         if (legend) legend.innerHTML = `<span class="font-label-sm text-label-sm text-muted font-mono">No structures loaded</span>`;
         if (rmsdBox) rmsdBox.innerHTML = `
             <span class="font-label-sm text-label-sm text-secondary uppercase">Global RMSD</span>
@@ -817,6 +845,7 @@ export class Viewer3D {
         const legend = this.element.querySelector('#hud-structure-legend');
         const rmsdBox = this.element.querySelector('#hud-rmsd-container');
         this._updateMorphButtonUI();
+        this._updateDownloadButtonsUI();
 
         legend.innerHTML = this.structures.map(s => `
             <div class="flex items-center gap-2">

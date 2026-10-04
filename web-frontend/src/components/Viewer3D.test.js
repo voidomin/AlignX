@@ -3,6 +3,7 @@ import { Viewer3D } from './Viewer3D.js';
 
 vi.mock('../api.js', () => ({
     getAlignmentPdbUrl: vi.fn((runId) => `http://mock/results/${runId}/alignment.pdb`),
+    getReportZipUrl: vi.fn((runId) => `http://mock/api/report/zip?run_id=${runId}`),
     getStructureFileUrl: vi.fn((pdbId) => `http://mock/api/structure-file?pdb_id=${pdbId}`),
     getMorphFramesUrl: vi.fn((runId, a, b, n) => `http://mock/api/morph?run_id=${runId}&pdb_id_a=${a}&pdb_id_b=${b}&num_frames=${n}`),
     fetchMutationTolerance: vi.fn(),
@@ -85,6 +86,7 @@ describe('Viewer3D', () => {
         [
             '#viewer-style-picker', '#viewer-colorscheme-picker', '#btn-toggle-surface', '#btn-reset-view',
             '#btn-toggle-spin', '#btn-toggle-morph', '#btn-toggle-fullscreen', '#btn-toggle-measure', '#btn-screenshot',
+            '#btn-download-pdb', '#btn-download-zip',
             '#viewer-canvas-3dmol', '#ambient-placeholder', '#hud-structure-legend', '#hud-rmsd-container',
         ].forEach(sel => {
             expect(v.element.querySelector(sel), `missing ${sel}`).toBeTruthy();
@@ -394,6 +396,34 @@ describe('Viewer3D', () => {
             expect(mockViewer.pngURI).toHaveBeenCalled();
             expect(clickSpy).toHaveBeenCalled();
             clickSpy.mockRestore();
+        });
+    });
+
+    describe('download buttons', () => {
+        it('disables download buttons when no run is loaded and enables when run is loaded', async () => {
+            const v = makeViewer();
+            const pdbBtn = v.element.querySelector('#btn-download-pdb');
+            const zipBtn = v.element.querySelector('#btn-download-zip');
+            expect(pdbBtn.disabled).toBe(true);
+            expect(zipBtn.disabled).toBe(true);
+
+            await loadTwoStructures(v);
+            expect(pdbBtn.disabled).toBe(false);
+            expect(zipBtn.disabled).toBe(false);
+        });
+
+        it('triggers window.open with correct URLs when clicked', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+            const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+
+            v.element.querySelector('#btn-download-pdb').click();
+            expect(openSpy).toHaveBeenCalledWith('http://mock/results/run_1/alignment.pdb', '_blank');
+
+            v.element.querySelector('#btn-download-zip').click();
+            expect(openSpy).toHaveBeenCalledWith('http://mock/api/report/zip?run_id=run_1', '_blank');
+
+            openSpy.mockRestore();
         });
     });
 
