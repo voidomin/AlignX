@@ -122,7 +122,7 @@ export function render2DInteractionMap(containerEl, ligandName, contacts, onResi
         line.setAttribute('x2', nx);
         line.setAttribute('y2', ny);
 
-        let strokeColor = '#94A3B8';
+        let strokeColor = '#64748B';
         let dashArray = 'none';
 
         if (item.type === 'Hydrogen Bond') {
@@ -133,7 +133,6 @@ export function render2DInteractionMap(containerEl, ligandName, contacts, onResi
         } else if (item.type === 'Metal Coordination') {
             strokeColor = '#EF4444'; // Red
         } else {
-            strokeColor = '#64748B'; // Muted
             dashArray = '2 2';
         }
 
