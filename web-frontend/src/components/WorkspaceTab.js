@@ -19,6 +19,22 @@ const SOURCE_LABELS = {
 // would be wrong.
 const ONBOARDING_DISMISSED_KEY = 'structscope:onboarding-dismissed';
 
+function getOnboardingDismissed() {
+    try {
+        return localStorage.getItem(ONBOARDING_DISMISSED_KEY) === 'true';
+    } catch {
+        return false;
+    }
+}
+
+function setOnboardingDismissed() {
+    try {
+        localStorage.setItem(ONBOARDING_DISMISSED_KEY, 'true');
+    } catch {
+        // ignore
+    }
+}
+
 // The single merged "add structures, then see what you can do with them"
 // tab - replaces the old Overview (2+, Mustang alignment) and Discover
 // (exactly 1, Foldseek function inference) split. Add any number of
@@ -198,13 +214,12 @@ export class WorkspaceTab {
                 renderSuggestions([]);
                 return;
             }
-            this.suggestTimeout = setTimeout(async () => {
-                try {
-                    const data = await fetchSuggestions(q);
+            this.suggestTimeout = setTimeout(() => {
+                fetchSuggestions(q).then(data => {
                     renderSuggestions(data.suggestions);
-                } catch (err) {
+                }).catch(err => {
                     console.error("Autocomplete suggestions failed:", err);
-                }
+                });
             }, 300);
         });
 
@@ -233,7 +248,7 @@ export class WorkspaceTab {
             this.onRunAlignment();
         });
 
-        this.element.querySelector('#workspace-run-qc-btn').addEventListener('click', () => this.runQcOnAll());
+        this.element.querySelector('#workspace-run-qc-btn').addEventListener('click', () => { void this.runQcOnAll(); });
 
         const toggleBatchBtn = this.element.querySelector('#workspace-toggle-batch-add-btn');
         const batchContainer = this.element.querySelector('#workspace-batch-add-container');
@@ -317,7 +332,7 @@ export class WorkspaceTab {
         });
 
         const screenRunBtn = this.element.querySelector('#screen-run-btn');
-        screenRunBtn.addEventListener('click', () => this.runScreen());
+        screenRunBtn.addEventListener('click', () => { void this.runScreen(); });
 
         const togglePredictBtn = this.element.querySelector('#workspace-toggle-predict-btn');
         const predictContainer = this.element.querySelector('#workspace-predict-container');
@@ -384,7 +399,7 @@ export class WorkspaceTab {
         slot.classList.remove('hidden');
         slot.innerHTML = '';
         slot.appendChild(this.discoveryPanel.render());
-        this.discoveryPanel.runFor(pdbId);
+        void this.discoveryPanel.runFor(pdbId);
     }
 
     // Reopens a Discover run loaded from the Dashboard/History tab - hands
@@ -440,12 +455,15 @@ export class WorkspaceTab {
         container.innerHTML = "";
         if (this.selectedPDBs.length === 0) {
             container.innerHTML = `
-                <div class="flex flex-col items-center gap-3 py-4 text-center">
-                    <span class="text-secondary font-body-sm">Add a structure to analyze it on its own, or 2+ to align them - or try an example:</span>
-                    <div id="workspace-quick-start" class="flex flex-wrap justify-center gap-2"></div>
+                <div class="flex flex-col items-center gap-4 py-4 text-center max-w-3xl mx-auto">
+                    <div class="flex flex-col items-center gap-1">
+                        <span class="font-headline-sm text-headline-sm font-semibold text-primary">Explore Curated Showcase Demos</span>
+                        <span class="text-secondary font-body-sm">Add a structure to analyze it on its own, or 2+ to align them &mdash; or click an example below to instantly populate:</span>
+                    </div>
+                    <div id="workspace-quick-start" class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full text-left"></div>
                 </div>
             `;
-            if (!this.isSharedView && localStorage.getItem(ONBOARDING_DISMISSED_KEY) !== 'true') {
+            if (!this.isSharedView && !getOnboardingDismissed()) {
                 const hint = document.createElement('div');
                 hint.id = 'workspace-onboarding-hint';
                 hint.className = "flex items-start justify-between gap-3 bg-surface-raised border border-border-subtle rounded-md px-4 py-3 mt-1 max-w-md mx-auto text-left";
@@ -459,7 +477,7 @@ export class WorkspaceTab {
                 dismissBtn.setAttribute('aria-label', 'Dismiss');
                 dismissBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">close</span>';
                 dismissBtn.addEventListener('click', () => {
-                    localStorage.setItem(ONBOARDING_DISMISSED_KEY, 'true');
+                    setOnboardingDismissed();
                     hint.remove();
                 });
                 hint.appendChild(hintText);
@@ -471,8 +489,21 @@ export class WorkspaceTab {
                 QUICK_START_EXAMPLES.forEach(ex => {
                     const btn = document.createElement('button');
                     btn.type = 'button';
-                    btn.className = "quick-start-btn px-3 py-1.5 rounded-md bg-surface-raised border border-border-subtle font-label-sm text-label-sm text-secondary hover:text-primary transition-colors";
-                    btn.textContent = `${ex.label} (${ex.pdbIds.join(' + ')})`;
+                    btn.className = "quick-start-btn group text-left p-3.5 rounded-lg bg-surface border border-border-subtle hover:border-accent hover:bg-surface-raised transition-all duration-150 flex flex-col gap-1.5 shadow-sm";
+                    btn.innerHTML = `
+                        <div class="flex items-center justify-between w-full">
+                            <span class="inline-flex items-center gap-1.5 font-label-md text-label-md font-semibold text-primary group-hover:text-accent transition-colors">
+                                <span class="material-symbols-outlined text-[18px] text-accent">${ex.icon || 'science'}</span>
+                                ${ex.label}
+                            </span>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-mono tracking-wide bg-surface-raised border border-border-subtle text-secondary">${ex.tag || 'Demo'}</span>
+                        </div>
+                        <span class="font-body-sm text-body-sm text-secondary line-clamp-2">${ex.description || ''}</span>
+                        <span class="font-mono text-[11px] text-muted mt-1 flex items-center gap-1">
+                            <span class="material-symbols-outlined text-[13px]">dataset</span>
+                            ${ex.pdbIds.join(' + ')}
+                        </span>
+                    `;
                     btn.addEventListener('click', () => this.onQuickStart(ex.pdbIds));
                     quickStartContainer.appendChild(btn);
                 });
@@ -640,9 +671,9 @@ export class WorkspaceTab {
         container.appendChild(div);
 
         if (meta?.source === 'pdb') {
-            this._loadValidation(pid);
-            this._loadCath(pid);
-            this._loadAssembly(pid);
+            void this._loadValidation(pid);
+            void this._loadCath(pid);
+            void this._loadAssembly(pid);
         }
     }
 

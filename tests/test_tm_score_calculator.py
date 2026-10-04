@@ -2,6 +2,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("tmtools")
+
 from src.backend.tm_score_calculator import (
     calculate_pairwise_tm_score,
     calculate_tm_score_matrix,

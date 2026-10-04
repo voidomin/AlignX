@@ -159,7 +159,7 @@ export function renderGoTermList(goTerms, heading = 'GO terms') {
 // untouched (fail closed) rather than risk mangling real UniProt prose.
 // Citation data isn't discarded - each id becomes a real, clickable link
 // in a collapsed references list appended after the paragraph.
-const PUBMED_CITATION_GROUP_RE = /\s*\(((?:PubMed:\d+)(?:,\s*PubMed:\d+)*)\)/g;
+const PUBMED_CITATION_GROUP_RE = /[ \t]*\((PubMed:\d+(?:,[ \t]*PubMed:\d+)*)\)/g;
 
 export function renderFunctionSummary(text) {
     if (!text) return '';

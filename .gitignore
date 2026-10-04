@@ -61,3 +61,7 @@ reproduce_notebook.py
 
 # Documentation builds
 docs/_build/
+
+# Node dependencies
+node_modules/
+

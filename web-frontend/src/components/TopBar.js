@@ -1,5 +1,6 @@
 import { fetchMemoryStats, triggerClearMemory, fetchHealth } from '../api';
 import { wireArrowKeyNavigation } from '../utils/tabKeyboardNav';
+import { showDesktopModal } from './DesktopModal';
 
 // Grouped into two sections so the nav communicates structure instead of
 // 9 flat, equal-weight peers: Workspace (the one merged add-structures/
@@ -40,9 +41,10 @@ export class TopBar {
         header.className = "sticky top-0 z-50 bg-surface border-b border-border shrink-0";
         header.innerHTML = `
             <div class="max-w-[1600px] mx-auto px-6 py-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 lg:gap-6">
-                <div class="flex items-center gap-3 shrink-0">
+                <div class="flex items-center gap-2.5 shrink-0">
                     <span class="material-symbols-outlined text-[20px] text-accent">science</span>
                     <span class="font-headline-md text-headline-md font-bold text-primary">StructScope</span>
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-medium tracking-wide uppercase bg-accent-muted text-accent border border-accent/20" title="Interactive Web Showcase - optimized for quick comparisons and curated demos">Web Demo</span>
                 </div>
 
                 <div id="topbar-tabs-wrapper" class="flex items-center w-full lg:w-auto lg:flex-1 min-w-0">
@@ -60,7 +62,11 @@ export class TopBar {
                     </button>
                 </div>
 
-                <div class="flex items-center flex-wrap lg:flex-nowrap gap-4 shrink-0 font-mono text-label-sm">
+                <div class="flex items-center flex-wrap lg:flex-nowrap gap-3 shrink-0 font-mono text-label-sm">
+                    <button id="topbar-download-desktop-btn" class="btn-primary px-3 py-1.5 rounded-md font-label-md text-label-md flex items-center gap-1.5 shadow-sm" title="Download Desktop Edition for unlimited large files & private local compute">
+                        <span class="material-symbols-outlined text-[16px]">desktop_windows</span>
+                        Desktop App
+                    </button>
                     <button id="topbar-new-ws-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">New Workspace</button>
                     <button id="topbar-export-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Export</button>
                     <div class="h-5 w-px bg-border"></div>
@@ -127,6 +133,10 @@ export class TopBar {
 
         this.element.querySelector('#topbar-export-btn').addEventListener('click', () => this.onExportData());
         this.element.querySelector('#topbar-new-ws-btn').addEventListener('click', () => this.onNewWorkspace());
+        const desktopBtn = this.element.querySelector('#topbar-download-desktop-btn');
+        if (desktopBtn) {
+            desktopBtn.addEventListener('click', () => showDesktopModal());
+        }
 
         const freeBtn = this.element.querySelector('#topbar-free-ram-btn');
         freeBtn.addEventListener('click', async () => {
@@ -180,7 +190,8 @@ export class TopBar {
                 const healthEl = this.element.querySelector('#topbar-health-status');
                 if (healthEl && health) {
                     if (health.mustang_installed) {
-                        const mode = health.mustang_message?.toLowerCase().includes("wsl") ? "WSL" : "Native";
+                        const msg = health.mustang_message || '';
+                        const mode = msg.toLowerCase().includes("wsl") ? "WSL" : "Native";
                         healthEl.innerText = "Alignment engine: Ready";
                         healthEl.title = `Runs via Mustang, in ${mode} mode`;
                         healthEl.className = "text-success truncate max-w-[200px]";
@@ -206,8 +217,8 @@ export class TopBar {
         // the default structures over the browser's limited per-host
         // connection pool. Poll less aggressively thereafter (20s, was 10s)
         // to reduce ongoing background request volume.
-        this.initialPollTimeout = setTimeout(update, 3000);
-        this.memoryInterval = setInterval(update, 20000);
+        this.initialPollTimeout = setTimeout(() => { void update(); }, 3000);
+        this.memoryInterval = setInterval(() => { void update(); }, 20000);
     }
 
     updateMemoryDisplay(ramMb) {
@@ -218,6 +229,9 @@ export class TopBar {
     }
 
     destroy() {
+        if (this._updateScrollArrows) {
+            window.removeEventListener('resize', this._updateScrollArrows);
+        }
         clearTimeout(this.initialPollTimeout);
         clearInterval(this.memoryInterval);
     }

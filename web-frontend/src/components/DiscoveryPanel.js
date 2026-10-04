@@ -1,5 +1,6 @@
 import { submitDiscoveryJob, pollJobUntilDone, getDiscoveryReportUrl, getDiscoveryExportUrl, getDiscoveryCitationsUrl } from '../api';
 import { renderDomainList, renderGoTermList } from '../utils/annotationRenderers';
+import { escapeHtml } from '../escapeHtml';
 
 const SOURCE_LABELS = {
     pdb: 'PDB',
@@ -64,7 +65,7 @@ export class DiscoveryPanel {
             <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
                     <span class="material-symbols-outlined text-[18px] text-accent">travel_explore</span>
-                    <span class="font-label-md text-label-md">Discover: <span id="discovery-panel-pdbid" class="font-mono">${this.pdbId || ''}</span></span>
+                    <span class="font-label-md text-label-md">Discover: <span id="discovery-panel-pdbid" class="font-mono">${escapeHtml(this.pdbId || '')}</span></span>
                 </div>
                 <button id="discovery-panel-close-btn" class="text-secondary hover:text-primary" aria-label="Close">
                     <span class="material-symbols-outlined text-[18px]">close</span>
@@ -126,7 +127,7 @@ export class DiscoveryPanel {
 
         this.element = div;
         this.element.querySelector('#discovery-panel-close-btn').addEventListener('click', () => this.onClose());
-        this.element.querySelector('#discover-rerun-btn').addEventListener('click', () => this.runFor(this.pdbId));
+        this.element.querySelector('#discover-rerun-btn').addEventListener('click', () => { void this.runFor(this.pdbId); });
         this.element.querySelectorAll('.discover-db-checkbox').forEach(cb => {
             cb.addEventListener('change', () => {
                 if (cb.checked) this.selectedDatabases.add(cb.dataset.db);
@@ -272,226 +273,367 @@ export class DiscoveryPanel {
 
     renderResults() {
         const container = this.element.querySelector('#discover-results');
-        if (!this.results) {
-            container.innerHTML = '';
-            return;
-        }
+        if (!container) return;
+        container.innerHTML = '';
+        if (!this.results) return;
 
         const r = this.results;
         const ann = r.annotations;
         const sourceLabel = SOURCE_LABELS[r.source] || 'PDB';
 
-        const detailToggleHTML = `
-            <div class="flex gap-1 p-1 rounded-md bg-surface border border-border-subtle w-fit">
-                ${DETAIL_LEVELS.map(d => `
-                    <button data-level="${d.key}" class="detail-level-btn px-3 py-1 rounded-md font-label-sm text-label-sm transition-colors ${this.detailLevel === d.key ? 'bg-accent-muted text-accent' : 'text-secondary hover:text-primary'}">${d.label}</button>
-                `).join('')}
-            </div>
-        `;
+        const wrapper = document.createElement('div');
+        wrapper.className = "flex flex-col gap-4 border-t border-border pt-6";
 
-        const bodyHTML = this.renderBody(r, ann);
+        const topBar = document.createElement('div');
+        topBar.className = "flex items-center justify-between flex-wrap gap-3";
 
-        // Discover runs are always saved to history (see DiscoveryCoordinator),
-        // so a completed result should always have an id - guard anyway in
-        // case of an older/malformed result with no id to build a URL from.
-        const downloadHTML = r.id ? `
-            <div class="flex gap-4">
-                <a href="${getDiscoveryReportUrl(r.id)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 font-label-sm text-label-sm text-secondary hover:text-primary transition-colors">
-                    <span class="material-symbols-outlined text-[16px]">description</span>
-                    Download Report
-                </a>
-                <a href="${getDiscoveryExportUrl(r.id)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 font-label-sm text-label-sm text-secondary hover:text-primary transition-colors">
-                    <span class="material-symbols-outlined text-[16px]">data_object</span>
-                    Download JSON
-                </a>
-                <a href="${getDiscoveryCitationsUrl(r.id)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 font-label-sm text-label-sm text-secondary hover:text-primary transition-colors">
-                    <span class="material-symbols-outlined text-[16px]">format_quote</span>
-                    Export Citations
-                </a>
-            </div>
-        ` : '';
+        const infoGroup = document.createElement('div');
+        infoGroup.className = "flex items-center gap-2";
 
-        container.innerHTML = `
-            <div class="flex flex-col gap-4 border-t border-border pt-6">
-                <div class="flex items-center justify-between flex-wrap gap-3">
-                    <div class="flex items-center gap-2">
-                        <span class="font-headline-sm text-body-md font-bold text-primary font-mono">${r.pdb_id}</span>
-                        <span class="px-1.5 py-0.5 rounded-md bg-surface border border-border-subtle font-mono text-[10px] text-secondary uppercase source-badge">${sourceLabel}</span>
-                        <span class="font-body-sm text-[11px] text-secondary">${r.hit_count} structural matches (${r.databases_searched.join(', ')})</span>
-                    </div>
-                    ${detailToggleHTML}
-                </div>
-                ${downloadHTML}
-                ${bodyHTML}
-            </div>
-        `;
+        const pdbSpan = document.createElement('span');
+        pdbSpan.className = "font-headline-sm text-body-md font-bold text-primary font-mono";
+        pdbSpan.textContent = r.pdb_id;
 
-        container.querySelectorAll('.detail-level-btn').forEach(btn => {
-            btn.addEventListener('click', () => this.setDetailLevel(btn.dataset.level));
+        const sourceBadge = document.createElement('span');
+        sourceBadge.className = "px-1.5 py-0.5 rounded-md bg-surface border border-border-subtle font-mono text-[10px] text-secondary uppercase source-badge";
+        sourceBadge.textContent = sourceLabel;
+
+        const matchesSpan = document.createElement('span');
+        matchesSpan.className = "font-body-sm text-[11px] text-secondary";
+        matchesSpan.textContent = `${r.hit_count} structural matches (${(r.databases_searched || []).join(', ')})`;
+
+        infoGroup.appendChild(pdbSpan);
+        infoGroup.appendChild(sourceBadge);
+        infoGroup.appendChild(matchesSpan);
+
+        const detailToggle = document.createElement('div');
+        detailToggle.className = "flex gap-1 p-1 rounded-md bg-surface border border-border-subtle w-fit";
+        DETAIL_LEVELS.forEach(d => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.dataset.level = d.key;
+            btn.className = `detail-level-btn px-3 py-1 rounded-md font-label-sm text-label-sm transition-colors ${this.detailLevel === d.key ? 'bg-accent-muted text-accent' : 'text-secondary hover:text-primary'}`;
+            btn.textContent = d.label;
+            btn.addEventListener('click', () => this.setDetailLevel(d.key));
+            detailToggle.appendChild(btn);
         });
+
+        topBar.appendChild(infoGroup);
+        topBar.appendChild(detailToggle);
+        wrapper.appendChild(topBar);
+
+        if (r.id) {
+            const downloadRow = document.createElement('div');
+            downloadRow.className = "flex gap-4";
+
+            const links = [
+                { href: getDiscoveryReportUrl(r.id), icon: 'description', label: 'Download Report' },
+                { href: getDiscoveryExportUrl(r.id), icon: 'data_object', label: 'Download JSON' },
+                { href: getDiscoveryCitationsUrl(r.id), icon: 'format_quote', label: 'Export Citations' },
+            ];
+
+            links.forEach(link => {
+                const a = document.createElement('a');
+                a.href = link.href;
+                a.target = '_blank';
+                a.rel = 'noopener noreferrer';
+                a.className = "flex items-center gap-1 font-label-sm text-label-sm text-secondary hover:text-primary transition-colors";
+
+                const icon = document.createElement('span');
+                icon.className = "material-symbols-outlined text-[16px]";
+                icon.textContent = link.icon;
+
+                a.appendChild(icon);
+                a.appendChild(document.createTextNode(link.label));
+                downloadRow.appendChild(a);
+            });
+            wrapper.appendChild(downloadRow);
+        }
+
+        const bodyContainer = document.createElement('div');
+        this.renderBodyInto(bodyContainer, r, ann);
+        wrapper.appendChild(bodyContainer);
+
+        container.appendChild(wrapper);
     }
 
-    // Researcher always sees whatever data exists (its own empty-state
-    // handling per section already covers zero domains/GO terms/hits
-    // gracefully) - only Public/Student are gated on confidence, since
-    // stating a function hypothesis from a single weak structural match
-    // would be misleading precisely for the audiences least equipped to
-    // judge that for themselves.
-    renderBody(r, ann) {
+    renderBodyInto(container, r, ann) {
         if (!ann || ann.annotated_neighbor_count === 0) {
-            return this.renderEmptyAnnotations(r);
+            this.renderEmptyAnnotationsInto(container, r);
+            return;
         }
         if (this.detailLevel === 'researcher') {
-            return this.renderResearcherView(ann);
+            this.renderResearcherViewInto(container, ann);
+            return;
         }
         if (ann.high_confidence_annotated_count === 0) {
-            return this.renderLowConfidenceMessage(ann);
+            this.renderLowConfidenceMessageInto(container, ann);
+            return;
         }
-        return this.detailLevel === 'public'
-            ? this.renderPublicView(ann)
-            : this.renderStudentView(ann);
+        if (this.detailLevel === 'public') {
+            this.renderPublicViewInto(container, ann);
+        } else {
+            this.renderStudentViewInto(container, ann);
+        }
     }
 
-    renderEmptyAnnotations(r) {
-        const reason = r.hit_count > 0
+    renderEmptyAnnotationsInto(container, r) {
+        const div = document.createElement('div');
+        div.className = "py-6 text-center text-secondary font-body-sm";
+        div.textContent = r.hit_count > 0
             ? `Found ${r.hit_count} structural matches, but none could be resolved to a protein with known functional annotations yet.`
             : 'No structural matches were found in the searched databases.';
-        return `<div class="py-6 text-center text-secondary font-body-sm">${reason}</div>`;
+        container.appendChild(div);
     }
 
-    renderLowConfidenceMessage(ann) {
-        return `
-            <div class="py-6 text-center text-secondary font-body-sm max-w-[480px] mx-auto">
-                Found ${ann.annotated_neighbor_count} structurally similar protein(s) with known
-                functional annotations, but none matched with high enough structural confidence
-                (Foldseek probability &ge; ${ann.min_confident_probability}) to state a reliable
-                function hypothesis here. Switch to the Researcher view to see the raw data and
-                judge for yourself.
-            </div>
-        `;
+    renderLowConfidenceMessageInto(container, ann) {
+        const div = document.createElement('div');
+        div.className = "py-6 text-center text-secondary font-body-sm max-w-[480px] mx-auto";
+        div.textContent = `Found ${ann.annotated_neighbor_count} structurally similar protein(s) with known functional annotations, but none matched with high enough structural confidence (Foldseek probability ≥ ${ann.min_confident_probability}) to state a reliable function hypothesis here. Switch to the Researcher view to see the raw data and judge for yourself.`;
+        container.appendChild(div);
     }
 
-    renderPublicView(ann) {
-        // This method is only reached once renderBody() has already gated
-        // on high_confidence_annotated_count > 0, so pull from the
-        // confidence-filtered lists, not the unfiltered top_domains/
-        // top_go_terms (which can include domains/terms that only came
-        // from a low-confidence match). Domains and GO terms are each
-        // still independently possibly-empty (a neighbor set can have GO
-        // terms with zero domain matches, or vice versa).
+    renderPublicViewInto(container, ann) {
         const topDomain = ann.high_confidence_top_domains[0];
         const topGo = ann.high_confidence_top_go_terms[0];
-        const subject = topDomain ? `known <strong>${topDomain.name}</strong>-type proteins` : 'proteins with a known function';
-        const involvement = topGo ? `, which are typically involved in <strong>${topGo.name}</strong>` : '';
-        return `
-            <div class="p-4 rounded-md bg-surface border border-border-subtle font-body-md leading-relaxed">
-                This structure looks similar to ${subject}${involvement}.
-                This is a computational inference based on structural similarity, not a confirmed experimental result.
-            </div>
-        `;
-    }
 
-    renderStudentView(ann) {
-        const topDomain = ann.high_confidence_top_domains[0];
-        const topGo = ann.high_confidence_top_go_terms[0];
-        let consensusParagraph = '';
+        const div = document.createElement('div');
+        div.className = "p-4 rounded-md bg-surface border border-border-subtle font-body-md leading-relaxed";
+
+        div.appendChild(document.createTextNode('This structure looks similar to '));
         if (topDomain) {
-            consensusParagraph = `<p>The most common protein family among these neighbors is <strong>${topDomain.name}</strong>
-               (seen in ${topDomain.neighbor_count} of ${ann.high_confidence_annotated_count} confidently-matched neighbors).
-               Because structural fold is conserved much longer than sequence identity over evolution, a strong
-               structural match to a known family is meaningful evidence for shared function - even in cases
-               where sequence similarity alone wouldn't have found the connection.</p>`;
-        } else if (topGo) {
-            consensusParagraph = `<p>No single protein family dominates, but a common thread across these neighbors is
-                 <strong>${topGo.name}</strong> (seen in ${topGo.neighbor_count} of ${ann.high_confidence_annotated_count}
-                 confidently-matched neighbors) - a shared Gene Ontology annotation that's meaningful evidence for function
-                 even without a matching domain family.</p>`;
+            div.appendChild(document.createTextNode('known '));
+            const strongDomain = document.createElement('strong');
+            strongDomain.textContent = topDomain.name;
+            div.appendChild(strongDomain);
+            div.appendChild(document.createTextNode('-type proteins'));
+        } else {
+            div.appendChild(document.createTextNode('proteins with a known function'));
         }
-        return `
-            <div class="flex flex-col gap-4">
-                <div class="p-4 rounded-md bg-surface border border-border-subtle font-body-md leading-relaxed flex flex-col gap-3">
-                    <p>Out of ${ann.neighbors_considered} of the most confident structural neighbors,
-                    <strong>${ann.high_confidence_annotated_count}</strong> matched a protein with known functional
-                    annotations at high enough structural confidence (Foldseek probability &ge; ${ann.min_confident_probability}).</p>
-                    ${consensusParagraph}
-                </div>
-                ${renderDomainList(ann.high_confidence_top_domains, 'Common domains / families')}
-                ${renderGoTermList(ann.high_confidence_top_go_terms, 'Common GO terms')}
-            </div>
-        `;
+
+        if (topGo) {
+            div.appendChild(document.createTextNode(', which are typically involved in '));
+            const strongGo = document.createElement('strong');
+            strongGo.textContent = topGo.name;
+            div.appendChild(strongGo);
+        }
+        div.appendChild(document.createTextNode('. This is a computational inference based on structural similarity, not a confirmed experimental result.'));
+
+        container.appendChild(div);
     }
 
-    renderResearcherView(ann) {
-        return `
-            <div class="flex flex-col gap-4">
-                <div class="grid grid-cols-4 gap-4">
-                    <div class="stat-row"><span class="stat-key">Total hits</span><span class="stat-value">${ann.total_hit_count}</span></div>
-                    <div class="stat-row"><span class="stat-key">Candidates examined</span><span class="stat-value">${ann.candidates_examined}</span></div>
-                    <div class="stat-row"><span class="stat-key">Resolvable to UniProt</span><span class="stat-value">${ann.resolvable_hit_count} / ${ann.candidates_examined}</span></div>
-                    <div class="stat-row"><span class="stat-key">Annotated neighbors</span><span class="stat-value">${ann.annotated_neighbor_count} / ${ann.neighbors_considered}</span></div>
-                </div>
-                <div class="grid grid-cols-3 gap-4">
-                    <div class="stat-row"><span class="stat-key">With STRING interactions</span><span class="stat-value">${ann.neighbors_with_interactions_count}</span></div>
-                    <div class="stat-row"><span class="stat-key">With Reactome pathways</span><span class="stat-value">${ann.neighbors_with_pathways_count}</span></div>
-                    <div class="stat-row"><span class="stat-key">High-confidence (prob &ge; ${ann.min_confident_probability})</span><span class="stat-value">${ann.high_confidence_annotated_count} / ${ann.annotated_neighbor_count}</span></div>
-                </div>
-                ${renderDomainList(ann.top_domains, 'Common domains / families')}
-                ${renderGoTermList(ann.top_go_terms, 'Common GO terms')}
-                ${this.renderInteractionsAndPathways(ann)}
-                ${this.renderHitTable(this.results.hits)}
-            </div>
-        `;
+    renderStudentViewInto(container, ann) {
+        const topDomain = ann.high_confidence_top_domains[0];
+        const topGo = ann.high_confidence_top_go_terms[0];
+
+        const wrapper = document.createElement('div');
+        wrapper.className = "flex flex-col gap-4";
+
+        const card = document.createElement('div');
+        card.className = "p-4 rounded-md bg-surface border border-border-subtle font-body-md leading-relaxed flex flex-col gap-3";
+
+        const p1 = document.createElement('p');
+        p1.appendChild(document.createTextNode(`Out of ${ann.neighbors_considered} of the most confident structural neighbors, `));
+        const strongCount = document.createElement('strong');
+        strongCount.textContent = ann.high_confidence_annotated_count;
+        p1.appendChild(strongCount);
+        p1.appendChild(document.createTextNode(` matched a protein with known functional annotations at high enough structural confidence (Foldseek probability ≥ ${ann.min_confident_probability}).`));
+        card.appendChild(p1);
+
+        if (topDomain) {
+            const p2 = document.createElement('p');
+            p2.appendChild(document.createTextNode('The most common protein family among these neighbors is '));
+            const strong = document.createElement('strong');
+            strong.textContent = topDomain.name;
+            p2.appendChild(strong);
+            p2.appendChild(document.createTextNode(` (seen in ${topDomain.neighbor_count} of ${ann.high_confidence_annotated_count} confidently-matched neighbors). Because structural fold is conserved much longer than sequence identity over evolution, a strong structural match to a known family is meaningful evidence for shared function - even in cases where sequence similarity alone wouldn't have found the connection.`));
+            card.appendChild(p2);
+        } else if (topGo) {
+            const p2 = document.createElement('p');
+            p2.appendChild(document.createTextNode('No single protein family dominates, but a common thread across these neighbors is '));
+            const strong = document.createElement('strong');
+            strong.textContent = topGo.name;
+            p2.appendChild(strong);
+            p2.appendChild(document.createTextNode(` (seen in ${topGo.neighbor_count} of ${ann.high_confidence_annotated_count} confidently-matched neighbors) - a shared Gene Ontology annotation that's meaningful evidence for function even without a matching domain family.`));
+            card.appendChild(p2);
+        }
+
+        wrapper.appendChild(card);
+
+        const domainListHtml = renderDomainList(ann.high_confidence_top_domains, 'Common domains / families');
+        if (domainListHtml) {
+            const dDiv = document.createElement('div');
+            dDiv.innerHTML = domainListHtml;
+            wrapper.appendChild(dDiv);
+        }
+
+        const goListHtml = renderGoTermList(ann.high_confidence_top_go_terms, 'Common GO terms');
+        if (goListHtml) {
+            const gDiv = document.createElement('div');
+            gDiv.innerHTML = goListHtml;
+            wrapper.appendChild(gDiv);
+        }
+
+        container.appendChild(wrapper);
     }
 
-    renderInteractionsAndPathways(ann) {
+    renderResearcherViewInto(container, ann) {
+        const wrapper = document.createElement('div');
+        wrapper.className = "flex flex-col gap-4";
+
+        const statsGrid = document.createElement('div');
+        statsGrid.className = "grid grid-cols-4 gap-4";
+        statsGrid.innerHTML = `
+            <div class="stat-row"><span class="stat-key">Total hits</span><span class="stat-value"></span></div>
+            <div class="stat-row"><span class="stat-key">Candidates examined</span><span class="stat-value"></span></div>
+            <div class="stat-row"><span class="stat-key">Resolvable to UniProt</span><span class="stat-value"></span></div>
+            <div class="stat-row"><span class="stat-key">Annotated neighbors</span><span class="stat-value"></span></div>
+        `;
+        const vals1 = statsGrid.querySelectorAll('.stat-value');
+        vals1[0].textContent = ann.total_hit_count;
+        vals1[1].textContent = ann.candidates_examined;
+        vals1[2].textContent = `${ann.resolvable_hit_count} / ${ann.candidates_examined}`;
+        vals1[3].textContent = `${ann.annotated_neighbor_count} / ${ann.neighbors_considered}`;
+        wrapper.appendChild(statsGrid);
+
+        const statsGrid2 = document.createElement('div');
+        statsGrid2.className = "grid grid-cols-3 gap-4";
+        statsGrid2.innerHTML = `
+            <div class="stat-row"><span class="stat-key">With STRING interactions</span><span class="stat-value"></span></div>
+            <div class="stat-row"><span class="stat-key">With Reactome pathways</span><span class="stat-value"></span></div>
+            <div class="stat-row"><span class="stat-key">High-confidence</span><span class="stat-value"></span></div>
+        `;
+        const vals2 = statsGrid2.querySelectorAll('.stat-value');
+        vals2[0].textContent = ann.neighbors_with_interactions_count;
+        vals2[1].textContent = ann.neighbors_with_pathways_count;
+        vals2[2].textContent = `${ann.high_confidence_annotated_count} / ${ann.annotated_neighbor_count}`;
+        wrapper.appendChild(statsGrid2);
+
+        const domainListHtml = renderDomainList(ann.top_domains, 'Common domains / families');
+        if (domainListHtml) {
+            const dDiv = document.createElement('div');
+            dDiv.innerHTML = domainListHtml;
+            wrapper.appendChild(dDiv);
+        }
+
+        const goListHtml = renderGoTermList(ann.top_go_terms, 'Common GO terms');
+        if (goListHtml) {
+            const gDiv = document.createElement('div');
+            gDiv.innerHTML = goListHtml;
+            wrapper.appendChild(gDiv);
+        }
+
+        this.renderInteractionsAndPathwaysInto(wrapper, ann);
+        this.renderHitTableInto(wrapper, this.results.hits);
+
+        container.appendChild(wrapper);
+    }
+
+    renderInteractionsAndPathwaysInto(container, ann) {
         const rows = ann.per_neighbor.filter(
             n => n.string_partners.length > 0 || n.reactome_pathways.length > 0
         );
-        if (!rows.length) return '';
-        return `
-            <div class="flex flex-col gap-2">
-                <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Interactions &amp; pathways (per neighbor)</span>
-                ${rows.map(n => `
-                    <div class="flex flex-col gap-1 py-1.5 border-b border-border-subtle">
-                        <span class="font-mono text-[11px] text-secondary">${(n.target || '').slice(0, 60)}</span>
-                        ${n.string_partners.length ? `<span class="font-body-sm text-[12px]">STRING partners: ${n.string_partners.map(p => p.partner_name).join(', ')}</span>` : ''}
-                        ${n.reactome_pathways.length ? `<span class="font-body-sm text-[12px]">Reactome pathways: ${n.reactome_pathways.map(p => p.name).join(', ')}</span>` : ''}
-                    </div>
-                `).join('')}
-            </div>
-        `;
+        if (!rows.length) return;
+
+        const wrapper = document.createElement('div');
+        wrapper.className = "flex flex-col gap-2";
+
+        const header = document.createElement('span');
+        header.className = "font-label-md text-label-md text-secondary uppercase tracking-wider";
+        header.textContent = "Interactions & pathways (per neighbor)";
+        wrapper.appendChild(header);
+
+        rows.forEach(n => {
+            const row = document.createElement('div');
+            row.className = "flex flex-col gap-1 py-1.5 border-b border-border-subtle";
+
+            const targetSpan = document.createElement('span');
+            targetSpan.className = "font-mono text-[11px] text-secondary";
+            targetSpan.textContent = (n.target || '').slice(0, 60);
+            row.appendChild(targetSpan);
+
+            if (n.string_partners.length) {
+                const stringSpan = document.createElement('span');
+                stringSpan.className = "font-body-sm text-[12px]";
+                stringSpan.textContent = `STRING partners: ${n.string_partners.map(p => p.partner_name).join(', ')}`;
+                row.appendChild(stringSpan);
+            }
+
+            if (n.reactome_pathways.length) {
+                const reactomeSpan = document.createElement('span');
+                reactomeSpan.className = "font-body-sm text-[12px]";
+                reactomeSpan.textContent = `Reactome pathways: ${n.reactome_pathways.map(p => p.name).join(', ')}`;
+                row.appendChild(reactomeSpan);
+            }
+
+            wrapper.appendChild(row);
+        });
+
+        container.appendChild(wrapper);
     }
 
-    renderHitTable(hits) {
-        const rows = [...hits]
+    renderHitTableInto(container, hits) {
+        if (!hits || !hits.length) return;
+
+        const wrapper = document.createElement('div');
+        wrapper.className = "flex flex-col gap-2";
+
+        const header = document.createElement('span');
+        header.className = "font-label-md text-label-md text-secondary uppercase tracking-wider";
+        header.textContent = "Top structural matches";
+        wrapper.appendChild(header);
+
+        const overflowDiv = document.createElement('div');
+        overflowDiv.className = "overflow-x-auto";
+
+        const table = document.createElement('table');
+        table.className = "w-full text-left font-body-sm text-[12px]";
+        table.innerHTML = `
+            <thead>
+                <tr class="text-secondary border-b border-border-subtle">
+                    <th class="py-1.5 pr-4">Target</th>
+                    <th class="py-1.5 pr-4">Prob</th>
+                    <th class="py-1.5 pr-4">E-value</th>
+                    <th class="py-1.5 pr-4">Seq ID</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        `;
+
+        const tbody = table.querySelector('tbody');
+        const sortedHits = [...hits]
             .sort((a, b) => (Number.parseFloat(a.eval) || 1e9) - (Number.parseFloat(b.eval) || 1e9))
             .slice(0, 20);
-        return `
-            <div class="flex flex-col gap-2">
-                <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Top structural matches</span>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left font-body-sm text-[12px]">
-                        <thead>
-                            <tr class="text-secondary border-b border-border-subtle">
-                                <th class="py-1.5 pr-4">Target</th>
-                                <th class="py-1.5 pr-4">Prob</th>
-                                <th class="py-1.5 pr-4">E-value</th>
-                                <th class="py-1.5 pr-4">Seq ID</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${rows.map(h => `
-                                <tr class="border-b border-border-subtle">
-                                    <td class="py-1.5 pr-4 font-mono">${(h.target || '').slice(0, 60)}</td>
-                                    <td class="py-1.5 pr-4 font-mono">${typeof h.prob === 'number' ? h.prob.toFixed(3) : h.prob}</td>
-                                    <td class="py-1.5 pr-4 font-mono">${h.eval}</td>
-                                    <td class="py-1.5 pr-4 font-mono">${h.seqId}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        `;
+
+        sortedHits.forEach(h => {
+            const tr = document.createElement('tr');
+            tr.className = "border-b border-border-subtle";
+
+            const tdTarget = document.createElement('td');
+            tdTarget.className = "py-1.5 pr-4 font-mono";
+            tdTarget.textContent = (h.target || '').slice(0, 60);
+
+            const tdProb = document.createElement('td');
+            tdProb.className = "py-1.5 pr-4 font-mono";
+            tdProb.textContent = typeof h.prob === 'number' ? h.prob.toFixed(3) : h.prob;
+
+            const tdEval = document.createElement('td');
+            tdEval.className = "py-1.5 pr-4 font-mono";
+            tdEval.textContent = h.eval;
+
+            const tdSeqId = document.createElement('td');
+            tdSeqId.className = "py-1.5 pr-4 font-mono";
+            tdSeqId.textContent = h.seqId;
+
+            tr.appendChild(tdTarget);
+            tr.appendChild(tdProb);
+            tr.appendChild(tdEval);
+            tr.appendChild(tdSeqId);
+            tbody.appendChild(tr);
+        });
+
+        overflowDiv.appendChild(table);
+        wrapper.appendChild(overflowDiv);
+        container.appendChild(wrapper);
     }
 }

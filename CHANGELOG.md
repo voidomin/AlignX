@@ -2,6 +2,15 @@
 
 All notable changes to StructScope (formerly AlignX) are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.99.0]
+
+Showcase Demos, Rosetta Stone plain-English guidance layer, and Desktop Edition packaging:
+- **Curated Showcase Demo Cards**: interactive cards on Workspace and Dashboard tabs for Hemoglobin variants, Kinase drug targets, Trp-cage AI vs Wet Lab, and COVID-19 Spike RBD with educational context.
+- **Rosetta Stone Plain-English Layer**: interactive lightbulb tooltips translating complex metrics (RMSD as "Shape Match", TM-score as "Fold Match", Ramachandran as "Backbone Health", Ligand Pockets as "Drug Target Cavity", and ClinVar as "Medical Impact").
+- **Web Demo & Desktop Edition Modal**: Web Demo badge and Desktop modal offering one-click local setups via Docker and Python for unlimited compute and 100% data privacy.
+- **Standalone Desktop Launcher**: `scripts/launch_desktop.py` automatically boots the FastAPI backend and opens the default browser locally.
+- **Test Suite Resiliency**: `tests/test_tm_score_calculator.py` gracefully skips when optional `tmtools` C-extension is not installed.
+
 ## [3.98.0]
 
 Phase 8: a 4-stage feature batch, smallest/most-contained first, all on one

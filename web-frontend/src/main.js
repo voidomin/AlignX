@@ -154,9 +154,9 @@ class App {
             // The default demo structures (4RLT/3UG9) are about to be
             // replaced entirely by the shared run's own data - no point
             // fetching metadata for them first.
-            this.loadSharedRun();
+            void this.loadSharedRun();
         } else {
-            this.loadChainsMetadata();
+            void this.loadChainsMetadata();
         }
     }
 
@@ -222,7 +222,7 @@ class App {
             this.clustersTab.updateResults(this.rmsdDf, this.pdbMetadata);
         } else if (this.activeTab === 'comparison') {
             pane.appendChild(this.comparisonTab.render());
-            this.comparisonTab.updateResults(this.currentRunId);
+            void this.comparisonTab.updateResults(this.currentRunId);
         } else if (this.activeTab === 'history') {
             pane.appendChild(this.historyPanel.render());
         } else if (this.activeTab === 'settings') {
@@ -265,7 +265,7 @@ class App {
     // (loadSuperposition, from executeAlignment()/reloadPastRun()) replaces it.
     syncViewerToStructureCount() {
         if (this.selectedPDBs.length === 1) {
-            this.viewer3D.loadSingleStructure(this.selectedPDBs[0]);
+            void this.viewer3D.loadSingleStructure(this.selectedPDBs[0]);
         } else {
             this.viewer3D.reset();
         }
@@ -483,7 +483,7 @@ class App {
             this.updateTabContentPane();
             this.syncViewerToStructureCount();
             this.workspaceTab.showSavedDiscoveryResults(metadata.results);
-            this.loadChainsMetadata();
+            void this.loadChainsMetadata();
             return;
         }
 
@@ -526,7 +526,7 @@ class App {
         );
 
         // Load metadata chains asynchronously
-        this.loadChainsMetadata();
+        void this.loadChainsMetadata();
 
         // Fetch Ligands for the first structure by default
         const refId = this.selectedPDBs[0];
@@ -586,7 +586,7 @@ class App {
             this.sequenceTab.updateResults(null, null);
             this.analyticsTab.updateResults(null, null, null, null, null, null, []);
             this.clustersTab.updateResults(null, null);
-            this.comparisonTab.updateResults(null);
+            void this.comparisonTab.updateResults(null);
             this.viewer3D.reset();
 
             this.switchTab('workspace');

@@ -58,17 +58,32 @@ export class DashboardTab {
         `;
         this.element = div;
         this.renderQuickStart();
-        this.loadDashboardData();
+        void this.loadDashboardData();
         return div;
     }
 
     renderQuickStart() {
         const container = this.element.querySelector('#dashboard-quick-start');
         container.innerHTML = "";
+        container.className = "grid grid-cols-1 md:grid-cols-2 gap-3.5 w-full";
         QUICK_START_EXAMPLES.forEach(ex => {
             const btn = document.createElement('button');
-            btn.className = "quick-start-btn px-3 py-1.5 rounded-md bg-surface-raised border border-border-subtle font-label-sm text-label-sm text-secondary hover:text-primary transition-colors";
-            btn.textContent = `${ex.label} (${ex.pdbIds.join(' + ')})`;
+            btn.type = 'button';
+            btn.className = "quick-start-btn group text-left p-3.5 rounded-lg bg-surface border border-border-subtle hover:border-accent hover:bg-surface-raised transition-all duration-150 flex flex-col gap-1.5 shadow-sm";
+            btn.innerHTML = `
+                <div class="flex items-center justify-between w-full">
+                    <span class="inline-flex items-center gap-1.5 font-label-md text-label-md font-semibold text-primary group-hover:text-accent transition-colors">
+                        <span class="material-symbols-outlined text-[18px] text-accent">${ex.icon || 'science'}</span>
+                        ${ex.label}
+                    </span>
+                    <span class="px-2 py-0.5 rounded text-[10px] font-mono tracking-wide bg-surface-raised border border-border-subtle text-secondary">${ex.tag || 'Demo'}</span>
+                </div>
+                <span class="font-body-sm text-body-sm text-secondary line-clamp-2">${ex.description || ''}</span>
+                <span class="font-mono text-[11px] text-muted mt-1 flex items-center gap-1">
+                    <span class="material-symbols-outlined text-[13px]">dataset</span>
+                    ${ex.pdbIds.join(' + ')}
+                </span>
+            `;
             btn.addEventListener('click', () => this.onQuickStart(ex.pdbIds));
             container.appendChild(btn);
         });

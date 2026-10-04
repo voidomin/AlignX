@@ -3,6 +3,7 @@ import { renderDomainList, renderGoTermList, renderFeatureList, renderCatalyticS
 import { createInsightIconSvg } from '../utils/insightIcons';
 import { wireArrowKeyNavigation } from '../utils/tabKeyboardNav';
 import { escapeHtml } from '../escapeHtml';
+import { renderRosettaTooltip } from '../utils/rosettaStone';
 
 // Renders one insight string's markdown-lite **bold** segments as real
 // <strong> DOM nodes, built via createElement/createTextNode rather than
@@ -131,7 +132,7 @@ export class AnalyticsTab {
                 <div data-panel="quality" class="flex flex-col gap-4 shrink-0">
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
                         <div class="stat-row stat-primary">
-                            <span class="stat-key">Ramachandran score</span>
+                            <span class="stat-key">${renderRosettaTooltip('ramachandran', 'Ramachandran score')}</span>
                             <span id="ramachandran-score" class="stat-value">--</span>
                         </div>
                         <div class="stat-row">
@@ -146,7 +147,7 @@ export class AnalyticsTab {
                         </div>
                     </div>
                     <div id="quality-metrics-table-card" class="flex flex-col gap-2 hidden border-t border-border-subtle pt-4">
-                        <span class="font-label-sm text-label-sm text-secondary uppercase">Alignment quality (TM-score / GDT-TS - fold-similarity scores from 0 to 1, higher is more similar)</span>
+                        <span class="font-label-sm text-label-sm text-secondary uppercase">${renderRosettaTooltip('tmScore', 'Alignment quality (TM-score / GDT-TS)')}</span>
                         <table class="w-full font-body-sm text-body-sm">
                             <thead>
                                 <tr class="text-secondary text-left border-b border-border-subtle">
@@ -167,7 +168,7 @@ export class AnalyticsTab {
                         </div>
                     </div>
                     <div id="pairwise-tm-score-card" class="flex flex-col gap-2 hidden border-t border-border-subtle pt-4">
-                        <span class="font-label-sm text-label-sm text-secondary uppercase">Pairwise TM-score (independent optimal superposition)</span>
+                        <span class="font-label-sm text-label-sm text-secondary uppercase">${renderRosettaTooltip('tmScore', 'Pairwise TM-score')}</span>
                         <table class="w-full font-body-sm text-body-sm">
                             <thead>
                                 <tr class="text-secondary text-left border-b border-border-subtle">
@@ -353,22 +354,22 @@ export class AnalyticsTab {
     }
 
     setupContactMapControls() {
-        this.element.querySelector('#contact-map-load-btn').addEventListener('click', () => this.loadContactMap());
-        this.element.querySelector('#diff-distance-load-btn').addEventListener('click', () => this.loadDifferenceDistance());
+        this.element.querySelector('#contact-map-load-btn').addEventListener('click', () => { void this.loadContactMap(); });
+        this.element.querySelector('#diff-distance-load-btn').addEventListener('click', () => { void this.loadDifferenceDistance(); });
         ['#contact-map-pdb-select', '#diff-distance-pdb-a-select', '#diff-distance-pdb-b-select'].forEach(sel => {
             this.element.querySelector(sel).addEventListener('change', () => this.updateContactMapButtonStates());
         });
     }
 
     setupPaeControls() {
-        this.element.querySelector('#pae-load-btn').addEventListener('click', () => this.loadPae());
+        this.element.querySelector('#pae-load-btn').addEventListener('click', () => { void this.loadPae(); });
         this.element.querySelector('#pae-pdb-select').addEventListener('change', (e) => {
             this.element.querySelector('#pae-load-btn').disabled = !e.target.value;
         });
     }
 
     setupFlexibilityControls() {
-        this.element.querySelector('#flexibility-load-btn').addEventListener('click', () => this.loadFlexibility());
+        this.element.querySelector('#flexibility-load-btn').addEventListener('click', () => { void this.loadFlexibility(); });
         this.element.querySelector('#flexibility-pdb-select').addEventListener('change', (e) => {
             this.element.querySelector('#flexibility-load-btn').disabled = !e.target.value;
         });
@@ -397,8 +398,8 @@ export class AnalyticsTab {
     setupAnnotationsPicker() {
         const select = this.element.querySelector('#annotations-structure-select');
         select.addEventListener('change', () => this.renderAnnotationsPanel());
-        this.element.querySelector('#mutation-map-btn').addEventListener('click', () => this.loadMutationImpact());
-        this.element.querySelector('#mutation-ddg-btn').addEventListener('click', () => this.loadDdgStability());
+        this.element.querySelector('#mutation-map-btn').addEventListener('click', () => { void this.loadMutationImpact(); });
+        this.element.querySelector('#mutation-ddg-btn').addEventListener('click', () => { void this.loadDdgStability(); });
     }
 
     switchSubTab(key) {
@@ -423,7 +424,7 @@ export class AnalyticsTab {
         // click). Available whenever there's at least one structure, not
         // just after a completed alignment - fetchAnnotations needs no run.
         if (key === 'annotations' && this.structures.length > 0 && this.annotationsLoadedForKey !== this._structuresKey()) {
-            this.loadAllAnnotations();
+            void this.loadAllAnnotations();
         }
     }
 
@@ -573,7 +574,7 @@ export class AnalyticsTab {
             `;
             const annotateBtn = content.querySelector('#interproscan-annotate-btn');
             if (annotateBtn) {
-                annotateBtn.addEventListener('click', () => this.loadInterproscanAnnotation(selectedPdbId));
+                annotateBtn.addEventListener('click', () => { void this.loadInterproscanAnnotation(selectedPdbId); });
             }
         } else if (!annotation.domains?.length && !annotation.go_terms?.length && !annotation.reactome_pathways?.length && !annotation.kegg_pathways?.length && !annotation.uniprot_features?.length && !annotation.catalytic_sites?.length && !annotation.function_summary && !annotation.tissue_expression && !annotation.orthologs && !annotation.disprot_regions?.length && !annotation.intact_partners?.length && !annotation.rhea_reactions?.length && !annotation.tractability) {
             content.innerHTML = `<div class="font-body-sm text-secondary py-4">Resolved to UniProt ${annotation.accession}, but no curated domains, GO terms, pathways, or sequence features were found.</div>`;
@@ -1071,12 +1072,17 @@ export class AnalyticsTab {
                 rows.push({ a: index[i], b: index[j], value: data[i][j] });
             }
         }
-        body.innerHTML = rows.map(r => `
+        body.innerHTML = rows.map(r => {
+            const safeA = escapeHtml(r.a || '');
+            const safeB = escapeHtml(r.b || '');
+            const valText = typeof r.value === 'number' ? r.value.toFixed(3) : '—';
+            return `
             <tr>
-                <td class="py-1 font-mono"><span class="block max-w-[220px] truncate" title="${r.a} &harr; ${r.b}">${r.a} &harr; ${r.b}</span></td>
-                <td class="py-1 font-mono">${r.value.toFixed(3)}</td>
+                <td class="py-1 font-mono"><span class="block max-w-[220px] truncate" title="${safeA} &harr; ${safeB}">${safeA} &harr; ${safeB}</span></td>
+                <td class="py-1 font-mono">${valText}</td>
             </tr>
-        `).join('');
+        `;
+        }).join('');
     }
 
     renderQualityMetricsTable() {
