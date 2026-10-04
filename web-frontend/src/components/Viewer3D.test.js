@@ -1196,6 +1196,19 @@ describe('Viewer3D', () => {
         });
     });
 
+    describe('onAtomSelect callback', () => {
+        it('invokes onAtomSelect when an atom is inspected', async () => {
+            const onAtomSelect = vi.fn();
+            const v = new Viewer3D({ onAtomSelect });
+            v.render();
+            v.init3Dmol();
+
+            v._handleInspectClick({ chain: 'A', resi: 12, resn: 'VAL', x: 1, y: 2, z: 3 });
+
+            expect(onAtomSelect).toHaveBeenCalledWith({ chain: 'A', resi: 12, resn: 'VAL', x: 1, y: 2, z: 3 });
+        });
+    });
+
     describe('highlightResidues with a missing or sparse chain mapping', () => {
         it('tolerates a null/undefined chainMapping', async () => {
             const v = makeViewer();
