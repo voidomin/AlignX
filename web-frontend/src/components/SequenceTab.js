@@ -446,7 +446,7 @@ export class SequenceTab {
         try {
             const data = await fetchSequence(this.currentRunId);
             const { sequences, conservation } = data;
-
+            this.sequences = sequences;
             this._populateConservationStructureSelect(Object.keys(sequences));
 
             // Render colored scrollable grid
@@ -478,7 +478,7 @@ export class SequenceTab {
                     }
 
                     const resClass = (score > 0.5 || char === '-') ? "res-val" : "";
-                    residuesHtml += `<td class="${resClass} text-center font-mono border border-border-subtle" style="background-color: ${bgColor}; min-width: 22px; height: 24px; font-size: 12px; color: #fff;">${char}</td>`;
+                    residuesHtml += `<td data-col="${i}" class="${resClass} seq-res-cell text-center font-mono border border-border-subtle cursor-pointer hover:ring-1 hover:ring-accent transition-all relative" style="background-color: ${bgColor}; min-width: 22px; height: 24px; font-size: 12px; color: #fff;">${char}</td>`;
                 }
 
                 rowsHtml += `
@@ -491,13 +491,13 @@ export class SequenceTab {
 
             // Consensus row
             let consensusHtml = "";
-            conservation.forEach(score => {
+            conservation.forEach((score, i) => {
                 let symbol = "&nbsp;";
                 if (score === 1.0) symbol = "*";
                 else if (score > 0.7) symbol = ":";
                 else if (score > 0.5) symbol = ".";
 
-                consensusHtml += `<td class="text-center font-mono font-bold text-secondary" style="min-width: 22px; height: 20px;">${symbol}</td>`;
+                consensusHtml += `<td data-col="${i}" class="text-center font-mono font-bold text-secondary" style="min-width: 22px; height: 20px;">${symbol}</td>`;
             });
 
             rowsHtml += `
@@ -514,6 +514,18 @@ export class SequenceTab {
                     </tbody>
                 </table>
             `;
+
+            wrapper.querySelectorAll('.seq-res-cell').forEach(cell => {
+                cell.addEventListener('click', () => {
+                    const colIdx = parseInt(cell.dataset.col, 10);
+                    if (Number.isNaN(colIdx)) return;
+                    this.highlightColumn(colIdx);
+                    const mapping = this.mapColumnToResidues(colIdx);
+                    if (Object.keys(mapping).length > 0) {
+                        this.onHighlightResidues(mapping);
+                    }
+                });
+            });
         } catch (err) {
             console.error("Failed to render sequence alignment viewer:", err);
             wrapper.innerHTML = `
@@ -521,6 +533,59 @@ export class SequenceTab {
                     Failed to parse alignment FASTA data.
                 </div>
             `;
+        }
+    }
+
+    mapColumnToResidues(colIdx) {
+        if (!this.sequences) return {};
+        const mapping = {};
+        const headers = Object.keys(this.sequences);
+        headers.forEach((header, seqIdx) => {
+            const chainId = String.fromCharCode(65 + seqIdx);
+            const seq = this.sequences[header];
+            if (colIdx >= 0 && colIdx < seq.length && seq[colIdx] !== '-') {
+                let resi = 0;
+                for (let j = 0; j <= colIdx; j++) {
+                    if (seq[j] !== '-') resi++;
+                }
+                mapping[chainId] = [resi];
+            }
+        });
+        return mapping;
+    }
+
+    highlightColumn(colIdx) {
+        if (!this.element) return;
+        this.element.querySelectorAll('.seq-res-cell').forEach(cell => {
+            const active = parseInt(cell.dataset.col, 10) === colIdx;
+            cell.classList.toggle('ring-2', active);
+            cell.classList.toggle('ring-amber-400', active);
+            cell.classList.toggle('z-10', active);
+        });
+
+        const targetCell = this.element.querySelector(`.seq-res-cell[data-col="${colIdx}"]`);
+        if (targetCell) {
+            targetCell.scrollIntoView?.({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        }
+    }
+
+    highlightColumnByResidue(chain, resi) {
+        if (!this.sequences || !resi) return;
+        const headers = Object.keys(this.sequences);
+        const chainIdx = Math.max(0, (chain || 'A').toUpperCase().charCodeAt(0) - 65);
+        const header = headers[chainIdx] || headers[0];
+        const seq = this.sequences[header];
+        if (!seq) return;
+
+        let currentResi = 0;
+        for (let i = 0; i < seq.length; i++) {
+            if (seq[i] !== '-') {
+                currentResi++;
+                if (currentResi === Number(resi)) {
+                    this.highlightColumn(i);
+                    break;
+                }
+            }
         }
     }
 

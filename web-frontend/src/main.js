@@ -49,7 +49,13 @@ class App {
             onNewWorkspace: () => this.resetWorkspace()
         });
 
-        this.viewer3D = new Viewer3D();
+        this.viewer3D = new Viewer3D({
+            onAtomSelect: (atom) => {
+                if (atom && this.sequenceTab) {
+                    this.sequenceTab.highlightColumnByResidue(atom.chain, atom.resi);
+                }
+            }
+        });
 
         this.workspaceTab = new WorkspaceTab({
             selectedPDBs: this.selectedPDBs,

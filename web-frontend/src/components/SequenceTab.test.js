@@ -275,6 +275,40 @@ describe('SequenceTab', () => {
             expect(onHighlightResidues).toHaveBeenCalledWith({ A: [3, 4, 5] });
         });
 
+        it('clicking a residue cell in alignment grid highlights column and triggers onHighlightResidues', async () => {
+            const onHighlightResidues = vi.fn();
+            const tab = new SequenceTab({ onHighlightResidues });
+            tab.render();
+            fetchSequence.mockResolvedValueOnce({
+                sequences: { '4RLT (Chain A)': 'MKV', '3UG9 (Chain B)': 'M-V' },
+                conservation: [1.0, 0.0, 1.0],
+            });
+            tab.updateResults('run_123', { rmsd: 1.0 });
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const cell = tab.element.querySelector('.seq-res-cell[data-col="0"]');
+            expect(cell).not.toBeNull();
+            cell.click();
+            expect(onHighlightResidues).toHaveBeenCalledWith({ A: [1], B: [1] });
+        });
+
+        it('highlightColumnByResidue finds and highlights column for given chain and residue', async () => {
+            const tab = new SequenceTab();
+            tab.render();
+            fetchSequence.mockResolvedValueOnce({
+                sequences: { '4RLT (Chain A)': 'MKV', '3UG9 (Chain B)': 'M-V' },
+                conservation: [1.0, 0.0, 1.0],
+            });
+            tab.updateResults('run_123', { rmsd: 1.0 });
+            await Promise.resolve();
+            await Promise.resolve();
+
+            tab.highlightColumnByResidue('A', 2);
+            const cell = tab.element.querySelector('.seq-res-cell[data-col="1"]');
+            expect(cell.classList.contains('ring-amber-400')).toBe(true);
+        });
+
         it('clears the motif input and results when a new run is loaded', async () => {
             fetchSequence.mockResolvedValue({ sequences: {}, conservation: [] });
             const tab = new SequenceTab();
