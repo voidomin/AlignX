@@ -1159,6 +1159,10 @@ export class Viewer3D {
         this.viewer.render();
     }
 
+    constructor(props = {}) {
+        this.onAtomSelect = props.onAtomSelect || null;
+    }
+
     // Inspect mode: purely informational, single reusable label - never
     // disturbs camera/style state. At most one inspect label ever exists.
     _handleInspectClick(atom) {
@@ -1168,6 +1172,10 @@ export class Viewer3D {
             this.inspectLabelHandle = null;
         }
         if (!atom) return;
+
+        if (typeof this.onAtomSelect === 'function') {
+            this.onAtomSelect(atom);
+        }
 
         const chainPart = atom.chain ? ` · Chain ${atom.chain}` : '';
         const text = `${atom.resn} ${atom.resi}${chainPart}`;
