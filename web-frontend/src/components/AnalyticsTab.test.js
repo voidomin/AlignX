@@ -97,6 +97,23 @@ describe('AnalyticsTab', () => {
         expect(item.textContent).toBe('Some insight text.');
     });
 
+    it('toggles viewMode between simple overview and deep dive when buttons are clicked', () => {
+        const tab = makeTab();
+        tab.render();
+
+        expect(tab.viewMode).toBe('simple');
+        const deepBtn = tab.element.querySelector('#viewmode-btn-deep');
+        const simpleBtn = tab.element.querySelector('#viewmode-btn-simple');
+
+        deepBtn.click();
+        expect(tab.viewMode).toBe('deep');
+        expect(deepBtn.className).toContain('font-semibold');
+
+        simpleBtn.click();
+        expect(tab.viewMode).toBe('simple');
+        expect(simpleBtn.className).toContain('font-semibold');
+    });
+
     it('escapes HTML in insight text before applying markdown formatting', () => {
         const tab = makeTab();
         tab.render();
