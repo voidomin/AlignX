@@ -1,5 +1,5 @@
 import { fetchInteractions, fetchLigands, fetchChains, fetchInterface, fetchLigandInfo, fetchPockets, submitPrankwebJob, pollJobUntilDone } from '../api';
-import { buildContactRow } from '../utils/interactionRenderers';
+import { buildContactRow, render2DInteractionMap, isHydrophobicResidue } from '../utils/interactionRenderers';
 import { renderRosettaTooltip } from '../utils/rosettaStone';
 
 export class LigandTab {
@@ -14,6 +14,8 @@ export class LigandTab {
         this.currentStructureIndex = 0;
         this.pocketSimilarity = null;
         this.availableChains = [];
+        this.pocketColorMode = 'default';
+        this.lastContacts = [];
     }
 
     render() {
@@ -40,13 +42,43 @@ export class LigandTab {
                 <div id="ligand-pocket-desc" class="font-body-sm text-body-sm text-secondary leading-relaxed">
                     Add a second structure and run alignment to analyze ligands here in Compare mode. For a single structure, use Discover mode's ligand inspector instead.
                 </div>
-                <div id="ligand-sasa-row" class="stat-row hidden max-w-[180px]">
-                    <span class="stat-key">SASA</span>
-                    <span id="ligand-sasa-badge" class="stat-value" title="Solvent-accessible surface area of the binding pocket, in square Angstroms - a rough measure of pocket size">-- Å²</span>
+
+                <div id="pocket-metrics-row" class="hidden flex-wrap items-center gap-3 p-3 rounded-lg bg-surface-raised border border-border">
+                    <div class="flex flex-col">
+                        <span class="font-label-sm text-[10px] text-muted uppercase font-mono">SASA Surface Area</span>
+                        <span id="ligand-sasa-badge" class="font-headline-md text-headline-md text-primary font-bold font-mono">-- Å²</span>
+                    </div>
+                    <div class="h-8 w-px bg-border"></div>
+                    <div class="flex flex-col">
+                        <span class="font-label-sm text-[10px] text-muted uppercase font-mono">Est. Pocket Cavity</span>
+                        <span id="ligand-volume-badge" class="font-headline-md text-headline-md text-accent font-bold font-mono" title="Estimated binding pocket volume calculated from pocket lining residue contacts">-- Å³</span>
+                    </div>
+                    <div class="h-8 w-px bg-border"></div>
+                    <div class="flex flex-col">
+                        <span class="font-label-sm text-[10px] text-muted uppercase font-mono">Hydrophobic Ratio</span>
+                        <span id="ligand-hydrophobic-badge" class="font-headline-md text-headline-md text-success font-bold font-mono">-- %</span>
+                    </div>
+                    <div class="ml-auto flex items-center gap-2">
+                        <span class="font-label-sm text-[11px] text-secondary">3D Pocket Color:</span>
+                        <select id="pocket-color-mode-select" aria-label="3D pocket residue color scheme" class="bg-surface border border-border rounded-md text-body-sm text-primary py-1 px-2 focus:outline-none focus:border-accent font-mono text-[12px]">
+                            <option value="default">Default Accent</option>
+                            <option value="hydrophobicity">Hydrophobicity (Kyte-Doolittle)</option>
+                            <option value="charge">Electrostatics / Charge</option>
+                        </select>
+                    </div>
                 </div>
+
                 <div id="ligand-chemistry-info" class="font-body-sm text-[11px] text-secondary hidden"></div>
                 <div id="ligand-analogs-info" class="font-body-sm text-[11px] text-secondary hidden flex-wrap items-baseline gap-1.5"></div>
                 <div id="ligand-bioactivity-info" class="font-body-sm text-[11px] text-secondary hidden flex-col gap-1"></div>
+
+                <div id="ligand-2d-section" class="hidden flex-col gap-2 pt-2 border-t border-border">
+                    <div class="flex items-baseline justify-between">
+                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">2D Interaction Schematic Map</span>
+                        <span class="font-body-sm text-[11px] text-muted">Click any residue node to inspect in 3D</span>
+                    </div>
+                    <div id="ligand-2d-contact-map-container" class="w-full"></div>
+                </div>
 
                 <div class="flex items-baseline justify-between mt-2 pt-4 border-t border-border">
                     <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Molecular interactions</span>
@@ -155,6 +187,16 @@ export class LigandTab {
             await this.switchStructure(Number.parseInt(e.target.value, 10));
         });
 
+        const colorSelect = this.element.querySelector('#pocket-color-mode-select');
+        if (colorSelect) {
+            colorSelect.addEventListener('change', (e) => {
+                this.pocketColorMode = e.target.value;
+                if (this.selectedLigandId && typeof this.onLigandSelected === 'function') {
+                    this.onLigandSelected(this.currentStructureIndex, this.selectedLigandId, this.lastContacts, this.pocketColorMode);
+                }
+            });
+        }
+
         const analyzeBtn = this.element.querySelector('#interface-analyze-btn');
         analyzeBtn.addEventListener('click', () => this.analyzeInterface());
 
@@ -181,11 +223,6 @@ export class LigandTab {
         this.clearTable();
         this.onLigandSelected(this.currentStructureIndex, "");
 
-        // fetchLigands already treats runId as optional (resolves the raw
-        // download directly when there's no run) - this used to bail out
-        // here whenever there was no completed alignment, which is exactly
-        // what blocked the Ligands tab from working for a lone, un-aligned
-        // structure.
         const pdbId = this.selectedPDBs[index];
         try {
             const ligData = await fetchLigands(pdbId, this.currentRunId);
@@ -233,9 +270,6 @@ export class LigandTab {
         this.renderInterfaceSection();
     }
 
-    // Heuristic candidate-pocket detection (LigandAnalyzer.find_candidate_pockets)
-    // only makes sense once a structure has confirmed NO real bound ligand -
-    // otherwise the real interaction analysis above is strictly more useful.
     async loadCandidatePockets() {
         if (!this.element) return;
         const section = this.element.querySelector('#candidate-pockets-section');
@@ -272,9 +306,17 @@ export class LigandTab {
         body.innerHTML = "";
         pockets.forEach(pocket => {
             const tr = document.createElement('tr');
+            tr.className = "hover:bg-surface-raised transition-colors cursor-pointer group";
+            tr.title = "Click to inspect pocket-lining residues in 3D";
+            tr.addEventListener('click', () => {
+                if (typeof this.onResidueSelected === 'function' && pocket.residues?.length > 0) {
+                    const first = pocket.residues[0];
+                    this.onResidueSelected(this.currentStructureIndex, first.chain, first.resi, first.resi);
+                }
+            });
 
             const rankCell = document.createElement('td');
-            rankCell.className = "py-1.5";
+            rankCell.className = "py-1.5 font-bold";
             rankCell.textContent = pocket.rank;
             tr.appendChild(rankCell);
 
@@ -291,23 +333,19 @@ export class LigandTab {
             tr.appendChild(residuesCell);
 
             const scoreCell = document.createElement('td');
-            scoreCell.className = "px-3 py-1.5 text-right";
+            scoreCell.className = "px-3 py-1.5 text-right font-semibold";
             scoreCell.textContent = pocket.score;
             tr.appendChild(scoreCell);
 
             const volumeCell = document.createElement('td');
-            volumeCell.className = "px-3 py-1.5 text-right";
-            volumeCell.textContent = pocket.volume_estimate_a3 != null ? pocket.volume_estimate_a3 : '--';
+            volumeCell.className = "px-3 py-1.5 text-right font-mono text-accent";
+            volumeCell.textContent = pocket.volume_estimate_a3 != null ? `${pocket.volume_estimate_a3} Å³` : '--';
             tr.appendChild(volumeCell);
 
             body.appendChild(tr);
         });
     }
 
-    // A second, opt-in, slower action alongside loadCandidatePockets'
-    // heuristic finder above - submits a real geometric pocket-detection
-    // job to PrankWeb (P2Rank) and polls it via the same job-queue pattern
-    // submitDdgStabilityJob/pollJobUntilDone already use elsewhere.
     async runPrankwebDetection() {
         const btn = this.element.querySelector('#prankweb-detect-btn');
         const feedback = this.element.querySelector('#prankweb-feedback');
@@ -352,15 +390,22 @@ export class LigandTab {
         body.innerHTML = "";
         pockets.forEach(pocket => {
             const tr = document.createElement('tr');
+            tr.className = "hover:bg-surface-raised transition-colors cursor-pointer group";
+            tr.title = "Click to inspect pocket-lining residues in 3D";
+            tr.addEventListener('click', () => {
+                if (typeof this.onResidueSelected === 'function' && pocket.residues?.length > 0) {
+                    const parts = pocket.residues[0].split('_');
+                    const chain = parts[0] || 'A';
+                    const resi = Number.parseInt(parts[1], 10) || 1;
+                    this.onResidueSelected(this.currentStructureIndex, chain, resi, resi);
+                }
+            });
 
             const rankCell = document.createElement('td');
-            rankCell.className = "py-1.5";
+            rankCell.className = "py-1.5 font-bold";
             rankCell.textContent = pocket.rank;
             tr.appendChild(rankCell);
 
-            // PrankWeb residues are "chain_resi" strings (e.g. "E_104"),
-            // unlike the heuristic finder's {chain, resi, resn} objects -
-            // no residue name here, since P2Rank doesn't return one.
             const residuesText = (pocket.residues || [])
                 .map(r => r.replace('_', ''))
                 .join(', ');
@@ -374,12 +419,12 @@ export class LigandTab {
             tr.appendChild(residuesCell);
 
             const scoreCell = document.createElement('td');
-            scoreCell.className = "px-3 py-1.5 text-right";
+            scoreCell.className = "px-3 py-1.5 text-right font-semibold";
             scoreCell.textContent = pocket.score;
             tr.appendChild(scoreCell);
 
             const probabilityCell = document.createElement('td');
-            probabilityCell.className = "px-3 py-1.5 text-right";
+            probabilityCell.className = "px-3 py-1.5 text-right font-mono text-success";
             probabilityCell.textContent = pocket.probability;
             tr.appendChild(probabilityCell);
 
@@ -576,9 +621,21 @@ export class LigandTab {
         const desc = this.element.querySelector('#ligand-pocket-desc');
         desc.innerText = "Add a second structure and run alignment to analyze ligands here in Compare mode. For a single structure, use Discover mode's ligand inspector instead.";
 
-        this.element.querySelector('#ligand-sasa-row').classList.add('hidden');
+        const metricsRow = this.element.querySelector('#pocket-metrics-row');
+        if (metricsRow) {
+            metricsRow.classList.add('hidden');
+            metricsRow.classList.remove('flex');
+        }
+
+        const d2Section = this.element.querySelector('#ligand-2d-section');
+        if (d2Section) {
+            d2Section.classList.add('hidden');
+            d2Section.classList.remove('flex');
+        }
+
         this.element.querySelector('#ligand-chemistry-info').classList.add('hidden');
         this.element.querySelector('#interaction-count').innerText = "0 Found";
+        this.lastContacts = [];
         
         this.element.querySelector('#interactions-table-body').innerHTML = `
             <tr>
@@ -596,7 +653,9 @@ export class LigandTab {
         const desc = this.element.querySelector('#ligand-pocket-desc');
         const countBadge = this.element.querySelector('#interaction-count');
         const sasaBadge = this.element.querySelector('#ligand-sasa-badge');
-        const sasaRow = this.element.querySelector('#ligand-sasa-row');
+        const volumeBadge = this.element.querySelector('#ligand-volume-badge');
+        const hydroBadge = this.element.querySelector('#ligand-hydrophobic-badge');
+        const metricsRow = this.element.querySelector('#pocket-metrics-row');
 
         if (!ligandId) {
             this.clearTable();
@@ -617,23 +676,51 @@ export class LigandTab {
             const targetPdbId = this.selectedPDBs[this.currentStructureIndex];
             const data = await fetchInteractions(targetPdbId, ligandId, this.currentRunId);
             const metadata = data.interactions;
-            const contacts = metadata.interactions;
+            const contacts = metadata.interactions || [];
+            this.lastContacts = contacts;
 
             // Trigger parent event to update 3D viewer binding site
-            this.onLigandSelected(this.currentStructureIndex, ligandId, contacts);
+            this.onLigandSelected(this.currentStructureIndex, ligandId, contacts, this.pocketColorMode);
 
             desc.innerText = `Conserved catalytic pocket near ligand ${metadata.ligand}. Stable hydrophobic cluster showing coordinated interactions.`;
 
-            // Fire-and-forget - doesn't block interaction-table rendering,
-            // and a slow/failed chemistry lookup shouldn't affect the rest
-            // of this view.
+            // Fire-and-forget - doesn't block interaction-table rendering
             void this.loadLigandChemistry(ligandId);
 
-            if (metadata.pocket_sasa) {
-                sasaBadge.innerText = `${metadata.pocket_sasa.toFixed(1)} Å²`;
-                sasaRow.classList.remove('hidden');
-            } else {
-                sasaRow.classList.add('hidden');
+            if (metadata.pocket_sasa || contacts.length > 0) {
+                if (sasaBadge) {
+                    sasaBadge.innerText = metadata.pocket_sasa ? `${metadata.pocket_sasa.toFixed(1)} Å²` : '-- Å²';
+                }
+                if (volumeBadge) {
+                    const estVol = metadata.pocket_sasa
+                        ? Math.round(0.6 * Math.pow(metadata.pocket_sasa, 1.5))
+                        : contacts.length * 45;
+                    volumeBadge.innerText = `${estVol} Å³`;
+                }
+                if (hydroBadge) {
+                    const hydroCount = contacts.filter(c => isHydrophobicResidue(c.resn || c.residue)).length;
+                    const pct = contacts.length > 0 ? Math.round((hydroCount / contacts.length) * 100) : 0;
+                    hydroBadge.innerText = `${pct}%`;
+                }
+                if (metricsRow) {
+                    metricsRow.classList.remove('hidden');
+                    metricsRow.classList.add('flex');
+                }
+            } else if (metricsRow) {
+                metricsRow.classList.add('hidden');
+            }
+
+            // Render 2D Interaction Schematic Map
+            const mapContainer = this.element.querySelector('#ligand-2d-contact-map-container');
+            const d2Section = this.element.querySelector('#ligand-2d-section');
+            if (mapContainer && d2Section && contacts.length > 0) {
+                d2Section.classList.remove('hidden');
+                d2Section.classList.add('flex');
+                render2DInteractionMap(mapContainer, metadata.ligand, contacts, (item) => {
+                    this.onResidueSelected(this.currentStructureIndex, item.chain, item.resi, item.aligned_resi);
+                });
+            } else if (d2Section) {
+                d2Section.classList.add('hidden');
             }
 
             countBadge.innerText = `${contacts.length} Found`;

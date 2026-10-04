@@ -77,9 +77,9 @@ class App {
         this.ligandTab = new LigandTab({
             selectedPDBs: this.selectedPDBs,
             currentRunId: this.currentRunId,
-            onLigandSelected: (structureIndex, ligandId, contacts) => {
+            onLigandSelected: (structureIndex, ligandId, contacts, colorMode) => {
                 if (ligandId) {
-                    this.viewer3D.showLigandBindingSite(structureIndex, ligandId, contacts);
+                    this.viewer3D.showLigandBindingSite(structureIndex, ligandId, contacts, colorMode);
                 } else {
                     this.viewer3D.resetCartoonStyles();
                 }

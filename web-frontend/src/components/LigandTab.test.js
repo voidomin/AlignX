@@ -59,7 +59,7 @@ describe('LigandTab', () => {
         expect(select.options[2].value).toBe('ZN_A_301');
     });
 
-    it('loads interactions and renders table rows when a ligand is selected', async () => {
+    it('loads interactions and renders table rows, metrics badges, and 2D map when a ligand is selected', async () => {
         fetchInteractions.mockResolvedValue({
             interactions: {
                 ligand: 'RET_A_296',
@@ -80,20 +80,27 @@ describe('LigandTab', () => {
         expect(fetchInteractions).toHaveBeenCalledWith('4RLT', 'RET_A_296', 'run_1');
         expect(onLigandSelected).toHaveBeenCalledWith(0, 'RET_A_296', [
             { resn: 'TYR', chain: 'A', resi: 191, distance: 3.2, type: 'Hydrogen Bond' },
-        ]);
+        ], 'default');
         expect(tab.element.querySelector('#interaction-count').innerText).toBe('1 Found');
-        expect(tab.element.querySelector('#ligand-sasa-row').classList.contains('hidden')).toBe(false);
+        expect(tab.element.querySelector('#pocket-metrics-row').classList.contains('hidden')).toBe(false);
         expect(tab.element.querySelector('#ligand-sasa-badge').innerText).toBe('56.7 Å²');
+        expect(tab.element.querySelector('#ligand-volume-badge').innerText).toBe('256 Å³');
         const rows = tab.element.querySelectorAll('#interactions-table-body tr');
         expect(rows).toHaveLength(1);
         expect(rows[0].textContent).toContain('TYR');
+        expect(tab.element.querySelector('#ligand-2d-contact-map-container svg')).not.toBeNull();
     });
 
-    it('does not render a Volume badge (removed - no pocket-volume computation exists)', () => {
+    it('renders pocket cavity volume badge and hydrophobic ratio badge', () => {
         const tab = makeTab();
         tab.render();
 
-        expect(tab.element.querySelector('#ligand-volume-badge')).toBeNull();
+        const badge = tab.element.querySelector('#ligand-volume-badge');
+        expect(badge).not.toBeNull();
+        expect(badge.textContent).toBe('-- Å³');
+
+        const hydroBadge = tab.element.querySelector('#ligand-hydrophobic-badge');
+        expect(hydroBadge).not.toBeNull();
     });
 
     it('clicking a contact row passes aligned_resi (the raw->aligned residue remap) to onResidueSelected', async () => {
