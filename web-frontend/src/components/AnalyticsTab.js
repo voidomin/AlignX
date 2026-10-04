@@ -87,6 +87,7 @@ export class AnalyticsTab {
     insights = [];
     qualityMetrics = null;
     activeSubTab = 'quality';
+    viewMode = 'simple';
     // One entry per structure in the workspace: { pdbId, chain }. chain is
     // only needed for plain PDB IDs (a real SIFTS lookup); AlphaFold/SWISS-
     // MODEL IDs resolve their UniProt accession from the ID string alone.
@@ -113,13 +114,16 @@ export class AnalyticsTab {
         div.id = "tab-analytics-container";
 
         div.innerHTML = `
-            <header class="section-head">
+            <header class="section-head flex flex-wrap justify-between items-center gap-4">
                 <div>
                     <span class="eyebrow">Fig. — Structural Analytics</span>
                     <h2 class="section-title">Quality, fluctuation &amp; phylogeny</h2>
                 </div>
-            </header>
-
+                <div id="analytics-viewmode-toggle" class="flex items-center gap-1 bg-surface-raised border border-border p-1 rounded-md shrink-0">
+                    <button id="viewmode-btn-simple" data-mode="simple" class="px-3 py-1 rounded-md font-label-sm text-label-sm transition-colors ${this.viewMode === 'simple' ? 'bg-surface text-primary shadow-xs font-semibold' : 'text-secondary hover:text-primary'}" title="Simple Overview: Layman summaries, key takeaways & plain-English badges">Simple Overview</button>
+                    <button id="viewmode-btn-deep" data-mode="deep" class="px-3 py-1 rounded-md font-label-sm text-label-sm transition-colors ${this.viewMode === 'deep' ? 'bg-surface text-primary shadow-xs font-semibold' : 'text-secondary hover:text-primary'}" title="Deep Dive: Full distance matrices, B-factors, Ramachandran details & UPGMA trees">Deep Dive</button>
+                </div>
+            </header>` + `
             <div class="section-body flex flex-col gap-6">
                 <!-- Sub-tab strip -->
                 <div id="analytics-subtab-strip" role="tablist" class="flex flex-wrap gap-1 border border-border rounded-md p-1 shrink-0">
@@ -332,6 +336,7 @@ export class AnalyticsTab {
         `;
 
         this.element = div;
+        this.setupViewModeToggle();
         this.setupSubTabs();
         this.setupAnnotationsPicker();
         this.setupContactMapControls();
@@ -340,6 +345,28 @@ export class AnalyticsTab {
         this.setupDiffNarrativeControls();
         this.renderVisuals();
         return div;
+    }
+
+    setupViewModeToggle() {
+        const simpleBtn = this.element.querySelector('#viewmode-btn-simple');
+        const deepBtn = this.element.querySelector('#viewmode-btn-deep');
+        simpleBtn?.addEventListener('click', () => this.setViewMode('simple'));
+        deepBtn?.addEventListener('click', () => this.setViewMode('deep'));
+    }
+
+    setViewMode(mode) {
+        this.viewMode = mode;
+        const simpleBtn = this.element?.querySelector('#viewmode-btn-simple');
+        const deepBtn = this.element?.querySelector('#viewmode-btn-deep');
+        if (simpleBtn) {
+            simpleBtn.className = `px-3 py-1 rounded-md font-label-sm text-label-sm transition-colors ${mode === 'simple' ? 'bg-surface text-primary shadow-xs font-semibold' : 'text-secondary hover:text-primary'}`;
+        }
+        if (deepBtn) {
+            deepBtn.className = `px-3 py-1 rounded-md font-label-sm text-label-sm transition-colors ${mode === 'deep' ? 'bg-surface text-primary shadow-xs font-semibold' : 'text-secondary hover:text-primary'}`;
+        }
+        if (mode === 'simple' && this.activeSubTab === 'rmsd') {
+            this.switchSubTab('quality');
+        }
     }
 
     setupDiffNarrativeControls() {
