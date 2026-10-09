@@ -1,4 +1,5 @@
 import { getAlignmentPdbUrl, getReportZipUrl, getStructureFileUrl, getMorphFramesUrl, fetchMutationTolerance, fetchAnnotations, fetchDisorderPrediction, fetchFlexibility, fetchPaeDomains } from '../api';
+import { getResidueHydrophobicityColor, getResidueChargeColor } from '../utils/interactionRenderers';
 
 // Qualitative palette for N-structure identity coloring. Deliberately avoids
 // amber/#F59E0B (reserved for the residue-selection highlight) and the
@@ -1049,7 +1050,7 @@ export class Viewer3D {
     // computed server-side, since the aligned structure's chains are
     // renumbered from 1) is used instead of its raw PDB `resi` so the
     // highlighted atoms actually exist in the loaded model.
-    showLigandBindingSite(structureIndex, ligandId, interactions) {
+    showLigandBindingSite(structureIndex, ligandId, interactions, colorMode = 'default') {
         if (!this.viewer) return;
 
         // Ghost every structure first.
@@ -1060,16 +1061,30 @@ export class Viewer3D {
         const target = this.structures[structureIndex];
         const mustangChain = target ? target.mustangChain : 'A';
 
-        const alignedResidues = interactions
-            .map(i => i.aligned_resi)
-            .filter(r => r !== null && r !== undefined);
+        (interactions || []).forEach(item => {
+            const resi = item.aligned_resi;
+            if (resi === null || resi === undefined) return;
 
-        alignedResidues.forEach(resi => {
+            let stickColor = target ? target.color : '#8B5CF6';
+            let cartoonColor = target ? target.color : '#8B5CF6';
+
+            if (colorMode === 'hydrophobicity') {
+                stickColor = getResidueHydrophobicityColor(item.resn || item.residue);
+                cartoonColor = stickColor;
+            } else if (colorMode === 'charge') {
+                stickColor = getResidueChargeColor(item.resn || item.residue);
+                cartoonColor = stickColor;
+            }
+
             this.viewer.addStyle({chain: mustangChain, resi: resi}, {
-                stick: {colorscheme: 'purpleCarbon', radius: 0.25},
-                cartoon: {color: target ? target.color : '#8B5CF6', opacity: 1.0}
+                stick: { color: stickColor, radius: 0.3 },
+                cartoon: { color: cartoonColor, opacity: 1.0 }
             });
         });
+
+        const alignedResidues = (interactions || [])
+            .map(i => i.aligned_resi)
+            .filter(r => r !== null && r !== undefined);
 
         if (alignedResidues.length > 0) {
             this.viewer.zoomTo({chain: mustangChain, resi: alignedResidues});

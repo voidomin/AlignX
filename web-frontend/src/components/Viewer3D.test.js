@@ -525,6 +525,23 @@ describe('Viewer3D', () => {
             expect(mockViewer.zoomTo).toHaveBeenCalledWith({ chain: 'A', resi: [5, 8] });
         });
 
+        it('showLigandBindingSite applies hydrophobicity or charge color schemes when specified', async () => {
+            const v = makeViewer();
+            await loadTwoStructures(v);
+            mockViewer.addStyle.mockClear();
+
+            v.showLigandBindingSite(0, 'HEM_A_1', [{ resn: 'LEU', aligned_resi: 5 }], 'hydrophobicity');
+            expect(mockViewer.addStyle).toHaveBeenCalledWith({ chain: 'A', resi: 5 }, expect.objectContaining({
+                stick: expect.objectContaining({ color: '#EAB308' })
+            }));
+
+            mockViewer.addStyle.mockClear();
+            v.showLigandBindingSite(0, 'HEM_A_1', [{ resn: 'ASP', aligned_resi: 8 }], 'charge');
+            expect(mockViewer.addStyle).toHaveBeenCalledWith({ chain: 'A', resi: 8 }, expect.objectContaining({
+                stick: expect.objectContaining({ color: '#EF4444' })
+            }));
+        });
+
         it('highlightResidue ghosts then highlights one residue in amber', async () => {
             const v = makeViewer();
             await loadTwoStructures(v);
