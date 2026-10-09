@@ -10,7 +10,8 @@ import { ComparisonTab } from './components/ComparisonTab';
 import { HistoryPanel } from './components/HistoryPanel';
 import { DashboardTab } from './components/DashboardTab';
 import { SettingsTab } from './components/SettingsTab';
-import { fetchChains, runAlignment, pollJobUntilDone, fetchLigands, getAlignmentReportUrl, isValidPdbId, uploadStructure as apiUploadStructure, predictFromSequence as apiPredictFromSequence, fetchRun, setApiKeyOverride } from './api';
+import { showExportModal } from './components/ExportModal';
+import { fetchChains, runAlignment, pollJobUntilDone, fetchLigands, isValidPdbId, uploadStructure as apiUploadStructure, predictFromSequence as apiPredictFromSequence, fetchRun, setApiKeyOverride } from './api';
 
 class App {
     static MAX_PROTEINS = 20; // matches config.yaml's core.max_proteins default
@@ -600,11 +601,10 @@ class App {
     }
 
     exportData() {
-        if (!this.currentRunId) {
-            alert("No active alignment result to export.");
-            return;
-        }
-        window.open(getAlignmentReportUrl(this.currentRunId), '_blank');
+        showExportModal({
+            runId: this.currentRunId,
+            selectedPDBs: this.selectedPDBs,
+        });
     }
 }
 
