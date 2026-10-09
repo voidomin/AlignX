@@ -135,15 +135,15 @@ class App {
         // Plain flexbox (not CSS grid) — this is the same box-model the app already
         // used reliably for the 3Dmol canvas before this redesign, just mirrored.
         const gridShell = document.createElement('div');
-        gridShell.className = "flex-1 flex flex-col md:flex-row overflow-hidden max-w-[1280px] mx-auto w-full";
+        gridShell.className = "flex-1 flex flex-col lg:flex-row overflow-hidden max-w-[1680px] mx-auto w-full px-2 sm:px-4 lg:px-6";
 
         const tabContentPane = document.createElement('div');
         tabContentPane.id = "tab-content-pane";
-        tabContentPane.className = "flex-1 overflow-y-auto px-8";
+        tabContentPane.className = "flex-1 overflow-y-auto px-4 lg:px-8";
 
         const viewerColumn = document.createElement('div');
         viewerColumn.id = "viewer-column";
-        viewerColumn.className = "w-full md:w-[480px] shrink-0 flex flex-col max-h-[50vh] md:max-h-none md:h-full p-6 pl-0";
+        viewerColumn.className = "w-full lg:w-[500px] xl:w-[580px] 2xl:w-[640px] shrink-0 flex flex-col max-h-[50vh] lg:max-h-none lg:h-full p-4 lg:p-6 lg:pl-0";
         viewerColumn.appendChild(this.viewer3D.render());
 
         gridShell.appendChild(tabContentPane);
@@ -202,6 +202,7 @@ class App {
         if (!pane) return;
 
         pane.innerHTML = "";
+        pane.className = "flex-1 overflow-y-auto px-4 lg:px-8 animate-tab-fade";
 
         if (this.activeTab === 'dashboard') {
             pane.appendChild(this.dashboardTab.render());
