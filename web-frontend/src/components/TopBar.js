@@ -38,7 +38,7 @@ export class TopBar {
 
     render() {
         const header = document.createElement('header');
-        header.className = "sticky top-0 z-50 bg-surface border-b border-border shrink-0";
+        header.className = "sticky top-0 z-50 bg-surface/90 backdrop-blur-md border-b border-border/80 shrink-0";
         header.innerHTML = `
             <div class="max-w-[1600px] mx-auto px-6 py-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 lg:gap-6">
                 <div class="flex items-center gap-2.5 shrink-0">
