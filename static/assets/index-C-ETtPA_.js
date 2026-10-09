@@ -715,7 +715,7 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
                     Select a ligand to populate interactions.
                 </td>
             </tr>
-        `}async loadInteractions(e){if(!this.element)return;let t=this.element.querySelector(`#interactions-table-body`),n=this.element.querySelector(`#ligand-pocket-desc`),r=this.element.querySelector(`#interaction-count`),i=this.element.querySelector(`#ligand-sasa-badge`),a=this.element.querySelector(`#ligand-volume-badge`),o=this.element.querySelector(`#ligand-hydrophobic-badge`),s=this.element.querySelector(`#pocket-metrics-row`);if(!e){this.clearTable(),this.onLigandSelected(this.currentStructureIndex,``);return}t.innerHTML=`
+        `}async loadInteractions(e){if(!this.element)return;this.selectedLigandId=e;let t=this.element.querySelector(`#interactions-table-body`),n=this.element.querySelector(`#ligand-pocket-desc`),r=this.element.querySelector(`#interaction-count`),i=this.element.querySelector(`#ligand-sasa-badge`),a=this.element.querySelector(`#ligand-volume-badge`),o=this.element.querySelector(`#ligand-hydrophobic-badge`),s=this.element.querySelector(`#pocket-metrics-row`);if(!e){this.clearTable(),this.onLigandSelected(this.currentStructureIndex,``);return}t.innerHTML=`
             <tr>
                 <td colspan="5" class="text-center py-8 text-secondary font-body-sm">
                     <span class="animate-spin material-symbols-outlined text-[18px]">sync</span>

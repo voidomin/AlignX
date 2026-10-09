@@ -648,6 +648,7 @@ export class LigandTab {
 
     async loadInteractions(ligandId) {
         if (!this.element) return;
+        this.selectedLigandId = ligandId;
         
         const tableBody = this.element.querySelector('#interactions-table-body');
         const desc = this.element.querySelector('#ligand-pocket-desc');

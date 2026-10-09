@@ -103,6 +103,62 @@ describe('LigandTab', () => {
         expect(hydroBadge).not.toBeNull();
     });
 
+    it('changing pocket color mode re-triggers onLigandSelected with the chosen mode', async () => {
+        fetchInteractions.mockResolvedValue({
+            interactions: {
+                ligand: 'RET_A_296',
+                interactions: [{ resn: 'TYR', chain: 'A', resi: 191, distance: 3.2, type: 'Hydrogen Bond' }],
+            },
+        });
+
+        const onLigandSelected = vi.fn();
+        const tab = makeTab({ onLigandSelected });
+        tab.render();
+        tab.updateLigands([{ id: 'RET_A_296', name: 'RET', chain: 'A', resi: 296 }], 'run_1');
+        await tab.loadInteractions('RET_A_296');
+
+        onLigandSelected.mockClear();
+
+        const colorSelect = tab.element.querySelector('#pocket-color-mode-select');
+        colorSelect.value = 'hydrophobicity';
+        colorSelect.dispatchEvent(new Event('change'));
+
+        expect(tab.pocketColorMode).toBe('hydrophobicity');
+        expect(onLigandSelected).toHaveBeenCalledWith(0, 'RET_A_296', [
+            { resn: 'TYR', chain: 'A', resi: 191, distance: 3.2, type: 'Hydrogen Bond' },
+        ], 'hydrophobicity');
+    });
+
+    it('clicking a candidate pocket row triggers onResidueSelected for the first lining residue', () => {
+        const onResidueSelected = vi.fn();
+        const tab = makeTab({ onResidueSelected });
+        tab.render();
+
+        tab.renderCandidatePockets([
+            { rank: 1, score: 9.5, volume_estimate_a3: 320, residues: [{ resn: 'LEU', chain: 'A', resi: 45 }] },
+        ]);
+
+        const row = tab.element.querySelector('#candidate-pockets-table-body tr');
+        row.click();
+
+        expect(onResidueSelected).toHaveBeenCalledWith(0, 'A', 45, 45);
+    });
+
+    it('clicking a prankweb pocket row triggers onResidueSelected for the first lining residue', () => {
+        const onResidueSelected = vi.fn();
+        const tab = makeTab({ onResidueSelected });
+        tab.render();
+
+        tab.renderPrankwebPockets([
+            { rank: 1, score: 0.85, probability: 0.92, residues: ['A_104'] },
+        ]);
+
+        const row = tab.element.querySelector('#prankweb-pockets-table-body tr');
+        row.click();
+
+        expect(onResidueSelected).toHaveBeenCalledWith(0, 'A', 104, 104);
+    });
+
     it('clicking a contact row passes aligned_resi (the raw->aligned residue remap) to onResidueSelected', async () => {
         fetchInteractions.mockResolvedValue({
             interactions: {
