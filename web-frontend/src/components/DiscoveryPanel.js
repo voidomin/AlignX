@@ -96,10 +96,15 @@ export class DiscoveryPanel {
                         `).join('')}
                     </div>
                     <p class="font-body-sm text-[10px] text-secondary">* Hits from these databases are shown but don't yet resolve to functional annotations.</p>
-                    <label class="flex flex-col gap-1">
-                        <span class="font-label-sm text-label-sm text-secondary">Notify me when done - we'll POST to this URL when the job finishes (optional)</span>
-                        <input id="discover-webhook-url" type="url" placeholder="https://..." class="w-full max-w-[320px] bg-surface border border-border rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
-                    </label>
+                    <details class="webhook-disclosure group">
+                        <summary class="flex items-center gap-1 cursor-pointer select-none font-label-sm text-[11px] text-secondary hover:text-primary list-none [&::-webkit-details-marker]:hidden w-fit">
+                            <span class="material-symbols-outlined text-[14px] transition-transform group-open:rotate-90">chevron_right</span>
+                            <span>Advanced: Webhook notification when job finishes (optional)</span>
+                        </summary>
+                        <div class="pt-2 pl-4">
+                            <input id="discover-webhook-url" type="url" aria-label="Webhook URL for discovery job notification" placeholder="https://..." class="w-full max-w-[320px] bg-surface border border-border rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
+                        </div>
+                    </details>
                     <button id="discover-rerun-btn" class="btn-secondary self-start px-4 py-1.5 rounded-sm font-label-sm text-label-sm">Search again</button>
                 </div>
             </details>

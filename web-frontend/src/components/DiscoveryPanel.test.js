@@ -506,5 +506,15 @@ describe('DiscoveryPanel', () => {
             const checked = Array.from(panel.element.querySelectorAll('.discover-db-checkbox:checked')).map(cb => cb.dataset.db);
             expect(checked.sort()).toEqual(['afdb50', 'pdb100']);
         });
+
+        it('tucks the webhook URL input inside a collapsed .webhook-disclosure <details> element', () => {
+            const panel = new DiscoveryPanel();
+            panel.render();
+
+            const webhookInput = panel.element.querySelector('#discover-webhook-url');
+            const disclosure = webhookInput.closest('details.webhook-disclosure');
+            expect(disclosure).not.toBeNull();
+            expect(disclosure.open).toBe(false);
+        });
     });
 });
