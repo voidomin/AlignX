@@ -621,4 +621,36 @@ describe('SequenceTab', () => {
             expect(tab.element.querySelector('#conservation-run-btn').disabled).toBe(false);
         });
     });
+
+    describe('executive verdict banner & webhook progressive disclosure', () => {
+        it('hides the verdict banner before a run and renders plain-English verdicts once results arrive', () => {
+            fetchSequence.mockResolvedValue({ sequences: {}, conservation: [] });
+            const tab = new SequenceTab();
+            tab.render();
+
+            const banner = tab.element.querySelector('#sequence-verdict-banner');
+            expect(banner.classList.contains('hidden')).toBe(true);
+
+            tab.updateResults('run_1', { rmsd: 1.2, aligned_length: 140, seq_identity: 85.0 });
+            expect(banner.classList.contains('hidden')).toBe(false);
+            expect(banner.textContent).toContain('High 3D Shape Match');
+            expect(banner.textContent).toContain('Nearly identical 3D fold (1.20 Å RMSD)');
+
+            tab.updateResults('run_2', { rmsd: 1.8, aligned_length: 130, seq_identity: 22.5 });
+            expect(banner.textContent).toContain('Evolutionary insight: despite low sequence identity (22.5%)');
+
+            tab.updateResults('run_3', { rmsd: 6.4, aligned_length: 90, seq_identity: 18.0 });
+            expect(banner.textContent).toContain('Divergent 3D Shapes');
+        });
+
+        it('tucks Clustal Omega and BLAST webhook URL inputs inside collapsed .webhook-disclosure blocks', () => {
+            const tab = new SequenceTab();
+            tab.render();
+
+            const clustalWebhook = tab.element.querySelector('#clustalo-webhook-url');
+            const blastWebhook = tab.element.querySelector('#conservation-webhook-url');
+            expect(clustalWebhook.closest('details.webhook-disclosure').open).toBe(false);
+            expect(blastWebhook.closest('details.webhook-disclosure').open).toBe(false);
+        });
+    });
 });

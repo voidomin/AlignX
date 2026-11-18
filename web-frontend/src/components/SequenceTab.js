@@ -1,5 +1,6 @@
 import { fetchSequence, getAlignmentPdbUrl, getAlignmentFastaUrl, getAlignmentReportUrl, getLabNotebookUrl, getLabNotebookIpynbUrl, getCitationsUrl, getRmsdCsvUrl, getHeatmapPngUrl, getReportZipUrl, getNewickUrl, getPymolScriptUrl, getChimeraxScriptUrl, submitClustalOmegaJob, submitConservationJob, pollJobUntilDone } from '../api';
 import { escapeHtml } from '../escapeHtml';
+import { renderRosettaTooltip } from '../utils/rosettaStone';
 
 const REPORT_SECTIONS = [
     { key: 'summary', label: 'Summary' },
@@ -52,9 +53,11 @@ export class SequenceTab {
             </header>
 
             <div class="section-body flex flex-col gap-10">
+                <div id="sequence-verdict-banner" class="hidden flex-col gap-2 p-4 rounded-lg bg-surface-raised border border-border-subtle"></div>
+
                 <div id="alignment-stats-container" class="grid grid-cols-2 sm:grid-cols-4 gap-6">
                     <div class="stat-row stat-primary">
-                        <span class="stat-key">RMSD</span>
+                        <span class="stat-key">${renderRosettaTooltip('rmsd', 'RMSD')}</span>
                         <span id="stat-rmsd" class="stat-value">--</span>
                     </div>
                     <div class="stat-row">
@@ -91,10 +94,15 @@ export class SequenceTab {
                     <div class="section-caption">
                         Independent of Mustang's structural alignment above - a real multiple sequence alignment computed purely from each structure's own sequence, via EBI's public Clustal Omega service. Can disagree with the structural alignment for divergent sequences with similar folds.
                     </div>
-                    <label class="flex flex-col gap-1">
-                        <span class="font-label-sm text-label-sm text-secondary">Notify me when done - we'll POST to this URL when the job finishes (optional)</span>
-                        <input id="clustalo-webhook-url" type="url" placeholder="https://..." class="max-w-[320px] bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
-                    </label>
+                    <details class="webhook-disclosure group mt-1">
+                        <summary class="flex items-center gap-1 cursor-pointer select-none font-label-sm text-[11px] text-secondary hover:text-primary list-none [&::-webkit-details-marker]:hidden w-fit">
+                            <span class="material-symbols-outlined text-[14px] transition-transform group-open:rotate-90">chevron_right</span>
+                            <span>Advanced: Webhook notification when job finishes (optional)</span>
+                        </summary>
+                        <div class="pt-2 pl-4">
+                            <input id="clustalo-webhook-url" type="url" aria-label="Webhook URL for Clustal Omega completion notification" placeholder="https://..." class="max-w-[320px] bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
+                        </div>
+                    </details>
                     <div id="clustalo-result-wrapper" class="overflow-x-auto rounded-md max-h-[350px]"></div>
                 </div>
 
@@ -109,10 +117,15 @@ export class SequenceTab {
                     <div class="section-caption">
                         Searches NCBI BLAST for real homologs of the selected structure's sequence, then scores real per-position conservation from their alignments (Shannon entropy) - genuinely different from the identity-based coloring above. Real BLAST searches commonly take several minutes.
                     </div>
-                    <label class="flex flex-col gap-1">
-                        <span class="font-label-sm text-label-sm text-secondary">Notify me when done - we'll POST to this URL when the job finishes (optional)</span>
-                        <input id="conservation-webhook-url" type="url" placeholder="https://..." class="max-w-[320px] bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
-                    </label>
+                    <details class="webhook-disclosure group mt-1">
+                        <summary class="flex items-center gap-1 cursor-pointer select-none font-label-sm text-[11px] text-secondary hover:text-primary list-none [&::-webkit-details-marker]:hidden w-fit">
+                            <span class="material-symbols-outlined text-[14px] transition-transform group-open:rotate-90">chevron_right</span>
+                            <span>Advanced: Webhook notification when job finishes (optional)</span>
+                        </summary>
+                        <div class="pt-2 pl-4">
+                            <input id="conservation-webhook-url" type="url" aria-label="Webhook URL for NCBI BLAST completion notification" placeholder="https://..." class="max-w-[320px] bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
+                        </div>
+                    </details>
                     <div id="conservation-result-wrapper" class="overflow-x-auto rounded-md max-h-[350px]"></div>
                     <div id="conservation-logo-plotly" class="w-full h-[160px] hidden"></div>
                 </div>
@@ -323,8 +336,74 @@ export class SequenceTab {
         }
     }
 
+    _computeSequenceVerdict(rmsd, identity, length) {
+        let badge;
+        let badgeClass;
+        let headline;
+        if (rmsd < 2.0) {
+            badge = 'High 3D Shape Match';
+            badgeClass = 'bg-success/15 text-success border-success/30';
+            headline = `Nearly identical 3D fold (${rmsd.toFixed(2)} Å RMSD)`;
+        } else if (rmsd <= 4.0) {
+            badge = 'Moderate 3D Match';
+            badgeClass = 'bg-tertiary/15 text-tertiary border-tertiary/30';
+            headline = `Shared structural core with local divergence (${rmsd.toFixed(2)} Å RMSD)`;
+        } else {
+            badge = 'Divergent 3D Shapes';
+            badgeClass = 'bg-error/15 text-error border-error/30';
+            headline = `Significant 3D structural divergence (${rmsd.toFixed(2)} Å RMSD)`;
+        }
+
+        const lengthPart = length != null ? ` across ${length} aligned residues` : '';
+        const idPart = identity != null ? ` (${identity.toFixed(1)}% sequence identity)` : '';
+        let takeaway;
+        if (rmsd < 2.5 && identity != null && identity < 40) {
+            takeaway = `Evolutionary insight: despite low sequence identity (${identity.toFixed(1)}%), these proteins fold into nearly the same 3D architecture — demonstrating that 3D structure is conserved far longer than sequence.`;
+        } else if (rmsd < 2.0) {
+            takeaway = `These structures align closely${length != null ? ` across ${length} residues` : ''}${idPart}. Click any column in the sequence grid below to highlight that residue position in the 3D viewer.`;
+        } else if (rmsd <= 4.0) {
+            takeaway = `These proteins share a common architectural core${lengthPart}${idPart}, with flexible loops or local shifts contributing to the ${rmsd.toFixed(2)} Å difference.`;
+        } else {
+            takeaway = `These structures adopt substantially different conformations${idPart}. Check Analytics → Phylogeny & RMSF to inspect where they diverge.`;
+        }
+
+        return { badge, badgeClass, headline, takeaway };
+    }
+
+    _renderVerdictBanner() {
+        const banner = this.element?.querySelector('#sequence-verdict-banner');
+        if (!banner) return;
+
+        const rmsd = this.stats.rmsd != null ? Number.parseFloat(this.stats.rmsd) : null;
+        if (!this.currentRunId || rmsd == null || Number.isNaN(rmsd)) {
+            banner.classList.add('hidden');
+            banner.classList.remove('flex');
+            banner.innerHTML = '';
+            return;
+        }
+
+        const identity = this.stats.seq_identity != null ? Number.parseFloat(this.stats.seq_identity) : null;
+        const length = this.stats.aligned_length ?? null;
+        const { badge, badgeClass, headline, takeaway } = this._computeSequenceVerdict(rmsd, identity, length);
+
+        banner.innerHTML = `
+            <div class="flex items-center gap-2 flex-wrap">
+                <span data-field="badge" class="px-2 py-0.5 rounded border font-mono text-[10px] uppercase tracking-wider ${badgeClass}"></span>
+                <span data-field="headline" class="font-label-md text-label-md text-primary"></span>
+            </div>
+            <p data-field="takeaway" class="font-body-sm text-[12px] text-secondary leading-relaxed"></p>
+        `;
+        banner.querySelector('[data-field="badge"]').textContent = badge;
+        banner.querySelector('[data-field="headline"]').textContent = headline;
+        banner.querySelector('[data-field="takeaway"]').textContent = takeaway;
+        banner.classList.remove('hidden');
+        banner.classList.add('flex');
+    }
+
     refreshStats() {
         if (!this.element) return;
+
+        this._renderVerdictBanner();
         
         const rmsdText = this.stats.rmsd != null ? `${Number.parseFloat(this.stats.rmsd).toFixed(2)} Å` : '--';
         const lengthText = this.stats.aligned_length != null ? this.stats.aligned_length : '--';

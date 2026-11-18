@@ -125,6 +125,8 @@ export class AnalyticsTab {
                 </div>
             </header>` + `
             <div class="section-body flex flex-col gap-6">
+                <div id="analytics-verdict-banner" class="hidden flex-col gap-2 p-4 rounded-lg bg-surface-raised border border-border-subtle"></div>
+
                 <!-- Sub-tab strip -->
                 <div id="analytics-subtab-strip" role="tablist" class="flex flex-wrap gap-1 border border-border rounded-md p-1 shrink-0">
                     ${SUB_TABS.map(t => `
@@ -183,34 +185,50 @@ export class AnalyticsTab {
                             <tbody id="pairwise-tm-score-table-body"></tbody>
                         </table>
                     </div>
-                    <div class="flex flex-col gap-2 border-t border-border-subtle pt-4">
-                        <span class="font-label-sm text-label-sm text-secondary uppercase">Predicted aligned error (AlphaFold structures only - AlphaFold's own confidence in each residue pair's relative position, lower is better)</span>
-                        <div class="flex gap-2 items-center">
-                            <select id="pae-pdb-select" aria-label="Structure for PAE view" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
-                                <option value="">Select a structure</option>
-                            </select>
-                            <button id="pae-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
-                        </div>
-                        <div id="pae-plotly" class="w-full h-[240px]">
-                            <div class="flex items-center justify-center h-full text-secondary font-body-sm">
-                                Select an AlphaFold structure and load to view its per-residue-pair confidence.
+                    <details id="analytics-pae-disclosure" data-deep-dive-section class="group border-t border-border-subtle pt-4">
+                        <summary class="flex items-center justify-between gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                            <span class="flex items-center gap-1.5 font-label-sm text-label-sm text-secondary group-hover:text-primary uppercase">
+                                <span class="material-symbols-outlined text-[15px] transition-transform group-open:rotate-90">chevron_right</span>
+                                Predicted aligned error (AlphaFold structures only - AlphaFold's own confidence in each residue pair's relative position, lower is better)
+                            </span>
+                            <span class="px-1.5 py-0.5 rounded bg-surface border border-border-subtle font-mono text-[10px] text-muted shrink-0">Deep Dive</span>
+                        </summary>
+                        <div class="flex flex-col gap-2 pt-3 pl-5">
+                            <div class="flex gap-2 items-center">
+                                <select id="pae-pdb-select" aria-label="Structure for PAE view" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
+                                    <option value="">Select a structure</option>
+                                </select>
+                                <button id="pae-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
+                            </div>
+                            <div id="pae-plotly" class="w-full h-[240px]">
+                                <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                                    Select an AlphaFold structure and load to view its per-residue-pair confidence.
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    <div class="flex flex-col gap-2 border-t border-border-subtle pt-4">
-                        <span class="font-label-sm text-label-sm text-secondary uppercase">Predicted flexibility (Gaussian Network Model - a computational prediction from geometry alone, not a measurement)</span>
-                        <div class="flex gap-2 items-center">
-                            <select id="flexibility-pdb-select" aria-label="Structure for predicted flexibility view" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
-                                <option value="">Select a structure</option>
-                            </select>
-                            <button id="flexibility-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
-                        </div>
-                        <div id="flexibility-plotly" class="w-full h-[240px]">
-                            <div class="flex items-center justify-center h-full text-secondary font-body-sm">
-                                Select a structure and load to view its predicted per-residue flexibility.
+                    </details>
+                    <details id="analytics-flexibility-disclosure" data-deep-dive-section class="group border-t border-border-subtle pt-4">
+                        <summary class="flex items-center justify-between gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                            <span class="flex items-center gap-1.5 font-label-sm text-label-sm text-secondary group-hover:text-primary uppercase">
+                                <span class="material-symbols-outlined text-[15px] transition-transform group-open:rotate-90">chevron_right</span>
+                                Predicted flexibility (Gaussian Network Model - a computational prediction from geometry alone, not a measurement)
+                            </span>
+                            <span class="px-1.5 py-0.5 rounded bg-surface border border-border-subtle font-mono text-[10px] text-muted shrink-0">Deep Dive</span>
+                        </summary>
+                        <div class="flex flex-col gap-2 pt-3 pl-5">
+                            <div class="flex gap-2 items-center">
+                                <select id="flexibility-pdb-select" aria-label="Structure for predicted flexibility view" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
+                                    <option value="">Select a structure</option>
+                                </select>
+                                <button id="flexibility-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
+                            </div>
+                            <div id="flexibility-plotly" class="w-full h-[240px]">
+                                <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                                    Select a structure and load to view its predicted per-residue flexibility.
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    </details>
                 </div>
 
                 <!-- Residue Fluctuation (Plotly Line Chart) -->
@@ -230,38 +248,54 @@ export class AnalyticsTab {
                         </div>
                     </div>
 
-                    <div class="flex flex-col gap-2 border-t border-border-subtle pt-4">
-                        <span class="font-label-sm text-label-sm text-secondary uppercase">Contact map (CA-CA, 8&Aring; default)</span>
-                        <div class="flex gap-2 items-center">
-                            <select id="contact-map-pdb-select" aria-label="Structure for contact map" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
-                                <option value="">Select a structure</option>
-                            </select>
-                            <button id="contact-map-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
-                        </div>
-                        <div id="contact-map-plotly" class="w-full h-[240px]">
-                            <div class="flex items-center justify-center h-full text-secondary font-body-sm">
-                                Select a structure and load to view its contact map.
+                    <details id="analytics-contact-map-disclosure" data-deep-dive-section class="group border-t border-border-subtle pt-4">
+                        <summary class="flex items-center justify-between gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                            <span class="flex items-center gap-1.5 font-label-sm text-label-sm text-secondary group-hover:text-primary uppercase">
+                                <span class="material-symbols-outlined text-[15px] transition-transform group-open:rotate-90">chevron_right</span>
+                                Contact map (CA-CA, 8&Aring; default)
+                            </span>
+                            <span class="px-1.5 py-0.5 rounded bg-surface border border-border-subtle font-mono text-[10px] text-muted shrink-0">Deep Dive</span>
+                        </summary>
+                        <div class="flex flex-col gap-2 pt-3 pl-5">
+                            <div class="flex gap-2 items-center">
+                                <select id="contact-map-pdb-select" aria-label="Structure for contact map" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
+                                    <option value="">Select a structure</option>
+                                </select>
+                                <button id="contact-map-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
+                            </div>
+                            <div id="contact-map-plotly" class="w-full h-[240px]">
+                                <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                                    Select a structure and load to view its contact map.
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    </details>
 
-                    <div class="flex flex-col gap-2 border-t border-border-subtle pt-4">
-                        <span class="font-label-sm text-label-sm text-secondary uppercase">Difference-distance matrix</span>
-                        <div class="flex gap-2 items-center">
-                            <select id="diff-distance-pdb-a-select" aria-label="First structure to compare distances between" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
-                                <option value="">Select a structure</option>
-                            </select>
-                            <select id="diff-distance-pdb-b-select" aria-label="Second structure to compare distances between" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
-                                <option value="">Select a structure</option>
-                            </select>
-                            <button id="diff-distance-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
-                        </div>
-                        <div id="diff-distance-plotly" class="w-full h-[240px]">
-                            <div class="flex items-center justify-center h-full text-secondary font-body-sm">
-                                Select two structures and load to view their difference-distance matrix.
+                    <details id="analytics-diff-distance-disclosure" data-deep-dive-section class="group border-t border-border-subtle pt-4">
+                        <summary class="flex items-center justify-between gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                            <span class="flex items-center gap-1.5 font-label-sm text-label-sm text-secondary group-hover:text-primary uppercase">
+                                <span class="material-symbols-outlined text-[15px] transition-transform group-open:rotate-90">chevron_right</span>
+                                Difference-distance matrix
+                            </span>
+                            <span class="px-1.5 py-0.5 rounded bg-surface border border-border-subtle font-mono text-[10px] text-muted shrink-0">Deep Dive</span>
+                        </summary>
+                        <div class="flex flex-col gap-2 pt-3 pl-5">
+                            <div class="flex gap-2 items-center">
+                                <select id="diff-distance-pdb-a-select" aria-label="First structure to compare distances between" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
+                                    <option value="">Select a structure</option>
+                                </select>
+                                <select id="diff-distance-pdb-b-select" aria-label="Second structure to compare distances between" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm">
+                                    <option value="">Select a structure</option>
+                                </select>
+                                <button id="diff-distance-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
+                            </div>
+                            <div id="diff-distance-plotly" class="w-full h-[240px]">
+                                <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                                    Select two structures and load to view their difference-distance matrix.
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    </details>
                 </div>
 
                 <!-- Phylogenetic Tree (Plotly Dendrogram) -->
@@ -313,24 +347,32 @@ export class AnalyticsTab {
                         <div id="annotations-shared-content"></div>
                     </div>
 
-                    <div class="flex flex-col gap-2 pt-3 border-t border-border-subtle">
-                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Map a mutation</span>
-                        <span class="font-body-sm text-body-sm text-secondary">Maps the selected structure's residue to UniProt, then checks ClinVar for a known clinical record and AlphaMissense for a predicted pathogenicity score</span>
-                        <div class="flex items-end gap-2">
-                            <label class="flex flex-col gap-1">
-                                <span class="font-label-sm text-label-sm text-secondary">Residue #</span>
-                                <input id="mutation-resi-input" type="number" min="1" class="w-24 bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono" />
-                            </label>
-                            <label class="flex flex-col gap-1">
-                                <span class="font-label-sm text-label-sm text-secondary">Mutant residue</span>
-                                <input id="mutation-mutant-input" type="text" maxlength="1" class="w-16 bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono uppercase" />
-                            </label>
-                            <button id="mutation-map-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Map</button>
-                            <button id="mutation-ddg-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Predict stability impact</button>
+                    <details id="analytics-mutation-disclosure" data-deep-dive-section class="group pt-3 border-t border-border-subtle">
+                        <summary class="flex items-center justify-between gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                            <span class="flex items-center gap-1.5 font-label-md text-label-md text-secondary group-hover:text-primary uppercase tracking-wider">
+                                <span class="material-symbols-outlined text-[16px] transition-transform group-open:rotate-90">chevron_right</span>
+                                Map a mutation
+                            </span>
+                            <span class="px-1.5 py-0.5 rounded bg-surface border border-border-subtle font-mono text-[10px] text-muted shrink-0">Deep Dive</span>
+                        </summary>
+                        <div class="flex flex-col gap-2 pt-3 pl-5">
+                            <span class="font-body-sm text-body-sm text-secondary">Maps the selected structure's residue to UniProt, then checks ClinVar for a known clinical record and AlphaMissense for a predicted pathogenicity score</span>
+                            <div class="flex items-end gap-2 flex-wrap">
+                                <label class="flex flex-col gap-1">
+                                    <span class="font-label-sm text-label-sm text-secondary">Residue #</span>
+                                    <input id="mutation-resi-input" type="number" min="1" class="w-24 bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono" />
+                                </label>
+                                <label class="flex flex-col gap-1">
+                                    <span class="font-label-sm text-label-sm text-secondary">Mutant residue</span>
+                                    <input id="mutation-mutant-input" type="text" maxlength="1" class="w-16 bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono uppercase" />
+                                </label>
+                                <button id="mutation-map-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Map</button>
+                                <button id="mutation-ddg-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Predict stability impact</button>
+                            </div>
+                            <div id="mutation-impact-result" class="font-body-sm text-body-sm text-secondary flex flex-col gap-1"></div>
+                            <div id="mutation-ddg-result" class="font-body-sm text-body-sm text-secondary flex flex-col gap-1"></div>
                         </div>
-                        <div id="mutation-impact-result" class="font-body-sm text-body-sm text-secondary flex flex-col gap-1"></div>
-                        <div id="mutation-ddg-result" class="font-body-sm text-body-sm text-secondary flex flex-col gap-1"></div>
-                    </div>
+                    </details>
                 </div>
             </div>
         `;
@@ -343,8 +385,16 @@ export class AnalyticsTab {
         this.setupPaeControls();
         this.setupFlexibilityControls();
         this.setupDiffNarrativeControls();
+        this.syncDeepDiveSections();
         this.renderVisuals();
         return div;
+    }
+
+    syncDeepDiveSections() {
+        const isDeep = this.viewMode === 'deep';
+        this.element?.querySelectorAll('details[data-deep-dive-section]').forEach(detailsEl => {
+            detailsEl.open = isDeep;
+        });
     }
 
     setupViewModeToggle() {
@@ -365,6 +415,7 @@ export class AnalyticsTab {
         this.viewMode = mode;
         this._updateViewModeButtonUI(this.element?.querySelector('#viewmode-btn-simple'), mode === 'simple');
         this._updateViewModeButtonUI(this.element?.querySelector('#viewmode-btn-deep'), mode === 'deep');
+        this.syncDeepDiveSections();
         if (mode === 'simple' && this.activeSubTab === 'rmsd') {
             this.switchSubTab('quality');
         }
@@ -1011,9 +1062,109 @@ export class AnalyticsTab {
         `;
     }
 
+    _computeMeanTmScore() {
+        const index = this.tmScoreMatrix?.index;
+        const data = this.tmScoreMatrix?.data;
+        if (index?.length >= 2 && Array.isArray(data)) {
+            const offDiag = [];
+            for (let i = 0; i < index.length; i++) {
+                for (let j = i + 1; j < index.length; j++) {
+                    if (typeof data[i]?.[j] === 'number') offDiag.push(data[i][j]);
+                }
+            }
+            if (offDiag.length > 0) {
+                return offDiag.reduce((a, b) => a + b, 0) / offDiag.length;
+            }
+        }
+
+        const qScores = Object.values(this.qualityMetrics || {})
+            .map(m => m?.tm_score)
+            .filter(v => typeof v === 'number');
+        if (qScores.length > 0) {
+            return qScores.reduce((a, b) => a + b, 0) / qScores.length;
+        }
+        return null;
+    }
+
+    _buildHealthBadges() {
+        const badges = [];
+        const fav = this.ramachandranStats?.favored_percent;
+        if (typeof fav === 'number') {
+            let label = 'Strained Backbone';
+            let cls = 'text-error border-error/30 bg-error/15';
+            if (fav >= 95) {
+                label = 'Healthy Backbone';
+                cls = 'text-success border-success/30 bg-success/15';
+            } else if (fav >= 90) {
+                label = 'Acceptable Backbone';
+                cls = 'text-tertiary border-tertiary/30 bg-tertiary/15';
+            }
+            const outliers = this.ramachandranStats.outlier_count ?? 0;
+            badges.push({
+                label,
+                cls,
+                detail: `${fav.toFixed(1)}% favored dihedral angles (${outliers} outliers)`,
+            });
+        }
+
+        const meanTm = this._computeMeanTmScore();
+        if (meanTm != null) {
+            const sameFold = meanTm >= 0.5;
+            badges.push({
+                label: sameFold ? 'Same Fold Family' : 'Distinct Folds',
+                cls: sameFold
+                    ? 'text-success border-success/30 bg-success/15'
+                    : 'text-tertiary border-tertiary/30 bg-tertiary/15',
+                detail: `Mean TM-score ${meanTm.toFixed(2)} (${sameFold ? '> 0.50 confirms shared global fold' : '< 0.50 indicates different global folds'})`,
+            });
+        }
+        return badges;
+    }
+
+    renderAnalyticsVerdictBanner() {
+        const banner = this.element?.querySelector('#analytics-verdict-banner');
+        if (!banner) return;
+
+        const badges = this._buildHealthBadges();
+        const hasInsights = Array.isArray(this.insights) && this.insights.length > 0;
+        if (badges.length === 0 && !hasInsights) {
+            banner.classList.add('hidden');
+            banner.classList.remove('flex');
+            banner.innerHTML = '';
+            return;
+        }
+
+        banner.innerHTML = '';
+        if (badges.length > 0) {
+            const pillsRow = document.createElement('div');
+            pillsRow.className = 'flex flex-wrap items-center gap-2';
+            badges.forEach(b => {
+                const pill = document.createElement('span');
+                pill.className = `px-2 py-0.5 rounded border font-mono text-[10px] uppercase tracking-wider ${b.cls}`;
+                pill.textContent = b.label;
+                pillsRow.appendChild(pill);
+            });
+            banner.appendChild(pillsRow);
+
+            const detailsEl = document.createElement('p');
+            detailsEl.className = 'font-body-sm text-[12px] text-secondary leading-relaxed';
+            detailsEl.textContent = badges.map(b => b.detail).join(' · ');
+            banner.appendChild(detailsEl);
+        } else {
+            const summaryNote = document.createElement('p');
+            summaryNote.className = 'font-body-sm text-[12px] text-secondary leading-relaxed';
+            summaryNote.textContent = 'Run insights are ready — switch to the Insights sub-tab to read plain-English takeaways.';
+            banner.appendChild(summaryNote);
+        }
+
+        banner.classList.remove('hidden');
+        banner.classList.add('flex');
+    }
+
     renderVisuals() {
         if (!this.element) return;
 
+        this.renderAnalyticsVerdictBanner();
         this.renderRamachandranSection();
         this.renderQualityMetricsTable();
         this.renderSecondaryStructureSection();

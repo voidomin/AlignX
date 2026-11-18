@@ -1637,4 +1637,58 @@ describe('AnalyticsTab', () => {
             });
         });
     });
+
+    describe('health verdict banner and Simple Overview vs Deep Dive disclosures', () => {
+        it('hides the health verdict banner before stats arrive and renders plain-English health pills once populated', () => {
+            const tab = makeTab();
+            tab.render();
+
+            const banner = tab.element.querySelector('#analytics-verdict-banner');
+            expect(banner.classList.contains('hidden')).toBe(true);
+
+            tab.updateResults(
+                'run_1',
+                null,
+                {
+                    ramachandran: { favored_percent: 97.4, outlier_count: 1, outliers_list: [] },
+                    tmScoreMatrix: { index: ['4RLT', '3UG9'], columns: ['4RLT', '3UG9'], data: [[1.0, 0.86], [0.86, 1.0]] },
+                },
+                [],
+                []
+            );
+
+            expect(banner.classList.contains('hidden')).toBe(false);
+            expect(banner.textContent).toContain('Healthy Backbone');
+            expect(banner.textContent).toContain('Same Fold Family');
+            expect(banner.textContent).toContain('97.4% favored dihedral angles');
+            expect(banner.textContent).toContain('Mean TM-score 0.86');
+        });
+
+        it('keeps specialist deep-dive disclosures collapsed in simple mode and opens them in deep mode', () => {
+            const tab = makeTab();
+            tab.render();
+
+            const disclosureIds = [
+                '#analytics-pae-disclosure',
+                '#analytics-flexibility-disclosure',
+                '#analytics-contact-map-disclosure',
+                '#analytics-diff-distance-disclosure',
+                '#analytics-mutation-disclosure',
+            ];
+
+            disclosureIds.forEach(id => {
+                expect(tab.element.querySelector(id).open).toBe(false);
+            });
+
+            tab.element.querySelector('#viewmode-btn-deep').click();
+            disclosureIds.forEach(id => {
+                expect(tab.element.querySelector(id).open).toBe(true);
+            });
+
+            tab.element.querySelector('#viewmode-btn-simple').click();
+            disclosureIds.forEach(id => {
+                expect(tab.element.querySelector(id).open).toBe(false);
+            });
+        });
+    });
 });
