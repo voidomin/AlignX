@@ -689,5 +689,16 @@ describe('SequenceTab', () => {
                 expect(disclosure.querySelector(sel)).not.toBeNull();
             });
         });
+
+        it('tucks Motif Search, Clustal Omega, and NCBI BLAST inside collapsed optional sequence tool disclosures', () => {
+            const tab = new SequenceTab();
+            tab.render();
+
+            ['#sequence-motif-disclosure', '#sequence-clustalo-disclosure', '#sequence-conservation-disclosure'].forEach(sel => {
+                const details = tab.element.querySelector(sel);
+                expect(details).not.toBeNull();
+                expect(details.open).toBe(false);
+            });
+        });
     });
 });

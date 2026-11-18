@@ -61,12 +61,12 @@ function wrapAnnotationBlock(label, html, open = false) {
 }
 
 const SUB_TABS = [
-    { key: 'quality', label: 'Quality' },
-    { key: 'rmsf', label: 'RMSF' },
-    { key: 'rmsd', label: 'RMSD Matrix' },
-    { key: 'phylo', label: 'Phylogeny' },
-    { key: 'insights', label: 'Insights' },
-    { key: 'annotations', label: 'Annotations' },
+    { key: 'quality', label: 'Quality', tooltip: 'Backbone geometry (Ramachandran) & overall fold similarity (TM-score)' },
+    { key: 'rmsf', label: 'RMSF', tooltip: 'Per-residue structural fluctuation across aligned positions' },
+    { key: 'rmsd', label: 'RMSD Matrix', tooltip: 'Pairwise 3D structural distance heatmap across all structures' },
+    { key: 'phylo', label: 'Phylogeny', tooltip: 'Hierarchical structural similarity tree (dendrogram)' },
+    { key: 'insights', label: 'Insights', tooltip: 'Automated plain-English biochemical takeaways' },
+    { key: 'annotations', label: 'Annotations', tooltip: 'Protein domains, Gene Ontology (GO) terms & catalytic sites' },
 ];
 
 // Mirrors annotation_aggregator.py's PTM_FEATURE_TYPES exactly - which of
@@ -130,7 +130,7 @@ export class AnalyticsTab {
                 <!-- Sub-tab strip -->
                 <div id="analytics-subtab-strip" role="tablist" class="flex flex-wrap gap-1 border border-border rounded-md p-1 shrink-0">
                     ${SUB_TABS.map(t => `
-                        <button data-subtab="${t.key}" id="analytics-subtab-tab-${t.key}" role="tab" aria-controls="analytics-subtab-panel-${t.key}" class="analytics-subtab-btn flex-1 min-w-[84px] py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors" aria-selected="${t.key === 'quality'}" tabindex="${t.key === 'quality' ? '0' : '-1'}">${t.label}</button>
+                        <button data-subtab="${t.key}" id="analytics-subtab-tab-${t.key}" role="tab" aria-controls="analytics-subtab-panel-${t.key}" title="${t.tooltip}" class="analytics-subtab-btn flex-1 min-w-[84px] py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors" aria-selected="${t.key === 'quality'}" tabindex="${t.key === 'quality' ? '0' : '-1'}">${t.label}</button>
                     `).join('')}
                 </div>
 
@@ -200,8 +200,8 @@ export class AnalyticsTab {
                                 </select>
                                 <button id="pae-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
                             </div>
-                            <div id="pae-plotly" class="w-full h-[240px]">
-                                <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                            <div id="pae-plotly" class="w-full min-h-[36px]">
+                                <div class="flex items-center justify-center py-2 text-secondary font-body-sm">
                                     Select an AlphaFold structure and load to view its per-residue-pair confidence.
                                 </div>
                             </div>
@@ -222,8 +222,8 @@ export class AnalyticsTab {
                                 </select>
                                 <button id="flexibility-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
                             </div>
-                            <div id="flexibility-plotly" class="w-full h-[240px]">
-                                <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                            <div id="flexibility-plotly" class="w-full min-h-[36px]">
+                                <div class="flex items-center justify-center py-2 text-secondary font-body-sm">
                                     Select a structure and load to view its predicted per-residue flexibility.
                                 </div>
                             </div>
@@ -263,8 +263,8 @@ export class AnalyticsTab {
                                 </select>
                                 <button id="contact-map-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
                             </div>
-                            <div id="contact-map-plotly" class="w-full h-[240px]">
-                                <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                            <div id="contact-map-plotly" class="w-full min-h-[36px]">
+                                <div class="flex items-center justify-center py-2 text-secondary font-body-sm">
                                     Select a structure and load to view its contact map.
                                 </div>
                             </div>
@@ -289,8 +289,8 @@ export class AnalyticsTab {
                                 </select>
                                 <button id="diff-distance-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
                             </div>
-                            <div id="diff-distance-plotly" class="w-full h-[240px]">
-                                <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                            <div id="diff-distance-plotly" class="w-full min-h-[36px]">
+                                <div class="flex items-center justify-center py-2 text-secondary font-body-sm">
                                     Select two structures and load to view their difference-distance matrix.
                                 </div>
                             </div>
@@ -1475,6 +1475,7 @@ export class AnalyticsTab {
         const div = this.element.querySelector('#pae-plotly');
         if (!div) return;
 
+        div.className = "w-full h-[240px]";
         div.innerHTML = "";
         const trace = {
             z: data.pae,
@@ -1526,6 +1527,7 @@ export class AnalyticsTab {
         const div = this.element.querySelector('#flexibility-plotly');
         if (!div) return;
 
+        div.className = "w-full h-[240px]";
         div.innerHTML = "";
         const traces = [{
             x: flexibility.residue_numbers,
@@ -1679,6 +1681,7 @@ export class AnalyticsTab {
             return;
         }
 
+        div.className = "w-full h-[240px]";
         div.innerHTML = "";
         const trace = {
             z: data.matrix,
@@ -1731,6 +1734,7 @@ export class AnalyticsTab {
             return;
         }
 
+        div.className = "w-full h-[240px]";
         div.innerHTML = "";
         const trace = {
             z: data.matrix,

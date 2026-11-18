@@ -246,5 +246,18 @@ describe('TopBar', () => {
             expect(seqBtn.className).toContain('opacity-75');
             expect(bar.element.querySelector('[data-group-label="Results"] .bg-accent')).toBeNull();
         });
+
+        it('tucks engine diagnostics, RAM readout, Free up memory, and Desktop App inside #topbar-system-disclosure', () => {
+            const bar = makeBar();
+            bar.render();
+
+            const sysDisclosure = bar.element.querySelector('#topbar-system-disclosure');
+            expect(sysDisclosure).not.toBeNull();
+            expect(sysDisclosure.open).toBe(false);
+            expect(sysDisclosure.querySelector('#topbar-health-status')).not.toBeNull();
+            expect(sysDisclosure.querySelector('#topbar-ram-text')).not.toBeNull();
+            expect(sysDisclosure.querySelector('#topbar-free-ram-btn')).not.toBeNull();
+            expect(sysDisclosure.querySelector('#topbar-download-desktop-btn')).not.toBeNull();
+        });
     });
 });

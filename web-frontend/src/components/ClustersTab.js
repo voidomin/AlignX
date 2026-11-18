@@ -22,6 +22,16 @@ export class ClustersTab {
             </header>
 
             <div class="section-body flex flex-col gap-6">
+                <div id="clusters-guidance-banner" class="p-3.5 rounded-lg bg-surface-raised border border-border-subtle flex flex-col gap-1.5 font-body-sm text-body-sm text-secondary leading-relaxed">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="font-label-sm text-label-sm uppercase tracking-wider text-primary">How Structural Clustering Works</span>
+                        <span id="clusters-structure-count-badge" class="px-2 py-0.5 rounded bg-surface border border-border-subtle font-mono text-[10px] text-secondary">Cutoff: 3.00 Å</span>
+                    </div>
+                    <p id="clusters-guidance-text">
+                        Structures within the chosen RMSD distance cutoff are grouped into the same cluster. Use a tight cutoff (<strong class="font-mono text-primary">&lt; 2.0 Å</strong>) to separate open/closed conformations, or a broader cutoff (<strong class="font-mono text-primary">2.5–4.0 Å</strong>) to group related family members.
+                    </p>
+                </div>
+
                 <div class="flex flex-col gap-2">
                     <div class="flex items-center justify-between">
                         <span class="font-label-sm text-label-sm text-secondary">RMSD threshold</span>
@@ -57,7 +67,21 @@ export class ClustersTab {
     updateResults(rmsdDf, pdbMetadata) {
         this.rmsdDf = rmsdDf;
         this.pdbMetadata = pdbMetadata || {};
+        this.updateGuidanceBanner();
         this.loadClusters();
+    }
+
+    updateGuidanceBanner() {
+        if (!this.element) return;
+        const badge = this.element.querySelector('#clusters-structure-count-badge');
+        const text = this.element.querySelector('#clusters-guidance-text');
+        const count = this.rmsdDf?.index?.length || 0;
+        if (badge) {
+            badge.textContent = count > 0 ? `${count} structures · Cutoff ${this.threshold.toFixed(2)} Å` : `Cutoff: ${this.threshold.toFixed(2)} Å`;
+        }
+        if (text && count === 2) {
+            text.innerHTML = `Comparing <strong class="font-mono text-primary">2 structures</strong> will either group them into 1 shared cluster (if RMSD &le; cutoff) or 2 separate clusters. <span class="text-muted">Tip: Add 3 or more structures in Workspace to discover multi-member conformational sub-families.</span>`;
+        }
     }
 
     async loadClusters() {

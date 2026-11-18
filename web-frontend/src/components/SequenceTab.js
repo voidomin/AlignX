@@ -87,62 +87,6 @@ export class SequenceTab {
                     </div>
                 </div>
 
-                <div class="flex flex-col gap-3 border-t border-border pt-6">
-                    <div class="flex items-center justify-between">
-                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">True sequence-only MSA (Clustal Omega)</span>
-                        <button id="clustalo-run-btn" class="btn-secondary py-1.5 px-3 rounded-md font-label-md text-label-md" disabled>Run true sequence alignment</button>
-                    </div>
-                    <div class="section-caption">
-                        Independent of Mustang's structural alignment above - a real multiple sequence alignment computed purely from each structure's own sequence, via EBI's public Clustal Omega service. Can disagree with the structural alignment for divergent sequences with similar folds.
-                    </div>
-                    <details class="webhook-disclosure group mt-1">
-                        <summary class="flex items-center gap-1 cursor-pointer select-none font-label-sm text-[11px] text-secondary hover:text-primary list-none [&::-webkit-details-marker]:hidden w-fit">
-                            <span class="material-symbols-outlined text-[14px] transition-transform group-open:rotate-90">chevron_right</span>
-                            <span>Advanced: Webhook notification when job finishes (optional)</span>
-                        </summary>
-                        <div class="pt-2 pl-4">
-                            <input id="clustalo-webhook-url" type="url" aria-label="Webhook URL for Clustal Omega completion notification" placeholder="https://..." class="max-w-[320px] bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
-                        </div>
-                    </details>
-                    <div id="clustalo-result-wrapper" class="overflow-x-auto rounded-md max-h-[350px]"></div>
-                </div>
-
-                <div class="flex flex-col gap-3 border-t border-border pt-6">
-                    <div class="flex items-center justify-between">
-                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Real evolutionary conservation (NCBI BLAST)</span>
-                        <div class="flex items-center gap-2">
-                            <select id="conservation-structure-select" aria-label="Structure to show conservation mapping for" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[160px]"></select>
-                            <button id="conservation-run-btn" class="btn-secondary py-1.5 px-3 rounded-md font-label-md text-label-md" disabled>Find real homologs</button>
-                        </div>
-                    </div>
-                    <div class="section-caption">
-                        Searches NCBI BLAST for real homologs of the selected structure's sequence, then scores real per-position conservation from their alignments (Shannon entropy) - genuinely different from the identity-based coloring above. Real BLAST searches commonly take several minutes.
-                    </div>
-                    <details class="webhook-disclosure group mt-1">
-                        <summary class="flex items-center gap-1 cursor-pointer select-none font-label-sm text-[11px] text-secondary hover:text-primary list-none [&::-webkit-details-marker]:hidden w-fit">
-                            <span class="material-symbols-outlined text-[14px] transition-transform group-open:rotate-90">chevron_right</span>
-                            <span>Advanced: Webhook notification when job finishes (optional)</span>
-                        </summary>
-                        <div class="pt-2 pl-4">
-                            <input id="conservation-webhook-url" type="url" aria-label="Webhook URL for NCBI BLAST completion notification" placeholder="https://..." class="max-w-[320px] bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
-                        </div>
-                    </details>
-                    <div id="conservation-result-wrapper" class="overflow-x-auto rounded-md max-h-[350px]"></div>
-                    <div id="conservation-logo-plotly" class="w-full h-[160px] hidden"></div>
-                </div>
-
-                <div class="flex flex-col gap-3 border-t border-border pt-6">
-                    <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Sequence motif search</span>
-                    <div class="section-caption">
-                        Search for a residue motif (e.g. <code>RYY</code>, <code>G.G</code>, <code>G-X-P</code> — <code>X</code>/<code>.</code>/<code>-</code> act as single-residue wildcards) and highlight every match in the 3D viewer.
-                    </div>
-                    <div class="flex gap-2">
-                        <input id="motif-search-input" type="text" placeholder="e.g. RYY or G.G" aria-label="Residue motif to search for" class="flex-1 bg-surface-raised border border-border rounded-md px-3 py-2 font-body-sm font-mono text-primary uppercase" />
-                        <button id="motif-search-btn" class="btn-primary py-2 px-4 rounded-md font-label-md text-label-md" disabled>Search</button>
-                    </div>
-                    <div id="motif-results-container"></div>
-                </div>
-
                 <div class="flex flex-col gap-4 border-t border-border pt-6">
                     <div class="flex flex-wrap items-center justify-between gap-2">
                         <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Export &amp; reports</span>
@@ -243,6 +187,90 @@ export class SequenceTab {
                                     </label>
                                 `).join('')}
                             </div>
+                        </div>
+                    </details>
+                </div>
+
+                <div class="flex flex-col gap-3 border-t border-border pt-6">
+                    <span class="font-label-sm text-[11px] font-mono uppercase tracking-wider text-muted">Optional Sequence Tools</span>
+
+                    <details id="sequence-motif-disclosure" class="group rounded-lg bg-surface border border-border-subtle p-3.5">
+                        <summary class="flex items-center justify-between gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                            <span class="flex items-center gap-1.5 font-label-md text-label-md text-secondary group-hover:text-primary uppercase tracking-wider">
+                                <span class="material-symbols-outlined text-[16px] transition-transform group-open:rotate-90">chevron_right</span>
+                                Sequence motif search
+                            </span>
+                            <span class="font-mono text-[10px] text-muted">Find &amp; highlight patterns in 3D</span>
+                        </summary>
+                        <div class="flex flex-col gap-3 pt-3 pl-5">
+                            <div class="section-caption">
+                                Search for a residue motif (e.g. <code>RYY</code>, <code>G.G</code>, <code>G-X-P</code> — <code>X</code>/<code>.</code>/<code>-</code> act as single-residue wildcards) and highlight every match in the 3D viewer.
+                            </div>
+                            <div class="flex gap-2">
+                                <input id="motif-search-input" type="text" placeholder="e.g. RYY or G.G" aria-label="Residue motif to search for" class="flex-1 bg-surface-raised border border-border rounded-md px-3 py-2 font-body-sm font-mono text-primary uppercase" />
+                                <button id="motif-search-btn" class="btn-primary py-2 px-4 rounded-md font-label-md text-label-md" disabled>Search</button>
+                            </div>
+                            <div id="motif-results-container"></div>
+                        </div>
+                    </details>
+
+                    <details id="sequence-clustalo-disclosure" class="group rounded-lg bg-surface border border-border-subtle p-3.5">
+                        <summary class="flex items-center justify-between gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                            <span class="flex items-center gap-1.5 font-label-md text-label-md text-secondary group-hover:text-primary uppercase tracking-wider">
+                                <span class="material-symbols-outlined text-[16px] transition-transform group-open:rotate-90">chevron_right</span>
+                                True sequence-only MSA (Clustal Omega)
+                            </span>
+                            <span class="font-mono text-[10px] text-muted">Compare pure sequence vs. 3D alignment</span>
+                        </summary>
+                        <div class="flex flex-col gap-3 pt-3 pl-5">
+                            <div class="flex items-center justify-between gap-2">
+                                <div class="section-caption">
+                                    Independent of Mustang's structural alignment above - a real multiple sequence alignment computed purely from each structure's own sequence, via EBI's public Clustal Omega service. Can disagree with the structural alignment for divergent sequences with similar folds.
+                                </div>
+                                <button id="clustalo-run-btn" class="btn-secondary py-1.5 px-3 rounded-md font-label-md text-label-md shrink-0" disabled>Run true sequence alignment</button>
+                            </div>
+                            <details class="webhook-disclosure group mt-1">
+                                <summary class="flex items-center gap-1 cursor-pointer select-none font-label-sm text-[11px] text-secondary hover:text-primary list-none [&::-webkit-details-marker]:hidden w-fit">
+                                    <span class="material-symbols-outlined text-[14px] transition-transform group-open:rotate-90">chevron_right</span>
+                                    <span>Advanced: Webhook notification when job finishes (optional)</span>
+                                </summary>
+                                <div class="pt-2 pl-4">
+                                    <input id="clustalo-webhook-url" type="url" aria-label="Webhook URL for Clustal Omega completion notification" placeholder="https://..." class="max-w-[320px] bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
+                                </div>
+                            </details>
+                            <div id="clustalo-result-wrapper" class="overflow-x-auto rounded-md max-h-[350px]"></div>
+                        </div>
+                    </details>
+
+                    <details id="sequence-conservation-disclosure" class="group rounded-lg bg-surface border border-border-subtle p-3.5">
+                        <summary class="flex items-center justify-between gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                            <span class="flex items-center gap-1.5 font-label-md text-label-md text-secondary group-hover:text-primary uppercase tracking-wider">
+                                <span class="material-symbols-outlined text-[16px] transition-transform group-open:rotate-90">chevron_right</span>
+                                Real evolutionary conservation (NCBI BLAST)
+                            </span>
+                            <span class="font-mono text-[10px] text-muted">Shannon entropy across homologs</span>
+                        </summary>
+                        <div class="flex flex-col gap-3 pt-3 pl-5">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <div class="section-caption flex-1">
+                                    Searches NCBI BLAST for real homologs of the selected structure's sequence, then scores real per-position conservation from their alignments (Shannon entropy) - genuinely different from the identity-based coloring above. Real BLAST searches commonly take several minutes.
+                                </div>
+                                <div class="flex items-center gap-2 shrink-0">
+                                    <select id="conservation-structure-select" aria-label="Structure to show conservation mapping for" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[160px]"></select>
+                                    <button id="conservation-run-btn" class="btn-secondary py-1.5 px-3 rounded-md font-label-md text-label-md" disabled>Find real homologs</button>
+                                </div>
+                            </div>
+                            <details class="webhook-disclosure group mt-1">
+                                <summary class="flex items-center gap-1 cursor-pointer select-none font-label-sm text-[11px] text-secondary hover:text-primary list-none [&::-webkit-details-marker]:hidden w-fit">
+                                    <span class="material-symbols-outlined text-[14px] transition-transform group-open:rotate-90">chevron_right</span>
+                                    <span>Advanced: Webhook notification when job finishes (optional)</span>
+                                </summary>
+                                <div class="pt-2 pl-4">
+                                    <input id="conservation-webhook-url" type="url" aria-label="Webhook URL for NCBI BLAST completion notification" placeholder="https://..." class="max-w-[320px] bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
+                                </div>
+                            </details>
+                            <div id="conservation-result-wrapper" class="overflow-x-auto rounded-md max-h-[350px]"></div>
+                            <div id="conservation-logo-plotly" class="w-full h-[160px] hidden"></div>
                         </div>
                     </details>
                 </div>

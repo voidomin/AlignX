@@ -1690,5 +1690,20 @@ describe('AnalyticsTab', () => {
                 expect(tab.element.querySelector(id).open).toBe(false);
             });
         });
+
+        it('keeps deep-dive chart containers compact before loading and adds tooltips to sub-tabs', () => {
+            const tab = makeTab();
+            tab.render();
+
+            ['#pae-plotly', '#flexibility-plotly', '#contact-map-plotly', '#diff-distance-plotly'].forEach(sel => {
+                const container = tab.element.querySelector(sel);
+                expect(container.className).toContain('min-h-[36px]');
+                expect(container.className).not.toContain('h-[240px]');
+            });
+
+            tab.element.querySelectorAll('.analytics-subtab-btn').forEach(btn => {
+                expect(btn.getAttribute('title')).toBeTruthy();
+            });
+        });
     });
 });
