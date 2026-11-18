@@ -421,6 +421,7 @@ class App {
             this.currentLigands = ligData.ligands || [];
 
             // Update tabs
+            this.topBar.setRunActive(true);
             this.ligandTab.updateLigands(this.currentLigands, results.id, this.selectedPDBs, results.ligand_pocket_similarity);
             this.sequenceTab.updateResults(results.id, results.stats);
             this.analyticsTab.updateResults(results.id, { heatmap: this.heatmapFig, tree: this.treeFig }, this.buildStructuralStats(), results.rmsf_values, results.insights, results.quality_metrics, this.buildAnalyticsStructures());
@@ -478,6 +479,7 @@ class App {
         // DiscoveryPanel, the same as a live "What is this?" run would.
         if (metadata?.run_type === 'discover') {
             this.currentRunId = null;
+            this.topBar.setRunActive(false);
             this.chainSelections = {};
             this.heatmapFig = null;
             this.treeFig = null;
@@ -566,6 +568,7 @@ class App {
         this.clustersTab.updateResults(this.rmsdDf, this.pdbMetadata);
 
         // Switch to Sequence tab
+        this.topBar.setRunActive(true);
         this.switchTab('sequence');
     }
 
@@ -596,6 +599,7 @@ class App {
             this.clustersTab.updateResults(null, null);
             void this.comparisonTab.updateResults(null);
             this.viewer3D.reset();
+            this.topBar.setRunActive(false);
 
             this.switchTab('workspace');
         }

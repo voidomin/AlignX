@@ -15,16 +15,18 @@ import { showDesktopModal } from './DesktopModal';
 // array (group per entry) rather than nested {label, tabs: [...]} groups -
 // the render loop below inserts a divider whenever `group` changes.
 const TABS = [
-    { key: 'workspace', label: 'Workspace', group: 'Workspace' },
-    { key: 'ligands', label: 'Ligands', group: 'Results' },
+    { key: 'workspace', label: 'Workspace', group: 'Workspace', stageLabel: '1. Setup' },
+    { key: 'ligands', label: 'Ligands', group: 'Results', stageLabel: '2. Results' },
     { key: 'sequence', label: 'Sequence', group: 'Results' },
     { key: 'analytics', label: 'Analytics', group: 'Results' },
     { key: 'clusters', label: 'Clusters', group: 'Results' },
-    { key: 'comparison', label: 'Diff Runs', group: 'Manage' },
+    { key: 'comparison', label: 'Diff Runs', group: 'Manage', stageLabel: '3. Manage' },
     { key: 'history', label: 'History', group: 'Manage' },
     { key: 'dashboard', label: 'Dashboard', group: 'Manage' },
     { key: 'settings', label: 'Settings', group: 'Manage' },
 ];
+
+const RESULTS_TAB_KEYS = new Set(TABS.filter(t => t.group === 'Results').map(t => t.key));
 
 export class TopBar {
     constructor(props) {
@@ -32,6 +34,7 @@ export class TopBar {
         this.onExportData = props.onExportData;
         this.onNewWorkspace = props.onNewWorkspace;
         this.activeTab = 'workspace';
+        this.hasActiveRun = false;
         this.element = null;
         this.memoryInterval = null;
     }
@@ -40,7 +43,7 @@ export class TopBar {
         const header = document.createElement('header');
         header.className = "sticky top-0 z-50 bg-surface/90 backdrop-blur-md border-b border-border/80 shrink-0";
         header.innerHTML = `
-            <div class="max-w-[1600px] mx-auto px-6 py-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 lg:gap-6">
+            <div class="max-w-[1600px] mx-auto px-6 py-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 lg:gap-4">
                 <div class="flex items-center gap-2.5 shrink-0">
                     <span class="material-symbols-outlined text-[20px] text-accent">science</span>
                     <span class="font-headline-md text-headline-md font-bold text-primary">StructScope</span>
@@ -54,6 +57,7 @@ export class TopBar {
                     <nav id="topbar-tabs" role="tablist" class="flex items-center gap-1 min-w-0 overflow-x-auto scroll-smooth">
                         ${TABS.map((t, i) => `
                             ${i > 0 && t.group !== TABS[i - 1].group ? '<div class="w-px h-5 bg-border-subtle mx-1.5 shrink-0" aria-hidden="true"></div>' : ''}
+                            ${t.stageLabel ? `<span data-group-label="${t.group}" class="hidden xl:inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wider text-muted select-none whitespace-nowrap" aria-hidden="true">${t.stageLabel}</span>` : ''}
                             <button data-tab="${t.key}" role="tab" class="tab-trigger px-3 py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors" aria-selected="${t.key === 'workspace'}" tabindex="${t.key === 'workspace' ? '0' : '-1'}">${t.label}</button>
                         `).join('')}
                     </nav>
@@ -62,17 +66,20 @@ export class TopBar {
                     </button>
                 </div>
 
-                <div class="flex items-center flex-wrap lg:flex-nowrap gap-3 shrink-0 font-mono text-label-sm">
+                <div class="flex items-center flex-wrap lg:flex-nowrap gap-2.5 shrink-0 font-mono text-label-sm">
                     <button id="topbar-download-desktop-btn" class="btn-primary px-3 py-1.5 rounded-md font-label-md text-label-md flex items-center gap-1.5 shadow-sm" title="Download Desktop Edition for unlimited large files & private local compute">
                         <span class="material-symbols-outlined text-[16px]">desktop_windows</span>
                         Desktop App
                     </button>
                     <button id="topbar-new-ws-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">New Workspace</button>
                     <button id="topbar-export-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Export</button>
-                    <div class="h-5 w-px bg-border"></div>
-                    <span id="topbar-health-status" class="text-secondary truncate max-w-[200px]">Alignment engine: Checking...</span>
-                    <span id="topbar-ram-text" class="text-muted">--</span>
-                    <button id="topbar-free-ram-btn" class="text-accent hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-accent" title="Runs garbage collection on the shared server process - affects all users, not just your session">Free up memory</button>
+                    <div class="flex items-center flex-wrap lg:flex-nowrap gap-2 px-2.5 py-1 rounded-md bg-surface-raised border border-border-subtle text-[11px]">
+                        <span id="topbar-health-dot" class="w-1.5 h-1.5 rounded-full bg-secondary shrink-0" aria-hidden="true"></span>
+                        <span id="topbar-health-status" class="text-secondary truncate max-w-[180px]">Alignment engine: Checking...</span>
+                        <span class="text-border-subtle" aria-hidden="true">|</span>
+                        <span id="topbar-ram-text" class="text-muted">--</span>
+                        <button id="topbar-free-ram-btn" class="text-accent hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-accent" title="Runs garbage collection on the shared server process - affects all users, not just your session">Free up memory</button>
+                    </div>
                 </div>
             </div>
         `;
@@ -159,16 +166,40 @@ export class TopBar {
         this.updateTabStyles();
     }
 
+    setRunActive(isActive) {
+        this.hasActiveRun = Boolean(isActive);
+        if (this.element) {
+            this.updateTabStyles();
+        }
+    }
+
     updateTabStyles() {
         this.element.querySelectorAll('.tab-trigger').forEach(btn => {
             const isActive = btn.dataset.tab === this.activeTab;
-            btn.className = `tab-trigger px-3 py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors ${isActive ? 'bg-accent-muted text-accent' : 'text-secondary hover:text-primary'}`;
+            const isResultsPending = !this.hasActiveRun && RESULTS_TAB_KEYS.has(btn.dataset.tab);
+            const stateClass = isActive
+                ? 'bg-accent-muted text-accent'
+                : `text-secondary hover:text-primary${isResultsPending ? ' opacity-75' : ''}`;
+            btn.className = `tab-trigger px-3 py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors ${stateClass}`;
             btn.setAttribute('aria-selected', String(isActive));
             btn.tabIndex = isActive ? 0 : -1;
+            if (isResultsPending && !isActive) {
+                btn.title = 'Run an alignment in Workspace first to populate results';
+            } else {
+                btn.removeAttribute('title');
+            }
             if (isActive) {
                 btn.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
             }
         });
+
+        const resultsLabel = this.element.querySelector('[data-group-label="Results"]');
+        if (resultsLabel) {
+            resultsLabel.innerHTML = this.hasActiveRun
+                ? '2. Results <span class="w-1.5 h-1.5 rounded-full bg-accent inline-block" aria-hidden="true"></span>'
+                : '2. Results';
+        }
+
         // Scrolling into view may change what's scrollable in either
         // direction - refresh the arrow affordance once the scroll settles.
         if (this._updateScrollArrows) {
@@ -188,27 +219,32 @@ export class TopBar {
             try {
                 const health = await fetchHealth();
                 const healthEl = this.element.querySelector('#topbar-health-status');
+                const healthDot = this.element.querySelector('#topbar-health-dot');
                 if (healthEl && health) {
                     if (health.mustang_installed) {
                         const msg = health.mustang_message || '';
                         const mode = msg.toLowerCase().includes("wsl") ? "WSL" : "Native";
                         healthEl.innerText = "Alignment engine: Ready";
                         healthEl.title = `Runs via Mustang, in ${mode} mode`;
-                        healthEl.className = "text-success truncate max-w-[200px]";
+                        healthEl.className = "text-success truncate max-w-[180px]";
+                        if (healthDot) healthDot.className = "w-1.5 h-1.5 rounded-full bg-success shrink-0";
                     } else {
                         healthEl.innerText = "Alignment engine: Offline";
                         healthEl.title = "Mustang could not be found on the server";
-                        healthEl.className = "text-error truncate max-w-[200px]";
+                        healthEl.className = "text-error truncate max-w-[180px]";
+                        if (healthDot) healthDot.className = "w-1.5 h-1.5 rounded-full bg-error shrink-0";
                     }
                 }
             } catch (err) {
                 console.warn("Top bar health update failed:", err);
                 const healthEl = this.element.querySelector('#topbar-health-status');
+                const healthDot = this.element.querySelector('#topbar-health-dot');
                 if (healthEl) {
                     healthEl.innerText = "Alignment engine: Disconnected";
                     healthEl.title = "Could not reach the backend server";
-                    healthEl.className = "text-error truncate max-w-[200px]";
+                    healthEl.className = "text-error truncate max-w-[180px]";
                 }
+                if (healthDot) healthDot.className = "w-1.5 h-1.5 rounded-full bg-error shrink-0";
             }
         };
 

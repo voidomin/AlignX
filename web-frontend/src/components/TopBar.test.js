@@ -217,4 +217,34 @@ describe('TopBar', () => {
             expect(bar.element.querySelector('.tab-trigger').getAttribute('role')).toBe('tab');
         });
     });
+
+    describe('workflow stage labels and active-run indicator', () => {
+        it('renders 1. Setup, 2. Results, and 3. Manage stage labels', () => {
+            const bar = makeBar();
+            bar.render();
+
+            expect(bar.element.querySelector('[data-group-label="Workspace"]').textContent).toContain('1. Setup');
+            expect(bar.element.querySelector('[data-group-label="Results"]').textContent).toContain('2. Results');
+            expect(bar.element.querySelector('[data-group-label="Manage"]').textContent).toContain('3. Manage');
+        });
+
+        it('dims Results tabs until setRunActive(true) is called, then restores them', () => {
+            const bar = makeBar();
+            bar.render();
+
+            const seqBtn = bar.element.querySelector('.tab-trigger[data-tab="sequence"]');
+            expect(seqBtn.className).toContain('opacity-75');
+            expect(seqBtn.title).toContain('Run an alignment in Workspace first');
+            expect(bar.element.querySelector('[data-group-label="Results"] .bg-accent')).toBeNull();
+
+            bar.setRunActive(true);
+            expect(seqBtn.className).not.toContain('opacity-75');
+            expect(seqBtn.hasAttribute('title')).toBe(false);
+            expect(bar.element.querySelector('[data-group-label="Results"] .bg-accent')).not.toBeNull();
+
+            bar.setRunActive(false);
+            expect(seqBtn.className).toContain('opacity-75');
+            expect(bar.element.querySelector('[data-group-label="Results"] .bg-accent')).toBeNull();
+        });
+    });
 });

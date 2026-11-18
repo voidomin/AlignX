@@ -1237,4 +1237,95 @@ describe('WorkspaceTab', () => {
             expect(fetchQc).not.toHaveBeenCalled();
         });
     });
+
+    describe('guided workflow UX & progressive disclosure', () => {
+        it('updates the workflow guide banner across 0, 1, and 2+ structures', () => {
+            const tab = makeTab({ selectedPDBs: [] });
+            tab.render();
+
+            const guide = tab.element.querySelector('#workspace-workflow-guide');
+            expect(guide.textContent).toContain('Step 1 of 2');
+            expect(guide.textContent).toContain('Add Protein Structures');
+
+            tab.updateState(['4RLT'], {}, {});
+            expect(guide.textContent).toContain('Single-Structure Mode');
+            expect(guide.textContent).toContain('1 Structure Loaded (4RLT)');
+
+            tab.updateState(['4RLT', '3UG9'], {}, {});
+            expect(guide.textContent).toContain('Step 2 of 2');
+            expect(guide.textContent).toContain('Ready to Align (2 Structures)');
+        });
+
+        it('mutually excludes Batch Paste and Predict from Sequence drawers when toggled', () => {
+            const tab = makeTab();
+            tab.render();
+
+            const batchBtn = tab.element.querySelector('#workspace-toggle-batch-add-btn');
+            const predictBtn = tab.element.querySelector('#workspace-toggle-predict-btn');
+            const batchContainer = tab.element.querySelector('#workspace-batch-add-container');
+            const predictContainer = tab.element.querySelector('#workspace-predict-container');
+
+            batchBtn.click();
+            expect(batchContainer.classList.contains('hidden')).toBe(false);
+            expect(predictContainer.classList.contains('hidden')).toBe(true);
+            expect(batchBtn.getAttribute('aria-expanded')).toBe('true');
+
+            predictBtn.click();
+            expect(predictContainer.classList.contains('hidden')).toBe(false);
+            expect(batchContainer.classList.contains('hidden')).toBe(true);
+            expect(batchBtn.getAttribute('aria-expanded')).toBe('false');
+            expect(predictBtn.getAttribute('aria-expanded')).toBe('true');
+        });
+
+        it('places technical metadata badges inside the collapsible .pdb-technical-details disclosure', () => {
+            fetchValidation.mockResolvedValue({ pdb_id: '4HHB', validation: null });
+            fetchCathClassification.mockResolvedValue({ pdb_id: '4HHB', domains: [] });
+            fetchAssemblyInfo.mockResolvedValue({ pdb_id: '4HHB', assembly: null });
+
+            const tab = makeTab({
+                selectedPDBs: ['4HHB'],
+                pdbMetadata: {
+                    '4HHB': {
+                        chains: [{ id: 'A', residue_count: 141, gaps: [{ after: 10, before: 14 }] }],
+                        source: 'pdb',
+                        is_nmr: true,
+                        num_models: 5,
+                    },
+                },
+            });
+            tab.render();
+
+            const details = tab.element.querySelector('.pdb-technical-details');
+            expect(details).not.toBeNull();
+            expect(details.open).toBe(false);
+            expect(details.querySelector('.pdb-nmr-badge')).not.toBeNull();
+            expect(details.querySelector('.pdb-gaps-badge')).not.toBeNull();
+            expect(details.querySelector('#validation-badge-4HHB')).not.toBeNull();
+            expect(details.querySelector('#cath-badge-4HHB')).not.toBeNull();
+            expect(details.querySelector('#assembly-badge-4HHB')).not.toBeNull();
+        });
+
+        it('updates parameter summary text when checkboxes are toggled', () => {
+            const tab = makeTab();
+            tab.render();
+
+            const summary = tab.element.querySelector('#workspace-params-summary');
+            const water = tab.element.querySelector('#param-remove-water');
+            const hetero = tab.element.querySelector('#param-remove-heteroatoms');
+
+            expect(summary.textContent).toBe('Water & non-ligand ions filtered');
+
+            water.checked = false;
+            water.dispatchEvent(new Event('change'));
+            expect(summary.textContent).toBe('Water kept · non-ligand ions filtered');
+
+            hetero.checked = false;
+            hetero.dispatchEvent(new Event('change'));
+            expect(summary.textContent).toBe('No pre-alignment filtering');
+
+            water.checked = true;
+            water.dispatchEvent(new Event('change'));
+            expect(summary.textContent).toBe('Water filtered · ions kept');
+        });
+    });
 });
