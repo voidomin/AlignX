@@ -643,27 +643,53 @@ export class LigandTab {
         banner.classList.remove('hidden');
         banner.classList.add('flex');
 
+        banner.innerHTML = `
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <span class="font-label-sm text-label-sm uppercase tracking-wider text-secondary" data-field="title"></span>
+                <span class="px-2 py-0.5 rounded-md border font-mono text-[11px] font-semibold" data-field="badge"></span>
+            </div>
+            <p class="font-body-sm text-body-sm text-primary leading-relaxed" data-field="desc"></p>
+        `;
+
+        const titleEl = banner.querySelector('[data-field="title"]');
+        const badgeEl = banner.querySelector('[data-field="badge"]');
+        const descEl = banner.querySelector('[data-field="desc"]');
+
+        titleEl.textContent = `Binding Pocket Summary (${currentPdb})`;
+
         if (this.ligandsList.length > 0) {
             const names = [...new Set(this.ligandsList.map(l => l.name))].join(', ');
-            banner.innerHTML = `
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                    <span class="font-label-sm text-label-sm uppercase tracking-wider text-secondary">Binding Pocket Summary (${currentPdb})</span>
-                    <span class="px-2 py-0.5 rounded-md border font-mono text-[11px] font-semibold bg-success/15 text-success border-success/30">${this.ligandsList.length} Bound Ligand${this.ligandsList.length === 1 ? '' : 's'}</span>
-                </div>
-                <p class="font-body-sm text-body-sm text-primary leading-relaxed">
-                    Detected bound molecule${this.ligandsList.length === 1 ? '' : 's'} (<strong class="font-mono">${names}</strong>) in <strong class="font-mono">${currentPdb}</strong>. Select a ligand from the top-right dropdown to highlight its 3D binding pocket and inspect contacting amino acids.
-                </p>
-            `;
+            badgeEl.className = "px-2 py-0.5 rounded-md border font-mono text-[11px] font-semibold bg-success/15 text-success border-success/30";
+            badgeEl.textContent = `${this.ligandsList.length} Bound Ligand${this.ligandsList.length === 1 ? '' : 's'}`;
+
+            descEl.innerHTML = '';
+            descEl.appendChild(document.createTextNode(`Detected bound molecule${this.ligandsList.length === 1 ? '' : 's'} (`));
+            const strongNames = document.createElement('strong');
+            strongNames.className = 'font-mono';
+            strongNames.textContent = names;
+            descEl.appendChild(strongNames);
+            descEl.appendChild(document.createTextNode(') in '));
+            const strongPdb = document.createElement('strong');
+            strongPdb.className = 'font-mono';
+            strongPdb.textContent = currentPdb;
+            descEl.appendChild(strongPdb);
+            descEl.appendChild(document.createTextNode('. Select a ligand from the top-right dropdown to highlight its 3D binding pocket and inspect contacting amino acids.'));
         } else {
-            banner.innerHTML = `
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                    <span class="font-label-sm text-label-sm uppercase tracking-wider text-secondary">Binding Pocket Summary (${currentPdb})</span>
-                    <span class="px-2 py-0.5 rounded-md border font-mono text-[11px] font-semibold bg-warning/15 text-warning border-warning/30">Apo Structure (No Bound Ligands)</span>
-                </div>
-                <p class="font-body-sm text-body-sm text-primary leading-relaxed">
-                    No small-molecule ligands are co-crystallized in <strong class="font-mono">${currentPdb}</strong>. Review the <strong class="text-secondary">Candidate binding pockets</strong> section below to explore predicted surface cavities.
-                </p>
-            `;
+            badgeEl.className = "px-2 py-0.5 rounded-md border font-mono text-[11px] font-semibold bg-warning/15 text-warning border-warning/30";
+            badgeEl.textContent = 'Apo Structure (No Bound Ligands)';
+
+            descEl.innerHTML = '';
+            descEl.appendChild(document.createTextNode('No small-molecule ligands are co-crystallized in '));
+            const strongPdb = document.createElement('strong');
+            strongPdb.className = 'font-mono';
+            strongPdb.textContent = currentPdb;
+            descEl.appendChild(strongPdb);
+            descEl.appendChild(document.createTextNode('. Review the '));
+            const strongCandidate = document.createElement('strong');
+            strongCandidate.className = 'text-secondary';
+            strongCandidate.textContent = 'Candidate binding pockets';
+            descEl.appendChild(strongCandidate);
+            descEl.appendChild(document.createTextNode(' section below to explore predicted surface cavities.'));
         }
     }
 
