@@ -17,7 +17,7 @@ filtering:
   remove_water: true
   remove_ligands: false
 mustang:
-  backend: wsl
+  backend: auto
   executable_path: null
   timeout: 600
 foldseek:
