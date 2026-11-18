@@ -79,15 +79,22 @@ export class ComparisonTab {
         }
 
         controls.innerHTML = `
-            <select id="comparison-target-select" class="w-full bg-surface-raised border border-border rounded-md px-3 py-2 font-body-sm text-primary">
-                ${this.pastRuns.map(r => `
-                    <option value="${r.id}">${r.timestamp} - ${r.id.slice(0, 8)}... (${r.proteins.length} p)</option>
-                `).join("")}
-            </select>
+            <select id="comparison-target-select" aria-label="Past run to compare against" class="w-full bg-surface-raised border border-border rounded-md px-3 py-2 font-body-sm text-primary font-mono"></select>
             <button id="btn-run-comparison" class="btn-primary w-full py-2 px-3 rounded-md font-label-md text-label-md">
                 Run Comparative Analysis
             </button>
         `;
+
+        const select = controls.querySelector('#comparison-target-select');
+        this.pastRuns.forEach(r => {
+            const proteinsLabel = Array.isArray(r.proteins) && r.proteins.length > 0
+                ? r.proteins.join(', ')
+                : `${r.proteins?.length || 0} structures`;
+            const opt = document.createElement('option');
+            opt.value = r.id;
+            opt.textContent = `${proteinsLabel} — ${r.timestamp} (${r.id.slice(0, 12)})`;
+            select.appendChild(opt);
+        });
 
         this.targetRunId = this.pastRuns[0].id;
         controls.querySelector('#comparison-target-select').addEventListener('change', (e) => {

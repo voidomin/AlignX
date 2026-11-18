@@ -56,6 +56,7 @@ describe('ComparisonTab', () => {
         const select = tab.element.querySelector('#comparison-target-select');
         expect(select).not.toBeNull();
         expect(select.querySelectorAll('option')).toHaveLength(2);
+        expect(select.options[0].textContent).toContain('4RLT, 3UG9');
         expect(tab.targetRunId).toBe('run_a');
     });
 

@@ -39,6 +39,8 @@ export class LigandTab {
             </header>
 
             <div class="section-body flex flex-col gap-6">
+                <div id="ligand-verdict-banner" class="hidden flex-col gap-1.5 p-3.5 rounded-lg bg-surface-raised border border-border-subtle"></div>
+
                 <div id="ligand-pocket-desc" class="font-body-sm text-body-sm text-secondary leading-relaxed">
                     Add a second structure and run alignment to analyze ligands here in Compare mode. For a single structure, use Discover mode's ligand inspector instead.
                 </div>
@@ -147,23 +149,31 @@ export class LigandTab {
                     </div>
                 </div>
 
-                <div id="interface-section" class="hidden flex-col gap-3 mt-6 pt-4 border-t border-border">
-                    <div class="flex items-baseline justify-between">
-                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Protein-protein interfaces</span>
-                        <span class="font-body-sm text-body-sm text-secondary">Residues from two chains close enough to touch where the proteins bind each other</span>
-                    </div>
-                    <div class="flex items-end gap-3">
-                        <label class="flex flex-col gap-1">
-                            <span class="font-label-sm text-label-sm text-secondary">Chain A</span>
-                            <select id="interface-chain-a" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono"></select>
-                        </label>
-                        <label class="flex flex-col gap-1">
-                            <span class="font-label-sm text-label-sm text-secondary">Chain B</span>
-                            <select id="interface-chain-b" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono"></select>
-                        </label>
-                        <button id="interface-analyze-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Analyze Interface</button>
-                    </div>
-                    <div id="interface-results" class="flex flex-col gap-3"></div>
+                <div id="interface-section" class="hidden flex-col gap-3 mt-4 pt-4 border-t border-border">
+                    <details id="ligand-interface-disclosure" class="group rounded-lg bg-surface border border-border-subtle p-3.5">
+                        <summary class="flex items-center justify-between gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                            <span class="flex items-center gap-1.5 font-label-md text-label-md text-secondary group-hover:text-primary uppercase tracking-wider">
+                                <span class="material-symbols-outlined text-[16px] transition-transform group-open:rotate-90">chevron_right</span>
+                                Protein-protein interfaces
+                            </span>
+                            <span class="font-mono text-[10px] text-muted">Chain-to-chain contact residues</span>
+                        </summary>
+                        <div class="flex flex-col gap-3 pt-3 pl-5">
+                            <span class="font-body-sm text-body-sm text-secondary">Residues from two chains close enough to touch where the proteins bind each other.</span>
+                            <div class="flex items-end gap-3">
+                                <label class="flex flex-col gap-1">
+                                    <span class="font-label-sm text-label-sm text-secondary">Chain A</span>
+                                    <select id="interface-chain-a" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono"></select>
+                                </label>
+                                <label class="flex flex-col gap-1">
+                                    <span class="font-label-sm text-label-sm text-secondary">Chain B</span>
+                                    <select id="interface-chain-b" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono"></select>
+                                </label>
+                                <button id="interface-analyze-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Analyze Interface</button>
+                            </div>
+                            <div id="interface-results" class="flex flex-col gap-3"></div>
+                        </div>
+                    </details>
                 </div>
             </div>
         `;
@@ -594,6 +604,7 @@ export class LigandTab {
         if (!this.element) return;
         const select = this.element.querySelector('#ligand-select');
         select.innerHTML = "";
+        this.renderVerdictBanner();
         
         if (this.ligandsList.length === 0) {
             select.innerHTML = `<option value="">No Ligands Loaded</option>`;
@@ -614,6 +625,72 @@ export class LigandTab {
             }
             select.appendChild(opt);
         });
+    }
+
+    renderVerdictBanner() {
+        if (!this.element) return;
+        const banner = this.element.querySelector('#ligand-verdict-banner');
+        if (!banner) return;
+
+        const currentPdb = this.selectedPDBs[this.currentStructureIndex];
+        if (!currentPdb || (!this.currentRunId && this.ligandsList.length === 0)) {
+            banner.classList.add('hidden');
+            banner.classList.remove('flex');
+            banner.innerHTML = '';
+            return;
+        }
+
+        banner.classList.remove('hidden');
+        banner.classList.add('flex');
+
+        banner.innerHTML = `
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <span class="font-label-sm text-label-sm uppercase tracking-wider text-secondary" data-field="title"></span>
+                <span class="px-2 py-0.5 rounded-md border font-mono text-[11px] font-semibold" data-field="badge"></span>
+            </div>
+            <p class="font-body-sm text-body-sm text-primary leading-relaxed" data-field="desc"></p>
+        `;
+
+        const titleEl = banner.querySelector('[data-field="title"]');
+        const badgeEl = banner.querySelector('[data-field="badge"]');
+        const descEl = banner.querySelector('[data-field="desc"]');
+
+        titleEl.textContent = `Binding Pocket Summary (${currentPdb})`;
+
+        if (this.ligandsList.length > 0) {
+            const names = [...new Set(this.ligandsList.map(l => l.name))].join(', ');
+            badgeEl.className = "px-2 py-0.5 rounded-md border font-mono text-[11px] font-semibold bg-success/15 text-success border-success/30";
+            badgeEl.textContent = `${this.ligandsList.length} Bound Ligand${this.ligandsList.length === 1 ? '' : 's'}`;
+
+            descEl.innerHTML = '';
+            descEl.appendChild(document.createTextNode(`Detected bound molecule${this.ligandsList.length === 1 ? '' : 's'} (`));
+            const strongNames = document.createElement('strong');
+            strongNames.className = 'font-mono';
+            strongNames.textContent = names;
+            descEl.appendChild(strongNames);
+            descEl.appendChild(document.createTextNode(') in '));
+            const strongPdb = document.createElement('strong');
+            strongPdb.className = 'font-mono';
+            strongPdb.textContent = currentPdb;
+            descEl.appendChild(strongPdb);
+            descEl.appendChild(document.createTextNode('. Select a ligand from the top-right dropdown to highlight its 3D binding pocket and inspect contacting amino acids.'));
+        } else {
+            badgeEl.className = "px-2 py-0.5 rounded-md border font-mono text-[11px] font-semibold bg-warning/15 text-warning border-warning/30";
+            badgeEl.textContent = 'Apo Structure (No Bound Ligands)';
+
+            descEl.innerHTML = '';
+            descEl.appendChild(document.createTextNode('No small-molecule ligands are co-crystallized in '));
+            const strongPdb = document.createElement('strong');
+            strongPdb.className = 'font-mono';
+            strongPdb.textContent = currentPdb;
+            descEl.appendChild(strongPdb);
+            descEl.appendChild(document.createTextNode('. Review the '));
+            const strongCandidate = document.createElement('strong');
+            strongCandidate.className = 'text-secondary';
+            strongCandidate.textContent = 'Candidate binding pockets';
+            descEl.appendChild(strongCandidate);
+            descEl.appendChild(document.createTextNode(' section below to explore predicted surface cavities.'));
+        }
     }
 
     clearTable() {

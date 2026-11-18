@@ -24,27 +24,35 @@ export class HistoryPanel {
                 <button id="history-clear-all-btn" class="font-label-sm text-label-sm text-secondary hover:text-error transition-colors underline decoration-dotted">Clear All History</button>
             </header>
 
-            <div class="section-body">
-                <div class="flex flex-col gap-2 border border-border rounded-lg p-4 mb-4">
-                    <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">RMSD trend across runs</span>
-                    <span class="font-body-sm text-body-sm text-secondary">Pick 2 or more past runs (Ctrl/Cmd-click for multiple) to see how their structural similarity has shifted over time.</span>
-                    <div class="flex gap-2 items-center">
-                        <select id="trend-run-select" multiple size="4" aria-label="Past runs to compare RMSD trend across (select 2 or more)" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm"></select>
-                        <button id="trend-load-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md self-start">Show trend</button>
-                    </div>
-                    <div id="trend-plotly" class="w-full h-[220px]">
-                        <div class="flex items-center justify-center h-full text-secondary font-body-sm">
-                            Select runs above and click "Show trend".
-                        </div>
-                    </div>
-                </div>
-
+            <div class="section-body flex flex-col gap-6">
                 <div id="history-runs-list" class="flex flex-col">
                     <div class="text-center py-12 text-secondary font-body-sm">
                         <span class="animate-spin material-symbols-outlined text-[24px] mb-2">sync</span>
                         Loading run logs...
                     </div>
                 </div>
+
+                <details id="history-trend-disclosure" class="group border border-border rounded-lg p-4 bg-surface">
+                    <summary class="flex items-center justify-between gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                        <span class="flex items-center gap-1.5 font-label-md text-label-md text-secondary group-hover:text-primary uppercase tracking-wider">
+                            <span class="material-symbols-outlined text-[16px] transition-transform group-open:rotate-90">chevron_right</span>
+                            RMSD trend across runs
+                        </span>
+                        <span class="font-mono text-[11px] text-muted">Compare multi-run trajectory</span>
+                    </summary>
+                    <div class="flex flex-col gap-2 pt-3 pl-5">
+                        <span class="font-body-sm text-body-sm text-secondary">Pick 2 or more past runs (Ctrl/Cmd-click for multiple) to see how their structural similarity has shifted over time.</span>
+                        <div class="flex gap-2 items-center">
+                            <select id="trend-run-select" multiple size="4" aria-label="Past runs to compare RMSD trend across (select 2 or more)" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm font-mono"></select>
+                            <button id="trend-load-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md self-start">Show trend</button>
+                        </div>
+                        <div id="trend-plotly" class="w-full min-h-[36px]">
+                            <div class="flex items-center justify-center py-2 text-secondary font-body-sm">
+                                Select runs above and click "Show trend".
+                            </div>
+                        </div>
+                    </div>
+                </details>
             </div>
         `;
         this.element = div;
@@ -320,9 +328,16 @@ export class HistoryPanel {
         );
         select.innerHTML = "";
         this.runsList.forEach(run => {
+            let pids;
+            try {
+                pids = typeof run.pdb_ids === 'string' ? JSON.parse(run.pdb_ids) : run.pdb_ids;
+            } catch {
+                pids = [run.pdb_ids];
+            }
+            const pidLabel = Array.isArray(pids) && pids.length > 0 ? pids.join(', ') : run.id;
             const opt = document.createElement('option');
             opt.value = run.id;
-            opt.textContent = `${run.id} — ${run.timestamp}`;
+            opt.textContent = `${pidLabel} — ${run.timestamp} (${run.id})`;
             opt.selected = previouslySelected.has(run.id);
             select.appendChild(opt);
         });
@@ -334,17 +349,19 @@ export class HistoryPanel {
         const runIds = [...select.selectedOptions].map(o => o.value);
 
         if (runIds.length < 2) {
-            div.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Select at least 2 runs to compare a trend.</div>`;
+            div.className = "w-full min-h-[36px]";
+            div.innerHTML = `<div class="flex items-center justify-center py-2 text-secondary font-body-sm">Select at least 2 runs to compare a trend.</div>`;
             return;
         }
 
-        div.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Loading trend&hellip;</div>`;
+        div.className = "w-full min-h-[36px]";
+        div.innerHTML = `<div class="flex items-center justify-center py-2 text-secondary font-body-sm">Loading trend&hellip;</div>`;
         try {
             const data = await fetchRunsTrend(runIds);
             this.renderTrendChart(data.trend || []);
         } catch (err) {
             console.error("Failed to load run trend:", err);
-            div.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">Failed to load run trend.</div>`;
+            div.innerHTML = `<div class="flex items-center justify-center py-2 text-secondary font-body-sm">Failed to load run trend.</div>`;
         }
     }
 
@@ -353,10 +370,12 @@ export class HistoryPanel {
         if (!div) return;
 
         if (trend.length === 0) {
-            div.innerHTML = `<div class="flex items-center justify-center h-full text-secondary font-body-sm">None of the selected runs have a usable RMSD matrix.</div>`;
+            div.className = "w-full min-h-[36px]";
+            div.innerHTML = `<div class="flex items-center justify-center py-2 text-secondary font-body-sm">None of the selected runs have a usable RMSD matrix.</div>`;
             return;
         }
 
+        div.className = "w-full h-[220px]";
         div.innerHTML = "";
         const x = trend.map(t => t.timestamp);
         const traces = [

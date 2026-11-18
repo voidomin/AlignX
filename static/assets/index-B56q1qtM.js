@@ -81,7 +81,6 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
                 <div class="flex items-center gap-2.5 shrink-0">
                     <span class="material-symbols-outlined text-[20px] text-accent">science</span>
                     <span class="font-headline-md text-headline-md font-bold text-primary">StructScope</span>
-                    <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-medium tracking-wide uppercase bg-accent-muted text-accent border border-accent/20" title="Interactive Web Showcase - optimized for quick comparisons and curated demos">Web Demo</span>
                 </div>
 
                 <div id="topbar-tabs-wrapper" class="flex items-center w-full lg:w-auto lg:flex-1 min-w-0">
@@ -100,20 +99,29 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
                     </button>
                 </div>
 
-                <div class="flex items-center flex-wrap lg:flex-nowrap gap-2.5 shrink-0 font-mono text-label-sm">
-                    <button id="topbar-download-desktop-btn" class="btn-primary px-3 py-1.5 rounded-md font-label-md text-label-md flex items-center gap-1.5 shadow-sm" title="Download Desktop Edition for unlimited large files & private local compute">
-                        <span class="material-symbols-outlined text-[16px]">desktop_windows</span>
-                        Desktop App
-                    </button>
+                <div class="flex items-center flex-wrap lg:flex-nowrap gap-2 shrink-0 font-mono text-label-sm">
                     <button id="topbar-new-ws-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">New Workspace</button>
                     <button id="topbar-export-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Export</button>
-                    <div class="flex items-center flex-wrap lg:flex-nowrap gap-2 px-2.5 py-1 rounded-md bg-surface-raised border border-border-subtle text-[11px]">
-                        <span id="topbar-health-dot" class="w-1.5 h-1.5 rounded-full bg-secondary shrink-0" aria-hidden="true"></span>
-                        <span id="topbar-health-status" class="text-secondary truncate max-w-[180px]">Alignment engine: Checking...</span>
-                        <span class="text-border-subtle" aria-hidden="true">|</span>
-                        <span id="topbar-ram-text" class="text-muted">--</span>
-                        <button id="topbar-free-ram-btn" class="text-accent hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-accent" title="Runs garbage collection on the shared server process - affects all users, not just your session">Free up memory</button>
-                    </div>
+                    <details id="topbar-system-disclosure" class="relative group">
+                        <summary class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-surface-raised border border-border-subtle text-[11px] text-secondary hover:text-primary cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden" title="Engine health, memory diagnostics &amp; desktop edition">
+                            <span id="topbar-health-dot" class="w-2 h-2 rounded-full bg-secondary shrink-0" aria-hidden="true"></span>
+                            <span>System</span>
+                            <span class="material-symbols-outlined text-[14px] transition-transform group-open:rotate-180">expand_more</span>
+                        </summary>
+                        <div class="absolute right-0 mt-1.5 w-72 p-3 rounded-lg bg-surface border border-border shadow-xl z-50 flex flex-col gap-2.5 text-[11px]">
+                            <div class="flex items-center justify-between gap-2 pb-2 border-b border-border-subtle">
+                                <span id="topbar-health-status" class="text-secondary truncate">Alignment engine: Checking...</span>
+                            </div>
+                            <div class="flex items-center justify-between flex-wrap lg:flex-nowrap gap-2 pb-2 border-b border-border-subtle">
+                                <span class="text-secondary">Server RAM: <strong id="topbar-ram-text" class="text-primary font-mono">--</strong></span>
+                                <button id="topbar-free-ram-btn" class="text-accent hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-accent" title="Runs garbage collection on the shared server process">Free up memory</button>
+                            </div>
+                            <button id="topbar-download-desktop-btn" class="btn-secondary w-full px-2.5 py-1.5 rounded-md font-label-sm text-label-sm flex items-center justify-center gap-1.5" title="Download Desktop Edition for unlimited large files &amp; private local compute">
+                                <span class="material-symbols-outlined text-[15px] text-accent">desktop_windows</span>
+                                <span>Desktop App</span>
+                            </button>
+                        </div>
+                    </details>
                 </div>
             </div>
         `,this.element=e,this.updateTabStyles(),this.setupEventListeners(),this.setupTabScrollAffordance(),this.startMemoryTracking(),e}setupTabScrollAffordance(){let e=this.element.querySelector(`#topbar-tabs`),t=this.element.querySelector(`#topbar-scroll-left`),n=this.element.querySelector(`#topbar-scroll-right`),r=()=>{let r=e.scrollLeft>2,i=e.scrollLeft+e.clientWidth<e.scrollWidth-2;t.classList.toggle(`hidden`,!r),t.classList.toggle(`flex`,r),n.classList.toggle(`hidden`,!i),n.classList.toggle(`flex`,i)};t.addEventListener(`click`,()=>e.scrollBy({left:-150,behavior:`smooth`})),n.addEventListener(`click`,()=>e.scrollBy({left:150,behavior:`smooth`})),e.addEventListener(`scroll`,r),window.addEventListener(`resize`,r),this._updateScrollArrows=r,requestAnimationFrame(r)}setupEventListeners(){this.element.querySelectorAll(`.tab-trigger`).forEach(e=>{e.addEventListener(`click`,()=>{let t=e.dataset.tab;this.switchTab(t),this.onTabChange(t)})}),F(this.element.querySelector(`#topbar-tabs`),`.tab-trigger`,e=>{let t=e.dataset.tab;this.switchTab(t),this.onTabChange(t)}),this.element.querySelector(`#topbar-export-btn`).addEventListener(`click`,()=>this.onExportData()),this.element.querySelector(`#topbar-new-ws-btn`).addEventListener(`click`,()=>this.onNewWorkspace());let e=this.element.querySelector(`#topbar-download-desktop-btn`);e&&e.addEventListener(`click`,()=>Xe());let t=this.element.querySelector(`#topbar-free-ram-btn`);t.addEventListener(`click`,async()=>{t.innerText=`Clearing...`,t.disabled=!0;try{let e=await fe();this.updateMemoryDisplay(e.ram_mb)}catch(e){console.error(`Free memory failed:`,e)}finally{t.innerText=`Free up memory`,t.disabled=!1}})}switchTab(e){this.activeTab=e,this.updateTabStyles()}setRunActive(e){this.hasActiveRun=!!e,this.element&&this.updateTabStyles()}updateTabStyles(){this.element.querySelectorAll(`.tab-trigger`).forEach(e=>{let t=e.dataset.tab===this.activeTab,n=!this.hasActiveRun&&Ze.has(e.dataset.tab);e.className=`tab-trigger px-3 py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors ${t?`bg-accent-muted text-accent`:`text-secondary hover:text-primary${n?` opacity-75`:``}`}`,e.setAttribute(`aria-selected`,String(t)),e.tabIndex=t?0:-1,n&&!t?e.title=`Run an alignment in Workspace first to populate results`:e.removeAttribute(`title`),t&&e.scrollIntoView({behavior:`smooth`,inline:`nearest`,block:`nearest`})});let e=this.element.querySelector(`[data-group-label="Results"]`);e&&(e.innerHTML=this.hasActiveRun?`2. Results <span class="w-1.5 h-1.5 rounded-full bg-accent inline-block" aria-hidden="true"></span>`:`2. Results`),this._updateScrollArrows&&requestAnimationFrame(this._updateScrollArrows)}startMemoryTracking(){let e=async()=>{try{let e=await de();this.updateMemoryDisplay(e.ram_mb)}catch(e){console.warn(`Top bar memory update failed:`,e)}try{let e=await g(),t=this.element.querySelector(`#topbar-health-status`),n=this.element.querySelector(`#topbar-health-dot`);if(t&&e)if(e.mustang_installed){let r=(e.mustang_message||``).toLowerCase().includes(`wsl`)?`WSL`:`Native`;t.innerText=`Alignment engine: Ready`,t.title=`Runs via Mustang, in ${r} mode`,t.className=`text-success truncate max-w-[180px]`,n&&(n.className=`w-1.5 h-1.5 rounded-full bg-success shrink-0`)}else t.innerText=`Alignment engine: Offline`,t.title=`Mustang could not be found on the server`,t.className=`text-error truncate max-w-[180px]`,n&&(n.className=`w-1.5 h-1.5 rounded-full bg-error shrink-0`)}catch(e){console.warn(`Top bar health update failed:`,e);let t=this.element.querySelector(`#topbar-health-status`),n=this.element.querySelector(`#topbar-health-dot`);t&&(t.innerText=`Alignment engine: Disconnected`,t.title=`Could not reach the backend server`,t.className=`text-error truncate max-w-[180px]`),n&&(n.className=`w-1.5 h-1.5 rounded-full bg-error shrink-0`)}};this.initialPollTimeout=setTimeout(()=>{e()},3e3),this.memoryInterval=setInterval(()=>{e()},2e4)}updateMemoryDisplay(e){let t=this.element.querySelector(`#topbar-ram-text`);t&&(t.innerText=`${e} MB`)}destroy(){this._updateScrollArrows&&window.removeEventListener(`resize`,this._updateScrollArrows),clearTimeout(this.initialPollTimeout),clearInterval(this.memoryInterval)}};function $e(e){switch(e){case`Hydrogen Bond`:return`bg-accent`;case`Salt Bridge`:return`bg-success`;case`Van der Waals`:return`bg-muted`;case`Metal Coordination`:return`bg-error`;default:return`bg-secondary`}}function L(e){let t=document.createElement(`tr`);return t.innerHTML=`
@@ -646,6 +654,8 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
             </header>
 
             <div class="section-body flex flex-col gap-6">
+                <div id="ligand-verdict-banner" class="hidden flex-col gap-1.5 p-3.5 rounded-lg bg-surface-raised border border-border-subtle"></div>
+
                 <div id="ligand-pocket-desc" class="font-body-sm text-body-sm text-secondary leading-relaxed">
                     Add a second structure and run alignment to analyze ligands here in Compare mode. For a single structure, use Discover mode's ligand inspector instead.
                 </div>
@@ -754,23 +764,31 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
                     </div>
                 </div>
 
-                <div id="interface-section" class="hidden flex-col gap-3 mt-6 pt-4 border-t border-border">
-                    <div class="flex items-baseline justify-between">
-                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Protein-protein interfaces</span>
-                        <span class="font-body-sm text-body-sm text-secondary">Residues from two chains close enough to touch where the proteins bind each other</span>
-                    </div>
-                    <div class="flex items-end gap-3">
-                        <label class="flex flex-col gap-1">
-                            <span class="font-label-sm text-label-sm text-secondary">Chain A</span>
-                            <select id="interface-chain-a" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono"></select>
-                        </label>
-                        <label class="flex flex-col gap-1">
-                            <span class="font-label-sm text-label-sm text-secondary">Chain B</span>
-                            <select id="interface-chain-b" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono"></select>
-                        </label>
-                        <button id="interface-analyze-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Analyze Interface</button>
-                    </div>
-                    <div id="interface-results" class="flex flex-col gap-3"></div>
+                <div id="interface-section" class="hidden flex-col gap-3 mt-4 pt-4 border-t border-border">
+                    <details id="ligand-interface-disclosure" class="group rounded-lg bg-surface border border-border-subtle p-3.5">
+                        <summary class="flex items-center justify-between gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                            <span class="flex items-center gap-1.5 font-label-md text-label-md text-secondary group-hover:text-primary uppercase tracking-wider">
+                                <span class="material-symbols-outlined text-[16px] transition-transform group-open:rotate-90">chevron_right</span>
+                                Protein-protein interfaces
+                            </span>
+                            <span class="font-mono text-[10px] text-muted">Chain-to-chain contact residues</span>
+                        </summary>
+                        <div class="flex flex-col gap-3 pt-3 pl-5">
+                            <span class="font-body-sm text-body-sm text-secondary">Residues from two chains close enough to touch where the proteins bind each other.</span>
+                            <div class="flex items-end gap-3">
+                                <label class="flex flex-col gap-1">
+                                    <span class="font-label-sm text-label-sm text-secondary">Chain A</span>
+                                    <select id="interface-chain-a" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono"></select>
+                                </label>
+                                <label class="flex flex-col gap-1">
+                                    <span class="font-label-sm text-label-sm text-secondary">Chain B</span>
+                                    <select id="interface-chain-b" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono"></select>
+                                </label>
+                                <button id="interface-analyze-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Analyze Interface</button>
+                            </div>
+                            <div id="interface-results" class="flex flex-col gap-3"></div>
+                        </div>
+                    </details>
                 </div>
             </div>
         `,this.element=e,this.setupEventListeners(),this.populateStructurePicker(),this.populateDropdown(),e}setupEventListeners(){this.element.querySelector(`#ligand-select`).addEventListener(`change`,async e=>{let t=e.target.value;this.selectedLigandId=t,await this.loadInteractions(t)}),this.element.querySelector(`#ligand-structure-select`).addEventListener(`change`,async e=>{await this.switchStructure(Number.parseInt(e.target.value,10))});let e=this.element.querySelector(`#pocket-color-mode-select`);e&&e.addEventListener(`change`,e=>{this.pocketColorMode=e.target.value,this.selectedLigandId&&typeof this.onLigandSelected==`function`&&this.onLigandSelected(this.currentStructureIndex,this.selectedLigandId,this.lastContacts,this.pocketColorMode)}),this.element.querySelector(`#interface-analyze-btn`).addEventListener(`click`,()=>this.analyzeInterface()),this.element.querySelector(`#prankweb-detect-btn`).addEventListener(`click`,()=>this.runPrankwebDetection())}populateStructurePicker(){if(!this.element)return;let e=this.element.querySelector(`#ligand-structure-select`);e.innerHTML=``,this.selectedPDBs.forEach((t,n)=>{let r=document.createElement(`option`);r.value=String(n),r.textContent=t,n===this.currentStructureIndex&&(r.selected=!0),e.appendChild(r)})}async switchStructure(e){if(e===this.currentStructureIndex)return;this.currentStructureIndex=e,this.selectedLigandId=``,this.clearTable(),this.onLigandSelected(this.currentStructureIndex,``);let t=this.selectedPDBs[e];try{let e=await E(t,this.currentRunId);this.ligandsList=e.ligands||[]}catch(e){console.error(`Failed to load ligands for structure:`,e),this.ligandsList=[]}this.populateDropdown(),await this.loadAvailableChains(),await this.loadCandidatePockets()}updateLigands(e,t,n,r=null){this.ligandsList=e||[],this.currentRunId=t,n&&(this.selectedPDBs=n),this.currentStructureIndex=0,this.selectedLigandId=``,this.pocketSimilarity=r,this.populateStructurePicker(),this.populateDropdown(),this.clearTable(),this.renderPocketSimilarity(),this.loadAvailableChains(),this.loadCandidatePockets()}async loadAvailableChains(){if(!this.element)return;let e=this.selectedPDBs[this.currentStructureIndex];if(!e){this.availableChains=[],this.renderInterfaceSection();return}try{let t=(await v([e])).chains?.[e];this.availableChains=(t?.chains||[]).map(e=>e.id)}catch(e){console.error(`Failed to load chain list for interface analysis:`,e),this.availableChains=[]}this.renderInterfaceSection()}async loadCandidatePockets(){if(!this.element)return;let e=this.element.querySelector(`#candidate-pockets-section`),t=this.selectedPDBs[this.currentStructureIndex];if(!t||this.ligandsList.length>0){e.classList.add(`hidden`),e.classList.remove(`flex`);return}try{let e=await le(t,this.currentRunId);this.renderCandidatePockets(e.pockets||[])}catch(e){console.error(`Failed to load candidate pockets:`,e),this.renderCandidatePockets([])}}renderCandidatePockets(e){if(!this.element)return;let t=this.element.querySelector(`#candidate-pockets-section`),n=this.element.querySelector(`#candidate-pockets-table-body`);if(!e||e.length===0){t.classList.add(`hidden`),t.classList.remove(`flex`);return}t.classList.remove(`hidden`),t.classList.add(`flex`),n.innerHTML=``,e.forEach(e=>{let t=document.createElement(`tr`);t.className=`hover:bg-surface-raised transition-colors cursor-pointer group`,t.title=`Click to inspect pocket-lining residues in 3D`,t.addEventListener(`click`,()=>{if(typeof this.onResidueSelected==`function`&&e.residues?.length>0){let t=e.residues[0];this.onResidueSelected(this.currentStructureIndex,t.chain,t.resi,t.resi)}});let r=document.createElement(`td`);r.className=`py-1.5 font-bold`,r.textContent=e.rank,t.appendChild(r);let i=(e.residues||[]).map(e=>`${e.resn} ${e.chain}${e.resi}`).join(`, `),a=document.createElement(`td`);a.className=`px-3 py-1.5`;let o=document.createElement(`span`);o.className=`block max-w-[280px] truncate`,o.title=i,o.textContent=i,a.appendChild(o),t.appendChild(a);let s=document.createElement(`td`);s.className=`px-3 py-1.5 text-right font-semibold`,s.textContent=e.score,t.appendChild(s);let c=document.createElement(`td`);c.className=`px-3 py-1.5 text-right font-mono text-accent`,c.textContent=e.volume_estimate_a3==null?`--`:`${e.volume_estimate_a3} Å³`,t.appendChild(c),n.appendChild(t)})}async runPrankwebDetection(){let e=this.element.querySelector(`#prankweb-detect-btn`),t=this.element.querySelector(`#prankweb-feedback`),n=this.selectedPDBs[this.currentStructureIndex];if(n){e.disabled=!0,t.textContent=`Submitting to PrankWeb…`;try{let e=await ne(n,this.currentRunId);t.textContent=`Running P2Rank (this can take a minute)…`;let r=await C(e.job_id,{intervalMs:8e3});if(r.status===`failed`){t.textContent=r.error||`PrankWeb pocket detection failed.`;return}let i=r.prediction?.pockets||[];t.textContent=i.length>0?`Found ${i.length} real pocket(s).`:`No real pockets detected for this structure.`,this.renderPrankwebPockets(i)}catch(e){console.error(`PrankWeb pocket detection failed:`,e),t.textContent=e.message||`PrankWeb pocket detection failed.`}finally{e.disabled=!1}}}renderPrankwebPockets(e){let t=this.element.querySelector(`#prankweb-pockets-section`),n=this.element.querySelector(`#prankweb-pockets-table-body`);if(!e||e.length===0){t.classList.add(`hidden`),t.classList.remove(`flex`);return}t.classList.remove(`hidden`),t.classList.add(`flex`),n.innerHTML=``,e.forEach(e=>{let t=document.createElement(`tr`);t.className=`hover:bg-surface-raised transition-colors cursor-pointer group`,t.title=`Click to inspect pocket-lining residues in 3D`,t.addEventListener(`click`,()=>{if(typeof this.onResidueSelected==`function`&&e.residues?.length>0){let t=e.residues[0].split(`_`),n=t[0]||`A`,r=Number.parseInt(t[1],10)||1;this.onResidueSelected(this.currentStructureIndex,n,r,r)}});let r=document.createElement(`td`);r.className=`py-1.5 font-bold`,r.textContent=e.rank,t.appendChild(r);let i=(e.residues||[]).map(e=>e.replace(`_`,``)).join(`, `),a=document.createElement(`td`);a.className=`px-3 py-1.5`;let o=document.createElement(`span`);o.className=`block max-w-[280px] truncate`,o.title=i,o.textContent=i,a.appendChild(o),t.appendChild(a);let s=document.createElement(`td`);s.className=`px-3 py-1.5 text-right font-semibold`,s.textContent=e.score,t.appendChild(s);let c=document.createElement(`td`);c.className=`px-3 py-1.5 text-right font-mono text-success`,c.textContent=e.probability,t.appendChild(c),n.appendChild(t)})}renderInterfaceSection(){if(!this.element)return;let e=this.element.querySelector(`#interface-section`),t=this.element.querySelector(`#interface-chain-a`),n=this.element.querySelector(`#interface-chain-b`),r=this.element.querySelector(`#interface-results`);if(r.innerHTML=``,this.availableChains.length<2){e.classList.add(`hidden`),e.classList.remove(`flex`);return}e.classList.remove(`hidden`),e.classList.add(`flex`);let i=(e,t)=>{e.innerHTML=``,this.availableChains.forEach((n,r)=>{let i=document.createElement(`option`);i.value=n,i.textContent=n,r===t&&(i.selected=!0),e.appendChild(i)})};i(t,0),i(n,1)}async analyzeInterface(){if(!this.element)return;let e=this.element.querySelector(`#interface-chain-a`).value,t=this.element.querySelector(`#interface-chain-b`).value,n=this.element.querySelector(`#interface-results`);if(!e||!t||e===t){n.innerHTML=`<div class="font-body-sm text-body-sm text-secondary py-2">Select two different chains.</div>`;return}n.innerHTML=`
@@ -787,7 +805,13 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
                         <th class="px-3 py-1.5 border-b border-border font-medium">Type</th>
                     </tr>
                 </thead>
-            `;let a=document.createElement(`tbody`);return a.className=`font-body-sm text-body-sm text-primary font-mono divide-y divide-border-subtle`,t.forEach(e=>a.appendChild(L(e))),i.appendChild(a),n.appendChild(i),n};t.appendChild(r(`Chain ${e.chain_a} contacts`,e.chain_a_contacts)),t.appendChild(r(`Chain ${e.chain_b} contacts`,e.chain_b_contacts))}renderPocketSimilarity(){if(!this.element)return;let e=this.element.querySelector(`#pocket-similarity-section`),t=this.element.querySelector(`#pocket-similarity-heatmap`),n=this.pocketSimilarity;if(!n?.data?.length||n.data.length<2){e.classList.add(`hidden`);return}e.classList.remove(`hidden`);let r=n.columns.map(e=>{let t=e.indexOf(`:`);return t===-1?e:`${e.slice(0,t)}<br>${e.slice(t+1)}`}),i={z:n.data,x:r,y:r,type:`heatmap`,colorscale:`RdBu`,reversescale:!0,zmin:0,zmax:1};Plotly.newPlot(t,[i],{height:320,margin:{l:90,r:20,t:10,b:90},paper_bgcolor:`rgba(0,0,0,0)`,plot_bgcolor:`rgba(0,0,0,0)`,font:{family:`Inter, sans-serif`,size:10,color:`#A79E8E`}},{responsive:!0,displayModeBar:!1})}populateDropdown(){if(!this.element)return;let e=this.element.querySelector(`#ligand-select`);if(e.innerHTML=``,this.ligandsList.length===0){e.innerHTML=`<option value="">No Ligands Loaded</option>`;return}let t=document.createElement(`option`);t.value=``,t.innerText=`Select a Ligand`,e.appendChild(t),this.ligandsList.forEach(t=>{let n=document.createElement(`option`);n.value=t.id,n.innerText=`${t.name} (Chain ${t.chain}, Resi ${t.resi})`,this.selectedLigandId===t.id&&(n.selected=!0),e.appendChild(n)})}clearTable(){if(!this.element)return;let e=this.element.querySelector(`#ligand-pocket-desc`);e.innerText=`Add a second structure and run alignment to analyze ligands here in Compare mode. For a single structure, use Discover mode's ligand inspector instead.`;let t=this.element.querySelector(`#pocket-metrics-row`);t&&(t.classList.add(`hidden`),t.classList.remove(`flex`));let n=this.element.querySelector(`#ligand-2d-section`);n&&(n.classList.add(`hidden`),n.classList.remove(`flex`)),this.element.querySelector(`#ligand-chemistry-info`).classList.add(`hidden`),this.element.querySelector(`#interaction-count`).innerText=`0 Found`,this.lastContacts=[],this.element.querySelector(`#interactions-table-body`).innerHTML=`
+            `;let a=document.createElement(`tbody`);return a.className=`font-body-sm text-body-sm text-primary font-mono divide-y divide-border-subtle`,t.forEach(e=>a.appendChild(L(e))),i.appendChild(a),n.appendChild(i),n};t.appendChild(r(`Chain ${e.chain_a} contacts`,e.chain_a_contacts)),t.appendChild(r(`Chain ${e.chain_b} contacts`,e.chain_b_contacts))}renderPocketSimilarity(){if(!this.element)return;let e=this.element.querySelector(`#pocket-similarity-section`),t=this.element.querySelector(`#pocket-similarity-heatmap`),n=this.pocketSimilarity;if(!n?.data?.length||n.data.length<2){e.classList.add(`hidden`);return}e.classList.remove(`hidden`);let r=n.columns.map(e=>{let t=e.indexOf(`:`);return t===-1?e:`${e.slice(0,t)}<br>${e.slice(t+1)}`}),i={z:n.data,x:r,y:r,type:`heatmap`,colorscale:`RdBu`,reversescale:!0,zmin:0,zmax:1};Plotly.newPlot(t,[i],{height:320,margin:{l:90,r:20,t:10,b:90},paper_bgcolor:`rgba(0,0,0,0)`,plot_bgcolor:`rgba(0,0,0,0)`,font:{family:`Inter, sans-serif`,size:10,color:`#A79E8E`}},{responsive:!0,displayModeBar:!1})}populateDropdown(){if(!this.element)return;let e=this.element.querySelector(`#ligand-select`);if(e.innerHTML=``,this.renderVerdictBanner(),this.ligandsList.length===0){e.innerHTML=`<option value="">No Ligands Loaded</option>`;return}let t=document.createElement(`option`);t.value=``,t.innerText=`Select a Ligand`,e.appendChild(t),this.ligandsList.forEach(t=>{let n=document.createElement(`option`);n.value=t.id,n.innerText=`${t.name} (Chain ${t.chain}, Resi ${t.resi})`,this.selectedLigandId===t.id&&(n.selected=!0),e.appendChild(n)})}renderVerdictBanner(){if(!this.element)return;let e=this.element.querySelector(`#ligand-verdict-banner`);if(!e)return;let t=this.selectedPDBs[this.currentStructureIndex];if(!t||!this.currentRunId&&this.ligandsList.length===0){e.classList.add(`hidden`),e.classList.remove(`flex`),e.innerHTML=``;return}e.classList.remove(`hidden`),e.classList.add(`flex`),e.innerHTML=`
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <span class="font-label-sm text-label-sm uppercase tracking-wider text-secondary" data-field="title"></span>
+                <span class="px-2 py-0.5 rounded-md border font-mono text-[11px] font-semibold" data-field="badge"></span>
+            </div>
+            <p class="font-body-sm text-body-sm text-primary leading-relaxed" data-field="desc"></p>
+        `;let n=e.querySelector(`[data-field="title"]`),r=e.querySelector(`[data-field="badge"]`),i=e.querySelector(`[data-field="desc"]`);if(n.textContent=`Binding Pocket Summary (${t})`,this.ligandsList.length>0){let e=[...new Set(this.ligandsList.map(e=>e.name))].join(`, `);r.className=`px-2 py-0.5 rounded-md border font-mono text-[11px] font-semibold bg-success/15 text-success border-success/30`,r.textContent=`${this.ligandsList.length} Bound Ligand${this.ligandsList.length===1?``:`s`}`,i.innerHTML=``,i.appendChild(document.createTextNode(`Detected bound molecule${this.ligandsList.length===1?``:`s`} (`));let n=document.createElement(`strong`);n.className=`font-mono`,n.textContent=e,i.appendChild(n),i.appendChild(document.createTextNode(`) in `));let a=document.createElement(`strong`);a.className=`font-mono`,a.textContent=t,i.appendChild(a),i.appendChild(document.createTextNode(`. Select a ligand from the top-right dropdown to highlight its 3D binding pocket and inspect contacting amino acids.`))}else{r.className=`px-2 py-0.5 rounded-md border font-mono text-[11px] font-semibold bg-warning/15 text-warning border-warning/30`,r.textContent=`Apo Structure (No Bound Ligands)`,i.innerHTML=``,i.appendChild(document.createTextNode(`No small-molecule ligands are co-crystallized in `));let e=document.createElement(`strong`);e.className=`font-mono`,e.textContent=t,i.appendChild(e),i.appendChild(document.createTextNode(`. Review the `));let n=document.createElement(`strong`);n.className=`text-secondary`,n.textContent=`Candidate binding pockets`,i.appendChild(n),i.appendChild(document.createTextNode(` section below to explore predicted surface cavities.`))}}clearTable(){if(!this.element)return;let e=this.element.querySelector(`#ligand-pocket-desc`);e.innerText=`Add a second structure and run alignment to analyze ligands here in Compare mode. For a single structure, use Discover mode's ligand inspector instead.`;let t=this.element.querySelector(`#pocket-metrics-row`);t&&(t.classList.add(`hidden`),t.classList.remove(`flex`));let n=this.element.querySelector(`#ligand-2d-section`);n&&(n.classList.add(`hidden`),n.classList.remove(`flex`)),this.element.querySelector(`#ligand-chemistry-info`).classList.add(`hidden`),this.element.querySelector(`#interaction-count`).innerText=`0 Found`,this.lastContacts=[],this.element.querySelector(`#interactions-table-body`).innerHTML=`
             <tr>
                 <td colspan="5" class="text-center py-8 text-secondary font-body-sm">
                     Select a ligand to populate interactions.
@@ -852,62 +876,6 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
                             Run alignment to generate sequence view.
                         </div>
                     </div>
-                </div>
-
-                <div class="flex flex-col gap-3 border-t border-border pt-6">
-                    <div class="flex items-center justify-between">
-                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">True sequence-only MSA (Clustal Omega)</span>
-                        <button id="clustalo-run-btn" class="btn-secondary py-1.5 px-3 rounded-md font-label-md text-label-md" disabled>Run true sequence alignment</button>
-                    </div>
-                    <div class="section-caption">
-                        Independent of Mustang's structural alignment above - a real multiple sequence alignment computed purely from each structure's own sequence, via EBI's public Clustal Omega service. Can disagree with the structural alignment for divergent sequences with similar folds.
-                    </div>
-                    <details class="webhook-disclosure group mt-1">
-                        <summary class="flex items-center gap-1 cursor-pointer select-none font-label-sm text-[11px] text-secondary hover:text-primary list-none [&::-webkit-details-marker]:hidden w-fit">
-                            <span class="material-symbols-outlined text-[14px] transition-transform group-open:rotate-90">chevron_right</span>
-                            <span>Advanced: Webhook notification when job finishes (optional)</span>
-                        </summary>
-                        <div class="pt-2 pl-4">
-                            <input id="clustalo-webhook-url" type="url" aria-label="Webhook URL for Clustal Omega completion notification" placeholder="https://..." class="max-w-[320px] bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
-                        </div>
-                    </details>
-                    <div id="clustalo-result-wrapper" class="overflow-x-auto rounded-md max-h-[350px]"></div>
-                </div>
-
-                <div class="flex flex-col gap-3 border-t border-border pt-6">
-                    <div class="flex items-center justify-between">
-                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Real evolutionary conservation (NCBI BLAST)</span>
-                        <div class="flex items-center gap-2">
-                            <select id="conservation-structure-select" aria-label="Structure to show conservation mapping for" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[160px]"></select>
-                            <button id="conservation-run-btn" class="btn-secondary py-1.5 px-3 rounded-md font-label-md text-label-md" disabled>Find real homologs</button>
-                        </div>
-                    </div>
-                    <div class="section-caption">
-                        Searches NCBI BLAST for real homologs of the selected structure's sequence, then scores real per-position conservation from their alignments (Shannon entropy) - genuinely different from the identity-based coloring above. Real BLAST searches commonly take several minutes.
-                    </div>
-                    <details class="webhook-disclosure group mt-1">
-                        <summary class="flex items-center gap-1 cursor-pointer select-none font-label-sm text-[11px] text-secondary hover:text-primary list-none [&::-webkit-details-marker]:hidden w-fit">
-                            <span class="material-symbols-outlined text-[14px] transition-transform group-open:rotate-90">chevron_right</span>
-                            <span>Advanced: Webhook notification when job finishes (optional)</span>
-                        </summary>
-                        <div class="pt-2 pl-4">
-                            <input id="conservation-webhook-url" type="url" aria-label="Webhook URL for NCBI BLAST completion notification" placeholder="https://..." class="max-w-[320px] bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
-                        </div>
-                    </details>
-                    <div id="conservation-result-wrapper" class="overflow-x-auto rounded-md max-h-[350px]"></div>
-                    <div id="conservation-logo-plotly" class="w-full h-[160px] hidden"></div>
-                </div>
-
-                <div class="flex flex-col gap-3 border-t border-border pt-6">
-                    <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Sequence motif search</span>
-                    <div class="section-caption">
-                        Search for a residue motif (e.g. <code>RYY</code>, <code>G.G</code>, <code>G-X-P</code> — <code>X</code>/<code>.</code>/<code>-</code> act as single-residue wildcards) and highlight every match in the 3D viewer.
-                    </div>
-                    <div class="flex gap-2">
-                        <input id="motif-search-input" type="text" placeholder="e.g. RYY or G.G" aria-label="Residue motif to search for" class="flex-1 bg-surface-raised border border-border rounded-md px-3 py-2 font-body-sm font-mono text-primary uppercase" />
-                        <button id="motif-search-btn" class="btn-primary py-2 px-4 rounded-md font-label-md text-label-md" disabled>Search</button>
-                    </div>
-                    <div id="motif-results-container"></div>
                 </div>
 
                 <div class="flex flex-col gap-4 border-t border-border pt-6">
@@ -1013,6 +981,90 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
                         </div>
                     </details>
                 </div>
+
+                <div class="flex flex-col gap-3 border-t border-border pt-6">
+                    <span class="font-label-sm text-[11px] font-mono uppercase tracking-wider text-muted">Optional Sequence Tools</span>
+
+                    <details id="sequence-motif-disclosure" class="group rounded-lg bg-surface border border-border-subtle p-3.5">
+                        <summary class="flex items-center justify-between gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                            <span class="flex items-center gap-1.5 font-label-md text-label-md text-secondary group-hover:text-primary uppercase tracking-wider">
+                                <span class="material-symbols-outlined text-[16px] transition-transform group-open:rotate-90">chevron_right</span>
+                                Sequence motif search
+                            </span>
+                            <span class="font-mono text-[10px] text-muted">Find &amp; highlight patterns in 3D</span>
+                        </summary>
+                        <div class="flex flex-col gap-3 pt-3 pl-5">
+                            <div class="section-caption">
+                                Search for a residue motif (e.g. <code>RYY</code>, <code>G.G</code>, <code>G-X-P</code> — <code>X</code>/<code>.</code>/<code>-</code> act as single-residue wildcards) and highlight every match in the 3D viewer.
+                            </div>
+                            <div class="flex gap-2">
+                                <input id="motif-search-input" type="text" placeholder="e.g. RYY or G.G" aria-label="Residue motif to search for" class="flex-1 bg-surface-raised border border-border rounded-md px-3 py-2 font-body-sm font-mono text-primary uppercase" />
+                                <button id="motif-search-btn" class="btn-primary py-2 px-4 rounded-md font-label-md text-label-md" disabled>Search</button>
+                            </div>
+                            <div id="motif-results-container"></div>
+                        </div>
+                    </details>
+
+                    <details id="sequence-clustalo-disclosure" class="group rounded-lg bg-surface border border-border-subtle p-3.5">
+                        <summary class="flex items-center justify-between gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                            <span class="flex items-center gap-1.5 font-label-md text-label-md text-secondary group-hover:text-primary uppercase tracking-wider">
+                                <span class="material-symbols-outlined text-[16px] transition-transform group-open:rotate-90">chevron_right</span>
+                                True sequence-only MSA (Clustal Omega)
+                            </span>
+                            <span class="font-mono text-[10px] text-muted">Compare pure sequence vs. 3D alignment</span>
+                        </summary>
+                        <div class="flex flex-col gap-3 pt-3 pl-5">
+                            <div class="flex items-center justify-between gap-2">
+                                <div class="section-caption">
+                                    Independent of Mustang's structural alignment above - a real multiple sequence alignment computed purely from each structure's own sequence, via EBI's public Clustal Omega service. Can disagree with the structural alignment for divergent sequences with similar folds.
+                                </div>
+                                <button id="clustalo-run-btn" class="btn-secondary py-1.5 px-3 rounded-md font-label-md text-label-md shrink-0" disabled>Run true sequence alignment</button>
+                            </div>
+                            <details class="webhook-disclosure group mt-1">
+                                <summary class="flex items-center gap-1 cursor-pointer select-none font-label-sm text-[11px] text-secondary hover:text-primary list-none [&::-webkit-details-marker]:hidden w-fit">
+                                    <span class="material-symbols-outlined text-[14px] transition-transform group-open:rotate-90">chevron_right</span>
+                                    <span>Advanced: Webhook notification when job finishes (optional)</span>
+                                </summary>
+                                <div class="pt-2 pl-4">
+                                    <input id="clustalo-webhook-url" type="url" aria-label="Webhook URL for Clustal Omega completion notification" placeholder="https://..." class="max-w-[320px] bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
+                                </div>
+                            </details>
+                            <div id="clustalo-result-wrapper" class="overflow-x-auto rounded-md max-h-[350px]"></div>
+                        </div>
+                    </details>
+
+                    <details id="sequence-conservation-disclosure" class="group rounded-lg bg-surface border border-border-subtle p-3.5">
+                        <summary class="flex items-center justify-between gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                            <span class="flex items-center gap-1.5 font-label-md text-label-md text-secondary group-hover:text-primary uppercase tracking-wider">
+                                <span class="material-symbols-outlined text-[16px] transition-transform group-open:rotate-90">chevron_right</span>
+                                Real evolutionary conservation (NCBI BLAST)
+                            </span>
+                            <span class="font-mono text-[10px] text-muted">Shannon entropy across homologs</span>
+                        </summary>
+                        <div class="flex flex-col gap-3 pt-3 pl-5">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <div class="section-caption flex-1">
+                                    Searches NCBI BLAST for real homologs of the selected structure's sequence, then scores real per-position conservation from their alignments (Shannon entropy) - genuinely different from the identity-based coloring above. Real BLAST searches commonly take several minutes.
+                                </div>
+                                <div class="flex items-center gap-2 shrink-0">
+                                    <select id="conservation-structure-select" aria-label="Structure to show conservation mapping for" class="bg-surface-raised border border-border rounded-md text-body-sm text-primary py-1.5 px-3 focus:outline-none focus:border-accent font-mono max-w-[160px]"></select>
+                                    <button id="conservation-run-btn" class="btn-secondary py-1.5 px-3 rounded-md font-label-md text-label-md" disabled>Find real homologs</button>
+                                </div>
+                            </div>
+                            <details class="webhook-disclosure group mt-1">
+                                <summary class="flex items-center gap-1 cursor-pointer select-none font-label-sm text-[11px] text-secondary hover:text-primary list-none [&::-webkit-details-marker]:hidden w-fit">
+                                    <span class="material-symbols-outlined text-[14px] transition-transform group-open:rotate-90">chevron_right</span>
+                                    <span>Advanced: Webhook notification when job finishes (optional)</span>
+                                </summary>
+                                <div class="pt-2 pl-4">
+                                    <input id="conservation-webhook-url" type="url" aria-label="Webhook URL for NCBI BLAST completion notification" placeholder="https://..." class="max-w-[320px] bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm text-primary focus:outline-none focus:border-accent font-mono" />
+                                </div>
+                            </details>
+                            <div id="conservation-result-wrapper" class="overflow-x-auto rounded-md max-h-[350px]"></div>
+                            <div id="conservation-logo-plotly" class="w-full h-[160px] hidden"></div>
+                        </div>
+                    </details>
+                </div>
             </div>
         `,this.element=e,this.setupEventListeners(),this.refreshStats(),e}setupEventListeners(){this.element.querySelectorAll(`.report-section-checkbox`).forEach(e=>{e.addEventListener(`change`,()=>this.updateReportLink())});let e=this.element.querySelector(`#motif-search-input`);this.element.querySelector(`#motif-search-btn`).addEventListener(`click`,()=>this.searchMotif(e.value)),e.addEventListener(`keydown`,t=>{t.key===`Enter`&&this.searchMotif(e.value)}),this.element.querySelector(`#clustalo-run-btn`).addEventListener(`click`,()=>this.runClustalOmegaAlignment()),this.element.querySelector(`#conservation-run-btn`).addEventListener(`click`,()=>this.runConservationSearch()),this.element.querySelector(`#sequence-open-export-studio-btn`)?.addEventListener(`click`,()=>this.onOpenExportStudio())}async searchMotif(e){if(!this.currentRunId||!e?.trim())return;let t=this.element.querySelector(`#motif-results-container`);t.innerHTML=`
             <div class="text-center py-4 text-secondary font-body-sm">
@@ -1107,7 +1159,7 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
             </summary>
             <div class="pb-2 pl-1">${t}</div>
         </details>
-    `:``}var It=[{key:`quality`,label:`Quality`},{key:`rmsf`,label:`RMSF`},{key:`rmsd`,label:`RMSD Matrix`},{key:`phylo`,label:`Phylogeny`},{key:`insights`,label:`Insights`},{key:`annotations`,label:`Annotations`}],Lt=new Set([`Modified residue`,`Disulfide bond`,`Glycosylation`,`Lipidation`,`Cross-link`]),Rt=class{element=null;currentRunId=null;heatmapFig=null;treeFig=null;ramachandranStats=null;secondaryStructureStats=null;tmScoreMatrix=null;rmsfValues=[];insights=[];qualityMetrics=null;activeSubTab=`quality`;viewMode=`simple`;structures=[];annotationsCache={};annotationsLoadedForKey=null;annotationsLoading=!1;constructor(e={}){this.onHighlightResidues=e.onHighlightResidues||(()=>{}),this.onGoToWorkspace=e.onGoToWorkspace||(()=>{})}render(){let e=document.createElement(`div`);return e.className=`editorial-section`,e.id=`tab-analytics-container`,e.innerHTML=`
+    `:``}var It=[{key:`quality`,label:`Quality`,tooltip:`Backbone geometry (Ramachandran) & overall fold similarity (TM-score)`},{key:`rmsf`,label:`RMSF`,tooltip:`Per-residue structural fluctuation across aligned positions`},{key:`rmsd`,label:`RMSD Matrix`,tooltip:`Pairwise 3D structural distance heatmap across all structures`},{key:`phylo`,label:`Phylogeny`,tooltip:`Hierarchical structural similarity tree (dendrogram)`},{key:`insights`,label:`Insights`,tooltip:`Automated plain-English biochemical takeaways`},{key:`annotations`,label:`Annotations`,tooltip:`Protein domains, Gene Ontology (GO) terms & catalytic sites`}],Lt=new Set([`Modified residue`,`Disulfide bond`,`Glycosylation`,`Lipidation`,`Cross-link`]),Rt=class{element=null;currentRunId=null;heatmapFig=null;treeFig=null;ramachandranStats=null;secondaryStructureStats=null;tmScoreMatrix=null;rmsfValues=[];insights=[];qualityMetrics=null;activeSubTab=`quality`;viewMode=`simple`;structures=[];annotationsCache={};annotationsLoadedForKey=null;annotationsLoading=!1;constructor(e={}){this.onHighlightResidues=e.onHighlightResidues||(()=>{}),this.onGoToWorkspace=e.onGoToWorkspace||(()=>{})}render(){let e=document.createElement(`div`);return e.className=`editorial-section`,e.id=`tab-analytics-container`,e.innerHTML=`
             <header class="section-head flex flex-wrap justify-between items-center gap-4">
                 <div>
                     <span class="eyebrow">Fig. — Structural Analytics</span>
@@ -1124,7 +1176,7 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
                 <!-- Sub-tab strip -->
                 <div id="analytics-subtab-strip" role="tablist" class="flex flex-wrap gap-1 border border-border rounded-md p-1 shrink-0">
                     ${It.map(e=>`
-                        <button data-subtab="${e.key}" id="analytics-subtab-tab-${e.key}" role="tab" aria-controls="analytics-subtab-panel-${e.key}" class="analytics-subtab-btn flex-1 min-w-[84px] py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors" aria-selected="${e.key===`quality`}" tabindex="${e.key===`quality`?`0`:`-1`}">${e.label}</button>
+                        <button data-subtab="${e.key}" id="analytics-subtab-tab-${e.key}" role="tab" aria-controls="analytics-subtab-panel-${e.key}" title="${e.tooltip}" class="analytics-subtab-btn flex-1 min-w-[84px] py-1.5 rounded-md font-label-md text-label-md whitespace-nowrap transition-colors" aria-selected="${e.key===`quality`}" tabindex="${e.key===`quality`?`0`:`-1`}">${e.label}</button>
                     `).join(``)}
                 </div>
 
@@ -1194,8 +1246,8 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
                                 </select>
                                 <button id="pae-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
                             </div>
-                            <div id="pae-plotly" class="w-full h-[240px]">
-                                <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                            <div id="pae-plotly" class="w-full min-h-[36px]">
+                                <div class="flex items-center justify-center py-2 text-secondary font-body-sm">
                                     Select an AlphaFold structure and load to view its per-residue-pair confidence.
                                 </div>
                             </div>
@@ -1216,8 +1268,8 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
                                 </select>
                                 <button id="flexibility-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
                             </div>
-                            <div id="flexibility-plotly" class="w-full h-[240px]">
-                                <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                            <div id="flexibility-plotly" class="w-full min-h-[36px]">
+                                <div class="flex items-center justify-center py-2 text-secondary font-body-sm">
                                     Select a structure and load to view its predicted per-residue flexibility.
                                 </div>
                             </div>
@@ -1257,8 +1309,8 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
                                 </select>
                                 <button id="contact-map-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
                             </div>
-                            <div id="contact-map-plotly" class="w-full h-[240px]">
-                                <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                            <div id="contact-map-plotly" class="w-full min-h-[36px]">
+                                <div class="flex items-center justify-center py-2 text-secondary font-body-sm">
                                     Select a structure and load to view its contact map.
                                 </div>
                             </div>
@@ -1283,8 +1335,8 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
                                 </select>
                                 <button id="diff-distance-load-btn" class="btn-secondary px-3 py-1 rounded-md font-label-sm text-label-sm" disabled>Load</button>
                             </div>
-                            <div id="diff-distance-plotly" class="w-full h-[240px]">
-                                <div class="flex items-center justify-center h-full text-secondary font-body-sm">
+                            <div id="diff-distance-plotly" class="w-full min-h-[36px]">
+                                <div class="flex items-center justify-center py-2 text-secondary font-body-sm">
                                     Select two structures and load to view their difference-distance matrix.
                                 </div>
                             </div>
@@ -1440,15 +1492,15 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
                     <div class="flex items-center justify-center h-full text-secondary font-body-sm">
                         No pairwise heatmap figure available.
                     </div>
-                `);return}e.innerHTML=``;let t={...this.heatmapFig.layout,width:void 0,height:280,margin:{l:50,r:20,t:30,b:50},paper_bgcolor:`rgba(0,0,0,0)`,plot_bgcolor:`rgba(0,0,0,0)`,font:{family:`Inter, sans-serif`,size:10,color:`#A79E8E`}};Plotly.newPlot(e,this.heatmapFig.data,t,{responsive:!0,displayModeBar:!1})}_populateStructureOptions(e,t){let n=e.value;if(e.innerHTML=``,t.length===0){let t=document.createElement(`option`);t.value=``,t.textContent=`Select a structure`,e.appendChild(t)}t.forEach(({pdbId:t})=>{let n=document.createElement(`option`);n.value=t,n.textContent=t,e.appendChild(n)}),t.some(e=>e.pdbId===n)&&(e.value=n)}populateContactMapSelectors(){let e=[this.element.querySelector(`#contact-map-pdb-select`)],t=[this.element.querySelector(`#diff-distance-pdb-a-select`),this.element.querySelector(`#diff-distance-pdb-b-select`)];[...e,...t].forEach(e=>this._populateStructureOptions(e,this.structures)),t[1]&&this.structures.length>1&&t[0].value===t[1].value&&(t[1].value=this.structures[1].pdbId),this.updateContactMapButtonStates()}updateContactMapButtonStates(){let e=this.element.querySelector(`#contact-map-pdb-select`),t=this.element.querySelector(`#contact-map-load-btn`);t&&(t.disabled=!e.value);let n=this.element.querySelector(`#diff-distance-pdb-a-select`).value,r=this.element.querySelector(`#diff-distance-pdb-b-select`).value,i=this.element.querySelector(`#diff-distance-load-btn`);i&&(i.disabled=!n||!r)}populatePaeSelector(){let e=this.element.querySelector(`#pae-pdb-select`),t=this.structures.filter(({pdbId:e})=>e.toUpperCase().startsWith(`AF-`));this._populateStructureOptions(e,t);let n=this.element.querySelector(`#pae-load-btn`);n&&(n.disabled=!e.value)}async loadPae(){let e=this.element.querySelector(`#pae-pdb-select`).value,t=this.element.querySelector(`#pae-plotly`);if(e){t.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">Loading PAE&hellip;</div>`;try{let t=await ze(e);this.renderPaeHeatmap(t)}catch(e){console.error(`Failed to load PAE:`,e),t.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">No PAE data available for this structure.</div>`}}}renderPaeHeatmap(e){let t=this.element.querySelector(`#pae-plotly`);if(!t)return;t.innerHTML=``;let n={z:e.pae,type:`heatmap`,colorscale:[[0,`#3E5C9A`],[.5,`#C9A063`],[1,`#B23A3A`]],showscale:!0};Plotly.newPlot(t,[n],{height:240,margin:{l:40,r:10,t:10,b:30},paper_bgcolor:`rgba(0,0,0,0)`,plot_bgcolor:`rgba(0,0,0,0)`,font:{family:`Inter, sans-serif`,size:10,color:`#A79E8E`},yaxis:{autorange:`reversed`}},{responsive:!0,displayModeBar:!1})}populateFlexibilitySelector(){let e=this.element.querySelector(`#flexibility-pdb-select`);this._populateStructureOptions(e,this.structures);let t=this.element.querySelector(`#flexibility-load-btn`);t&&(t.disabled=!e.value)}async loadFlexibility(){let e=this.element.querySelector(`#flexibility-pdb-select`).value,t=this.element.querySelector(`#flexibility-plotly`);if(e){t.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">Loading flexibility prediction&hellip;</div>`;try{let t=await P(e,this.currentRunId);this.renderFlexibilityChart(t.flexibility)}catch(e){console.error(`Failed to load flexibility prediction:`,e),t.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">${e.message||`No flexibility prediction available for this structure.`}</div>`}}}renderFlexibilityChart(e){let t=this.element.querySelector(`#flexibility-plotly`);if(!t)return;t.innerHTML=``;let n=[{x:e.residue_numbers,y:e.flexibility,type:`scatter`,mode:`lines`,name:`Predicted flexibility (GNM)`,line:{color:`#8B5CF6`}}];e.b_factor&&n.push({x:e.residue_numbers,y:e.b_factor,type:`scatter`,mode:`lines`,name:`Real B-factor`,yaxis:`y2`,line:{color:`#F59E0B`,dash:`dot`}});let r={height:240,margin:{l:40,r:e.b_factor?40:10,t:10,b:30},paper_bgcolor:`rgba(0,0,0,0)`,plot_bgcolor:`rgba(0,0,0,0)`,font:{family:`Inter, sans-serif`,size:10,color:`#A79E8E`},xaxis:{title:`Residue`},yaxis:{title:`Predicted flexibility (0-1)`},yaxis2:e.b_factor?{title:`B-factor`,overlaying:`y`,side:`right`}:void 0,showlegend:!!e.b_factor,legend:{orientation:`h`,y:-.3}};Plotly.newPlot(t,n,r,{responsive:!0,displayModeBar:!1})}populateDiffNarrativeSelectors(){let e=[this.element.querySelector(`#diff-narrative-pdb-a-select`),this.element.querySelector(`#diff-narrative-pdb-b-select`)];e.forEach(e=>this._populateStructureOptions(e,this.structures)),this.structures.length>1&&e[0].value===e[1].value&&(e[1].value=this.structures[1].pdbId);let t=this.element.querySelector(`#diff-narrative-load-btn`);t&&(t.disabled=!e[0].value||!e[1].value)}_rmsdFor(e,t){let n=this.heatmapFig?.data?.[0];if(!n?.z||!n?.x||!n?.y)return null;let r=n.y.indexOf(e),i=n.x.indexOf(t);if(r===-1||i===-1)return null;let a=n.z[r]?.[i];return typeof a==`number`?a:null}_tmScoreFor(e,t){let n=this.tmScoreMatrix;if(!n?.data||!n?.index||!n?.columns)return null;let r=n.index.indexOf(e),i=n.columns.indexOf(t);if(r===-1||i===-1)return null;let a=n.data[r]?.[i];return typeof a==`number`?a:null}describeStructureDiff(){let e=this.element.querySelector(`#diff-narrative-pdb-a-select`).value,t=this.element.querySelector(`#diff-narrative-pdb-b-select`).value,n=this.element.querySelector(`#diff-narrative-text`);if(!n)return;if(!e||!t||e===t){n.textContent=`Select two different structures to compare.`;return}let r=this._rmsdFor(e,t);if(r===null){n.textContent=`No RMSD data available for this pair yet - run alignment first.`;return}let i;i=r<2?`${e} and ${t} are structurally very similar (${r.toFixed(2)} Å RMSD).`:r<=5?`${e} and ${t} show moderate structural divergence (${r.toFixed(2)} Å RMSD).`:`${e} and ${t} are substantially different in shape (${r.toFixed(2)} Å RMSD).`;let a=this._tmScoreFor(e,t),o=``;a!==null&&(o=a>.9?` Their independent TM-score of ${a.toFixed(3)} confirms the same fold with high confidence.`:a>=.5?` Their independent TM-score of ${a.toFixed(3)} still indicates the same overall fold.`:` Their independent TM-score of ${a.toFixed(3)} suggests these may not share the same fold at all, despite the RMSD above.`),n.textContent=i+o}async loadContactMap(){let e=this.element.querySelector(`#contact-map-pdb-select`).value,t=this.element.querySelector(`#contact-map-plotly`);if(!(!this.currentRunId||!e)){t.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">Loading contact map&hellip;</div>`;try{let t=await Ve(this.currentRunId,e);this.renderContactMapHeatmap(t)}catch(e){console.error(`Failed to load contact map:`,e),t.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">Failed to load contact map.</div>`}}}renderContactMapHeatmap(e){let t=this.element.querySelector(`#contact-map-plotly`);if(!t)return;if(e.capped){t.innerHTML=`
+                `);return}e.innerHTML=``;let t={...this.heatmapFig.layout,width:void 0,height:280,margin:{l:50,r:20,t:30,b:50},paper_bgcolor:`rgba(0,0,0,0)`,plot_bgcolor:`rgba(0,0,0,0)`,font:{family:`Inter, sans-serif`,size:10,color:`#A79E8E`}};Plotly.newPlot(e,this.heatmapFig.data,t,{responsive:!0,displayModeBar:!1})}_populateStructureOptions(e,t){let n=e.value;if(e.innerHTML=``,t.length===0){let t=document.createElement(`option`);t.value=``,t.textContent=`Select a structure`,e.appendChild(t)}t.forEach(({pdbId:t})=>{let n=document.createElement(`option`);n.value=t,n.textContent=t,e.appendChild(n)}),t.some(e=>e.pdbId===n)&&(e.value=n)}populateContactMapSelectors(){let e=[this.element.querySelector(`#contact-map-pdb-select`)],t=[this.element.querySelector(`#diff-distance-pdb-a-select`),this.element.querySelector(`#diff-distance-pdb-b-select`)];[...e,...t].forEach(e=>this._populateStructureOptions(e,this.structures)),t[1]&&this.structures.length>1&&t[0].value===t[1].value&&(t[1].value=this.structures[1].pdbId),this.updateContactMapButtonStates()}updateContactMapButtonStates(){let e=this.element.querySelector(`#contact-map-pdb-select`),t=this.element.querySelector(`#contact-map-load-btn`);t&&(t.disabled=!e.value);let n=this.element.querySelector(`#diff-distance-pdb-a-select`).value,r=this.element.querySelector(`#diff-distance-pdb-b-select`).value,i=this.element.querySelector(`#diff-distance-load-btn`);i&&(i.disabled=!n||!r)}populatePaeSelector(){let e=this.element.querySelector(`#pae-pdb-select`),t=this.structures.filter(({pdbId:e})=>e.toUpperCase().startsWith(`AF-`));this._populateStructureOptions(e,t);let n=this.element.querySelector(`#pae-load-btn`);n&&(n.disabled=!e.value)}async loadPae(){let e=this.element.querySelector(`#pae-pdb-select`).value,t=this.element.querySelector(`#pae-plotly`);if(e){t.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">Loading PAE&hellip;</div>`;try{let t=await ze(e);this.renderPaeHeatmap(t)}catch(e){console.error(`Failed to load PAE:`,e),t.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">No PAE data available for this structure.</div>`}}}renderPaeHeatmap(e){let t=this.element.querySelector(`#pae-plotly`);if(!t)return;t.className=`w-full h-[240px]`,t.innerHTML=``;let n={z:e.pae,type:`heatmap`,colorscale:[[0,`#3E5C9A`],[.5,`#C9A063`],[1,`#B23A3A`]],showscale:!0};Plotly.newPlot(t,[n],{height:240,margin:{l:40,r:10,t:10,b:30},paper_bgcolor:`rgba(0,0,0,0)`,plot_bgcolor:`rgba(0,0,0,0)`,font:{family:`Inter, sans-serif`,size:10,color:`#A79E8E`},yaxis:{autorange:`reversed`}},{responsive:!0,displayModeBar:!1})}populateFlexibilitySelector(){let e=this.element.querySelector(`#flexibility-pdb-select`);this._populateStructureOptions(e,this.structures);let t=this.element.querySelector(`#flexibility-load-btn`);t&&(t.disabled=!e.value)}async loadFlexibility(){let e=this.element.querySelector(`#flexibility-pdb-select`).value,t=this.element.querySelector(`#flexibility-plotly`);if(e){t.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">Loading flexibility prediction&hellip;</div>`;try{let t=await P(e,this.currentRunId);this.renderFlexibilityChart(t.flexibility)}catch(e){console.error(`Failed to load flexibility prediction:`,e),t.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">${e.message||`No flexibility prediction available for this structure.`}</div>`}}}renderFlexibilityChart(e){let t=this.element.querySelector(`#flexibility-plotly`);if(!t)return;t.className=`w-full h-[240px]`,t.innerHTML=``;let n=[{x:e.residue_numbers,y:e.flexibility,type:`scatter`,mode:`lines`,name:`Predicted flexibility (GNM)`,line:{color:`#8B5CF6`}}];e.b_factor&&n.push({x:e.residue_numbers,y:e.b_factor,type:`scatter`,mode:`lines`,name:`Real B-factor`,yaxis:`y2`,line:{color:`#F59E0B`,dash:`dot`}});let r={height:240,margin:{l:40,r:e.b_factor?40:10,t:10,b:30},paper_bgcolor:`rgba(0,0,0,0)`,plot_bgcolor:`rgba(0,0,0,0)`,font:{family:`Inter, sans-serif`,size:10,color:`#A79E8E`},xaxis:{title:`Residue`},yaxis:{title:`Predicted flexibility (0-1)`},yaxis2:e.b_factor?{title:`B-factor`,overlaying:`y`,side:`right`}:void 0,showlegend:!!e.b_factor,legend:{orientation:`h`,y:-.3}};Plotly.newPlot(t,n,r,{responsive:!0,displayModeBar:!1})}populateDiffNarrativeSelectors(){let e=[this.element.querySelector(`#diff-narrative-pdb-a-select`),this.element.querySelector(`#diff-narrative-pdb-b-select`)];e.forEach(e=>this._populateStructureOptions(e,this.structures)),this.structures.length>1&&e[0].value===e[1].value&&(e[1].value=this.structures[1].pdbId);let t=this.element.querySelector(`#diff-narrative-load-btn`);t&&(t.disabled=!e[0].value||!e[1].value)}_rmsdFor(e,t){let n=this.heatmapFig?.data?.[0];if(!n?.z||!n?.x||!n?.y)return null;let r=n.y.indexOf(e),i=n.x.indexOf(t);if(r===-1||i===-1)return null;let a=n.z[r]?.[i];return typeof a==`number`?a:null}_tmScoreFor(e,t){let n=this.tmScoreMatrix;if(!n?.data||!n?.index||!n?.columns)return null;let r=n.index.indexOf(e),i=n.columns.indexOf(t);if(r===-1||i===-1)return null;let a=n.data[r]?.[i];return typeof a==`number`?a:null}describeStructureDiff(){let e=this.element.querySelector(`#diff-narrative-pdb-a-select`).value,t=this.element.querySelector(`#diff-narrative-pdb-b-select`).value,n=this.element.querySelector(`#diff-narrative-text`);if(!n)return;if(!e||!t||e===t){n.textContent=`Select two different structures to compare.`;return}let r=this._rmsdFor(e,t);if(r===null){n.textContent=`No RMSD data available for this pair yet - run alignment first.`;return}let i;i=r<2?`${e} and ${t} are structurally very similar (${r.toFixed(2)} Å RMSD).`:r<=5?`${e} and ${t} show moderate structural divergence (${r.toFixed(2)} Å RMSD).`:`${e} and ${t} are substantially different in shape (${r.toFixed(2)} Å RMSD).`;let a=this._tmScoreFor(e,t),o=``;a!==null&&(o=a>.9?` Their independent TM-score of ${a.toFixed(3)} confirms the same fold with high confidence.`:a>=.5?` Their independent TM-score of ${a.toFixed(3)} still indicates the same overall fold.`:` Their independent TM-score of ${a.toFixed(3)} suggests these may not share the same fold at all, despite the RMSD above.`),n.textContent=i+o}async loadContactMap(){let e=this.element.querySelector(`#contact-map-pdb-select`).value,t=this.element.querySelector(`#contact-map-plotly`);if(!(!this.currentRunId||!e)){t.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">Loading contact map&hellip;</div>`;try{let t=await Ve(this.currentRunId,e);this.renderContactMapHeatmap(t)}catch(e){console.error(`Failed to load contact map:`,e),t.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">Failed to load contact map.</div>`}}}renderContactMapHeatmap(e){let t=this.element.querySelector(`#contact-map-plotly`);if(!t)return;if(e.capped){t.innerHTML=`
                 <div class="flex items-center justify-center h-full text-secondary font-body-sm text-center px-4">
                     ${e.residue_count} residues exceeds the dense-matrix cap - ${e.contacts.length} contacts found, too sparse to render as a heatmap here.
                 </div>
-            `;return}t.innerHTML=``;let n={z:e.matrix,type:`heatmap`,colorscale:[[0,`rgba(0,0,0,0)`],[1,`#C9A063`]],showscale:!1};Plotly.newPlot(t,[n],{height:240,margin:{l:40,r:10,t:10,b:30},paper_bgcolor:`rgba(0,0,0,0)`,plot_bgcolor:`rgba(0,0,0,0)`,font:{family:`Inter, sans-serif`,size:10,color:`#A79E8E`},yaxis:{autorange:`reversed`}},{responsive:!0,displayModeBar:!1})}async loadDifferenceDistance(){let e=this.element.querySelector(`#diff-distance-pdb-a-select`).value,t=this.element.querySelector(`#diff-distance-pdb-b-select`).value,n=this.element.querySelector(`#diff-distance-plotly`);if(!(!this.currentRunId||!e||!t)){if(e===t){n.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">Select two different structures.</div>`;return}n.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">Loading difference-distance matrix&hellip;</div>`;try{let n=await He(this.currentRunId,e,t);this.renderDifferenceDistanceHeatmap(n)}catch(e){console.error(`Failed to load difference-distance matrix:`,e),n.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">Failed to load difference-distance matrix.</div>`}}}renderDifferenceDistanceHeatmap(e){let t=this.element.querySelector(`#diff-distance-plotly`);if(!t)return;if(e.capped){t.innerHTML=`
+            `;return}t.className=`w-full h-[240px]`,t.innerHTML=``;let n={z:e.matrix,type:`heatmap`,colorscale:[[0,`rgba(0,0,0,0)`],[1,`#C9A063`]],showscale:!1};Plotly.newPlot(t,[n],{height:240,margin:{l:40,r:10,t:10,b:30},paper_bgcolor:`rgba(0,0,0,0)`,plot_bgcolor:`rgba(0,0,0,0)`,font:{family:`Inter, sans-serif`,size:10,color:`#A79E8E`},yaxis:{autorange:`reversed`}},{responsive:!0,displayModeBar:!1})}async loadDifferenceDistance(){let e=this.element.querySelector(`#diff-distance-pdb-a-select`).value,t=this.element.querySelector(`#diff-distance-pdb-b-select`).value,n=this.element.querySelector(`#diff-distance-plotly`);if(!(!this.currentRunId||!e||!t)){if(e===t){n.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">Select two different structures.</div>`;return}n.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">Loading difference-distance matrix&hellip;</div>`;try{let n=await He(this.currentRunId,e,t);this.renderDifferenceDistanceHeatmap(n)}catch(e){console.error(`Failed to load difference-distance matrix:`,e),n.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">Failed to load difference-distance matrix.</div>`}}}renderDifferenceDistanceHeatmap(e){let t=this.element.querySelector(`#diff-distance-plotly`);if(!t)return;if(e.capped){t.innerHTML=`
                 <div class="flex items-center justify-center h-full text-secondary font-body-sm text-center px-4">
                     ${e.column_count} aligned columns exceeds the dense-matrix cap - ${e.differences.length} notable shifts (&gt;3&Aring;) found, too sparse to render as a heatmap here.
                 </div>
-            `;return}t.innerHTML=``;let n={z:e.matrix,type:`heatmap`,colorscale:`YlOrRd`};Plotly.newPlot(t,[n],{height:240,margin:{l:40,r:10,t:10,b:30},paper_bgcolor:`rgba(0,0,0,0)`,plot_bgcolor:`rgba(0,0,0,0)`,font:{family:`Inter, sans-serif`,size:10,color:`#A79E8E`},yaxis:{autorange:`reversed`}},{responsive:!0,displayModeBar:!1})}renderPhyloTree(){let e=this.element.querySelector(`#phylo-plotly-tree`);if(!this.treeFig?.data){this.currentRunId&&(e.innerHTML=`
+            `;return}t.className=`w-full h-[240px]`,t.innerHTML=``;let n={z:e.matrix,type:`heatmap`,colorscale:`YlOrRd`};Plotly.newPlot(t,[n],{height:240,margin:{l:40,r:10,t:10,b:30},paper_bgcolor:`rgba(0,0,0,0)`,plot_bgcolor:`rgba(0,0,0,0)`,font:{family:`Inter, sans-serif`,size:10,color:`#A79E8E`},yaxis:{autorange:`reversed`}},{responsive:!0,displayModeBar:!1})}renderPhyloTree(){let e=this.element.querySelector(`#phylo-plotly-tree`);if(!this.treeFig?.data){this.currentRunId&&(e.innerHTML=`
                     <div class="flex items-center justify-center h-full text-secondary font-body-sm">
                         No phylogenetic tree figure available.
                     </div>
@@ -1462,6 +1514,16 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
             </header>
 
             <div class="section-body flex flex-col gap-6">
+                <div id="clusters-guidance-banner" class="p-3.5 rounded-lg bg-surface-raised border border-border-subtle flex flex-col gap-1.5 font-body-sm text-body-sm text-secondary leading-relaxed">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="font-label-sm text-label-sm uppercase tracking-wider text-primary">How Structural Clustering Works</span>
+                        <span id="clusters-structure-count-badge" class="px-2 py-0.5 rounded bg-surface border border-border-subtle font-mono text-[10px] text-secondary">Cutoff: 3.00 Å</span>
+                    </div>
+                    <p id="clusters-guidance-text">
+                        Structures within the chosen RMSD distance cutoff are grouped into the same cluster. Use a tight cutoff (<strong class="font-mono text-primary">&lt; 2.0 Å</strong>) to separate open/closed conformations, or a broader cutoff (<strong class="font-mono text-primary">2.5–4.0 Å</strong>) to group related family members.
+                    </p>
+                </div>
+
                 <div class="flex flex-col gap-2">
                     <div class="flex items-center justify-between">
                         <span class="font-label-sm text-label-sm text-secondary">RMSD threshold</span>
@@ -1477,7 +1539,7 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
                     </div>
                 </div>
             </div>
-        `,this.element=e,this.setupEventListeners(),e}setupEventListeners(){this.element.querySelector(`#cluster-threshold-slider`).addEventListener(`input`,e=>{this.threshold=Number.parseFloat(e.target.value),this.element.querySelector(`#cluster-threshold-value`).innerText=`${this.threshold.toFixed(2)} Å`,clearTimeout(this.debounceTimer),this.debounceTimer=setTimeout(()=>this.loadClusters(),250)})}updateResults(e,t){this.rmsdDf=e,this.pdbMetadata=t||{},this.loadClusters()}async loadClusters(){if(!this.element)return;let e=this.element.querySelector(`#clusters-list-container`);if(!this.rmsdDf){e.innerHTML=`
+        `,this.element=e,this.setupEventListeners(),e}setupEventListeners(){this.element.querySelector(`#cluster-threshold-slider`).addEventListener(`input`,e=>{this.threshold=Number.parseFloat(e.target.value),this.element.querySelector(`#cluster-threshold-value`).innerText=`${this.threshold.toFixed(2)} Å`,clearTimeout(this.debounceTimer),this.debounceTimer=setTimeout(()=>this.loadClusters(),250)})}updateResults(e,t){this.rmsdDf=e,this.pdbMetadata=t||{},this.updateGuidanceBanner(),this.loadClusters()}updateGuidanceBanner(){if(!this.element)return;let e=this.element.querySelector(`#clusters-structure-count-badge`),t=this.element.querySelector(`#clusters-guidance-text`),n=this.rmsdDf?.index?.length||0;e&&(e.textContent=n>0?`${n} structures · Cutoff ${this.threshold.toFixed(2)} Å`:`Cutoff: ${this.threshold.toFixed(2)} Å`),t&&n===2&&(t.innerHTML=`Comparing <strong class="font-mono text-primary">2 structures</strong> will either group them into 1 shared cluster (if RMSD &le; cutoff) or 2 separate clusters. <span class="text-muted">Tip: Add 3 or more structures in Workspace to discover multi-member conformational sub-families.</span>`)}async loadClusters(){if(!this.element)return;let e=this.element.querySelector(`#clusters-list-container`);if(!this.rmsdDf){e.innerHTML=`
                 <div class="text-center py-8 text-secondary font-body-sm">
                     Run alignment to identify structural clusters.
                 </div>
@@ -1535,15 +1597,11 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
                     No other past runs found for comparison.
                 </div>
             `;return}e.innerHTML=`
-            <select id="comparison-target-select" class="w-full bg-surface-raised border border-border rounded-md px-3 py-2 font-body-sm text-primary">
-                ${this.pastRuns.map(e=>`
-                    <option value="${e.id}">${e.timestamp} - ${e.id.slice(0,8)}... (${e.proteins.length} p)</option>
-                `).join(``)}
-            </select>
+            <select id="comparison-target-select" aria-label="Past run to compare against" class="w-full bg-surface-raised border border-border rounded-md px-3 py-2 font-body-sm text-primary font-mono"></select>
             <button id="btn-run-comparison" class="btn-primary w-full py-2 px-3 rounded-md font-label-md text-label-md">
                 Run Comparative Analysis
             </button>
-        `,this.targetRunId=this.pastRuns[0].id,e.querySelector(`#comparison-target-select`).addEventListener(`change`,e=>{this.targetRunId=e.target.value}),e.querySelector(`#btn-run-comparison`).addEventListener(`click`,()=>this.runComparison())}async runComparison(){if(!this.currentRunId||!this.targetRunId)return;let e=this.element.querySelector(`#comparison-results-container`);e.innerHTML=`
+        `;let t=e.querySelector(`#comparison-target-select`);this.pastRuns.forEach(e=>{let n=Array.isArray(e.proteins)&&e.proteins.length>0?e.proteins.join(`, `):`${e.proteins?.length||0} structures`,r=document.createElement(`option`);r.value=e.id,r.textContent=`${n} — ${e.timestamp} (${e.id.slice(0,12)})`,t.appendChild(r)}),this.targetRunId=this.pastRuns[0].id,e.querySelector(`#comparison-target-select`).addEventListener(`change`,e=>{this.targetRunId=e.target.value}),e.querySelector(`#btn-run-comparison`).addEventListener(`click`,()=>this.runComparison())}async runComparison(){if(!this.currentRunId||!this.targetRunId)return;let e=this.element.querySelector(`#comparison-results-container`);e.innerHTML=`
             <div class="text-center py-8 text-secondary font-body-sm">
                 <span class="animate-spin material-symbols-outlined text-[18px]">sync</span>
                 Calculating differences...
@@ -1583,27 +1641,35 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
                 <button id="history-clear-all-btn" class="font-label-sm text-label-sm text-secondary hover:text-error transition-colors underline decoration-dotted">Clear All History</button>
             </header>
 
-            <div class="section-body">
-                <div class="flex flex-col gap-2 border border-border rounded-lg p-4 mb-4">
-                    <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">RMSD trend across runs</span>
-                    <span class="font-body-sm text-body-sm text-secondary">Pick 2 or more past runs (Ctrl/Cmd-click for multiple) to see how their structural similarity has shifted over time.</span>
-                    <div class="flex gap-2 items-center">
-                        <select id="trend-run-select" multiple size="4" aria-label="Past runs to compare RMSD trend across (select 2 or more)" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm"></select>
-                        <button id="trend-load-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md self-start">Show trend</button>
-                    </div>
-                    <div id="trend-plotly" class="w-full h-[220px]">
-                        <div class="flex items-center justify-center h-full text-secondary font-body-sm">
-                            Select runs above and click "Show trend".
-                        </div>
-                    </div>
-                </div>
-
+            <div class="section-body flex flex-col gap-6">
                 <div id="history-runs-list" class="flex flex-col">
                     <div class="text-center py-12 text-secondary font-body-sm">
                         <span class="animate-spin material-symbols-outlined text-[24px] mb-2">sync</span>
                         Loading run logs...
                     </div>
                 </div>
+
+                <details id="history-trend-disclosure" class="group border border-border rounded-lg p-4 bg-surface">
+                    <summary class="flex items-center justify-between gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                        <span class="flex items-center gap-1.5 font-label-md text-label-md text-secondary group-hover:text-primary uppercase tracking-wider">
+                            <span class="material-symbols-outlined text-[16px] transition-transform group-open:rotate-90">chevron_right</span>
+                            RMSD trend across runs
+                        </span>
+                        <span class="font-mono text-[11px] text-muted">Compare multi-run trajectory</span>
+                    </summary>
+                    <div class="flex flex-col gap-2 pt-3 pl-5">
+                        <span class="font-body-sm text-body-sm text-secondary">Pick 2 or more past runs (Ctrl/Cmd-click for multiple) to see how their structural similarity has shifted over time.</span>
+                        <div class="flex gap-2 items-center">
+                            <select id="trend-run-select" multiple size="4" aria-label="Past runs to compare RMSD trend across (select 2 or more)" class="flex-1 bg-surface-raised border border-border-subtle rounded-md px-2 py-1 font-body-sm text-body-sm font-mono"></select>
+                            <button id="trend-load-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md self-start">Show trend</button>
+                        </div>
+                        <div id="trend-plotly" class="w-full min-h-[36px]">
+                            <div class="flex items-center justify-center py-2 text-secondary font-body-sm">
+                                Select runs above and click "Show trend".
+                            </div>
+                        </div>
+                    </div>
+                </details>
             </div>
         `,this.element=e,this.element.querySelector(`#history-clear-all-btn`).addEventListener(`click`,()=>this.clearAll()),this.element.querySelector(`#trend-load-btn`).addEventListener(`click`,()=>this.loadTrend()),this.loadHistoryData(),e}async clearAll(){if(this.runsList.length!==0&&confirm(`Clear all run history? This cannot be undone.`))try{await ge(),this.runsList=[],this.total=0;let e=this.element.querySelector(`#history-runs-list`);e.innerHTML=`
                 <div class="text-center py-12 text-secondary font-body-sm">
@@ -1645,7 +1711,7 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
                             <div class="text-center py-12 text-secondary font-body-sm">
                                 No past alignment sessions found.
                             </div>
-                        `:this.renderLoadMoreControl()}catch(e){console.error(`Failed to delete run:`,e),alert(e.message||`Failed to delete run.`)}}),t.appendChild(n)})}renderTagsDisplay(e,t){let n=e.querySelector(`[data-field="tags-display"]`);if(n.innerHTML=``,(t.metadata?.tags||[]).forEach(e=>{let t=document.createElement(`span`);t.className=`px-1.5 py-0.5 rounded-md bg-surface-raised border border-border-subtle text-secondary font-mono text-[10px]`,t.textContent=e,n.appendChild(t)}),t.metadata?.notes){let e=document.createElement(`span`);e.className=`font-body-sm text-[11px] text-secondary italic`,e.textContent=t.metadata.notes,n.appendChild(e)}}renderLoadMoreControl(){let e=this.element.querySelector(`#history-runs-list`),t=this.element.querySelector(`#history-load-more-btn`);if(t&&t.remove(),this.runsList.length>=this.total)return;let n=document.createElement(`button`);n.id=`history-load-more-btn`,n.className=`w-full py-3 text-secondary hover:text-primary font-label-md text-label-md transition-colors shrink-0`,n.innerText=`Load More (${this.runsList.length}/${this.total})`,n.addEventListener(`click`,()=>this.loadMore()),e.appendChild(n)}async loadMore(){try{let e=await O($,this.runsList.length),t=e.runs||[];this.total=e.total||this.total,this.runsList=this.runsList.concat(t),this.renderRuns(t),this.renderLoadMoreControl(),this.populateTrendSelect()}catch(e){console.error(`Failed to load more history:`,e)}}populateTrendSelect(){let e=this.element.querySelector(`#trend-run-select`);if(!e)return;let t=new Set([...e.selectedOptions].map(e=>e.value));e.innerHTML=``,this.runsList.forEach(n=>{let r=document.createElement(`option`);r.value=n.id,r.textContent=`${n.id} — ${n.timestamp}`,r.selected=t.has(n.id),e.appendChild(r)})}async loadTrend(){let e=this.element.querySelector(`#trend-run-select`),t=this.element.querySelector(`#trend-plotly`),n=[...e.selectedOptions].map(e=>e.value);if(n.length<2){t.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">Select at least 2 runs to compare a trend.</div>`;return}t.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">Loading trend&hellip;</div>`;try{let e=await Ne(n);this.renderTrendChart(e.trend||[])}catch(e){console.error(`Failed to load run trend:`,e),t.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">Failed to load run trend.</div>`}}renderTrendChart(e){let t=this.element.querySelector(`#trend-plotly`);if(!t)return;if(e.length===0){t.innerHTML=`<div class="flex items-center justify-center h-full text-secondary font-body-sm">None of the selected runs have a usable RMSD matrix.</div>`;return}t.innerHTML=``;let n=e.map(e=>e.timestamp),r=[{x:n,y:e.map(e=>e.mean_rmsd),name:`Mean RMSD`,type:`scatter`,mode:`lines+markers`,line:{color:`#C9A063`}},{x:n,y:e.map(e=>e.max_rmsd),name:`Max RMSD`,type:`scatter`,mode:`lines+markers`,line:{color:`#8B5CF6`}}];Plotly.newPlot(t,r,{height:220,margin:{l:40,r:10,t:10,b:60},paper_bgcolor:`rgba(0,0,0,0)`,plot_bgcolor:`rgba(0,0,0,0)`,font:{family:`Inter, sans-serif`,size:10,color:`#A79E8E`},legend:{orientation:`h`,y:-.3},xaxis:{tickangle:-30}},{responsive:!0,displayModeBar:!1})}},Ht=5,Ut=class{constructor(e){this.onReloadRun=e.onReloadRun,this.onQuickStart=e.onQuickStart,this.onGoToWorkspace=e.onGoToWorkspace||(()=>{}),this.element=null}render(){let e=document.createElement(`div`);return e.className=`editorial-section`,e.id=`tab-dashboard-container`,e.innerHTML=`
+                        `:this.renderLoadMoreControl()}catch(e){console.error(`Failed to delete run:`,e),alert(e.message||`Failed to delete run.`)}}),t.appendChild(n)})}renderTagsDisplay(e,t){let n=e.querySelector(`[data-field="tags-display"]`);if(n.innerHTML=``,(t.metadata?.tags||[]).forEach(e=>{let t=document.createElement(`span`);t.className=`px-1.5 py-0.5 rounded-md bg-surface-raised border border-border-subtle text-secondary font-mono text-[10px]`,t.textContent=e,n.appendChild(t)}),t.metadata?.notes){let e=document.createElement(`span`);e.className=`font-body-sm text-[11px] text-secondary italic`,e.textContent=t.metadata.notes,n.appendChild(e)}}renderLoadMoreControl(){let e=this.element.querySelector(`#history-runs-list`),t=this.element.querySelector(`#history-load-more-btn`);if(t&&t.remove(),this.runsList.length>=this.total)return;let n=document.createElement(`button`);n.id=`history-load-more-btn`,n.className=`w-full py-3 text-secondary hover:text-primary font-label-md text-label-md transition-colors shrink-0`,n.innerText=`Load More (${this.runsList.length}/${this.total})`,n.addEventListener(`click`,()=>this.loadMore()),e.appendChild(n)}async loadMore(){try{let e=await O($,this.runsList.length),t=e.runs||[];this.total=e.total||this.total,this.runsList=this.runsList.concat(t),this.renderRuns(t),this.renderLoadMoreControl(),this.populateTrendSelect()}catch(e){console.error(`Failed to load more history:`,e)}}populateTrendSelect(){let e=this.element.querySelector(`#trend-run-select`);if(!e)return;let t=new Set([...e.selectedOptions].map(e=>e.value));e.innerHTML=``,this.runsList.forEach(n=>{let r;try{r=typeof n.pdb_ids==`string`?JSON.parse(n.pdb_ids):n.pdb_ids}catch{r=[n.pdb_ids]}let i=Array.isArray(r)&&r.length>0?r.join(`, `):n.id,a=document.createElement(`option`);a.value=n.id,a.textContent=`${i} — ${n.timestamp} (${n.id})`,a.selected=t.has(n.id),e.appendChild(a)})}async loadTrend(){let e=this.element.querySelector(`#trend-run-select`),t=this.element.querySelector(`#trend-plotly`),n=[...e.selectedOptions].map(e=>e.value);if(n.length<2){t.className=`w-full min-h-[36px]`,t.innerHTML=`<div class="flex items-center justify-center py-2 text-secondary font-body-sm">Select at least 2 runs to compare a trend.</div>`;return}t.className=`w-full min-h-[36px]`,t.innerHTML=`<div class="flex items-center justify-center py-2 text-secondary font-body-sm">Loading trend&hellip;</div>`;try{let e=await Ne(n);this.renderTrendChart(e.trend||[])}catch(e){console.error(`Failed to load run trend:`,e),t.innerHTML=`<div class="flex items-center justify-center py-2 text-secondary font-body-sm">Failed to load run trend.</div>`}}renderTrendChart(e){let t=this.element.querySelector(`#trend-plotly`);if(!t)return;if(e.length===0){t.className=`w-full min-h-[36px]`,t.innerHTML=`<div class="flex items-center justify-center py-2 text-secondary font-body-sm">None of the selected runs have a usable RMSD matrix.</div>`;return}t.className=`w-full h-[220px]`,t.innerHTML=``;let n=e.map(e=>e.timestamp),r=[{x:n,y:e.map(e=>e.mean_rmsd),name:`Mean RMSD`,type:`scatter`,mode:`lines+markers`,line:{color:`#C9A063`}},{x:n,y:e.map(e=>e.max_rmsd),name:`Max RMSD`,type:`scatter`,mode:`lines+markers`,line:{color:`#8B5CF6`}}];Plotly.newPlot(t,r,{height:220,margin:{l:40,r:10,t:10,b:60},paper_bgcolor:`rgba(0,0,0,0)`,plot_bgcolor:`rgba(0,0,0,0)`,font:{family:`Inter, sans-serif`,size:10,color:`#A79E8E`},legend:{orientation:`h`,y:-.3},xaxis:{tickangle:-30}},{responsive:!0,displayModeBar:!1})}},Ht=5,Ut=class{constructor(e){this.onReloadRun=e.onReloadRun,this.onQuickStart=e.onQuickStart,this.onGoToWorkspace=e.onGoToWorkspace||(()=>{}),this.element=null}render(){let e=document.createElement(`div`);return e.className=`editorial-section`,e.id=`tab-dashboard-container`,e.innerHTML=`
             <header class="section-head">
                 <div>
                     <span class="eyebrow">Fig. — Mission Control</span>

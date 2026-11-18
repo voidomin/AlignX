@@ -47,7 +47,6 @@ export class TopBar {
                 <div class="flex items-center gap-2.5 shrink-0">
                     <span class="material-symbols-outlined text-[20px] text-accent">science</span>
                     <span class="font-headline-md text-headline-md font-bold text-primary">StructScope</span>
-                    <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-medium tracking-wide uppercase bg-accent-muted text-accent border border-accent/20" title="Interactive Web Showcase - optimized for quick comparisons and curated demos">Web Demo</span>
                 </div>
 
                 <div id="topbar-tabs-wrapper" class="flex items-center w-full lg:w-auto lg:flex-1 min-w-0">
@@ -66,20 +65,29 @@ export class TopBar {
                     </button>
                 </div>
 
-                <div class="flex items-center flex-wrap lg:flex-nowrap gap-2.5 shrink-0 font-mono text-label-sm">
-                    <button id="topbar-download-desktop-btn" class="btn-primary px-3 py-1.5 rounded-md font-label-md text-label-md flex items-center gap-1.5 shadow-sm" title="Download Desktop Edition for unlimited large files & private local compute">
-                        <span class="material-symbols-outlined text-[16px]">desktop_windows</span>
-                        Desktop App
-                    </button>
+                <div class="flex items-center flex-wrap lg:flex-nowrap gap-2 shrink-0 font-mono text-label-sm">
                     <button id="topbar-new-ws-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">New Workspace</button>
                     <button id="topbar-export-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Export</button>
-                    <div class="flex items-center flex-wrap lg:flex-nowrap gap-2 px-2.5 py-1 rounded-md bg-surface-raised border border-border-subtle text-[11px]">
-                        <span id="topbar-health-dot" class="w-1.5 h-1.5 rounded-full bg-secondary shrink-0" aria-hidden="true"></span>
-                        <span id="topbar-health-status" class="text-secondary truncate max-w-[180px]">Alignment engine: Checking...</span>
-                        <span class="text-border-subtle" aria-hidden="true">|</span>
-                        <span id="topbar-ram-text" class="text-muted">--</span>
-                        <button id="topbar-free-ram-btn" class="text-accent hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-accent" title="Runs garbage collection on the shared server process - affects all users, not just your session">Free up memory</button>
-                    </div>
+                    <details id="topbar-system-disclosure" class="relative group">
+                        <summary class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-surface-raised border border-border-subtle text-[11px] text-secondary hover:text-primary cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden" title="Engine health, memory diagnostics &amp; desktop edition">
+                            <span id="topbar-health-dot" class="w-2 h-2 rounded-full bg-secondary shrink-0" aria-hidden="true"></span>
+                            <span>System</span>
+                            <span class="material-symbols-outlined text-[14px] transition-transform group-open:rotate-180">expand_more</span>
+                        </summary>
+                        <div class="absolute right-0 mt-1.5 w-72 p-3 rounded-lg bg-surface border border-border shadow-xl z-50 flex flex-col gap-2.5 text-[11px]">
+                            <div class="flex items-center justify-between gap-2 pb-2 border-b border-border-subtle">
+                                <span id="topbar-health-status" class="text-secondary truncate">Alignment engine: Checking...</span>
+                            </div>
+                            <div class="flex items-center justify-between flex-wrap lg:flex-nowrap gap-2 pb-2 border-b border-border-subtle">
+                                <span class="text-secondary">Server RAM: <strong id="topbar-ram-text" class="text-primary font-mono">--</strong></span>
+                                <button id="topbar-free-ram-btn" class="text-accent hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-accent" title="Runs garbage collection on the shared server process">Free up memory</button>
+                            </div>
+                            <button id="topbar-download-desktop-btn" class="btn-secondary w-full px-2.5 py-1.5 rounded-md font-label-sm text-label-sm flex items-center justify-center gap-1.5" title="Download Desktop Edition for unlimited large files &amp; private local compute">
+                                <span class="material-symbols-outlined text-[15px] text-accent">desktop_windows</span>
+                                <span>Desktop App</span>
+                            </button>
+                        </div>
+                    </details>
                 </div>
             </div>
         `;

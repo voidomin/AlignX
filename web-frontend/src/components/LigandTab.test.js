@@ -759,4 +759,29 @@ describe('LigandTab', () => {
             expect(tab.element.querySelector('#prankweb-feedback').textContent).toContain('boom');
         });
     });
+
+    describe('student takeaway banner and progressive interface disclosure', () => {
+        it('renders a Bound Ligand summary in #ligand-verdict-banner when ligands exist and an Apo summary when empty', () => {
+            const tab = makeTab();
+            tab.render();
+
+            tab.updateLigands([{ id: 'ATP_A_400', name: 'ATP', chain: 'A', resi: 400 }], 'run_1');
+            const banner = tab.element.querySelector('#ligand-verdict-banner');
+            expect(banner.classList.contains('hidden')).toBe(false);
+            expect(banner.textContent).toContain('1 Bound Ligand');
+            expect(banner.textContent).toContain('ATP');
+
+            tab.updateLigands([], 'run_1');
+            expect(banner.textContent).toContain('Apo Structure (No Bound Ligands)');
+        });
+
+        it('tucks protein-protein interface controls inside #ligand-interface-disclosure', () => {
+            const tab = makeTab();
+            tab.render();
+
+            const disclosure = tab.element.querySelector('#ligand-interface-disclosure');
+            expect(disclosure).not.toBeNull();
+            expect(disclosure.open).toBe(false);
+        });
+    });
 });

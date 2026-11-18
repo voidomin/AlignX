@@ -81,4 +81,15 @@ describe('ClustersTab', () => {
 
         expect(fetchClusters).toHaveBeenCalledWith(expect.anything(), 5.0);
     });
+
+    it('renders student guidance banner and notes when only 2 structures are compared', async () => {
+        fetchClusters.mockResolvedValue({ threshold: 3.0, clusters: [] });
+
+        const tab = new ClustersTab();
+        tab.render();
+        expect(tab.element.querySelector('#clusters-guidance-banner')).not.toBeNull();
+
+        await tab.updateResults({ index: ['4RLT', '3UG9'], columns: ['4RLT', '3UG9'], data: [[0, 1.2], [1.2, 0]] }, {});
+        expect(tab.element.querySelector('#clusters-guidance-text').textContent).toContain('Add 3 or more structures');
+    });
 });
