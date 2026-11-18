@@ -1275,4 +1275,29 @@ describe('Viewer3D', () => {
             expect(v.element.querySelector('#ambient-placeholder').style.display).toBe('flex');
         });
     });
+
+    describe('readable toolbar labels and mode indicator', () => {
+        it('renders readable text labels on viewer controls', () => {
+            const v = makeViewer();
+            const headerText = v.element.querySelector('.border-b').textContent;
+
+            ['Style', 'Color', 'Surface', 'Measure', 'Morph', 'Spin', 'Reset', 'PNG', 'PDB', 'ZIP'].forEach(label => {
+                expect(headerText).toContain(label);
+            });
+        });
+
+        it('updates #viewer-mode-badge between Inspect mode and Measure mode, and resets back on reset()', () => {
+            const v = makeViewer();
+            const badge = v.element.querySelector('#viewer-mode-badge');
+            const measureBtn = v.element.querySelector('#btn-toggle-measure');
+
+            expect(badge.textContent).toBe('Inspect mode');
+
+            measureBtn.click();
+            expect(badge.textContent).toBe('Measure: click 2 atoms');
+
+            v.reset();
+            expect(badge.textContent).toBe('Inspect mode');
+        });
+    });
 });

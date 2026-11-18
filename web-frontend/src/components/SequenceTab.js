@@ -37,6 +37,7 @@ export class SequenceTab {
 
     constructor(props = {}) {
         this.onHighlightResidues = props.onHighlightResidues || (() => {});
+        this.onOpenExportStudio = props.onOpenExportStudio || (() => {});
     }
 
     render() {
@@ -142,64 +143,108 @@ export class SequenceTab {
                     <div id="motif-results-container"></div>
                 </div>
 
-                <div class="flex flex-col gap-2 border-t border-border pt-6">
-                    <span class="font-label-md text-label-md text-secondary uppercase tracking-wider mb-2">Generated outputs</span>
-                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
-                        <span class="font-body-sm text-body-sm text-primary font-mono">alignment.pdb</span>
-                        <a id="download-pdb-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">View PDB</a>
+                <div class="flex flex-col gap-4 border-t border-border pt-6">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Export &amp; reports</span>
+                        <button id="sequence-open-export-studio-btn" type="button" class="btn-secondary px-3 py-1.5 rounded-md font-label-sm text-label-sm inline-flex items-center gap-1.5">
+                            <span class="material-symbols-outlined text-[15px] text-accent">tune</span>
+                            <span>Open Export Studio</span>
+                        </button>
                     </div>
-                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
-                        <span class="font-body-sm text-body-sm text-primary font-mono">alignment.fasta</span>
-                        <a id="download-fasta-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">View FASTA</a>
+
+                    <div id="sequence-quick-exports" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <a id="download-report-link" href="#" target="_blank" class="p-3 rounded-lg bg-surface-raised border border-border-subtle hover:border-accent transition-colors flex items-center justify-between gap-3 opacity-55 pointer-events-none">
+                            <div class="flex items-center gap-2.5 min-w-0">
+                                <span class="material-symbols-outlined text-[18px] text-accent shrink-0">picture_as_pdf</span>
+                                <div class="flex flex-col min-w-0">
+                                    <span class="font-label-md text-label-md text-primary truncate">PDF Summary Report</span>
+                                    <span class="font-mono text-[11px] text-secondary truncate">mustang_report.pdf</span>
+                                </div>
+                            </div>
+                            <span class="font-label-sm text-[11px] text-accent shrink-0">Download PDF</span>
+                        </a>
+                        <a id="download-pdb-link" href="#" target="_blank" class="p-3 rounded-lg bg-surface-raised border border-border-subtle hover:border-accent transition-colors flex items-center justify-between gap-3 opacity-55 pointer-events-none">
+                            <div class="flex items-center gap-2.5 min-w-0">
+                                <span class="material-symbols-outlined text-[18px] text-accent shrink-0">view_in_ar</span>
+                                <div class="flex flex-col min-w-0">
+                                    <span class="font-label-md text-label-md text-primary truncate">Superimposed 3D PDB</span>
+                                    <span class="font-mono text-[11px] text-secondary truncate">alignment.pdb</span>
+                                </div>
+                            </div>
+                            <span class="font-label-sm text-[11px] text-accent shrink-0">View PDB</span>
+                        </a>
+                        <a id="download-notebook-link" href="#" target="_blank" class="p-3 rounded-lg bg-surface-raised border border-border-subtle hover:border-accent transition-colors flex items-center justify-between gap-3 opacity-55 pointer-events-none">
+                            <div class="flex items-center gap-2.5 min-w-0">
+                                <span class="material-symbols-outlined text-[18px] text-accent shrink-0">menu_book</span>
+                                <div class="flex flex-col min-w-0">
+                                    <span class="font-label-md text-label-md text-primary truncate">Interactive HTML Notebook</span>
+                                    <span class="font-mono text-[11px] text-secondary truncate">lab_notebook.html</span>
+                                </div>
+                            </div>
+                            <span class="font-label-sm text-[11px] text-accent shrink-0">View Notebook</span>
+                        </a>
+                        <a id="download-zip-link" href="#" target="_blank" class="p-3 rounded-lg bg-surface-raised border border-border-subtle hover:border-accent transition-colors flex items-center justify-between gap-3 opacity-55 pointer-events-none">
+                            <div class="flex items-center gap-2.5 min-w-0">
+                                <span class="material-symbols-outlined text-[18px] text-accent shrink-0">folder_zip</span>
+                                <div class="flex flex-col min-w-0">
+                                    <span class="font-label-md text-label-md text-primary truncate">Complete Results Bundle</span>
+                                    <span class="font-mono text-[11px] text-secondary truncate">everything.zip</span>
+                                </div>
+                            </div>
+                            <span class="font-label-sm text-[11px] text-accent shrink-0">Download Everything</span>
+                        </a>
                     </div>
-                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
-                        <span class="font-body-sm text-body-sm text-primary font-mono">lab_notebook.html</span>
-                        <a id="download-notebook-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">View Notebook</a>
-                    </div>
-                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
-                        <span class="font-body-sm text-body-sm text-primary font-mono">lab_notebook.ipynb</span>
-                        <a id="download-notebook-ipynb-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download Jupyter Notebook</a>
-                    </div>
-                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
-                        <span class="font-body-sm text-body-sm text-primary font-mono">mustang_report.pdf</span>
-                        <a id="download-report-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download PDF</a>
-                    </div>
-                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
-                        <span class="font-body-sm text-body-sm text-primary font-mono">citations.txt</span>
-                        <a id="download-citations-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Export Citations</a>
-                    </div>
-                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
-                        <span class="font-body-sm text-body-sm text-primary font-mono">rmsd_matrix.csv</span>
-                        <a id="download-rmsd-csv-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download CSV</a>
-                    </div>
-                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
-                        <span class="font-body-sm text-body-sm text-primary font-mono">rmsd_heatmap.png</span>
-                        <a id="download-heatmap-png-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download PNG</a>
-                    </div>
-                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
-                        <span class="font-body-sm text-body-sm text-primary font-mono">tree.newick</span>
-                        <a id="download-newick-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download Tree</a>
-                    </div>
-                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
-                        <span class="font-body-sm text-body-sm text-primary font-mono">session.pml</span>
-                        <a id="download-pymol-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download PyMOL Script</a>
-                    </div>
-                    <div class="flex items-center justify-between py-2 border-b border-border-subtle">
-                        <span class="font-body-sm text-body-sm text-primary font-mono">session.cxc</span>
-                        <a id="download-chimerax-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download ChimeraX Script</a>
-                    </div>
-                    <div class="flex items-center justify-between py-2">
-                        <span class="font-body-sm text-body-sm text-primary font-mono">everything.zip</span>
-                        <a id="download-zip-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download Everything</a>
-                    </div>
-                    <div id="report-section-checklist" class="flex flex-wrap gap-x-4 gap-y-1.5 pt-2">
-                        ${REPORT_SECTIONS.map(s => `
-                            <label class="flex items-center gap-1.5 font-label-sm text-label-sm text-secondary cursor-pointer">
-                                <input type="checkbox" class="report-section-checkbox rounded border-border bg-surface-raised text-accent focus:ring-2 focus:ring-accent focus:ring-offset-1" value="${s.key}" checked/>
-                                ${s.label}
-                            </label>
-                        `).join('')}
-                    </div>
+
+                    <details id="sequence-all-exports-disclosure" class="group pt-1">
+                        <summary class="flex items-center gap-1.5 cursor-pointer select-none font-label-sm text-[11px] text-secondary hover:text-primary list-none [&::-webkit-details-marker]:hidden w-fit">
+                            <span class="material-symbols-outlined text-[15px] transition-transform group-open:rotate-90">chevron_right</span>
+                            <span>All individual files &amp; PDF section filters (FASTA, CSV, PyMOL, ChimeraX, Jupyter, Citations)</span>
+                        </summary>
+                        <div class="flex flex-col gap-3 pt-3 pl-5">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
+                                <div class="flex items-center justify-between py-1.5 border-b border-border-subtle">
+                                    <span class="font-body-sm text-body-sm text-primary font-mono">alignment.fasta</span>
+                                    <a id="download-fasta-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">View FASTA</a>
+                                </div>
+                                <div class="flex items-center justify-between py-1.5 border-b border-border-subtle">
+                                    <span class="font-body-sm text-body-sm text-primary font-mono">lab_notebook.ipynb</span>
+                                    <a id="download-notebook-ipynb-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download Jupyter Notebook</a>
+                                </div>
+                                <div class="flex items-center justify-between py-1.5 border-b border-border-subtle">
+                                    <span class="font-body-sm text-body-sm text-primary font-mono">rmsd_matrix.csv</span>
+                                    <a id="download-rmsd-csv-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download CSV</a>
+                                </div>
+                                <div class="flex items-center justify-between py-1.5 border-b border-border-subtle">
+                                    <span class="font-body-sm text-body-sm text-primary font-mono">rmsd_heatmap.png</span>
+                                    <a id="download-heatmap-png-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download PNG</a>
+                                </div>
+                                <div class="flex items-center justify-between py-1.5 border-b border-border-subtle">
+                                    <span class="font-body-sm text-body-sm text-primary font-mono">tree.newick</span>
+                                    <a id="download-newick-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download Tree</a>
+                                </div>
+                                <div class="flex items-center justify-between py-1.5 border-b border-border-subtle">
+                                    <span class="font-body-sm text-body-sm text-primary font-mono">session.pml</span>
+                                    <a id="download-pymol-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download PyMOL Script</a>
+                                </div>
+                                <div class="flex items-center justify-between py-1.5 border-b border-border-subtle">
+                                    <span class="font-body-sm text-body-sm text-primary font-mono">session.cxc</span>
+                                    <a id="download-chimerax-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Download ChimeraX Script</a>
+                                </div>
+                                <div class="flex items-center justify-between py-1.5 border-b border-border-subtle">
+                                    <span class="font-body-sm text-body-sm text-primary font-mono">citations.txt</span>
+                                    <a id="download-citations-link" href="#" target="_blank" class="text-accent text-body-sm hover:underline opacity-55 pointer-events-none">Export Citations</a>
+                                </div>
+                            </div>
+                            <div id="report-section-checklist" class="flex flex-wrap gap-x-4 gap-y-1.5 pt-1">
+                                ${REPORT_SECTIONS.map(s => `
+                                    <label class="flex items-center gap-1.5 font-label-sm text-label-sm text-secondary cursor-pointer">
+                                        <input type="checkbox" class="report-section-checkbox rounded border-border bg-surface-raised text-accent focus:ring-2 focus:ring-accent focus:ring-offset-1" value="${s.key}" checked/>
+                                        ${s.label}
+                                    </label>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </details>
                 </div>
             </div>
         `;
@@ -223,6 +268,7 @@ export class SequenceTab {
 
         this.element.querySelector('#clustalo-run-btn').addEventListener('click', () => this.runClustalOmegaAlignment());
         this.element.querySelector('#conservation-run-btn').addEventListener('click', () => this.runConservationSearch());
+        this.element.querySelector('#sequence-open-export-studio-btn')?.addEventListener('click', () => this.onOpenExportStudio());
     }
 
     async searchMotif(query) {

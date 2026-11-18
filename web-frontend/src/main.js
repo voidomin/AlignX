@@ -91,7 +91,8 @@ class App {
         });
 
         this.sequenceTab = new SequenceTab({
-            onHighlightResidues: (chainMapping) => this.viewer3D.highlightResidues(chainMapping)
+            onHighlightResidues: (chainMapping) => this.viewer3D.highlightResidues(chainMapping),
+            onOpenExportStudio: () => this.exportData()
         });
         this.analyticsTab = new AnalyticsTab({
             onHighlightResidues: (chainMapping) => this.viewer3D.highlightResidues(chainMapping),
