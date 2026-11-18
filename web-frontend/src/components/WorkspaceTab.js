@@ -98,32 +98,48 @@ export class WorkspaceTab {
                 <span id="workspace-pdb-count-badge" class="font-label-sm text-label-sm text-secondary">0 Proteins</span>
             </header>
 
-            <div class="section-body flex flex-col gap-8">
+            <div class="section-body flex flex-col gap-6">
+                <div id="workspace-workflow-guide" class="flex flex-col gap-1 px-4 py-3 rounded-lg bg-surface-raised border border-border-subtle">
+                    <!-- Dynamic step guidance populated by _renderWorkflowGuide() -->
+                </div>
+
                 <div class="flex flex-col gap-3">
                     <div class="flex gap-2 relative">
                         <input id="workspace-add-pdb-input" type="text" placeholder="PDB ID, or AF- / SM- / ESM- accession" aria-label="PDB ID, or AF- / SM- / ESM- accession" class="flex-grow bg-surface-raised border border-border rounded-md px-3 py-1.5 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase" autocomplete="off"/>
                         <button id="workspace-add-pdb-btn" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Add</button>
                     </div>
+                    <p class="font-body-sm text-[11px] text-muted">
+                        Supported formats: <span class="font-mono text-secondary">4RLT</span> (PDB) &middot; <span class="font-mono text-secondary">AF-P69905-F1</span> (AlphaFold) &middot; <span class="font-mono text-secondary">SM-P69905</span> (SWISS-MODEL) &middot; <span class="font-mono text-secondary">ESM-MGYP...</span>
+                    </p>
                     <div id="workspace-add-pdb-suggestions" class="flex gap-2"></div>
 
-                    <div class="flex items-center gap-4">
-                        <button id="workspace-toggle-batch-add-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Paste multiple IDs</button>
-                        <button id="workspace-upload-structure-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Upload a structure file</button>
+                    <div id="workspace-input-mode-bar" class="flex flex-wrap items-center gap-2">
+                        <button id="workspace-toggle-batch-add-btn" type="button" aria-expanded="${this.batchInputVisible}" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border-subtle bg-surface-raised font-label-sm text-label-sm text-secondary hover:text-primary hover:border-border transition-colors">
+                            <span class="material-symbols-outlined text-[15px]">playlist_add</span>
+                            <span>Paste multiple IDs</span>
+                        </button>
+                        <button id="workspace-upload-structure-btn" type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border-subtle bg-surface-raised font-label-sm text-label-sm text-secondary hover:text-primary hover:border-border transition-colors">
+                            <span class="material-symbols-outlined text-[15px]">upload_file</span>
+                            <span>Upload structure file (.pdb / .cif)</span>
+                        </button>
                         <input id="workspace-upload-structure-input" type="file" accept=".pdb,.ent,.cif" aria-label="Upload a structure file" class="hidden"/>
-                        <button id="workspace-toggle-predict-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Predict from sequence</button>
+                        <button id="workspace-toggle-predict-btn" type="button" aria-expanded="${this.predictInputVisible}" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border-subtle bg-surface-raised font-label-sm text-label-sm text-secondary hover:text-primary hover:border-border transition-colors">
+                            <span class="material-symbols-outlined text-[15px]">auto_awesome</span>
+                            <span>Predict from sequence (ESMFold)</span>
+                        </button>
                     </div>
                     <span id="workspace-upload-structure-feedback" class="font-body-sm text-[11px] text-secondary"></span>
 
-                    <div id="workspace-batch-add-container" class="flex flex-col gap-2 ${this.batchInputVisible ? '' : 'hidden'}">
-                        <textarea id="workspace-batch-pdb-input" rows="3" placeholder="Paste PDB IDs or accessions, separated by commas, spaces, or new lines (e.g. 4RLT, 3UG9, AF-P69905-F1)" aria-label="Paste multiple PDB IDs or accessions" class="w-full bg-surface-raised border border-border rounded-md px-3 py-2 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase"></textarea>
+                    <div id="workspace-batch-add-container" class="flex flex-col gap-2 p-3 rounded-md bg-surface-raised border border-border-subtle ${this.batchInputVisible ? '' : 'hidden'}">
+                        <textarea id="workspace-batch-pdb-input" rows="3" placeholder="Paste PDB IDs or accessions, separated by commas, spaces, or new lines (e.g. 4RLT, 3UG9, AF-P69905-F1)" aria-label="Paste multiple PDB IDs or accessions" class="w-full bg-surface border border-border rounded-md px-3 py-2 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase"></textarea>
                         <div class="flex items-center gap-3">
                             <button id="workspace-batch-add-btn" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Add All</button>
                             <span id="workspace-batch-add-feedback" class="font-body-sm text-[11px] text-secondary"></span>
                         </div>
                     </div>
 
-                    <div id="workspace-predict-container" class="flex flex-col gap-2 ${this.predictInputVisible ? '' : 'hidden'}">
-                        <textarea id="workspace-predict-sequence-input" rows="3" placeholder="Paste a raw amino-acid sequence (10-300 residues) to predict its structure via ESMFold - no existing accession needed" aria-label="Amino-acid sequence to predict a structure for" class="w-full bg-surface-raised border border-border rounded-md px-3 py-2 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase"></textarea>
+                    <div id="workspace-predict-container" class="flex flex-col gap-2 p-3 rounded-md bg-surface-raised border border-border-subtle ${this.predictInputVisible ? '' : 'hidden'}">
+                        <textarea id="workspace-predict-sequence-input" rows="3" placeholder="Paste a raw amino-acid sequence (10-300 residues) to predict its structure via ESMFold - no existing accession needed" aria-label="Amino-acid sequence to predict a structure for" class="w-full bg-surface border border-border rounded-md px-3 py-2 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase"></textarea>
                         <div class="flex items-center gap-3">
                             <button id="workspace-predict-btn" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Predict Structure</button>
                             <span id="workspace-predict-feedback" class="font-body-sm text-[11px] text-secondary"></span>
@@ -134,45 +150,69 @@ export class WorkspaceTab {
                         <!-- Dynamic list of PDBs with chain dropdowns -->
                     </div>
 
-                    <div class="flex flex-col gap-2">
-                        <button id="workspace-run-qc-btn" type="button" class="self-start font-label-sm text-label-sm text-secondary hover:text-accent transition-colors underline decoration-dotted">Run QC on all</button>
-                        <div id="workspace-qc-summary" class="hidden flex-col gap-2"></div>
-                    </div>
+                    <button id="workspace-run-btn" class="btn-primary-hard w-full py-3 mt-2 rounded-sm font-label-md text-label-md flex justify-center items-center gap-2">
+                        <span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+                        Run Structural Alignment
+                    </button>
 
                     <div id="workspace-discovery-panel-slot" class="${this.discoveryPanelVisible ? '' : 'hidden'}"></div>
                 </div>
 
-                <div class="flex flex-col gap-3 border-t border-border pt-6">
-                    <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Batch screen (reference vs. many)</span>
-                    <span class="font-body-sm text-body-sm text-secondary">Rank a batch of structures by TM-score/RMSD against one reference - a fast pairwise screen, independent of the N-way alignment above.</span>
-                    <label class="flex flex-col gap-1">
-                        <span class="font-label-sm text-label-sm text-secondary">Reference structure</span>
-                        <select id="screen-reference-select" aria-label="Reference structure for batch screen" class="bg-surface-raised border border-border rounded-md px-3 py-1.5 text-body-sm text-primary focus:outline-none focus:border-accent font-mono"></select>
-                    </label>
-                    <textarea id="screen-targets-input" rows="2" placeholder="Paste target PDB IDs or accessions to screen against the reference (e.g. 4RLT, 3UG9, AF-P69905-F1)" aria-label="Target structures to screen against the reference" class="w-full bg-surface-raised border border-border rounded-md px-3 py-2 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase"></textarea>
-                    <div class="flex items-center gap-3">
-                        <button id="screen-run-btn" type="button" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Run Screen</button>
-                        <span id="screen-feedback" class="font-body-sm text-[11px] text-secondary"></span>
+                <details id="workspace-parameters-disclosure" class="group border-t border-border pt-4">
+                    <summary class="flex items-center justify-between gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                        <span class="flex items-center gap-1.5 font-label-md text-label-md text-secondary group-hover:text-primary uppercase tracking-wider">
+                            <span class="material-symbols-outlined text-[16px] transition-transform group-open:rotate-90">chevron_right</span>
+                            Alignment parameters
+                        </span>
+                        <span id="workspace-params-summary" class="font-mono text-[11px] text-muted">Water &amp; non-ligand ions filtered</span>
+                    </summary>
+                    <div class="flex flex-col gap-3 pt-3 pl-5">
+                        <label class="flex items-center gap-3 cursor-pointer group" title="Removes crystallographic water molecules (HOH records) before alignment and analysis, since they carry no structural signal">
+                            <input id="param-remove-water" type="checkbox" checked class="rounded border-border bg-surface-raised text-accent focus:ring-2 focus:ring-accent focus:ring-offset-1"/>
+                            <span class="font-body-sm text-body-sm text-secondary group-hover:text-primary transition-colors">Filter water molecules (HOH)</span>
+                        </label>
+                        <label class="flex items-center gap-3 cursor-pointer group" title="Drops ions and buffer molecules used in crystallization, but keeps real bound ligands intact for the Ligand tab">
+                            <input id="param-remove-heteroatoms" type="checkbox" checked class="rounded border-border bg-surface-raised text-accent focus:ring-2 focus:ring-accent focus:ring-offset-1"/>
+                            <span class="font-body-sm text-body-sm text-secondary group-hover:text-primary transition-colors">Exclude non-ligand heteroatoms</span>
+                        </label>
                     </div>
-                    <div id="screen-results"></div>
-                </div>
+                </details>
 
-                <div class="flex flex-col gap-3 border-t border-border pt-6">
-                    <span class="font-label-md text-label-md text-secondary uppercase tracking-wider">Parameters</span>
-                    <label class="flex items-center gap-3 cursor-pointer group" title="Removes crystallographic water molecules (HOH records) before alignment and analysis, since they carry no structural signal">
-                        <input id="param-remove-water" type="checkbox" checked class="rounded border-border bg-surface-raised text-accent focus:ring-2 focus:ring-accent focus:ring-offset-1"/>
-                        <span class="font-body-sm text-body-sm text-secondary group-hover:text-primary transition-colors">Filter water molecules (HOH)</span>
-                    </label>
-                    <label class="flex items-center gap-3 cursor-pointer group" title="Drops ions and buffer molecules used in crystallization, but keeps real bound ligands intact for the Ligand tab">
-                        <input id="param-remove-heteroatoms" type="checkbox" checked class="rounded border-border bg-surface-raised text-accent focus:ring-2 focus:ring-accent focus:ring-offset-1"/>
-                        <span class="font-body-sm text-body-sm text-secondary group-hover:text-primary transition-colors">Exclude non-ligand heteroatoms</span>
-                    </label>
-                </div>
+                <details id="workspace-qc-disclosure" class="group border-t border-border pt-4">
+                    <summary class="flex items-center justify-between gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                        <span class="flex items-center gap-1.5 font-label-md text-label-md text-secondary group-hover:text-primary uppercase tracking-wider">
+                            <span class="material-symbols-outlined text-[16px] transition-transform group-open:rotate-90">chevron_right</span>
+                            Pre-alignment structure quality check (Ramachandran &amp; Clashscore)
+                        </span>
+                    </summary>
+                    <div class="flex flex-col gap-2 pt-3 pl-5">
+                        <button id="workspace-run-qc-btn" type="button" class="btn-secondary self-start px-3 py-1.5 rounded-md font-label-sm text-label-sm">Run QC on all</button>
+                        <div id="workspace-qc-summary" class="hidden flex-col gap-2"></div>
+                    </div>
+                </details>
 
-                <button id="workspace-run-btn" class="btn-primary-hard w-full py-3 rounded-sm font-label-md text-label-md flex justify-center items-center gap-2">
-                    <span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
-                    Run Structural Alignment
-                </button>
+                <details id="workspace-screen-disclosure" class="group border-t border-border pt-4">
+                    <summary class="flex items-center justify-between gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                        <span class="flex items-center gap-1.5 font-label-md text-label-md text-secondary group-hover:text-primary uppercase tracking-wider">
+                            <span class="material-symbols-outlined text-[16px] transition-transform group-open:rotate-90">chevron_right</span>
+                            Batch screen (1 reference vs. many targets)
+                        </span>
+                        <span class="px-2 py-0.5 rounded bg-surface-raised border border-border-subtle font-mono text-[10px] text-secondary">Standalone pairwise TM-score tool</span>
+                    </summary>
+                    <div class="flex flex-col gap-3 pt-3 pl-5">
+                        <span class="font-body-sm text-body-sm text-secondary">Rank a batch of structures by TM-score/RMSD against one reference - a fast pairwise screen, independent of the N-way alignment above.</span>
+                        <label class="flex flex-col gap-1">
+                            <span class="font-label-sm text-label-sm text-secondary">Reference structure</span>
+                            <select id="screen-reference-select" aria-label="Reference structure for batch screen" class="bg-surface-raised border border-border rounded-md px-3 py-1.5 text-body-sm text-primary focus:outline-none focus:border-accent font-mono"></select>
+                        </label>
+                        <textarea id="screen-targets-input" rows="2" placeholder="Paste target PDB IDs or accessions to screen against the reference (e.g. 4RLT, 3UG9, AF-P69905-F1)" aria-label="Target structures to screen against the reference" class="w-full bg-surface-raised border border-border rounded-md px-3 py-2 text-body-sm text-primary focus:outline-none focus:border-accent font-mono uppercase"></textarea>
+                        <div class="flex items-center gap-3">
+                            <button id="screen-run-btn" type="button" class="btn-secondary px-4 py-1.5 rounded-md font-label-md text-label-md">Run Screen</button>
+                            <span id="screen-feedback" class="font-body-sm text-[11px] text-secondary"></span>
+                        </div>
+                        <div id="screen-results"></div>
+                    </div>
+                </details>
             </div>
         `;
         this.element = div;
@@ -256,9 +296,28 @@ export class WorkspaceTab {
         const batchAddBtn = this.element.querySelector('#workspace-batch-add-btn');
         const batchFeedback = this.element.querySelector('#workspace-batch-add-feedback');
 
+        const togglePredictBtn = this.element.querySelector('#workspace-toggle-predict-btn');
+        const predictContainer = this.element.querySelector('#workspace-predict-container');
+        const predictInput = this.element.querySelector('#workspace-predict-sequence-input');
+        const predictBtn = this.element.querySelector('#workspace-predict-btn');
+        const predictFeedback = this.element.querySelector('#workspace-predict-feedback');
+
+        const syncInputModeState = () => {
+            batchContainer.classList.toggle('hidden', !this.batchInputVisible);
+            predictContainer.classList.toggle('hidden', !this.predictInputVisible);
+            toggleBatchBtn.setAttribute('aria-expanded', String(this.batchInputVisible));
+            togglePredictBtn.setAttribute('aria-expanded', String(this.predictInputVisible));
+            toggleBatchBtn.classList.toggle('border-accent', this.batchInputVisible);
+            toggleBatchBtn.classList.toggle('text-accent', this.batchInputVisible);
+            togglePredictBtn.classList.toggle('border-accent', this.predictInputVisible);
+            togglePredictBtn.classList.toggle('text-accent', this.predictInputVisible);
+        };
+        syncInputModeState();
+
         toggleBatchBtn.addEventListener('click', () => {
             this.batchInputVisible = !this.batchInputVisible;
-            batchContainer.classList.toggle('hidden', !this.batchInputVisible);
+            if (this.batchInputVisible) this.predictInputVisible = false;
+            syncInputModeState();
             if (this.batchInputVisible) batchInput.focus();
         });
 
@@ -334,15 +393,15 @@ export class WorkspaceTab {
         const screenRunBtn = this.element.querySelector('#screen-run-btn');
         screenRunBtn.addEventListener('click', () => { void this.runScreen(); });
 
-        const togglePredictBtn = this.element.querySelector('#workspace-toggle-predict-btn');
-        const predictContainer = this.element.querySelector('#workspace-predict-container');
-        const predictInput = this.element.querySelector('#workspace-predict-sequence-input');
-        const predictBtn = this.element.querySelector('#workspace-predict-btn');
-        const predictFeedback = this.element.querySelector('#workspace-predict-feedback');
+        const paramWater = this.element.querySelector('#param-remove-water');
+        const paramHetero = this.element.querySelector('#param-remove-heteroatoms');
+        paramWater?.addEventListener('change', () => this._updateParamsSummary());
+        paramHetero?.addEventListener('change', () => this._updateParamsSummary());
 
         togglePredictBtn.addEventListener('click', () => {
             this.predictInputVisible = !this.predictInputVisible;
-            predictContainer.classList.toggle('hidden', !this.predictInputVisible);
+            if (this.predictInputVisible) this.batchInputVisible = false;
+            syncInputModeState();
             if (this.predictInputVisible) predictInput.focus();
         });
 
@@ -367,6 +426,58 @@ export class WorkspaceTab {
                 predictBtn.disabled = false;
             }
         });
+    }
+
+    _updateParamsSummary() {
+        const summaryEl = this.element?.querySelector('#workspace-params-summary');
+        if (!summaryEl) return;
+        const { removeWater, removeHeteroatoms } = this.getParameters();
+        if (removeWater && removeHeteroatoms) {
+            summaryEl.textContent = 'Water & non-ligand ions filtered';
+        } else if (removeWater) {
+            summaryEl.textContent = 'Water filtered · ions kept';
+        } else if (removeHeteroatoms) {
+            summaryEl.textContent = 'Water kept · non-ligand ions filtered';
+        } else {
+            summaryEl.textContent = 'No pre-alignment filtering';
+        }
+    }
+
+    _renderWorkflowGuide() {
+        const guideEl = this.element?.querySelector('#workspace-workflow-guide');
+        if (!guideEl) return;
+
+        const count = this.selectedPDBs.length;
+        let badge;
+        let title;
+        let subtitle;
+        let badgeClass = 'bg-surface border border-border-subtle text-secondary';
+
+        if (count === 0) {
+            badge = 'Step 1 of 2';
+            title = 'Add Protein Structures';
+            subtitle = 'Enter a 4-character PDB code (e.g. 4RLT), an AlphaFold ID (AF-P69905-F1), upload a .pdb/.cif file, or pick a curated demo below.';
+        } else if (count === 1) {
+            badge = 'Single-Structure Mode';
+            title = `1 Structure Loaded (${this.selectedPDBs[0]})`;
+            subtitle = "Click 'What is this?' on the card below to discover its function via Foldseek, or add 1 more structure to unlock 3D Structural Alignment.";
+        } else {
+            badge = 'Step 2 of 2';
+            title = `Ready to Align (${count} Structures)`;
+            subtitle = "Select chains if needed, then click 'Run Structural Alignment' below to superimpose all structures in 3D.";
+            badgeClass = 'bg-accent-muted border border-accent/30 text-accent';
+        }
+
+        guideEl.innerHTML = `
+            <div class="flex items-center gap-2 flex-wrap">
+                <span data-field="badge" class="px-2 py-0.5 rounded font-mono text-[10px] uppercase tracking-wider ${badgeClass}"></span>
+                <span data-field="title" class="font-label-md text-label-md text-primary"></span>
+            </div>
+            <p data-field="subtitle" class="font-body-sm text-[12px] text-secondary leading-relaxed"></p>
+        `;
+        guideEl.querySelector('[data-field="badge"]').textContent = badge;
+        guideEl.querySelector('[data-field="title"]').textContent = title;
+        guideEl.querySelector('[data-field="subtitle"]').textContent = subtitle;
     }
 
     updateState(selectedPDBs, chainSelections, pdbMetadata) {
@@ -425,6 +536,8 @@ export class WorkspaceTab {
 
     refreshPDBList() {
         if (!this.element) return;
+
+        this._renderWorkflowGuide();
 
         const badge = this.element.querySelector('#workspace-pdb-count-badge');
         badge.innerText = `${this.selectedPDBs.length} Protein${this.selectedPDBs.length !== 1 ? 's' : ''}`;
@@ -629,30 +742,45 @@ export class WorkspaceTab {
         const gapLabel = gapCount === 1 ? 'region' : 'regions';
 
         const citationLinkHTML = this._citationLinkHTML(meta);
+        const technicalBadges = [
+            meta?.is_nmr ? `<span class="pdb-nmr-badge font-body-sm text-[11px] text-tertiary" title="Showing model 1 of ${meta.num_models} - other conformers in this NMR ensemble aren't analyzed.">NMR · ${meta.num_models} models (model 1 shown)</span>` : '',
+            gapCount > 0 ? `<span class="pdb-gaps-badge font-body-sm text-[11px] text-tertiary" title="${escapeHtml(gapTooltip)}">${gapCount} disordered ${gapLabel}</span>` : '',
+            meta?.source === 'pdb' ? `<span id="validation-badge-${pid}" class="pdb-validation-badge font-body-sm text-[11px] text-tertiary" title="From wwPDB's own validation pipeline. Archive percentile is how this structure's clashscore/Ramachandran-outlier rate compares to every other validated entry in the archive - higher is better.">${this._validationBadgeContent(pid)}</span>` : '',
+            meta?.source === 'pdb' ? `<span id="cath-badge-${pid}" class="pdb-cath-badge font-body-sm text-[11px] text-tertiary">${this._cathBadgeContent(pid)}</span>` : '',
+            meta?.source === 'pdb' ? `<span id="assembly-badge-${pid}" class="pdb-assembly-badge font-body-sm text-[11px] text-tertiary">${this._assemblyBadgeContent(pid)}</span>` : '',
+            citationLinkHTML,
+        ].filter(Boolean);
+
+        const technicalDetailsHTML = technicalBadges.length > 0 ? `
+            <details class="pdb-technical-details group mt-1 pt-1.5 border-t border-border-subtle">
+                <summary class="flex items-center gap-1 cursor-pointer select-none font-label-sm text-[11px] text-secondary hover:text-primary list-none [&::-webkit-details-marker]:hidden">
+                    <span class="material-symbols-outlined text-[14px] transition-transform group-open:rotate-90">chevron_right</span>
+                    <span>Technical details &amp; validation</span>
+                </summary>
+                <div class="flex flex-col gap-1 pt-1.5 pl-4">
+                    ${technicalBadges.join('')}
+                </div>
+            </details>
+        ` : '';
 
         div.innerHTML = `
-            <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 min-w-0 flex-wrap">
                     <span class="font-headline-sm text-body-md font-bold text-primary font-mono">${pid}</span>
                     <span class="px-1.5 py-0.5 rounded-md bg-surface border border-border-subtle font-mono text-[10px] text-secondary uppercase source-badge">${sourceLabel}</span>
                     <select class="bg-surface border border-border rounded-md px-2 py-1 text-body-sm text-secondary focus:outline-none focus:border-accent font-mono chain-select" data-pdb="${pid}">
                         ${chainsOptionsHTML}
                     </select>
                 </div>
-                <div class="flex items-center gap-1">
-                    <button class="discover-structure-btn font-label-sm text-label-sm text-secondary hover:text-accent px-2 py-1 rounded-md hover:bg-surface transition-colors whitespace-nowrap" data-pdb="${pid}">What is this?</button>
+                <div class="flex items-center gap-1 shrink-0">
+                    <button class="discover-structure-btn inline-flex items-center gap-1 font-label-sm text-label-sm text-secondary hover:text-accent px-2 py-1 rounded-md hover:bg-surface transition-colors whitespace-nowrap" data-pdb="${pid}" title="Identify fold & function via Foldseek"><span class="material-symbols-outlined text-[14px]">travel_explore</span><span>What is this?</span></button>
                     <button class="text-error hover:text-red-400 p-1 rounded-md hover:bg-surface transition-colors remove-pdb-btn" data-pdb="${pid}" aria-label="Remove structure ${pid}">
                         <span class="material-symbols-outlined text-[18px]">delete</span>
                     </button>
                 </div>
             </div>
             ${metaParts.length > 0 ? `<span class="pdb-meta-line font-body-sm text-[11px] text-secondary pl-0.5">${metaParts.join(' · ')}</span>` : ''}
-            ${meta?.is_nmr ? `<span class="pdb-nmr-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="Showing model 1 of ${meta.num_models} - other conformers in this NMR ensemble aren't analyzed.">NMR · ${meta.num_models} models (model 1 shown)</span>` : ''}
-            ${gapCount > 0 ? `<span class="pdb-gaps-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="${escapeHtml(gapTooltip)}">${gapCount} disordered ${gapLabel}</span>` : ''}
-            ${meta?.source === 'pdb' ? `<span id="validation-badge-${pid}" class="pdb-validation-badge font-body-sm text-[11px] text-tertiary pl-0.5" title="From wwPDB's own validation pipeline. Archive percentile is how this structure's clashscore/Ramachandran-outlier rate compares to every other validated entry in the archive - higher is better.">${this._validationBadgeContent(pid)}</span>` : ''}
-            ${meta?.source === 'pdb' ? `<span id="cath-badge-${pid}" class="pdb-cath-badge font-body-sm text-[11px] text-tertiary pl-0.5">${this._cathBadgeContent(pid)}</span>` : ''}
-            ${meta?.source === 'pdb' ? `<span id="assembly-badge-${pid}" class="pdb-assembly-badge font-body-sm text-[11px] text-tertiary pl-0.5">${this._assemblyBadgeContent(pid)}</span>` : ''}
-            ${citationLinkHTML}
+            ${technicalDetailsHTML}
         `;
 
         // Bind events
