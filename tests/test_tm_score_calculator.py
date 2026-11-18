@@ -108,6 +108,29 @@ class TestCalculateTmScoreMatrix:
         assert result is not None
         assert result.loc["structA", "structB"] == pytest.approx(1.0, abs=0.05)
 
+    def test_handles_modified_residues_gracefully(self, tmp_path):
+        # Modified residues like TPO (phosphothreonine) or MSE (selenomethionine)
+        # cause tmtools.io.get_residue_data to fail with KeyError.
+        pdb_file = tmp_path / "alignment.pdb"
+        fasta_file = tmp_path / "alignment.afasta"
+        lines = []
+        for model_num in (1, 2):
+            lines.append(f"MODEL        {model_num}")
+            for i, (x, y, z) in enumerate(_CHAIN_A, start=1):
+                resname = "TPO" if i == 2 else "ALA"
+                lines.append(
+                    f"ATOM  {i:5d}  CA  {resname} A{i:4d}    {x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00           C"
+                )
+            lines.append("ENDMDL")
+        lines.append("END\n")
+        pdb_file.write_text("\n".join(lines))
+        fasta_file.write_text(">structA\nAAAAAA\n>structB\nAAAAAA\n")
+
+        result = calculate_tm_score_matrix(pdb_file, fasta_file)
+
+        assert result is not None
+        assert result.loc["structA", "structB"] == pytest.approx(1.0, abs=0.05)
+
     def test_returns_none_on_parse_failure(self, tmp_path):
         fasta_file = tmp_path / "alignment.afasta"
         fasta_file.write_text(">structA\nAAAAAA\n>structB\nAAAAAA\n")

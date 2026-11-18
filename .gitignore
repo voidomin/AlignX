@@ -64,4 +64,9 @@ docs/_build/
 
 # Node dependencies
 node_modules/
+web-frontend/dist/
+
+# Matplotlib cache
+.matplotlib/
+
 

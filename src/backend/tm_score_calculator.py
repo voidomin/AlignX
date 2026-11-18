@@ -1,13 +1,55 @@
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from Bio import SeqIO
+from Bio.Data.IUPACData import protein_letters_3to1
 from Bio.PDB import PDBParser
 
 from src.utils.logger import get_logger
 
 logger = get_logger()
+
+# Map common post-translationally modified amino acids to single-letter equivalents
+MODIFIED_RESIDUES: dict[str, str] = {
+    "MSE": "M",  # Selenomethionine
+    "TPO": "T",  # Phosphothreonine
+    "SEP": "S",  # Phosphoserine
+    "PTR": "Y",  # Phosphotyrosine
+    "HYP": "P",  # Hydroxyproline
+    "PCA": "E",  # Pyroglutamic acid
+    "SEC": "C",  # Selenocysteine
+    "PYL": "K",  # Pyrrolysine
+    "CSO": "C",  # S-hydroxycysteine
+    "CSX": "C",  # S-oxycysteine
+    "CME": "C",  # S,S-(2-hydroxyethyl)thiocysteine
+}
+
+
+def _extract_residue_data(
+    entity: Any, ignore_hetero: bool = True
+) -> tuple[np.ndarray, str]:
+    """Safely extracts CA coordinates and sequence from a structure entity (chain or model).
+
+    Handles non-standard / modified residues (such as TPO, SEP, MSE) which cause
+    tmtools.io.get_residue_data to raise a KeyError.
+    """
+    coords = []
+    seq = []
+    residues = entity.get_residues() if hasattr(entity, "get_residues") else []
+    for residue in residues:
+        if (residue.id[0] == " " or not ignore_hetero) and "CA" in residue.child_dict:
+            coords.append(residue.child_dict["CA"].coord)
+            resname = residue.resname.upper()
+            letter = MODIFIED_RESIDUES.get(resname) or protein_letters_3to1.get(
+                resname.capitalize(), "X"
+            )
+            seq.append(letter)
+
+    if not coords:
+        return np.empty((0, 3)), ""
+    return np.vstack(coords), "".join(seq)
 
 
 def calculate_tm_score_matrix(
@@ -35,7 +77,6 @@ def calculate_tm_score_matrix(
     """
     try:
         from tmtools import tm_align
-        from tmtools.io import get_residue_data
     except ImportError:
         logger.warning(
             "tmtools not installed - skipping independent pairwise TM-score matrix"
@@ -60,7 +101,7 @@ def calculate_tm_score_matrix(
         pdb_ids = [record.id for record in alignment]
         chain_data = []
         for entity in entities:
-            coords, seq = get_residue_data(entity)
+            coords, seq = _extract_residue_data(entity)
             chain_data.append((coords, seq))
 
         n = len(pdb_ids)
@@ -100,7 +141,6 @@ def calculate_pairwise_tm_score(pdb_path_a: Path, pdb_path_b: Path):
     file has no resolvable residues, or parsing fails."""
     try:
         from tmtools import tm_align
-        from tmtools.io import get_residue_data
     except ImportError:
         logger.warning("tmtools not installed - skipping standalone pairwise TM-score")
         return None
@@ -111,8 +151,8 @@ def calculate_pairwise_tm_score(pdb_path_a: Path, pdb_path_b: Path):
         structure_b = parser.get_structure("b", str(pdb_path_b))
         chain_a = next(iter(next(iter(structure_a)).get_chains()))
         chain_b = next(iter(next(iter(structure_b)).get_chains()))
-        coords_a, seq_a = get_residue_data(chain_a)
-        coords_b, seq_b = get_residue_data(chain_b)
+        coords_a, seq_a = _extract_residue_data(chain_a)
+        coords_b, seq_b = _extract_residue_data(chain_b)
         if len(coords_a) == 0 or len(coords_b) == 0:
             return None
 
