@@ -653,4 +653,41 @@ describe('SequenceTab', () => {
             expect(blastWebhook.closest('details.webhook-disclosure').open).toBe(false);
         });
     });
+
+    describe('unified quick-export card and Export Studio integration', () => {
+        it('calls onOpenExportStudio when clicking the Open Export Studio button', () => {
+            const onOpenExportStudio = vi.fn();
+            const tab = new SequenceTab({ onOpenExportStudio });
+            tab.render();
+
+            tab.element.querySelector('#sequence-open-export-studio-btn').click();
+            expect(onOpenExportStudio).toHaveBeenCalledTimes(1);
+        });
+
+        it('keeps 4 primary export cards visible and tucks specialist exports inside #sequence-all-exports-disclosure', () => {
+            const tab = new SequenceTab();
+            tab.render();
+
+            const quickExports = tab.element.querySelector('#sequence-quick-exports');
+            ['#download-report-link', '#download-pdb-link', '#download-notebook-link', '#download-zip-link'].forEach(sel => {
+                expect(quickExports.querySelector(sel)).not.toBeNull();
+            });
+
+            const disclosure = tab.element.querySelector('#sequence-all-exports-disclosure');
+            expect(disclosure.open).toBe(false);
+            [
+                '#download-fasta-link',
+                '#download-notebook-ipynb-link',
+                '#download-rmsd-csv-link',
+                '#download-heatmap-png-link',
+                '#download-newick-link',
+                '#download-pymol-link',
+                '#download-chimerax-link',
+                '#download-citations-link',
+                '#report-section-checklist',
+            ].forEach(sel => {
+                expect(disclosure.querySelector(sel)).not.toBeNull();
+            });
+        });
+    });
 });

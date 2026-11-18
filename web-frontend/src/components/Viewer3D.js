@@ -127,12 +127,16 @@ export class Viewer3D {
         div.innerHTML = `
             <!-- Viewport Header -->
             <div class="px-4 py-3 border-b border-border flex flex-col gap-2">
-                <div class="flex justify-between items-center">
-                    <h3 class="font-body-md text-body-md font-semibold text-primary">Superposition Viewer</h3>
-                    <div class="flex gap-2 items-center">
+                <div class="flex flex-wrap justify-between items-center gap-2">
+                    <div class="flex items-center gap-2">
+                        <h3 class="font-body-md text-body-md font-semibold text-primary">Superposition Viewer</h3>
+                        <span id="viewer-mode-badge" class="px-2 py-0.5 rounded font-mono text-[10px] uppercase tracking-wider bg-surface-raised border border-border-subtle text-secondary" title="Click any residue on the 3D model to inspect it">Inspect mode</span>
+                    </div>
+                    <div class="flex gap-1.5 items-center">
                         <details id="viewer-style-picker" class="group relative">
-                            <summary class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors cursor-pointer select-none flex items-center gap-0.5 list-none [&::-webkit-details-marker]:hidden" title="Representation Style" aria-label="Representation Style">
-                                <span class="material-symbols-outlined text-[18px]">view_in_ar</span>
+                            <summary class="px-2 py-1 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors cursor-pointer select-none flex items-center gap-1 list-none [&::-webkit-details-marker]:hidden" title="Representation Style" aria-label="Representation Style">
+                                <span class="material-symbols-outlined text-[16px]">view_in_ar</span>
+                                <span class="font-label-sm text-[11px]">Style</span>
                                 <span class="material-symbols-outlined text-[14px] group-open:rotate-180 transition-transform">expand_more</span>
                             </summary>
                             <div class="absolute right-0 top-full mt-1 z-20 bg-surface border border-border rounded-md shadow-panel p-1 flex flex-col gap-0.5 min-w-[130px]">
@@ -142,8 +146,9 @@ export class Viewer3D {
                             </div>
                         </details>
                         <details id="viewer-colorscheme-picker" class="group relative">
-                            <summary class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors cursor-pointer select-none flex items-center gap-0.5 list-none [&::-webkit-details-marker]:hidden" title="Color Scheme" aria-label="Color Scheme">
-                                <span class="material-symbols-outlined text-[18px]">palette</span>
+                            <summary class="px-2 py-1 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors cursor-pointer select-none flex items-center gap-1 list-none [&::-webkit-details-marker]:hidden" title="Color Scheme" aria-label="Color Scheme">
+                                <span class="material-symbols-outlined text-[16px]">palette</span>
+                                <span class="font-label-sm text-[11px]">Color</span>
                                 <span class="material-symbols-outlined text-[14px] group-open:rotate-180 transition-transform">expand_more</span>
                             </summary>
                             <div class="absolute right-0 top-full mt-1 z-20 bg-surface border border-border rounded-md shadow-panel p-1 flex flex-col gap-0.5 min-w-[220px] max-h-[70vh] overflow-y-auto">
@@ -162,36 +167,49 @@ export class Viewer3D {
                                 })()}
                             </div>
                         </details>
-                        <button id="btn-toggle-surface" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Surface" aria-label="Toggle Surface">
-                            <span class="material-symbols-outlined text-[18px]">blur_on</span>
-                        </button>
-                        <button id="btn-reset-view" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Reset View" aria-label="Reset View">
-                            <span class="material-symbols-outlined text-[18px]">center_focus_strong</span>
+                        <button id="btn-toggle-surface" class="px-2 py-1 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors flex items-center gap-1" title="Toggle Surface" aria-label="Toggle Surface">
+                            <span class="material-symbols-outlined text-[16px]">blur_on</span>
+                            <span class="font-label-sm text-[11px]">Surface</span>
                         </button>
                     </div>
                 </div>
-                <div class="flex justify-end gap-2 items-center">
-                    <button id="btn-toggle-spin" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Auto-Spin" aria-label="Toggle Auto-Spin">
-                        <span class="material-symbols-outlined text-[18px]">autorenew</span>
-                    </button>
-                    <button id="btn-toggle-morph" disabled class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-secondary" title="Play Morph Animation (2-structure alignments only)" aria-label="Play Morph Animation">
-                        <span class="material-symbols-outlined text-[18px]">movie</span>
-                    </button>
-                    <button id="btn-toggle-fullscreen" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Fullscreen" aria-label="Toggle Fullscreen">
-                        <span class="material-symbols-outlined text-[18px]">fullscreen</span>
-                    </button>
-                    <button id="btn-toggle-measure" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Toggle Measurement Mode" aria-label="Toggle Measurement Mode">
-                        <span class="material-symbols-outlined text-[18px]">straighten</span>
-                    </button>
-                    <button id="btn-screenshot" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors" title="Download Screenshot (PNG)" aria-label="Download Screenshot (PNG)">
-                        <span class="material-symbols-outlined text-[18px]">photo_camera</span>
-                    </button>
-                    <button id="btn-download-pdb" disabled class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-secondary" title="Download Superimposed Aligned PDB (1-Click)" aria-label="Download Superimposed Aligned PDB">
-                        <span class="material-symbols-outlined text-[18px]">download_for_offline</span>
-                    </button>
-                    <button id="btn-download-zip" disabled class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-secondary" title="Download Complete Alignment Bundle (ZIP)" aria-label="Download Complete Alignment Bundle (ZIP)">
-                        <span class="material-symbols-outlined text-[18px]">folder_zip</span>
-                    </button>
+                <div class="flex flex-wrap justify-between gap-2 items-center pt-1 border-t border-border-subtle">
+                    <div class="flex items-center gap-1">
+                        <button id="btn-toggle-measure" class="px-2 py-1 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors flex items-center gap-1" title="Toggle Measurement Mode" aria-label="Toggle Measurement Mode">
+                            <span class="material-symbols-outlined text-[16px]">straighten</span>
+                            <span class="font-label-sm text-[11px]">Measure</span>
+                        </button>
+                        <button id="btn-toggle-morph" disabled class="px-2 py-1 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-secondary flex items-center gap-1" title="Play Morph Animation (2-structure alignments only)" aria-label="Play Morph Animation">
+                            <span class="material-symbols-outlined text-[16px]">movie</span>
+                            <span class="font-label-sm text-[11px]">Morph</span>
+                        </button>
+                        <button id="btn-toggle-spin" class="px-2 py-1 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors flex items-center gap-1" title="Toggle Auto-Spin" aria-label="Toggle Auto-Spin">
+                            <span class="material-symbols-outlined text-[16px]">autorenew</span>
+                            <span class="font-label-sm text-[11px]">Spin</span>
+                        </button>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <button id="btn-reset-view" class="px-2 py-1 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors flex items-center gap-1" title="Reset View" aria-label="Reset View">
+                            <span class="material-symbols-outlined text-[16px]">center_focus_strong</span>
+                            <span class="font-label-sm text-[11px]">Reset</span>
+                        </button>
+                        <button id="btn-screenshot" class="px-2 py-1 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors flex items-center gap-1" title="Download Screenshot (PNG)" aria-label="Download Screenshot (PNG)">
+                            <span class="material-symbols-outlined text-[16px]">photo_camera</span>
+                            <span class="font-label-sm text-[11px]">PNG</span>
+                        </button>
+                        <button id="btn-toggle-fullscreen" class="p-1.5 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors flex items-center" title="Toggle Fullscreen" aria-label="Toggle Fullscreen">
+                            <span class="material-symbols-outlined text-[16px]">fullscreen</span>
+                        </button>
+                        <div class="h-4 w-px bg-border-subtle mx-0.5" aria-hidden="true"></div>
+                        <button id="btn-download-pdb" disabled class="px-2 py-1 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-secondary flex items-center gap-1" title="Download Superimposed Aligned PDB (1-Click)" aria-label="Download Superimposed Aligned PDB">
+                            <span class="material-symbols-outlined text-[16px]">download_for_offline</span>
+                            <span class="font-label-sm text-[11px]">PDB</span>
+                        </button>
+                        <button id="btn-download-zip" disabled class="px-2 py-1 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-secondary flex items-center gap-1" title="Download Complete Alignment Bundle (ZIP)" aria-label="Download Complete Alignment Bundle (ZIP)">
+                            <span class="material-symbols-outlined text-[16px]">folder_zip</span>
+                            <span class="font-label-sm text-[11px]">ZIP</span>
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -287,6 +305,8 @@ export class Viewer3D {
                 });
                 this.isSurfaceVisible = true;
             }
+            toggleSurfaceBtn.classList.toggle('bg-surface-raised', this.isSurfaceVisible);
+            toggleSurfaceBtn.classList.toggle('text-primary', this.isSurfaceVisible);
             this.viewer.render();
         });
 
@@ -1282,14 +1302,27 @@ export class Viewer3D {
         this.measureHandles = [];
     }
 
+    _updateInteractionModeUI() {
+        const isMeasuring = this.interactionMode === 'measure';
+        const btn = this.element?.querySelector('#btn-toggle-measure');
+        if (btn) {
+            btn.classList.toggle('bg-surface-raised', isMeasuring);
+            btn.classList.toggle('text-primary', isMeasuring);
+        }
+        const badge = this.element?.querySelector('#viewer-mode-badge');
+        if (badge) {
+            badge.textContent = isMeasuring ? 'Measure: click 2 atoms' : 'Inspect mode';
+            badge.className = isMeasuring
+                ? 'px-2 py-0.5 rounded font-mono text-[10px] uppercase tracking-wider bg-tertiary/15 border border-tertiary/40 text-tertiary'
+                : 'px-2 py-0.5 rounded font-mono text-[10px] uppercase tracking-wider bg-surface-raised border border-border-subtle text-secondary';
+        }
+    }
+
     toggleMeasureMode() {
         this.interactionMode = this.interactionMode === 'measure' ? 'inspect' : 'measure';
         this._clearMeasurement();
         this._clearInspectLabel();
-        const btn = this.element.querySelector('#btn-toggle-measure');
-        const isMeasuring = this.interactionMode === 'measure';
-        btn.classList.toggle('bg-surface-raised', isMeasuring);
-        btn.classList.toggle('text-primary', isMeasuring);
+        this._updateInteractionModeUI();
         if (this.viewer) this.viewer.render();
     }
 
@@ -1305,6 +1338,7 @@ export class Viewer3D {
         this.flexibilityScoresByPdbId = {};
         this.paeDomainColorsByPdbId = {};
         this.interactionMode = 'inspect';
+        this.isSurfaceVisible = false;
         this.measurePoints = [];
         this.measureHandles = [];
         this.inspectLabelHandle = null;
@@ -1326,10 +1360,11 @@ export class Viewer3D {
             this._updateStylePickerUI();
             this._updateColorSchemePopoverUI();
             this._updateMorphButtonUI();
+            this._updateInteractionModeUI();
             const spinBtn = this.element.querySelector('#btn-toggle-spin');
             spinBtn.classList.remove('bg-surface-raised', 'text-primary');
-            const measureBtn = this.element.querySelector('#btn-toggle-measure');
-            measureBtn.classList.remove('bg-surface-raised', 'text-primary');
+            const surfaceBtn = this.element.querySelector('#btn-toggle-surface');
+            surfaceBtn?.classList.remove('bg-surface-raised', 'text-primary');
         }
     }
 }
