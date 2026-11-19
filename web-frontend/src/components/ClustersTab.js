@@ -6,6 +6,11 @@ export class ClustersTab {
     threshold = 3.0;
     element = null;
     debounceTimer = null;
+    onGoToWorkspace = null;
+
+    constructor(props = {}) {
+        this.onGoToWorkspace = props.onGoToWorkspace || (() => {});
+    }
 
     render() {
         const div = document.createElement('div');
@@ -42,8 +47,10 @@ export class ClustersTab {
                 </div>
 
                 <div id="clusters-list-container" class="flex flex-col">
-                    <div class="text-center py-8 text-secondary font-body-sm">
-                        Run alignment to identify structural clusters.
+                    <div class="flex flex-col items-center justify-center py-8 px-4 text-center bg-surface-raised/40 border border-border-subtle rounded-lg gap-2 text-secondary font-body-sm">
+                        <span class="material-symbols-outlined text-[24px] text-muted">bubble_chart</span>
+                        <span>Run alignment to identify structural clusters.</span>
+                        <button type="button" id="clusters-goto-workspace-btn" class="btn-primary py-1 px-3 rounded-md font-label-sm text-label-sm mt-1">Go to Workspace</button>
                     </div>
                 </div>
             </div>
@@ -54,6 +61,12 @@ export class ClustersTab {
     }
 
     setupEventListeners() {
+        this.element.addEventListener('click', (e) => {
+            if (e.target && e.target.closest('#clusters-goto-workspace-btn')) {
+                this.onGoToWorkspace();
+            }
+        });
+
         const slider = this.element.querySelector('#cluster-threshold-slider');
         slider.addEventListener('input', (e) => {
             this.threshold = Number.parseFloat(e.target.value);

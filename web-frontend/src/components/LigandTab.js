@@ -8,6 +8,7 @@ export class LigandTab {
         this.currentRunId = props.currentRunId;
         this.onResidueSelected = props.onResidueSelected;
         this.onLigandSelected = props.onLigandSelected;
+        this.onGoToWorkspace = props.onGoToWorkspace || (() => {});
         this.ligandsList = [];
         this.element = null;
         this.selectedLigandId = "";
@@ -42,7 +43,7 @@ export class LigandTab {
                 <div id="ligand-verdict-banner" class="hidden flex-col gap-1.5 p-3.5 rounded-lg bg-surface-raised border border-border-subtle"></div>
 
                 <div id="ligand-pocket-desc" class="font-body-sm text-body-sm text-secondary leading-relaxed">
-                    Add a second structure and run alignment to analyze ligands here in Compare mode. For a single structure, use Discover mode's ligand inspector instead.
+                    Superimpose 2 or more protein structures in the <button type="button" id="ligand-goto-workspace-btn" class="text-accent underline font-medium hover:opacity-80">Workspace</button> to analyze ligand binding pockets, contacts, and drug potency.
                 </div>
 
                 <div id="pocket-metrics-row" class="hidden flex-wrap items-center gap-3 p-3 rounded-lg bg-surface-raised border border-border">
@@ -185,6 +186,12 @@ export class LigandTab {
     }
 
     setupEventListeners() {
+        this.element.addEventListener('click', (e) => {
+            if (e.target && e.target.closest('#ligand-goto-workspace-btn')) {
+                this.onGoToWorkspace();
+            }
+        });
+
         const select = this.element.querySelector('#ligand-select');
         select.addEventListener('change', async (e) => {
             const ligandId = e.target.value;
@@ -696,7 +703,17 @@ export class LigandTab {
     clearTable() {
         if (!this.element) return;
         const desc = this.element.querySelector('#ligand-pocket-desc');
-        desc.innerText = "Add a second structure and run alignment to analyze ligands here in Compare mode. For a single structure, use Discover mode's ligand inspector instead.";
+        if (desc) {
+            desc.replaceChildren();
+            desc.appendChild(document.createTextNode('Superimpose 2 or more protein structures in the '));
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.id = 'ligand-goto-workspace-btn';
+            btn.className = 'text-accent underline font-medium hover:opacity-80';
+            btn.textContent = 'Workspace';
+            desc.appendChild(btn);
+            desc.appendChild(document.createTextNode(' to analyze ligand binding pockets, contacts, and drug potency.'));
+        }
 
         const metricsRow = this.element.querySelector('#pocket-metrics-row');
         if (metricsRow) {

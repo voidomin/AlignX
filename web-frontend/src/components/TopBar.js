@@ -2,6 +2,7 @@ import { fetchMemoryStats, triggerClearMemory, fetchHealth } from '../api';
 import { wireArrowKeyNavigation } from '../utils/tabKeyboardNav';
 import { showDesktopModal } from './DesktopModal';
 import { showGlossaryModal } from '../utils/rosettaStone';
+import { showShortcutsModal } from './ShortcutsModal';
 
 // Grouped into two sections so the nav communicates structure instead of
 // 9 flat, equal-weight peers: Workspace (the one merged add-structures/
@@ -86,6 +87,10 @@ export class TopBar {
                         <span class="material-symbols-outlined text-[15px] text-accent">school</span>
                         <span>Lab Guide</span>
                     </button>
+                    <button id="topbar-shortcuts-btn" class="btn-secondary px-2.5 py-1.5 rounded-md font-label-md text-label-md inline-flex items-center gap-1" title="Keyboard Shortcuts (?)" aria-label="Keyboard Shortcuts">
+                        <span class="material-symbols-outlined text-[15px] text-secondary">keyboard</span>
+                        <span class="font-mono text-[11px] text-muted">?</span>
+                    </button>
                     <button id="topbar-new-ws-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">New Workspace</button>
                     <button id="topbar-export-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Export</button>
                     <details id="topbar-system-disclosure" class="relative group">
@@ -169,6 +174,7 @@ export class TopBar {
         this.element.querySelector('#topbar-export-btn').addEventListener('click', () => this.onExportData());
         this.element.querySelector('#topbar-new-ws-btn').addEventListener('click', () => this.onNewWorkspace());
         this.element.querySelector('#topbar-glossary-btn')?.addEventListener('click', () => showGlossaryModal());
+        this.element.querySelector('#topbar-shortcuts-btn')?.addEventListener('click', () => showShortcutsModal());
         const desktopBtn = this.element.querySelector('#topbar-download-desktop-btn');
         if (desktopBtn) {
             desktopBtn.addEventListener('click', () => showDesktopModal());
