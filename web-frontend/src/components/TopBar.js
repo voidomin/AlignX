@@ -46,7 +46,22 @@ export class TopBar {
         header.innerHTML = `
             <div class="max-w-[1600px] mx-auto px-6 py-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 lg:gap-4">
                 <div class="flex items-center gap-2.5 shrink-0">
-                    <span class="material-symbols-outlined text-[20px] text-accent">science</span>
+                    <svg class="w-6 h-6 shrink-0" viewBox="0 0 64 64" fill="none" aria-label="StructScope logo" role="img">
+                        <rect width="64" height="64" rx="14" fill="#1E1813" stroke="#2C2620" stroke-width="2"/>
+                        <line x1="32" y1="9" x2="32" y2="14" stroke="#EDE7DC" stroke-width="1.5" stroke-linecap="round" stroke-opacity="0.5"/>
+                        <line x1="32" y1="50" x2="32" y2="55" stroke="#EDE7DC" stroke-width="1.5" stroke-linecap="round" stroke-opacity="0.5"/>
+                        <line x1="9" y1="32" x2="14" y2="32" stroke="#EDE7DC" stroke-width="1.5" stroke-linecap="round" stroke-opacity="0.5"/>
+                        <line x1="50" y1="32" x2="55" y2="32" stroke="#EDE7DC" stroke-width="1.5" stroke-linecap="round" stroke-opacity="0.5"/>
+                        <circle cx="32" cy="32" r="9.5" fill="none" stroke="#EDE7DC" stroke-width="1.2" stroke-opacity="0.35" stroke-dasharray="2.5 2"/>
+                        <path d="M 48 16 C 41 21, 37 27, 32 32 C 27 37, 23 43, 16 48" stroke="#F59E0B" stroke-width="4.5" stroke-linecap="round"/>
+                        <path d="M 16 16 C 23 21, 27 27, 32 32 C 37 37, 41 43, 48 48" stroke="#E2846A" stroke-width="4.5" stroke-linecap="round"/>
+                        <circle cx="16" cy="16" r="3.5" fill="#E2846A"/>
+                        <circle cx="48" cy="48" r="3.5" fill="#E2846A"/>
+                        <circle cx="48" cy="16" r="3.5" fill="#F59E0B"/>
+                        <circle cx="16" cy="48" r="3.5" fill="#F59E0B"/>
+                        <circle cx="32" cy="32" r="5" fill="#1E1813" stroke="#EDE7DC" stroke-width="2"/>
+                        <circle cx="32" cy="32" r="2.5" fill="#E2846A"/>
+                    </svg>
                     <span class="font-headline-md text-headline-md font-bold text-primary">StructScope</span>
                 </div>
 
