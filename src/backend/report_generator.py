@@ -41,6 +41,49 @@ def _clean_text(text: Any) -> str:
         return "".join(c for c in text if ord(c) < 128)
 
 
+def build_student_executive_verdict(stats: dict[str, Any]) -> str:
+    """Builds a plain-English 3D structural match & evolutionary takeaway
+    for PDF reports and student lab notebooks."""
+    raw_rmsd = stats.get("mean_rmsd")
+    try:
+        rmsd = float(raw_rmsd)
+    except (TypeError, ValueError):
+        return (
+            "Executive Takeaway: Review the pairwise RMSD matrix and 3D "
+            "superposition to assess structural conservation."
+        )
+
+    if rmsd < 2.0:
+        verdict = (
+            f"High 3D Shape Match ({rmsd:.2f} Å Mean RMSD): The aligned "
+            "structures share a nearly identical 3D backbone architecture."
+        )
+    elif rmsd <= 4.0:
+        verdict = (
+            f"Moderate 3D Similarity ({rmsd:.2f} Å Mean RMSD): The proteins "
+            "share a conserved core fold with flexible loop or domain shifts."
+        )
+    else:
+        verdict = (
+            f"Divergent 3D Shapes ({rmsd:.2f} Å Mean RMSD): Substantial "
+            "conformational or fold-level divergence across the structures."
+        )
+
+    raw_identity = stats.get("seq_identity", stats.get("identity"))
+    try:
+        seq_id = float(raw_identity)
+        if rmsd < 3.0 and seq_id > 0 and seq_id < 30.0:
+            verdict += (
+                f" Evolutionary Insight: Despite low sequence identity "
+                f"({seq_id:.1f}%), the 3D fold is preserved — demonstrating "
+                "that tertiary structure is conserved longer than sequence."
+            )
+    except (TypeError, ValueError):
+        pass
+
+    return verdict
+
+
 class ReportGenerator:
     def __init__(self, output_dir: Path):
         self.output_dir = output_dir
@@ -90,6 +133,13 @@ class ReportGenerator:
                 ),
                 0,
                 1,
+            )
+            pdf.ln(3)
+            pdf.set_font("Arial", "I", 10)
+            pdf.multi_cell(
+                0,
+                6,
+                _clean_text(build_student_executive_verdict(stats)),
             )
         pdf.ln(5)
 

@@ -832,6 +832,35 @@ class TestCorsMisconfigurationWarning:
         assert api_module._cors_misconfiguration_warning(None, "*") is None
 
 
+class TestParseCorsConfig:
+    def test_defaults_to_wildcard_when_empty_or_star(self):
+        assert api_module._parse_cors_config(None) == (["*"], None)
+        assert api_module._parse_cors_config("") == (["*"], None)
+        assert api_module._parse_cors_config("   ") == (["*"], None)
+        assert api_module._parse_cors_config("*") == (["*"], None)
+
+    def test_strips_trailing_slashes_and_enables_vercel_preview_regex(self):
+        origins, regex = api_module._parse_cors_config(
+            "https://align.vercel.app/, https://custom.example.com/"
+        )
+        assert origins == ["https://align.vercel.app", "https://custom.example.com"]
+        assert regex is not None
+        import re
+
+        assert re.match(
+            regex, "https://align-87eob4vtv-akashs-projects-19d0262e.vercel.app"
+        )
+        assert not re.match(regex, "https://evil.example.com")
+
+    def test_supports_wildcard_origin_patterns(self):
+        origins, regex = api_module._parse_cors_config("https://*.example.org")
+        assert origins == []
+        assert regex is not None
+        import re
+
+        assert re.match(regex, "https://preview-123.example.org")
+
+
 def test_upload_endpoint_returns_chain_info_for_a_valid_structure():
     with patch(
         "src.backend.coordinator.PDBManager.save_uploaded_bytes"

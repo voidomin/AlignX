@@ -1,7 +1,11 @@
-import { describe, it, expect } from 'vitest';
-import { ROSETTA_STONE_TERMS, renderRosettaTooltip } from './rosettaStone.js';
+import { describe, it, expect, afterEach } from 'vitest';
+import { ROSETTA_STONE_TERMS, STUDENT_WALKTHROUGH_STEPS, renderRosettaTooltip, showGlossaryModal } from './rosettaStone.js';
 
 describe('rosettaStone utility', () => {
+    afterEach(() => {
+        document.getElementById('rosetta-glossary-modal')?.remove();
+    });
+
     it('defines definitions for all core scientific terms', () => {
         expect(ROSETTA_STONE_TERMS.rmsd).toBeDefined();
         expect(ROSETTA_STONE_TERMS.tmScore).toBeDefined();
@@ -9,6 +13,11 @@ describe('rosettaStone utility', () => {
         expect(ROSETTA_STONE_TERMS.ligandPocket).toBeDefined();
         expect(ROSETTA_STONE_TERMS.clinvar).toBeDefined();
         expect(ROSETTA_STONE_TERMS.discover).toBeDefined();
+        expect(ROSETTA_STONE_TERMS.rmsf).toBeDefined();
+        expect(ROSETTA_STONE_TERMS.sasa).toBeDefined();
+        expect(ROSETTA_STONE_TERMS.bFactor).toBeDefined();
+        expect(ROSETTA_STONE_TERMS.shannonEntropy).toBeDefined();
+        expect(STUDENT_WALKTHROUGH_STEPS).toHaveLength(4);
     });
 
     it('each term has title, badge, summary, detail, and ruleOfThumb', () => {
@@ -37,5 +46,23 @@ describe('rosettaStone utility', () => {
     it('renderRosettaTooltip handles unknown terms gracefully', () => {
         const html = renderRosettaTooltip('unknown_term', 'Fallback');
         expect(html).toBe('Fallback');
+    });
+
+    it('showGlossaryModal opens the interactive Student Lab Guide & Rosetta Stone modal and filters cards', () => {
+        const modal = showGlossaryModal();
+        expect(document.getElementById('rosetta-glossary-modal')).toBe(modal);
+        expect(modal.querySelectorAll('.rosetta-glossary-card')).toHaveLength(10);
+
+        const searchInput = modal.querySelector('#glossary-search-input');
+        searchInput.value = 'Shannon';
+        searchInput.dispatchEvent(new Event('input'));
+
+        const visibleCards = Array.from(modal.querySelectorAll('.rosetta-glossary-card'))
+            .filter(c => !c.classList.contains('hidden'));
+        expect(visibleCards).toHaveLength(1);
+        expect(visibleCards[0].textContent).toContain('Shannon Entropy');
+
+        modal.querySelector('#close-glossary-modal-btn').click();
+        expect(document.getElementById('rosetta-glossary-modal')).toBeNull();
     });
 });

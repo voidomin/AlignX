@@ -2,7 +2,11 @@ import pandas as pd
 import pytest
 from PIL import Image
 
-from src.backend.report_generator import ReportGenerator, _clean_text
+from src.backend.report_generator import (
+    ReportGenerator,
+    _clean_text,
+    build_student_executive_verdict,
+)
 
 
 def _write_tiny_png(path):
@@ -12,6 +16,24 @@ def _write_tiny_png(path):
 class TestCleanText:
     def test_non_string_input_is_stringified(self):
         assert _clean_text(1.5) == "1.5"
+
+
+class TestBuildStudentExecutiveVerdict:
+    def test_high_shape_match_and_evolutionary_insight(self):
+        verdict = build_student_executive_verdict(
+            {"mean_rmsd": 1.4, "seq_identity": 21.5}
+        )
+        assert "High 3D Shape Match (1.40 Å Mean RMSD)" in verdict
+        assert "Evolutionary Insight: Despite low sequence identity (21.5%)" in verdict
+
+    def test_moderate_and_divergent_verdicts(self):
+        assert "Moderate 3D Similarity" in build_student_executive_verdict(
+            {"mean_rmsd": 2.8}
+        )
+        assert "Divergent 3D Shapes" in build_student_executive_verdict(
+            {"mean_rmsd": 5.2}
+        )
+        assert "Executive Takeaway" in build_student_executive_verdict({})
 
 
 class TestGenerateFullReport:

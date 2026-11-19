@@ -6,6 +6,8 @@ import pandas as pd
 import plotly.io as pio
 from jinja2 import Template
 
+from src.backend.report_generator import build_student_executive_verdict
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,6 +43,7 @@ class NotebookExporter:
         dict - the dashboard (results.py) expects `stats["mean_rmsd"]` to
         stay a float, not the formatted string this method produces."""
         stats = results.get("stats", {}).copy()
+        stats["student_verdict"] = build_student_executive_verdict(stats)
         if "mean_rmsd" in stats and isinstance(stats["mean_rmsd"], (int, float)):
             stats["mean_rmsd"] = f"{stats['mean_rmsd']:.3f}"
         elif "mean_rmsd" not in stats:
@@ -177,12 +180,15 @@ class NotebookExporter:
     @staticmethod
     def _ipynb_title_markdown(run_id, pdb_ids, stats):
         proteins = ", ".join(pdb_ids) if pdb_ids else "N/A"
+        verdict = stats.get("student_verdict", "")
+        verdict_block = f"> **{verdict}**\n\n" if verdict else ""
         return (
             f"# StructScope Lab Notebook\n\n"
             f"**Run ID:** `{run_id}`  \n"
             f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M')}  \n"
             f"**Structures:** {proteins}  \n"
             f"**Mean RMSD:** {stats.get('mean_rmsd', 'N/A')} Å  \n\n"
+            f"{verdict_block}"
             "This notebook re-fetches this run's real data live from "
             "StructScope's own REST API (see `/docs` for the full "
             "reference) rather than embedding a static snapshot - re-run "
