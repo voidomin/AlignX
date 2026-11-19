@@ -1,4 +1,4 @@
-import { fetchStats, fetchHistory } from '../api';
+import { fetchStats, fetchHistory, fetchHealth, fetchMemoryStats } from '../api';
 import { QUICK_START_EXAMPLES } from '../quickStartExamples';
 
 const RECENT_RUNS_LIMIT = 5;
@@ -25,6 +25,27 @@ export class DashboardTab {
             </header>
 
             <div class="section-body flex flex-col gap-8">
+                <div id="dashboard-system-diagnostics" class="p-4 rounded-lg bg-surface-raised border border-border-subtle flex flex-col gap-3">
+                    <span class="font-label-sm text-label-sm uppercase tracking-wider text-accent font-semibold flex items-center gap-1.5">
+                        <span class="material-symbols-outlined text-[16px]">monitor_heart</span>
+                        System &amp; Engine Telemetry
+                    </span>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-body-sm">
+                        <div class="flex flex-col gap-0.5">
+                            <span class="text-secondary text-[11px] uppercase font-mono">Alignment Engine</span>
+                            <span id="dashboard-engine-status" class="font-mono text-primary font-semibold">Checking...</span>
+                        </div>
+                        <div class="flex flex-col gap-0.5">
+                            <span class="text-secondary text-[11px] uppercase font-mono">Process Memory</span>
+                            <span id="dashboard-memory-status" class="font-mono text-primary font-semibold">-- MB</span>
+                        </div>
+                        <div class="flex flex-col gap-0.5">
+                            <span class="text-secondary text-[11px] uppercase font-mono">Hardware Acceleration</span>
+                            <span id="dashboard-webgl-status" class="font-mono text-success font-semibold">WebGL Active</span>
+                        </div>
+                    </div>
+                </div>
+
                 <div id="dashboard-stats" class="grid grid-cols-1 sm:grid-cols-3 gap-6">
                     <div class="stat-row stat-primary">
                         <span class="stat-key">Total runs</span>
@@ -91,6 +112,28 @@ export class DashboardTab {
 
     async loadDashboardData() {
         if (!this.element) return;
+
+        try {
+            const health = await fetchHealth();
+            const engineEl = this.element.querySelector('#dashboard-engine-status');
+            if (engineEl) {
+                engineEl.textContent = health.mustang_installed ? 'Mustang Native (Active)' : 'Mustang Fallback';
+                engineEl.className = health.mustang_installed ? 'font-mono text-success font-semibold' : 'font-mono text-warning font-semibold';
+            }
+        } catch {
+            const engineEl = this.element.querySelector('#dashboard-engine-status');
+            if (engineEl) engineEl.textContent = 'Offline / Unreachable';
+        }
+
+        try {
+            const mem = await fetchMemoryStats();
+            const memEl = this.element.querySelector('#dashboard-memory-status');
+            if (memEl && mem.ram_mb) {
+                memEl.textContent = `${mem.ram_mb.toFixed(1)} MB`;
+            }
+        } catch {
+            // ignore
+        }
 
         try {
             const stats = await fetchStats();

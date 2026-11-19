@@ -26,6 +26,7 @@ function makeMockViewer() {
         resize: vi.fn(),
         zoomTo: vi.fn(),
         spin: vi.fn(),
+        rotate: vi.fn(),
         pngURI: vi.fn(() => 'data:image/png;base64,mock'),
         setClickable: vi.fn(),
         addLabel: vi.fn(() => ({ id: Math.random() })),
@@ -396,6 +397,39 @@ describe('Viewer3D', () => {
             expect(mockViewer.pngURI).toHaveBeenCalled();
             expect(clickSpy).toHaveBeenCalled();
             clickSpy.mockRestore();
+        });
+    });
+
+    describe('camera presets', () => {
+        it('rotates to top view (90 deg x) and renders', () => {
+            const v = makeViewer();
+            v.setCameraPreset('top');
+            expect(mockViewer.zoomTo).toHaveBeenCalled();
+            expect(mockViewer.rotate).toHaveBeenCalledWith(90, 'x');
+            expect(mockViewer.render).toHaveBeenCalled();
+        });
+
+        it('rotates to side view (90 deg y) and renders', () => {
+            const v = makeViewer();
+            v.setCameraPreset('side');
+            expect(mockViewer.zoomTo).toHaveBeenCalled();
+            expect(mockViewer.rotate).toHaveBeenCalledWith(90, 'y');
+            expect(mockViewer.render).toHaveBeenCalled();
+        });
+
+        it('centers and zooms to front view', () => {
+            const v = makeViewer();
+            v.setCameraPreset('front');
+            expect(mockViewer.zoomTo).toHaveBeenCalled();
+            expect(mockViewer.render).toHaveBeenCalled();
+        });
+
+        it('clicking a camera preset button calls setCameraPreset', () => {
+            const v = makeViewer();
+            const spy = vi.spyOn(v, 'setCameraPreset');
+            const topBtn = v.element.querySelector('[data-camera-preset="top"]');
+            topBtn.click();
+            expect(spy).toHaveBeenCalledWith('top');
         });
     });
 

@@ -38,6 +38,7 @@ export class SequenceTab {
     constructor(props = {}) {
         this.onHighlightResidues = props.onHighlightResidues || (() => {});
         this.onOpenExportStudio = props.onOpenExportStudio || (() => {});
+        this.onGoToWorkspace = props.onGoToWorkspace || (() => {});
     }
 
     render() {
@@ -81,8 +82,13 @@ export class SequenceTab {
                         Coloring shows identity across the structures loaded in this run, not true evolutionary conservation - see "True sequence-only MSA" below for a real homolog-based conservation profile.
                     </div>
                     <div id="sequence-alignment-grid-wrapper" class="overflow-x-auto rounded-md max-h-[350px]">
-                        <div class="text-center py-8 text-secondary font-body-sm">
-                            Run alignment to generate sequence view.
+                        <div class="flex flex-col items-center justify-center py-10 px-4 text-center bg-surface-raised/40 border border-border-subtle rounded-lg gap-3">
+                            <span class="material-symbols-outlined text-[28px] text-accent">format_align_left</span>
+                            <div class="flex flex-col gap-1 max-w-md">
+                                <span class="font-body-md text-body-md font-semibold text-primary">Awaiting Structural Alignment</span>
+                                <span class="font-body-sm text-body-sm text-secondary">Add 2 or more structures in the Workspace to generate aligned sequence positions, conservation scores, and export files.</span>
+                            </div>
+                            <button type="button" id="sequence-goto-workspace-btn" class="btn-primary py-1.5 px-4 rounded-md font-label-md text-label-md mt-1">Go to Workspace</button>
                         </div>
                     </div>
                 </div>
@@ -283,6 +289,12 @@ export class SequenceTab {
     }
 
     setupEventListeners() {
+        this.element.addEventListener('click', (e) => {
+            if (e.target && e.target.closest('#sequence-goto-workspace-btn')) {
+                this.onGoToWorkspace();
+            }
+        });
+
         this.element.querySelectorAll('.report-section-checkbox').forEach(cb => {
             cb.addEventListener('change', () => this.updateReportLink());
         });

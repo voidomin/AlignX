@@ -272,5 +272,18 @@ describe('TopBar', () => {
             expect(modal).not.toBeNull();
             modal.remove();
         });
+
+        it('opens the Keyboard Shortcuts modal when #topbar-shortcuts-btn is clicked', () => {
+            const bar = makeBar();
+            bar.render();
+
+            const shortcutsBtn = bar.element.querySelector('#topbar-shortcuts-btn');
+            expect(shortcutsBtn).not.toBeNull();
+            shortcutsBtn.click();
+
+            const modal = document.getElementById('shortcuts-modal-overlay');
+            expect(modal).not.toBeNull();
+            modal.remove();
+        });
     });
 });

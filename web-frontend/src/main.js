@@ -11,6 +11,8 @@ import { HistoryPanel } from './components/HistoryPanel';
 import { DashboardTab } from './components/DashboardTab';
 import { SettingsTab } from './components/SettingsTab';
 import { showExportModal } from './components/ExportModal';
+import { showShortcutsModal } from './components/ShortcutsModal';
+import { showGlossaryModal } from './utils/rosettaStone';
 import { fetchChains, runAlignment, pollJobUntilDone, fetchLigands, isValidPdbId, uploadStructure as apiUploadStructure, predictFromSequence as apiPredictFromSequence, fetchRun, setApiKeyOverride } from './api';
 
 class App {
@@ -78,6 +80,7 @@ class App {
         this.ligandTab = new LigandTab({
             selectedPDBs: this.selectedPDBs,
             currentRunId: this.currentRunId,
+            onGoToWorkspace: () => this.switchTab('workspace'),
             onLigandSelected: (structureIndex, ligandId, contacts, colorMode) => {
                 if (ligandId) {
                     this.viewer3D.showLigandBindingSite(structureIndex, ligandId, contacts, colorMode);
@@ -92,13 +95,16 @@ class App {
 
         this.sequenceTab = new SequenceTab({
             onHighlightResidues: (chainMapping) => this.viewer3D.highlightResidues(chainMapping),
-            onOpenExportStudio: () => this.exportData()
+            onOpenExportStudio: () => this.exportData(),
+            onGoToWorkspace: () => this.switchTab('workspace')
         });
         this.analyticsTab = new AnalyticsTab({
             onHighlightResidues: (chainMapping) => this.viewer3D.highlightResidues(chainMapping),
             onGoToWorkspace: () => this.switchTab('workspace')
         });
-        this.clustersTab = new ClustersTab();
+        this.clustersTab = new ClustersTab({
+            onGoToWorkspace: () => this.switchTab('workspace')
+        });
         this.comparisonTab = new ComparisonTab();
 
         this.historyPanel = new HistoryPanel({
@@ -157,6 +163,7 @@ class App {
 
         // Render initial tab content
         this.updateTabContentPane();
+        this.setupGlobalKeyboardShortcuts();
 
         if (this.isSharedView) {
             // The default demo structures (4RLT/3UG9) are about to be
@@ -166,6 +173,63 @@ class App {
         } else {
             void this.loadChainsMetadata();
         }
+    }
+
+    setupGlobalKeyboardShortcuts() {
+        const TAB_KEYS = ['workspace', 'ligands', 'sequence', 'analytics', 'clusters', 'comparison', 'history', 'dashboard', 'settings'];
+
+        window.addEventListener('keydown', (e) => {
+            const target = e.target;
+            if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) {
+                return;
+            }
+
+            if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
+                e.preventDefault();
+                showShortcutsModal();
+                return;
+            }
+
+            if (e.key === 'h' || e.key === 'H') {
+                e.preventDefault();
+                showGlossaryModal();
+                return;
+            }
+
+            if (e.key === 'r' || e.key === 'R') {
+                e.preventDefault();
+                this.viewer3D?.setCameraPreset('center');
+                return;
+            }
+
+            if (e.key === 's' || e.key === 'S') {
+                e.preventDefault();
+                this.viewer3D?.toggleSpin();
+                return;
+            }
+
+            if (e.key === 'm' || e.key === 'M') {
+                e.preventDefault();
+                this.viewer3D?.toggleMeasureMode();
+                return;
+            }
+
+            if (e.key === 'f' || e.key === 'F') {
+                e.preventDefault();
+                const fsBtn = this.viewer3D?.element?.querySelector('#btn-toggle-fullscreen');
+                fsBtn?.click();
+                return;
+            }
+
+            if (e.key >= '1' && e.key <= '9') {
+                const idx = Number.parseInt(e.key, 10) - 1;
+                const tabKey = TAB_KEYS[idx];
+                if (tabKey) {
+                    e.preventDefault();
+                    this.switchTab(tabKey);
+                }
+            }
+        });
     }
 
     async loadSharedRun() {

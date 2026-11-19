@@ -4,9 +4,11 @@ import { DashboardTab } from './DashboardTab.js';
 vi.mock('../api.js', () => ({
     fetchStats: vi.fn(),
     fetchHistory: vi.fn(),
+    fetchHealth: vi.fn(),
+    fetchMemoryStats: vi.fn(),
 }));
 
-import { fetchStats, fetchHistory } from '../api.js';
+import { fetchStats, fetchHistory, fetchHealth, fetchMemoryStats } from '../api.js';
 
 function makeRun(id) {
     return { id, timestamp: '2026-01-01', pdb_ids: ['4RLT', '3UG9'] };
@@ -42,6 +44,8 @@ describe('DashboardTab', () => {
     });
 
     it('populates the stat cards from fetchStats', async () => {
+        fetchHealth.mockResolvedValue({ mustang_installed: true });
+        fetchMemoryStats.mockResolvedValue({ ram_mb: 128.5 });
         fetchStats.mockResolvedValue({ total_runs: 12, total_proteins_analyzed: 30, cache_size_mb: 4.5 });
         fetchHistory.mockResolvedValue({ runs: [] });
 
@@ -52,6 +56,8 @@ describe('DashboardTab', () => {
         expect(tab.element.querySelector('#stat-total-runs').textContent).toBe('12');
         expect(tab.element.querySelector('#stat-total-proteins').textContent).toBe('30');
         expect(tab.element.querySelector('#stat-cache-size').textContent).toBe('4.5 MB');
+        expect(tab.element.querySelector('#dashboard-engine-status').textContent).toBe('Mustang Native (Active)');
+        expect(tab.element.querySelector('#dashboard-memory-status').textContent).toBe('128.5 MB');
     });
 
     it('shows an empty state when there is no recent activity', async () => {

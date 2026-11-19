@@ -189,10 +189,36 @@ export class Viewer3D {
                         </button>
                     </div>
                     <div class="flex items-center gap-1">
-                        <button id="btn-reset-view" class="px-2 py-1 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors flex items-center gap-1" title="Reset View" aria-label="Reset View">
+                        <button id="btn-reset-view" class="px-2 py-1 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors flex items-center gap-1" title="Reset View & Center" aria-label="Reset View">
                             <span class="material-symbols-outlined text-[16px]">center_focus_strong</span>
                             <span class="font-label-sm text-[11px]">Reset</span>
                         </button>
+                        <details id="viewer-camera-picker" class="group relative">
+                            <summary class="px-2 py-1 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors cursor-pointer select-none flex items-center gap-1 list-none [&::-webkit-details-marker]:hidden" title="Camera Orientation Presets" aria-label="Camera Orientation Presets">
+                                <span class="material-symbols-outlined text-[16px]">videocam</span>
+                                <span class="font-label-sm text-[11px]">Camera</span>
+                                <span class="material-symbols-outlined text-[14px] group-open:rotate-180 transition-transform">expand_more</span>
+                            </summary>
+                            <div class="absolute right-0 top-full mt-1 z-20 bg-surface border border-border rounded-md shadow-panel p-1 flex flex-col gap-0.5 min-w-[130px]">
+                                <button data-camera-preset="front" class="viewer-camera-option text-left px-2 py-1 rounded-sm font-label-sm text-label-sm text-secondary hover:text-primary hover:bg-surface-raised transition-colors flex items-center justify-between">
+                                    <span>Front (Default)</span>
+                                    <span class="font-mono text-[10px] text-muted">Z</span>
+                                </button>
+                                <button data-camera-preset="top" class="viewer-camera-option text-left px-2 py-1 rounded-sm font-label-sm text-label-sm text-secondary hover:text-primary hover:bg-surface-raised transition-colors flex items-center justify-between">
+                                    <span>Top</span>
+                                    <span class="font-mono text-[10px] text-muted">90° X</span>
+                                </button>
+                                <button data-camera-preset="side" class="viewer-camera-option text-left px-2 py-1 rounded-sm font-label-sm text-label-sm text-secondary hover:text-primary hover:bg-surface-raised transition-colors flex items-center justify-between">
+                                    <span>Side</span>
+                                    <span class="font-mono text-[10px] text-muted">90° Y</span>
+                                </button>
+                                <div class="w-full h-px bg-border-subtle my-0.5"></div>
+                                <button data-camera-preset="center" class="viewer-camera-option text-left px-2 py-1 rounded-sm font-label-sm text-label-sm text-secondary hover:text-primary hover:bg-surface-raised transition-colors flex items-center justify-between">
+                                    <span>Center &amp; Fit</span>
+                                    <span class="font-mono text-[10px] text-muted">Fit</span>
+                                </button>
+                            </div>
+                        </details>
                         <button id="btn-screenshot" class="px-2 py-1 rounded-md hover:bg-surface-raised text-secondary hover:text-primary transition-colors flex items-center gap-1" title="Download Screenshot (PNG)" aria-label="Download Screenshot (PNG)">
                             <span class="material-symbols-outlined text-[16px]">photo_camera</span>
                             <span class="font-label-sm text-[11px]">PNG</span>
@@ -311,10 +337,15 @@ export class Viewer3D {
         });
 
         resetViewBtn.addEventListener('click', () => {
-            if (this.viewer) {
-                this.viewer.zoomTo();
-                this.viewer.render();
-            }
+            this.setCameraPreset('center');
+        });
+
+        this.element.querySelectorAll('.viewer-camera-option').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.setCameraPreset(btn.dataset.cameraPreset);
+                const picker = this.element.querySelector('#viewer-camera-picker');
+                if (picker) picker.open = false;
+            });
         });
 
         this.element.querySelector('#btn-toggle-spin').addEventListener('click', () => {
@@ -706,6 +737,28 @@ export class Viewer3D {
         }
     }
 
+    setCameraPreset(preset) {
+        if (!this.viewer) return;
+        switch (preset) {
+            case 'front':
+                this.viewer.zoomTo();
+                break;
+            case 'top':
+                this.viewer.zoomTo();
+                this.viewer.rotate(90, 'x');
+                break;
+            case 'side':
+                this.viewer.zoomTo();
+                this.viewer.rotate(90, 'y');
+                break;
+            case 'center':
+            default:
+                this.viewer.zoomTo();
+                break;
+        }
+        this.viewer.render();
+    }
+
     downloadScreenshot() {
         if (!this.viewer) return;
         this.viewer.render();
@@ -720,6 +773,15 @@ export class Viewer3D {
         document.body.appendChild(a);
         a.click();
         a.remove();
+
+        const btn = this.element?.querySelector('#btn-screenshot');
+        if (btn) {
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = `<span class="material-symbols-outlined text-[16px] text-success">check</span><span class="font-label-sm text-[11px] text-success">Saved</span>`;
+            setTimeout(() => {
+                if (btn) btn.innerHTML = originalHtml;
+            }, 1500);
+        }
     }
 
     _buildStructures(pdbIds, chainSelections) {
