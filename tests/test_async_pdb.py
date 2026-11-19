@@ -1,6 +1,6 @@
-import asyncio
 import os
 import sys
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -12,51 +12,67 @@ from src.utils.config_loader import load_config
 
 
 @pytest.mark.asyncio
-async def test_async_downloads():
-    print("Testing Async PDB Downloads...")
+async def test_async_downloads(tmp_path):
     config = load_config("config.yaml")
     manager = PDBManager(config)
-
-    # Test IDs (some existing, some new)
     test_ids = ["1L2Y", "1A6M", "1BKV", "4HHB"]
 
-    print(f"Starting batch download for: {test_ids}")
-    results = await manager.batch_download(test_ids)
+    fake_paths = {}
+    for pid in test_ids:
+        p = tmp_path / f"{pid}.pdb"
+        p.write_text(
+            "ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 20.00           C\n"
+        )
+        fake_paths[pid] = p
 
-    for pdb_id, (success, msg, path) in results.items():
-        status = "✅" if success else "❌"
-        print(f"{status} {pdb_id}: {msg} -> {path}")
-        if success and path:
-            assert path.exists()
+    async def fake_download(pdb_id, client=None):
+        return True, "Downloaded", fake_paths[pdb_id]
+
+    with patch.object(manager, "download_pdb", side_effect=fake_download):
+        results = await manager.batch_download(test_ids)
+
+    for pdb_id, (success, _msg, path) in results.items():
+        assert pdb_id in test_ids
+        assert success
+        assert path is not None
+        assert path.exists()
 
 
 @pytest.mark.asyncio
 async def test_async_metadata():
-    print("\nTesting Async Metadata Fetching...")
     config = load_config("config.yaml")
     manager = PDBManager(config)
-
     test_ids = ["1L2Y", "1A6M", "1BKV", "4HHB"]
 
-    print(f"Fetching metadata for: {test_ids}")
-    metadata = await manager.fetch_metadata(test_ids)
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "data": {
+            "entries": [
+                {
+                    "rcsb_id": pid,
+                    "struct": {"title": f"Structure of {pid}"},
+                    "exptl": [{"method": "X-RAY DIFFRACTION"}],
+                    "rcsb_entry_info": {"resolution_combined": [1.8]},
+                    "polymer_entities": [
+                        {
+                            "rcsb_entity_source_organism": [
+                                {"scientific_name": "Homo sapiens"}
+                            ]
+                        }
+                    ],
+                }
+                for pid in test_ids
+            ]
+        }
+    }
+
+    mock_client = AsyncMock()
+    mock_client.post.return_value = mock_response
+
+    metadata = await manager.fetch_metadata(test_ids, client=mock_client)
 
     for pdb_id, info in metadata.items():
-        print(f"📍 {pdb_id}: {info['title']} ({info['organism']})")
+        assert info["title"] == f"Structure of {pdb_id}"
         assert info["title"] != "N/A"
-
-
-async def main():
-    try:
-        await test_async_downloads()
-        await test_async_metadata()
-        print("\n✨ All async PDB tests passed!")
-    except Exception as e:
-        print(f"\n❌ Test failed: {e}")
-        import traceback
-
-        traceback.print_exc()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+        assert info["organism"] == "Homo sapiens"

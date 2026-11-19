@@ -1,6 +1,7 @@
 import { fetchMemoryStats, triggerClearMemory, fetchHealth } from '../api';
 import { wireArrowKeyNavigation } from '../utils/tabKeyboardNav';
 import { showDesktopModal } from './DesktopModal';
+import { showGlossaryModal } from '../utils/rosettaStone';
 
 // Grouped into two sections so the nav communicates structure instead of
 // 9 flat, equal-weight peers: Workspace (the one merged add-structures/
@@ -66,6 +67,10 @@ export class TopBar {
                 </div>
 
                 <div class="flex items-center flex-wrap lg:flex-nowrap gap-2 shrink-0 font-mono text-label-sm">
+                    <button id="topbar-glossary-btn" class="btn-secondary px-2.5 py-1.5 rounded-md font-label-md text-label-md inline-flex items-center gap-1" title="Open Student Lab Guide &amp; Rosetta Stone Metric Glossary">
+                        <span class="material-symbols-outlined text-[15px] text-accent">school</span>
+                        <span>Lab Guide</span>
+                    </button>
                     <button id="topbar-new-ws-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">New Workspace</button>
                     <button id="topbar-export-btn" class="btn-secondary px-3 py-1.5 rounded-md font-label-md text-label-md">Export</button>
                     <details id="topbar-system-disclosure" class="relative group">
@@ -148,6 +153,7 @@ export class TopBar {
 
         this.element.querySelector('#topbar-export-btn').addEventListener('click', () => this.onExportData());
         this.element.querySelector('#topbar-new-ws-btn').addEventListener('click', () => this.onNewWorkspace());
+        this.element.querySelector('#topbar-glossary-btn')?.addEventListener('click', () => showGlossaryModal());
         const desktopBtn = this.element.querySelector('#topbar-download-desktop-btn');
         if (desktopBtn) {
             desktopBtn.addEventListener('click', () => showDesktopModal());

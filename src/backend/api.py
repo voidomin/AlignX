@@ -110,14 +110,59 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+def _parse_cors_config(
+    cors_origins_env: str | None,
+) -> tuple[list[str], str | None]:
+    """Parse ALIGNX_CORS_ORIGINS into (allow_origins, allow_origin_regex).
+
+    Handles real-world Render + Vercel deployment pitfalls:
+    1. Empty or whitespace-only ALIGNX_CORS_ORIGINS (common when a Render
+       env var has sync: false and is left blank) falls back to ["*"].
+    2. Trailing slashes on configured origins (e.g. "https://app.vercel.app/")
+       are stripped because browser Origin headers never include trailing slashes.
+    3. Wildcard origins (e.g. "https://*.vercel.app") or any ".vercel.app"
+       origin automatically enable an allow_origin_regex covering Vercel
+       preview deployment URLs (e.g. https://align-<hash>-<team>.vercel.app).
+    """
+    raw = (cors_origins_env or "").strip()
+    if not raw or raw == "*":
+        return ["*"], None
+
+    exact_origins: list[str] = []
+    regex_parts: list[str] = []
+    has_vercel_origin = False
+
+    for item in raw.split(","):
+        cleaned = item.strip().rstrip("/")
+        if not cleaned:
+            continue
+        if cleaned == "*":
+            return ["*"], None
+        if ".vercel.app" in cleaned.lower():
+            has_vercel_origin = True
+        if "*" in cleaned:
+            escaped = re.escape(cleaned).replace(r"\*", "[A-Za-z0-9-]+")
+            regex_parts.append(f"^{escaped}$")
+        else:
+            exact_origins.append(cleaned)
+
+    if has_vercel_origin:
+        regex_parts.append(r"^https://[A-Za-z0-9-]+\.vercel\.app$")
+
+    origin_regex = "|".join(dict.fromkeys(regex_parts)) if regex_parts else None
+    return exact_origins, origin_regex
+
+
 # Enable CORS for frontend integration. Defaults to "*" for local development;
 # set ALIGNX_CORS_ORIGINS (comma-separated) to restrict this in production.
-_cors_origins_env = os.environ.get("ALIGNX_CORS_ORIGINS", "*")
-_cors_origins = [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+_cors_origins_env = os.environ.get("ALIGNX_CORS_ORIGINS", "*").strip() or "*"
+_cors_origins, _cors_origin_regex = _parse_cors_config(_cors_origins_env)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
+    allow_origin_regex=_cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

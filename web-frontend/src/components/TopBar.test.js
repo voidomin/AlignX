@@ -259,5 +259,18 @@ describe('TopBar', () => {
             expect(sysDisclosure.querySelector('#topbar-free-ram-btn')).not.toBeNull();
             expect(sysDisclosure.querySelector('#topbar-download-desktop-btn')).not.toBeNull();
         });
+
+        it('opens the Student Lab Guide & Rosetta Stone Glossary modal when #topbar-glossary-btn is clicked', () => {
+            const bar = makeBar();
+            bar.render();
+
+            const glossaryBtn = bar.element.querySelector('#topbar-glossary-btn');
+            expect(glossaryBtn).not.toBeNull();
+            glossaryBtn.click();
+
+            const modal = document.getElementById('rosetta-glossary-modal');
+            expect(modal).not.toBeNull();
+            modal.remove();
+        });
     });
 });

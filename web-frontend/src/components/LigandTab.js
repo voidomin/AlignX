@@ -926,11 +926,36 @@ export class LigandTab {
         bioactivityInfo.classList.remove('hidden');
         bioactivityInfo.classList.add('flex');
         const label = document.createElement('span');
-        label.textContent = 'Known bioactivity:';
+        label.className = "font-label-sm text-[11px] uppercase tracking-wider text-secondary";
+        label.textContent = 'Known bioactivity (ChEMBL Potency Intelligence):';
         bioactivityInfo.appendChild(label);
         activities.forEach(({ target, type, value, units }) => {
-            const row = document.createElement('span');
-            row.textContent = `${target || 'Unknown target'}: ${type} ${value} ${units || ''}`.trim();
+            const row = document.createElement('div');
+            row.className = "flex flex-wrap items-center justify-between gap-2 py-1 px-2 rounded bg-surface-raised border border-border-subtle";
+
+            const mainSpan = document.createElement('span');
+            mainSpan.className = "font-mono text-primary";
+            mainSpan.textContent = `${target || 'Unknown target'}: ${type} ${value} ${units || ''}`.trim();
+            row.appendChild(mainSpan);
+
+            const numVal = Number(value);
+            const normUnits = String(units || '').toLowerCase();
+            if (!Number.isNaN(numVal) && (normUnits === 'nm' || normUnits === 'um' || normUnits === 'µm')) {
+                const nmVal = normUnits === 'nm' ? numVal : numVal * 1000;
+                const badge = document.createElement('span');
+                if (nmVal < 100) {
+                    badge.className = "px-1.5 py-0.5 rounded border font-mono text-[10px] font-semibold bg-success/15 text-success border-success/30";
+                    badge.textContent = "High Potency (<100 nM)";
+                } else if (nmVal <= 1000) {
+                    badge.className = "px-1.5 py-0.5 rounded border font-mono text-[10px] font-semibold bg-accent-muted text-accent border-accent/30";
+                    badge.textContent = "Moderate Potency (Sub-µM)";
+                } else {
+                    badge.className = "px-1.5 py-0.5 rounded border font-mono text-[10px] text-secondary border-border-subtle";
+                    badge.textContent = "Micromolar Hit";
+                }
+                row.appendChild(badge);
+            }
+
             bioactivityInfo.appendChild(row);
         });
     }

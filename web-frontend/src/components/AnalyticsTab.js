@@ -767,10 +767,32 @@ export class AnalyticsTab {
         const resultDiv = this.element.querySelector('#mutation-impact-result');
         resultDiv.innerHTML = "";
 
+        const headerRow = document.createElement('div');
+        headerRow.className = "flex flex-wrap items-center justify-between gap-2";
+
         const summary = document.createElement('div');
-        summary.className = "text-primary";
+        summary.className = "text-primary font-semibold";
         summary.textContent = `UniProt ${data.accession ?? '--'} position ${data.uniprot_position ?? '--'}: ${data.wildtype_residue ?? '?'} → ${data.mutant_residue}`;
-        resultDiv.appendChild(summary);
+        headerRow.appendChild(summary);
+
+        const clinSig = String(data.clinvar?.clinical_significance || '').toLowerCase();
+        const amClass = String(data.alphamissense?.class || '').toLowerCase();
+        const revelScore = data.gnomad?.revel_score;
+
+        const consensusBadge = document.createElement('span');
+        consensusBadge.dataset.field = "clinical-consensus-badge";
+        if ((clinSig.includes('pathogenic') && !clinSig.includes('benign') && !clinSig.includes('conflicting')) || amClass.includes('pathogenic') || (typeof revelScore === 'number' && revelScore >= 0.5)) {
+            consensusBadge.className = "px-2 py-0.5 rounded border font-mono text-[10px] font-semibold bg-error/15 text-error border-error/30";
+            consensusBadge.textContent = "High Pathogenicity Risk";
+        } else if (clinSig.includes('benign') || amClass.includes('benign') || (typeof revelScore === 'number' && revelScore < 0.25)) {
+            consensusBadge.className = "px-2 py-0.5 rounded border font-mono text-[10px] font-semibold bg-success/15 text-success border-success/30";
+            consensusBadge.textContent = "Likely Benign / Tolerated";
+        } else {
+            consensusBadge.className = "px-2 py-0.5 rounded border font-mono text-[10px] font-semibold bg-warning/15 text-warning border-warning/30";
+            consensusBadge.textContent = "Uncertain Significance (VUS)";
+        }
+        headerRow.appendChild(consensusBadge);
+        resultDiv.appendChild(headerRow);
 
         const clinvarLine = document.createElement('div');
         if (data.clinvar) {
