@@ -150,7 +150,22 @@ cd AlignX &amp;&amp; python scripts/launch_desktop.py</pre>
     `,document.body.appendChild(t);let n=()=>t.remove();t.querySelector(`#close-glossary-modal-btn`)?.addEventListener(`click`,n),t.querySelector(`#dismiss-glossary-modal-btn`)?.addEventListener(`click`,n),t.addEventListener(`click`,e=>{e.target===t&&n()});let r=t.querySelector(`#glossary-search-input`);return r?.addEventListener(`input`,()=>{let e=r.value.trim().toLowerCase();t.querySelectorAll(`.rosetta-glossary-card`).forEach(t=>{let n=!e||t.textContent.toLowerCase().includes(e);t.classList.toggle(`hidden`,!n)})}),t}var V=[{key:`workspace`,label:`Workspace`,group:`Workspace`,stageLabel:`1. Setup`},{key:`ligands`,label:`Ligands`,group:`Results`,stageLabel:`2. Results`},{key:`sequence`,label:`Sequence`,group:`Results`},{key:`analytics`,label:`Analytics`,group:`Results`},{key:`clusters`,label:`Clusters`,group:`Results`},{key:`comparison`,label:`Diff Runs`,group:`Manage`,stageLabel:`3. Manage`},{key:`history`,label:`History`,group:`Manage`},{key:`dashboard`,label:`Dashboard`,group:`Manage`},{key:`settings`,label:`Settings`,group:`Manage`}],Ze=new Set(V.filter(e=>e.group===`Results`).map(e=>e.key)),Qe=class{constructor(e){this.onTabChange=e.onTabChange,this.onExportData=e.onExportData,this.onNewWorkspace=e.onNewWorkspace,this.activeTab=`workspace`,this.hasActiveRun=!1,this.element=null,this.memoryInterval=null}render(){let e=document.createElement(`header`);return e.className=`sticky top-0 z-50 bg-surface/90 backdrop-blur-md border-b border-border/80 shrink-0`,e.innerHTML=`
             <div class="max-w-[1600px] mx-auto px-6 py-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 lg:gap-4">
                 <div class="flex items-center gap-2.5 shrink-0">
-                    <span class="material-symbols-outlined text-[20px] text-accent">science</span>
+                    <svg class="w-6 h-6 shrink-0" viewBox="0 0 64 64" fill="none" aria-label="StructScope logo" role="img">
+                        <rect width="64" height="64" rx="14" fill="#1E1813" stroke="#2C2620" stroke-width="2"/>
+                        <line x1="32" y1="9" x2="32" y2="14" stroke="#EDE7DC" stroke-width="1.5" stroke-linecap="round" stroke-opacity="0.5"/>
+                        <line x1="32" y1="50" x2="32" y2="55" stroke="#EDE7DC" stroke-width="1.5" stroke-linecap="round" stroke-opacity="0.5"/>
+                        <line x1="9" y1="32" x2="14" y2="32" stroke="#EDE7DC" stroke-width="1.5" stroke-linecap="round" stroke-opacity="0.5"/>
+                        <line x1="50" y1="32" x2="55" y2="32" stroke="#EDE7DC" stroke-width="1.5" stroke-linecap="round" stroke-opacity="0.5"/>
+                        <circle cx="32" cy="32" r="9.5" fill="none" stroke="#EDE7DC" stroke-width="1.2" stroke-opacity="0.35" stroke-dasharray="2.5 2"/>
+                        <path d="M 48 16 C 41 21, 37 27, 32 32 C 27 37, 23 43, 16 48" stroke="#F59E0B" stroke-width="4.5" stroke-linecap="round"/>
+                        <path d="M 16 16 C 23 21, 27 27, 32 32 C 37 37, 41 43, 48 48" stroke="#E2846A" stroke-width="4.5" stroke-linecap="round"/>
+                        <circle cx="16" cy="16" r="3.5" fill="#E2846A"/>
+                        <circle cx="48" cy="48" r="3.5" fill="#E2846A"/>
+                        <circle cx="48" cy="16" r="3.5" fill="#F59E0B"/>
+                        <circle cx="16" cy="48" r="3.5" fill="#F59E0B"/>
+                        <circle cx="32" cy="32" r="5" fill="#1E1813" stroke="#EDE7DC" stroke-width="2"/>
+                        <circle cx="32" cy="32" r="2.5" fill="#E2846A"/>
+                    </svg>
                     <span class="font-headline-md text-headline-md font-bold text-primary">StructScope</span>
                 </div>
 
